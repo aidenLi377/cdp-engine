@@ -1,0 +1,28 @@
+﻿Crowd_Package,Base_Template,Param_Key,Label,JSON_Path,Widget_Type,Data_Source,Backend_Template,Is_Default
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",bhv,行为,selectionLv3.bhv,复选组,行为维表.csv,,1
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",leafCates,类目,selectionLv3.leafCates,搜索多选,类目维表.csv,,1
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",title,标题关键词,selectionLv3.extraFilters.title,列表输入,-,,0
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",stdBrand,标准品牌,selectionLv3.extraFilters.stdBrand,搜索多选,品牌维表.csv,,1
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",channel,渠道,selectionLv3.extraFilters.channel,复选组,渠道维表.csv,,0
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",frequency,消费频次,selectionLv3.extraFilters.frequency,数值_切换,-,"[
+  {""trigger"": ""isEmpty"", ""template"": {""op"": ""OPEN_OPEN""}},
+  {""trigger"": ""range"", ""template"": {""op"": ""CLOSE_CLOSE"", ""min"": ""${min}"", ""max"": ""${max}""}},
+  {""trigger"": ""min_only"", ""template"": {""op"": ""OPEN_CLOSE"", ""min"": ""${min}""}},
+  {""trigger"": ""max_only"", ""template"": {""op"": ""CLOSE_OPEN"", ""max"": ""${max}""}}
+]",0
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",price,消费金额,selectionLv3.extraFilters.price,数值_切换,-,"[
+  {""trigger"": ""isEmpty"", ""template"": {""op"": ""OPEN_OPEN""}},
+  {""trigger"": ""range"", ""template"": {""op"": ""CLOSE_CLOSE"", ""min"": ""${min}"", ""max"": ""${max}""}},
+  {""trigger"": ""min_only"", ""template"": {""op"": ""OPEN_CLOSE"", ""min"": ""${min}""}},
+  {""trigger"": ""max_only"", ""template"": {""op"": ""CLOSE_OPEN"", ""max"": ""${max}""}}
+]",0
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",itemprice,商品价格,selectionLv3.extraFilters.itemprice,数值_切换,-,"[
+  {""trigger"": ""isEmpty"", ""template"": {""op"": ""OPEN_OPEN""}},
+  {""trigger"": ""range"", ""template"": {""op"": ""CLOSE_CLOSE"", ""min"": ""${min}"", ""max"": ""${max}""}},
+  {""trigger"": ""min_only"", ""template"": {""op"": ""OPEN_CLOSE"", ""min"": ""${min}""}},
+  {""trigger"": ""max_only"", ""template"": {""op"": ""CLOSE_OPEN"", ""max"": ""${max}""}}
+]",0
+类目公域行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_CATE_BHV""]}",time,时间,selectionLv3,日期_切换,-,"[
+  {""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}},
+  {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}
+]",1
