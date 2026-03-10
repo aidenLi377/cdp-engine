@@ -26,3 +26,6 @@
   {""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}},
   {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}
 ]",1
+类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",bhv,行为,selectionLv3.bhv,复选组,行为维表.csv,,1
+类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",item,商品ID,selectionLv3.extraFilters.item,普通输入框,-,,1
+类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",time,时间,selectionLv3,日期_切换,-,"[{""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}}, {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}]",1
