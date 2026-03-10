@@ -31,6 +31,9 @@
             <template v-else-if="field.Widget_Type === '搜索多选'">
               <el-select-v2 v-model="formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable collapse-tags :placeholder="`请搜索并选择${field.Label}`" style="width: 100%"></el-select-v2>
             </template>
+            <template v-else-if="field.Widget_Type === '搜索单选'">
+              <el-select-v2 v-model="formData[field.key]" :options="formatOptions(field.options)" filterable clearable :placeholder="`请搜索并选择${field.Label}`" style="width: 100%"></el-select-v2>
+            </template>
 
             <template v-else-if="field.Widget_Type === '复选组'">
               <el-checkbox-group v-model="formData[field.key]" class="custom-checkbox-group">
@@ -171,20 +174,20 @@ const formatOptions = (opts) => {
 
 const isVisible = (field) => {
   if (field.isDefault) return true
-  const selectedBehaviors = formData['bhv'] || []
+
+  // 🔥 修复 JS 数组陷阱：必须明确判断 length 大于 0，否则会被空数组 [] 骗过去！
+  const selectedBehaviors = (formData['bhv'] && formData['bhv'].length > 0) 
+                            ? formData['bhv'] 
+                            : (formData['types'] || [])
+
   if (selectedBehaviors.length === 0) return false
-  
-  // 🔥 【绝对交集逻辑（一票否决）】：只要多选的行为里，有【任何一个】不支持该字段，就立刻隐藏！
+
   for (const bhv of selectedBehaviors) {
     const visibleFields = logicMatrix.value[bhv] || []
-    
-    // 如果当前遍历到的这个动作（比如预售），它的支持列表里【没有】这个字段
     if (!visibleFields.includes(field.key)) {
-      return false // 🚨 触发一票否决！直接隐藏，后面的动作都不用看了
+      return false 
     }
   }
-  
-  // 只有当所有选中的动作都被检查过，且没有一个人反对时，才准许显示！
   return true
 }
 // 🔥 引入 Element Plus 的消息提示弹窗

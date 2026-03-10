@@ -77,11 +77,14 @@ class ConfigEngine:
             if pkg not in self.bhv_options: self.bhv_options[pkg] = []
             if name not in self.bhv_options[pkg]: self.bhv_options[pkg].append(name)
 
+
         # 2. 解析其他全局维表
         loaders = [
             ("渠道维表.csv", "渠道名称", lambda r: f"{r.get('parentId', '')}#|#{r.get('BizID', '')}"),
             ("类目维表.csv", 1, lambda r: f"{r.get('cateId', '')}#|#{r.get('cateId', '')}"),
             ("品牌维表.csv", 1, lambda r: str(r.iloc[1]).strip()),
+            # 👇 新增这一行：让引擎认识状态维表
+            ("状态维表.csv", "状态名称", lambda r: f"{r.get('ID', '')}#|#{r.get('Value', '')}"),
         ]
 
         for fname, name_col, id_func in loaders:
@@ -111,13 +114,22 @@ class ConfigEngine:
     def get_package_meta(self, package_name):
         logic_filename = self.packages.get(package_name)
         if not logic_filename or not os.path.exists(logic_filename): return {}
-        try:
+        logic_df = pd.DataFrame()  # 🔥 建立空表兜底
+        logic_df = pd.DataFrame()
+        if logic_filename and os.path.exists(logic_filename):
             try:
-                logic_df = pd.read_csv(logic_filename, encoding='utf-8').set_index("行为")
-            except:
-                logic_df = pd.read_csv(logic_filename, encoding='gb18030').set_index("行为")
-        except:
-            return {}
+                # 🔥 架构升级：不再死磕“行为”两个字！直接抓取表格的【第一列】作为主键索引！
+                try:
+                    temp_df = pd.read_csv(logic_filename, encoding='utf-8')
+                except:
+                    temp_df = pd.read_csv(logic_filename, encoding='gb18030')
+
+                    # 🔥 修复：智能定位主键列！在表头里寻找“行为”或“状态”，不管它们在第几列！
+                index_col = next((col for col in temp_df.columns if col.strip() in ['行为', '状态']),
+                                 temp_df.columns[0])
+                logic_df = temp_df.set_index(index_col)
+            except Exception as e:
+                print(f"🚨 逻辑表读取失败: {e}")
 
         full_schema = []
         # 🔥 升级：直接遍历清洗后的 DataFrame，彻底摆脱 index 冲突
@@ -242,7 +254,7 @@ class ConfigEngine:
             if pd.isna(template_str) or str(template_str).strip() == "":
                 if state == "isEmpty": continue
                 val_to_write = vars_dict.get('val', cleaned_val)
-                if key in ['channel', 'stdBrand', 'leafCates', 'bhv', 'title']:
+                if key in ['channel', 'stdBrand', 'leafCates', 'bhv', 'title','types']:
                     if not isinstance(val_to_write, list): val_to_write = [val_to_write]
                 self._merge_path(selection_lv3, json_path, val_to_write)
                 continue
