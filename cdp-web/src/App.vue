@@ -171,25 +171,54 @@ const formatOptions = (opts) => {
   if (!opts) return []
   return opts.map(o => ({ value: o, label: o }))
 }
+// 小助手函数：确保拿到的是数组
+const getArray = (val) => Array.isArray(val) ? val : (val ? [val] : [])
 
 const isVisible = (field) => {
   if (field.isDefault) return true
-
-  // 🔥 修复 JS 数组陷阱：必须明确判断 length 大于 0，否则会被空数组 [] 骗过去！
-  const selectedBehaviors = (formData['bhv'] && formData['bhv'].length > 0) 
-                            ? formData['bhv'] 
-                            : (formData['types'] || [])
-
-  if (selectedBehaviors.length === 0) return false
-
-  for (const bhv of selectedBehaviors) {
-    const visibleFields = logicMatrix.value[bhv] || []
+  
+  // 增加容错保护，防止 logicMatrix 为空时报错
+  const matrixKeys = Object.keys(logicMatrix.value || {})
+  if (matrixKeys.length === 0) return false
+  
+  // 💡 智能嗅探：看看底层传来的钥匙里有没有 '|'，判断是不是多维商品包
+  const is2D = matrixKeys.some(k => k.includes('|'))
+  let triggerCombinations = []
+  
+  if (is2D) {
+    // 🔥 修复点：去掉 .value，直接读取 formData
+    const channels = getArray(formData['channel'])
+    const behaviors = getArray(formData['bhv'])
+    
+    // 二维逻辑下，必须【渠道】和【行为】都选了，才允许展示后续的靶向字段
+    if (channels.length === 0 || behaviors.length === 0) return false 
+    
+    // 生成笛卡尔积组合密钥 (如：天猫国际|购买)
+    for (const ch of channels) {
+      for (const bhv of behaviors) {
+        triggerCombinations.push(`${ch}|${bhv}`)
+      }
+    }
+  } else {
+    // 🔥 修复点：去掉 .value，直接读取 formData
+    triggerCombinations = getArray(formData['bhv']).length > 0 
+                        ? getArray(formData['bhv']) 
+                        : getArray(formData['types'])
+    if (triggerCombinations.length === 0) return false
+  }
+  
+  // 铁腕一票否决：只要有一个组合不支持该字段，立刻隐藏！
+  for (const comboKey of triggerCombinations) {
+    const visibleFields = (logicMatrix.value || {})[comboKey] || []
     if (!visibleFields.includes(field.key)) {
       return false 
     }
   }
   return true
 }
+
+
+
 // 🔥 引入 Element Plus 的消息提示弹窗
 import { ElMessage } from 'element-plus'
 

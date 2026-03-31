@@ -1,0 +1,475 @@
+{
+    "data": [
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "1",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate1",
+                        "conditionType": "1",
+                        "conditionCname": "一级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "shop",
+                        "conditionType": "1",
+                        "conditionCname": "店铺",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "item",
+                        "conditionType": "1",
+                        "conditionCname": "商品",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "itemprice",
+                        "conditionType": "1",
+                        "conditionCname": "商品价格",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "property",
+                        "conditionType": "1",
+                        "conditionCname": "商品属性",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "frequency",
+                        "conditionType": "1",
+                        "conditionCname": "购买频次",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "price",
+                        "conditionType": "1",
+                        "conditionCname": "购买金额",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 730,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_PAY"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "购买",
+            "id": "18919",
+            "aid": "18919",
+            "promptTip": null,
+            "status": null
+        },
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "2",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 366,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_SUBPAY"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "预售",
+            "id": "18929",
+            "aid": "18929",
+            "promptTip": null,
+            "status": null
+        },
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "3",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate1",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "itemprice",
+                        "conditionType": "1",
+                        "conditionCname": "商品价格",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 366,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_VIEWITEM"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "浏览",
+            "id": "18930",
+            "aid": "18930",
+            "promptTip": null,
+            "status": null
+        },
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "4",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate1",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "itemprice",
+                        "conditionType": "1",
+                        "conditionCname": "商品价格",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 366,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_COLLECTITEM"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "收藏",
+            "id": "18931",
+            "aid": "18931",
+            "promptTip": null,
+            "status": null
+        },
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "5",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate1",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "itemprice",
+                        "conditionType": "1",
+                        "conditionCname": "商品价格",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 366,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_CART"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "加购",
+            "id": "18932",
+            "aid": "18932",
+            "promptTip": null,
+            "status": null
+        },
+        {
+            "bizCate": "-1",
+            "level": "1",
+            "sortIndex": "6",
+            "promptDetail": null,
+            "nodeType": "1",
+            "parentId": "18917",
+            "ename": null,
+            "offlineDate": null,
+            "extraProp": {
+                "filterConditions": [
+                    {
+                        "conditionEname": "stdBrand",
+                        "conditionType": "1",
+                        "conditionCname": "标准品牌",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate1",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate2",
+                        "conditionType": "1",
+                        "conditionCname": "二级类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "cate_leaf",
+                        "conditionType": "1",
+                        "conditionCname": "叶子类目",
+                        "type": "3"
+                    },
+                    {
+                        "conditionEname": "channel",
+                        "conditionType": "1",
+                        "conditionCname": "渠道",
+                        "type": "1"
+                    },
+                    {
+                        "conditionEname": "itemprice",
+                        "conditionType": "1",
+                        "conditionCname": "商品价格",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "title",
+                        "conditionType": "1",
+                        "conditionCname": "商品标题词",
+                        "type": "2"
+                    },
+                    {
+                        "conditionEname": "time",
+                        "conditionType": "1",
+                        "conditionCname": "时间",
+                        "type": "2"
+                    }
+                ],
+                "dataScope": {
+                    "range": 366,
+                    "from": 366,
+                    "to": 1
+                },
+                "value": "CATE_PUBLIC_ITEM_FEED"
+            },
+            "scope": "101",
+            "bizId": null,
+            "name": "评论",
+            "id": "18933",
+            "aid": "18933",
+            "promptTip": null,
+            "status": null
+        }
+    ],
+    "errCode": 0,
+    "errMsg": "Success",
+    "codeClass": "SUCCESS"
+}

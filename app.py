@@ -77,19 +77,22 @@ class ConfigEngine:
             if pkg not in self.bhv_options: self.bhv_options[pkg] = []
             if name not in self.bhv_options[pkg]: self.bhv_options[pkg].append(name)
 
+        self.dim_translator = {}  # 🔥 新增：建立高维隔离字典
 
         # 2. 解析其他全局维表
         loaders = [
             ("渠道维表.csv", "渠道名称", lambda r: f"{r.get('parentId', '')}#|#{r.get('BizID', '')}"),
             ("类目维表.csv", 1, lambda r: f"{r.get('cateId', '')}#|#{r.get('cateId', '')}"),
             ("品牌维表.csv", 1, lambda r: str(r.iloc[1]).strip()),
-            # 👇 新增这一行：让引擎认识状态维表
             ("状态维表.csv", "状态名称", lambda r: f"{r.get('ID', '')}#|#{r.get('Value', '')}"),
+            ("商品类型维表.csv", "类型名称", lambda r: str(r.get('ID', '')).strip()),
         ]
 
         for fname, name_col, id_func in loaders:
             df = safe_read(fname)
             self.dimensions[fname] = []
+            has_pkg = '适用的包' in df.columns  # 💡 动态探测这个表有没有“适用的包”这一列
+
             for _, row in df.iterrows():
                 try:
                     if isinstance(name_col, int):
@@ -99,13 +102,20 @@ class ConfigEngine:
                             continue
                     else:
                         name = str(row.get(name_col, '')).strip()
+
                     if not name: continue
                     val = id_func(row)
+
+                    pkg_val = str(row.get('适用的包', '')).strip() if has_pkg else ""
+
                     if fname == "品牌维表.csv":
                         self.id_translator[name] = name
                         self.dimensions[fname].append(name)
                     elif val and val != "#|#":
-                        self.id_translator[name] = val
+                        self.id_translator[name] = val  # 兜底全局映射
+                        if has_pkg and pkg_val:
+                            # 🔥 核心隔离！把 (包名, 名字) 映射为专属 ID
+                            self.dim_translator[(pkg_val, name)] = val
                         self.dimensions[fname].append(name)
                 except:
                     continue
@@ -114,29 +124,24 @@ class ConfigEngine:
     def get_package_meta(self, package_name):
         logic_filename = self.packages.get(package_name)
         if not logic_filename or not os.path.exists(logic_filename): return {}
-        logic_df = pd.DataFrame()  # 🔥 建立空表兜底
-        logic_df = pd.DataFrame()
-        if logic_filename and os.path.exists(logic_filename):
-            try:
-                # 🔥 架构升级：不再死磕“行为”两个字！直接抓取表格的【第一列】作为主键索引！
-                try:
-                    temp_df = pd.read_csv(logic_filename, encoding='utf-8')
-                except:
-                    temp_df = pd.read_csv(logic_filename, encoding='gb18030')
 
-                    # 🔥 修复：智能定位主键列！在表头里寻找“行为”或“状态”，不管它们在第几列！
-                index_col = next((col for col in temp_df.columns if col.strip() in ['行为', '状态']),
-                                 temp_df.columns[0])
-                logic_df = temp_df.set_index(index_col)
-            except Exception as e:
-                print(f"🚨 逻辑表读取失败: {e}")
-
+        # --- 1. 读取参数配置表生成骨架 ---
+        # --- 1. 读取参数配置表生成骨架 ---
         full_schema = []
-        # 🔥 升级：直接遍历清洗后的 DataFrame，彻底摆脱 index 冲突
+        current_label_map = {}  # 🔥 新增：当前包专属的名称翻译字典
+
         for _, config in self.params_df.iterrows():
             pkg_col = config.get('Crowd_Package', '')
             if pd.isna(pkg_col): continue
             if package_name not in [p.strip() for p in str(pkg_col).split(',')]: continue
+
+            # 🔥 新增：只为当前选中的包建立映射，防止“商品行为”覆盖“类目公域行为”
+            if pd.notna(config.get('Label')):
+                cn_name = str(config.get('Label')).strip()
+                eng_key = str(config.get('Param_Key')).strip()
+                current_label_map[cn_name] = eng_key
+                if "关键词" in cn_name:
+                    current_label_map[cn_name.replace("关键词", "关键字")] = eng_key
 
             item = config.to_dict()
             for k, v in item.items():
@@ -144,7 +149,7 @@ class ConfigEngine:
 
             item['key'] = config['Param_Key']
             data_source = item.get('Data_Source')
-            # 🔥 精准下发：是行为表，就只下发当前包的专属动作！
+            # 精准下发专属动作
             if data_source == '行为维表.csv':
                 item['options'] = self.bhv_options.get(package_name, [])
             else:
@@ -153,15 +158,44 @@ class ConfigEngine:
             item['isDefault'] = is_def in ['1', '1.0', 'true', 'yes', '是']
             full_schema.append(item)
 
+        # --- 2. 逻辑表解析 (V1.3 终极多维靶向雷达) ---
         logic_matrix = {}
-        for behavior_name, row in logic_df.iterrows():
-            visible_fields = []
-            for col_name, val in row.items():
-                if str(val).strip() in ['1', '1.0', 'True', 'TRUE']:
-                    cn = col_name.strip()
-                    real_key = self.label_map.get(cn)
-                    if real_key: visible_fields.append(real_key)
-            logic_matrix[behavior_name] = visible_fields
+        try:
+            try:
+                temp_df = pd.read_csv(logic_filename, encoding='utf-8')
+            except:
+                temp_df = pd.read_csv(logic_filename, encoding='gb18030')
+
+            trigger_cols = []
+            # 强制设定维度的拼接顺序：渠道在前，行为/状态在后
+            for expected in ['渠道', '行为', '状态']:
+                for col in temp_df.columns:
+                    if col.strip() == expected:
+                        # 💡 智能嗅探：第一行是 1 或 1.0 的，是被控制的靶子，绝不是触发器！
+                        first_val = str(temp_df[col].dropna().iloc[0]).strip() if not temp_df[
+                            col].dropna().empty else ""
+                        if first_val not in ['1', '1.0', 'True', 'TRUE']:
+                            trigger_cols.append(col.strip())
+
+            # 兜底：如果啥也没匹配上，抓第一列
+            if not trigger_cols: trigger_cols = [temp_df.columns[0]]
+
+            for _, row in temp_df.iterrows():
+                # 拼接多维主键 (如 "天猫国际|浏览" 或一维的 "购买")
+                key_parts = [str(row[c]).strip() for c in trigger_cols]
+                composite_key = "|".join(key_parts)
+
+                visible_fields = []
+                for col_name, val in row.items():
+                    if col_name.strip() not in trigger_cols:
+                        if str(val).strip() in ['1', '1.0', 'True', 'TRUE']:
+                            cn = col_name.strip()
+                            # 🔥 修改：把 self.label_map 改成刚才建立的 current_label_map
+                            real_key = current_label_map.get(cn)
+                            if real_key: visible_fields.append(real_key)
+                logic_matrix[composite_key] = visible_fields
+        except Exception as e:
+            print(f"🚨 逻辑表读取异常: {e}")
 
         return {"schema": full_schema, "matrix": logic_matrix}
 
@@ -169,25 +203,25 @@ class ConfigEngine:
         current_pkg = user_data.pop('_package', '类目公域行为')
 
         selection_lv3 = {}
-        force_check_list = ['itemprice', 'frequency', 'price']
-        for k in force_check_list:
-            if k not in user_data: user_data[k] = ""
+
+        # 🔥 核心原则落实：绝对信任前端发来的 user_data！
+        # 页面显示什么参数前端就发什么，页面隐藏的参数绝对不强行兜底补全！
 
         for key, raw_val in user_data.items():
-            # 🔥 核心升级 2：精准定位配置行！同时匹配 Param_Key 和 Crowd_Package
+
+            # 精确匹配当前包的配置
             matched_rows = self.params_df[
                 (self.params_df['Param_Key'] == key) &
-                (self.params_df['Crowd_Package'].str.contains(current_pkg, na=False))
+                (self.params_df['Crowd_Package'].apply(
+                    lambda x: current_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)]))
                 ]
-
-            # 如果没匹配到，说明是不需要发给后端的脏数据，直接跳过
             if matched_rows.empty: continue
 
-            # 安全取出配置
             config = matched_rows.iloc[0]
-
             template_str = config.get('Backend_Template')
             json_path = config.get('JSON_Path')
+
+            if pd.isna(json_path): continue
 
             cleaned_val = raw_val
             vars_dict = {}
@@ -233,10 +267,9 @@ class ConfigEngine:
                 def translate(v):
                     if isinstance(v, list): return [translate(x) for x in v]
                     if isinstance(v, str):
-                        # 🔥 终极防串台：根据当前包名+动作名，提取专属 ID
-                        if key == 'bhv':
-                            return self.bhv_translator.get((current_pkg, v), v)
-                        return self.id_translator.get(v, v)
+                        if key == 'bhv': return self.bhv_translator.get((current_pkg, v), v)
+                        # 🔥 终极防串台
+                        return self.dim_translator.get((current_pkg, v), self.id_translator.get(v, v))
                     return v
 
                 final_val = translate(cleaned_val)
@@ -251,16 +284,21 @@ class ConfigEngine:
                 if isinstance(final_val, (str, int, float, list)): vars_dict['val'] = final_val
                 if not vars_dict and final_val: vars_dict['val'] = final_val
 
-            if pd.isna(template_str) or str(template_str).strip() == "":
+            # 🔥 修复：识别 "-", 空白，nan，直接塞值。防崩溃类型强转
+            if pd.isna(template_str) or str(template_str).strip() in ["", "-", "nan"]:
                 if state == "isEmpty": continue
                 val_to_write = vars_dict.get('val', cleaned_val)
-                if key in ['channel', 'stdBrand', 'leafCates', 'bhv', 'title','types']:
+                if key in ['channel', 'stdBrand', 'leafCates', 'bhv', 'title', 'types', 'keywords']:
                     if not isinstance(val_to_write, list): val_to_write = [val_to_write]
-                self._merge_path(selection_lv3, json_path, val_to_write)
+                self._merge_path(selection_lv3, str(json_path).strip(), val_to_write)
                 continue
 
             try:
                 strategies = json.loads(template_str)
+                if isinstance(strategies, dict):
+                    strategies = [strategies]
+                elif not isinstance(strategies, list):
+                    continue
             except:
                 continue
 
@@ -271,21 +309,29 @@ class ConfigEngine:
                 if cond in ['hasValue', 'HAS_VALUE'] and state != 'isEmpty': matched_template = strat.get(
                     'template'); break
 
+            if not matched_template:
+                for strat in strategies:
+                    if strat.get('trigger') in ['default', 'DEFAULT']:
+                        matched_template = strat.get('template');
+                        break
+
             if matched_template:
                 s = json.dumps(matched_template)
                 for v_key, v_val in vars_dict.items():
                     s = s.replace(f"\"${{{v_key}}}\"", str(v_val))
-                    if v_key in ['start', 'end','days']:
+                    if v_key in ['start', 'end', 'days']:
                         s = s.replace(f": {v_val}", f": \"{v_val}\"")
                     s = s.replace(f"${{{v_key}}}", str(v_val))
-                self._merge_path(selection_lv3, json_path, json.loads(s))
+                try:
+                    self._merge_path(selection_lv3, str(json_path).strip(), json.loads(s))
+                except Exception as e:
+                    print(f"合并路径报错: {e}")
 
-        real_lv3 = selection_lv3.get('selectionLv3', selection_lv3)
-
-        # 动态获取当前包的 Base_Template 外壳
-        base_tmpl = {"selectionLv1": ["COMMON_TOUCH", "PUBLIC_CATE_BHV"]}
+        # 获取外壳
+        base_tmpl = {}
         try:
-            pkg_rows = self.params_df[self.params_df['Crowd_Package'].str.contains(current_pkg, na=False)]
+            pkg_rows = self.params_df[self.params_df['Crowd_Package'].apply(
+                lambda x: current_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)])]
             if not pkg_rows.empty:
                 tmpl_str = pkg_rows.iloc[0]['Base_Template']
                 if pd.notna(tmpl_str) and str(tmpl_str).strip() != "":
@@ -293,9 +339,22 @@ class ConfigEngine:
         except Exception as e:
             print(f"解析 Base_Template 失败: {e}")
 
+        # 智能动态融合 (不丢失任何层级)
+        for k, v in selection_lv3.items():
+            if k in base_tmpl and isinstance(base_tmpl[k], dict) and isinstance(v, dict):
+                self._deep_update(base_tmpl[k], v)
+            else:
+                base_tmpl[k] = v
+
+        if "selectionLv3" not in base_tmpl:
+            base_tmpl["selectionLv3"] = {}
+
+        # 🔥 最稳妥的打包写法，兼容所有老版本系统，永不死机
+        base_tmpl["fromPoolId"] = 0
+
         final_payload = {
             "crowdName": "未命名",
-            "list": [{"selectionLv1": base_tmpl.get("selectionLv1", []), "selectionLv3": real_lv3, "fromPoolId": 0}],
+            "list": [base_tmpl],
             "compute": "(0)"
         }
         return final_payload

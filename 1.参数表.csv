@@ -30,8 +30,16 @@
 类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",item,商品ID,selectionLv3.extraFilters.item,普通输入框,-,,1
 类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",time,时间,selectionLv3,日期_切换,-,"[{""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}}, {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}]",1
 AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",types,状态,selectionLv3.types,复选组,状态维表.csv,,1
-AIPL状态,"{""selectionLv2"":[""FULL_LINK"",""FULL_LINK""]}",cate,二级类目,selectionLv3.cate,搜索单选,类目维表.csv,,1
-AIPL状态,"{""selectionLv3"":[""FULL_LINK"",""FULL_LINK""]}",time,时间,selectionLv3,日期_切换,,"[
+AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",cate,二级类目,selectionLv3.cate,搜索单选,类目维表.csv,,1
+AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",time,时间,selectionLv3,日期_切换,-,"[
   {""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}},
   {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}
 ]",1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",channel,渠道,selectionLv2,搜索单选,渠道维表.csv,,1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",bhv,行为,selectionLv3.bhv,复选组,行为维表.csv,,1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",cate,二级类目,selectionLv3.cate,搜索单选,类目维表.csv,,1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",keywords,标题关键词,selectionLv3.keywords,列表输入,-,,1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",time,时间_商品行为,selectionLv3,日期_切换,-,"[{""trigger"": ""固定日期"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RELATIVE_RANGE"", ""dateValue"": ""${date}""}}]",0
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",dayFrequency,天数,selectionLv3.dayFrequency,数值_切换,-,"[{""trigger"": ""isEmpty"", ""template"": {""op"": ""OPEN_OPEN""}}, {""trigger"": ""isGreaterThan"", ""template"": {""op"": ""OPEN_CLOSE"", ""min"": ${min}}}, {""trigger"": ""isBetween"", ""template"": {""op"": ""CLOSE_CLOSE"", ""min"": ${min}, ""max"": ${max}}}]",0
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",selectedGoodsType,商品类型,selectionLv3.selectedGoodsType,复选组,商品类型维表.csv,,1
+商品行为,"{""selectionLv1"":[""COMMODITY"",""ITEM""]}",item,商品ID,selectionLv3.item,列表输入,-,,1
