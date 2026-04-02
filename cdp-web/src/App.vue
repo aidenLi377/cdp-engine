@@ -32,7 +32,14 @@
               <el-select-v2 v-model="formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable collapse-tags :placeholder="`请搜索并选择${field.Label}`" style="width: 100%"></el-select-v2>
             </template>
             <template v-else-if="field.Widget_Type === '搜索单选'">
-              <el-select-v2 v-model="formData[field.key]" :options="formatOptions(field.options)" filterable clearable :placeholder="`请搜索并选择${field.Label}`" style="width: 100%"></el-select-v2>
+              <el-select-v2 
+                :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${Array.isArray(formData.channel) ? formData.channel.join(',') : formData.channel}` : field.key"
+                v-model="formData[field.key]" 
+                :options="formatOptions(getDynamicOptions(field))" 
+                filterable clearable 
+                :placeholder="`请搜索并选择${field.Label}`" 
+                style="width: 100%"
+              ></el-select-v2>
             </template>
 
             <template v-else-if="field.Widget_Type === '复选组'">
@@ -99,7 +106,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted,watch } from 'vue'
 
 const API_BASE = 'http://127.0.0.1:5000'
 
@@ -112,6 +119,56 @@ const finalJson = ref(null)
 
 let formData = reactive({})
 let modeData = reactive({})
+
+
+// 🔥 升级版监听：仅在“商品行为”包中执行账号与商品的联动逻辑
+watch([() => formData.shop, () => formData.channel], ([newShop, newChannel]) => {
+  if (currentPackage.value !== '商品行为') return; // 🎯 增加包名安全卫士
+  const channels = Array.isArray(newChannel) ? newChannel : (newChannel ? [newChannel] : []);
+  const isTmallGlobal = channels.includes('天猫国际直营');
+  const isTmall = channels.includes('天猫'); // 👈 新增：判断是否包含“天猫”
+
+  // 🎯 新增拦截规则：只要渠道【不是天猫】，且账号【不是全淘宝天猫】，强制重置账号！
+  if (!isTmall && newShop !== '全淘宝天猫') {
+    formData.shop = '全淘宝天猫';
+  }
+
+  // 获取最新的 shop 值（因为上面可能刚把它重置了）
+  const currentShop = formData.shop;
+
+  // 核心逻辑：如果是全淘宝天猫，且【不是】天猫国际直营，才强制限制并清空 ID
+  if ((currentShop === '全淘宝天猫' || !currentShop) && !isTmallGlobal) {
+    formData.selectedGoodsType = '任意品牌商品';
+    formData.item = [];
+  }
+}, { deep: true })
+
+// 🔥 新增逻辑 2：动态过滤下拉选项
+const getDynamicOptions = (field) => {
+  const channels = Array.isArray(formData.channel) ? formData.channel : (formData.channel ? [formData.channel] : []);
+
+  // 🎯 新增：拦截【账号(shop)】下拉框
+  if (field.key === 'shop') {
+    const isTmall = channels.includes('天猫');
+    if (!isTmall) {
+      return ['全淘宝天猫']; // 其他渠道，锁死只能选这个
+    } else {
+      return field.options; // 天猫渠道，放行所有真实店铺
+    }
+  }
+
+  // 拦截【商品类型(selectedGoodsType)】下拉框
+  if (field.key === 'selectedGoodsType') {
+    const isTmallGlobal = channels.includes('天猫国际直营');
+    if ((formData.shop === '全淘宝天猫' || !formData.shop) && !isTmallGlobal) {
+      return ['任意品牌商品']; 
+    } else {
+      return field.options; 
+    }
+  }
+  
+  return field.options;
+}
 
 // 获取所有包列表
 const loadPackages = async () => {
@@ -175,6 +232,13 @@ const formatOptions = (opts) => {
 const getArray = (val) => Array.isArray(val) ? val : (val ? [val] : [])
 
 const isVisible = (field) => {
+  // 🎯 修复回归 BUG：增加包名隔离
+  // 只有在【商品行为】包中，商品ID 字段才受“商品类型”下拉框的联动控制
+  // 在【类目商品行为】等其他包中，商品ID 依然遵循逻辑表 (logicMatrix) 的配置
+  if (field.key === 'item' && currentPackage.value === '商品行为') {
+    return formData.selectedGoodsType === '指定商品ID';
+  }
+
   if (field.isDefault) return true
   
   // 增加容错保护，防止 logicMatrix 为空时报错

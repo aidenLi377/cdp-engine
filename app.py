@@ -72,7 +72,16 @@ class ConfigEngine:
             if not name or not pkg: continue
 
             # 双重秘钥锁定
-            self.bhv_translator[(pkg, name)] = val
+            if pkg and name:
+                # 🔥 获取适用的渠道
+                channel_name = str(row.get('适用的渠道', 'ALL')).strip()
+
+                # 💡 世纪 BUG 修复：如果 Excel 里是空单元格，Python 会读成 '' 或 'nan'，需要强制归一化为 'ALL'
+                if not channel_name or channel_name.lower() == 'nan':
+                    channel_name = 'ALL'
+
+                # 🔥 升级为三维锁定：(包名, 渠道名, 行为名) -> ID
+                self.bhv_translator[(pkg, channel_name, name)] = val
 
             if pkg not in self.bhv_options: self.bhv_options[pkg] = []
             if name not in self.bhv_options[pkg]: self.bhv_options[pkg].append(name)
@@ -86,6 +95,7 @@ class ConfigEngine:
             ("品牌维表.csv", 1, lambda r: str(r.iloc[1]).strip()),
             ("状态维表.csv", "状态名称", lambda r: f"{r.get('ID', '')}#|#{r.get('Value', '')}"),
             ("商品类型维表.csv", "类型名称", lambda r: str(r.get('ID', '')).strip()),
+            ("账号维表.csv", "账号名称", lambda r: str(r.get('ID', '')).strip()),
         ]
 
         for fname, name_col, id_func in loaders:
@@ -267,8 +277,19 @@ class ConfigEngine:
                 def translate(v):
                     if isinstance(v, list): return [translate(x) for x in v]
                     if isinstance(v, str):
-                        if key == 'bhv': return self.bhv_translator.get((current_pkg, v), v)
-                        # 🔥 终极防串台
+                        if key == 'bhv':
+                            # 🔥 新增：提取当前选择的渠道名（比如'天猫'），去查三维字典
+                            current_channel = user_data.get('channel', ['ALL'])
+                            # 兼容单选字符串或多选数组格式
+                            ch_name = current_channel[0] if isinstance(current_channel,
+                                                                       list) and current_channel else current_channel
+                            if not ch_name:
+                                ch_name = 'ALL'
+
+                            # 🔥 优先查带渠道的专属ID（天猫->16709），查不到就退回到 ALL（所有渠道->16712）
+                            return self.bhv_translator.get((current_pkg, str(ch_name), v),
+                                                           self.bhv_translator.get((current_pkg, 'ALL', v), v))
+
                         return self.dim_translator.get((current_pkg, v), self.id_translator.get(v, v))
                     return v
 
@@ -351,6 +372,11 @@ class ConfigEngine:
 
         # 🔥 最稳妥的打包写法，兼容所有老版本系统，永不死机
         base_tmpl["fromPoolId"] = 0
+        # 🔥 新增：捕获前端发来的渠道中文名，原样回显到外壳上
+        if 'channel' in user_data:
+            channel_val = user_data['channel']
+            base_tmpl["selectionLv2Name"] = channel_val[0] if isinstance(channel_val, list) and channel_val else str(
+                channel_val)
 
         final_payload = {
             "crowdName": "未命名",
