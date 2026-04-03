@@ -264,10 +264,14 @@ const isVisible = (field) => {
       }
     }
   } else {
-    // 🔥 修复点：去掉 .value，直接读取 formData
-    triggerCombinations = getArray(formData['bhv']).length > 0 
-                        ? getArray(formData['bhv']) 
-                        : getArray(formData['types'])
+    // 🎯 新增兜底：如果逻辑表包含 DEFAULT 触发器，直接无条件放行
+    if (matrixKeys.includes('DEFAULT')) {
+      triggerCombinations = ['DEFAULT'];
+    } else {
+      triggerCombinations = getArray(formData['bhv']).length > 0 
+                          ? getArray(formData['bhv']) 
+                          : getArray(formData['types'])
+    }
     if (triggerCombinations.length === 0) return false
   }
   

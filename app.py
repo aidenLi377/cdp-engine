@@ -87,6 +87,9 @@ class ConfigEngine:
             if name not in self.bhv_options[pkg]: self.bhv_options[pkg].append(name)
 
         self.dim_translator = {}  # 🔥 新增：建立高维隔离字典
+        self.attr_options = {}  # 🔥 新增：维度表的专属包隔离选项库
+
+        # 2. 解析其他全局维表
 
         # 2. 解析其他全局维表
         loaders = [
@@ -96,6 +99,7 @@ class ConfigEngine:
             ("状态维表.csv", "状态名称", lambda r: f"{r.get('ID', '')}#|#{r.get('Value', '')}"),
             ("商品类型维表.csv", "类型名称", lambda r: str(r.get('ID', '')).strip()),
             ("账号维表.csv", "账号名称", lambda r: str(r.get('ID', '')).strip()),
+            ("属性值维表.csv", "属性值名称", lambda r: str(r.get('ID', '')).strip()),
         ]
 
         for fname, name_col, id_func in loaders:
@@ -126,6 +130,13 @@ class ConfigEngine:
                         if has_pkg and pkg_val:
                             # 🔥 核心隔离！把 (包名, 名字) 映射为专属 ID
                             self.dim_translator[(pkg_val, name)] = val
+
+                            # 🔥 新增：把选项加入到各自包的专属列表中，防止串台
+                            if (pkg_val, fname) not in self.attr_options:
+                                self.attr_options[(pkg_val, fname)] = []
+                            if name not in self.attr_options[(pkg_val, fname)]:
+                                self.attr_options[(pkg_val, fname)].append(name)
+
                         self.dimensions[fname].append(name)
                 except:
                     continue
@@ -163,9 +174,13 @@ class ConfigEngine:
             if data_source == '行为维表.csv':
                 item['options'] = self.bhv_options.get(package_name, [])
             else:
-                item['options'] = self.dimensions.get(data_source, [])
-            is_def = str(item.get('Is_Default', '0')).strip().lower()
-            item['isDefault'] = is_def in ['1', '1.0', 'true', 'yes', '是']
+                # 🔥 升级：优先从专属隔离库里拿选项，完美解决“购买力”里混入“男/女”的问题
+                item['options'] = self.attr_options.get((package_name, data_source),
+                                                        self.dimensions.get(data_source, []))
+            # 🎯 防弹版解析：强行干掉 .0 尾巴以及任何隐形空格，确保 1 绝对生效
+            is_def_raw = str(item.get('Is_Default', '0')).strip().lower()
+            is_def_clean = is_def_raw.replace('.0', '')
+            item['isDefault'] = is_def_clean in ['1', 'true', 'yes', '是']
             full_schema.append(item)
 
         # --- 2. 逻辑表解析 (V1.3 终极多维靶向雷达) ---
@@ -198,10 +213,10 @@ class ConfigEngine:
                 visible_fields = []
                 for col_name, val in row.items():
                     if col_name.strip() not in trigger_cols:
-                        if str(val).strip() in ['1', '1.0', 'True', 'TRUE']:
+                        if str(val).strip() in ['1', '1.0', 'True', 'TRUE', 'true']:
                             cn = col_name.strip()
-                            # 🔥 修改：把 self.label_map 改成刚才建立的 current_label_map
-                            real_key = current_label_map.get(cn)
+                            # 🎯 核心修复：如果逻辑表头直接写了英文变量名（如 attributes），也必须无条件识别并放行！
+                            real_key = current_label_map.get(cn, cn)
                             if real_key: visible_fields.append(real_key)
                 logic_matrix[composite_key] = visible_fields
         except Exception as e:
@@ -339,10 +354,13 @@ class ConfigEngine:
             if matched_template:
                 s = json.dumps(matched_template)
                 for v_key, v_val in vars_dict.items():
-                    s = s.replace(f"\"${{{v_key}}}\"", str(v_val))
+                    # 🎯 核心修复：如果替换的是一个数组(复选框多选)，必须用 json.dumps 转换，防止 Python 单引号破坏 JSON 结构！
+                    val_str = json.dumps(v_val, ensure_ascii=False) if isinstance(v_val, (list, dict)) else str(v_val)
+
+                    s = s.replace(f"\"${{{v_key}}}\"", val_str)
                     if v_key in ['start', 'end', 'days']:
-                        s = s.replace(f": {v_val}", f": \"{v_val}\"")
-                    s = s.replace(f"${{{v_key}}}", str(v_val))
+                        s = s.replace(f": {val_str}", f": \"{val_str}\"")
+                    s = s.replace(f"${{{v_key}}}", val_str)
                 try:
                     self._merge_path(selection_lv3, str(json_path).strip(), json.loads(s))
                 except Exception as e:
