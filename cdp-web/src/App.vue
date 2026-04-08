@@ -1,6 +1,7 @@
 <template>
-  <div class="container">
-    <div class="left-panel">
+  <el-config-provider :locale="zhCn">
+    <div class="container">
+      <div class="left-panel">
       <div class="header-control" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #ebeef5;">
         <div style="display: flex; align-items: center;">
           <h2 style="margin:0 15px 0 0;">✨ 条件配置引擎</h2>
@@ -25,7 +26,20 @@
             </template>
             
             <template v-else-if="field.Widget_Type === '列表输入'">
-              <el-select v-model="formData[field.key]" multiple filterable allow-create default-first-option :placeholder="`输入并回车创建${field.Label}`"></el-select>
+              <el-select 
+                v-model="formData[field.key]" 
+                multiple filterable allow-create default-first-option 
+                :placeholder="`输入并回车创建${field.Label}`"
+                @change="handleListInput(field.key)"
+                no-data-text="💡 敲击回车或输入逗号自动炸开标签"
+              ></el-select>
+            </template>
+
+            <template v-else-if="field.Widget_Type === '单选组'">
+              <el-radio-group v-model="formData[field.key]" @change="field.key === 'title_type' && $event === '任意商品标题关键字' ? formData.title = [] : null">
+                <el-radio label="任意商品标题关键字">任意商品标题关键字</el-radio>
+                <el-radio label="指定商品标题关键字">指定商品标题关键字</el-radio>
+              </el-radio-group>
             </template>
             
             <template v-else-if="field.Widget_Type === '搜索多选'">
@@ -43,8 +57,15 @@
             </template>
 
             <template v-else-if="field.Widget_Type === '复选组'">
-              <el-checkbox-group v-model="formData[field.key]" class="custom-checkbox-group">
-                <el-checkbox v-for="opt in field.options" :key="opt" :label="opt">{{ opt }}</el-checkbox>
+              <el-checkbox-group v-model="formData[field.key]" class="custom-checkbox-group" @change="handleCheckboxChange(field, $event)">
+                <el-checkbox 
+                  v-for="opt in field.options" 
+                  :key="opt" 
+                  :label="opt"
+                  :disabled="isCheckboxDisabled(field, opt)"
+                >
+                  {{ opt }}
+                </el-checkbox>
               </el-checkbox-group>
             </template>
             
@@ -67,7 +88,7 @@
               <div class="date-switch-container">
                 <el-radio-group v-model="modeData[field.key]" size="small" class="mode-switch">
                   <el-radio-button label="recent">过去 N 天</el-radio-button>
-                  <el-radio-button label="range">绝对时间段</el-radio-button>
+                  <el-radio-button label="range">固 定 日 期</el-radio-button>
                 </el-radio-group>
                 <div class="date-inputs">
                   <el-input-number v-if="modeData[field.key] === 'recent'" v-model="formData[field.key].days" :min="1" :max="365" size="small" controls-position="right"></el-input-number>
@@ -101,12 +122,15 @@
         <pre v-if="finalJson">{{ JSON.stringify(finalJson, null, 2) }}</pre>
         <div v-else class="empty-tip">暂无数据，请先在左侧配置并点击提交。</div>
       </div>
+ </div>
     </div>
-  </div>
+  </el-config-provider>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted,watch } from 'vue'
+// 🔥 新增：引入 Element Plus 的官方中文语言包
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 const API_BASE = 'http://127.0.0.1:5000'
 
@@ -195,20 +219,20 @@ const handlePackageChange = () => {
 
 const loadData = async () => {
   try {
-    const res = await fetch(`${API_BASE}/api/meta/${currentPackage.value}`)
+    // 🔥 加上时间戳粉碎缓存：每次请求带上当前毫秒数，强迫浏览器绝不使用旧缓存！
+    const res = await fetch(`${API_BASE}/api/meta/${currentPackage.value}?t=${new Date().getTime()}`)
     const data = await res.json()
     
-    schema.value = data.schema.sort((a, b) => {
-      if (a.isDefault && !b.isDefault) return -1;
-      if (!a.isDefault && b.isDefault) return 1;
-      return 0;
-    })
+    schema.value = data.schema
     
     logicMatrix.value = data.matrix
 
     schema.value.forEach(field => {
       if (['搜索多选', '复选组', '多选下拉'].includes(field.Widget_Type) || ['bhv', 'channel', 'leafCates', 'stdBrand'].includes(field.key)) {
         formData[field.key] = []
+      } else if (field.Widget_Type === '单选组') {
+        // 🔥 新增：单选组默认选中“任意商品”
+        formData[field.key] = '任意商品标题关键字'
       } else if (field.Widget_Type === '数值_切换') {
         modeData[field.key] = 'unlimited'
         formData[field.key] = { min: null, max: null }
@@ -219,10 +243,17 @@ const loadData = async () => {
         formData[field.key] = ''
       }
     })
+
+    // 🔥 新增：如果切换到了 AIPL人群，类目默认自动勾选“全部”
+    if (currentPackage.value === 'AIPL状态') {
+      formData.cate = ['全部']
+    }
+
   } catch (error) {
     console.error("加载元数据失败", error)
   }
-}
+}  
+      
 
 const formatOptions = (opts) => {
   if (!opts) return []
@@ -231,13 +262,76 @@ const formatOptions = (opts) => {
 // 小助手函数：确保拿到的是数组
 const getArray = (val) => Array.isArray(val) ? val : (val ? [val] : [])
 
+// 🔥 新增：自动拆分中英文逗号，将长字符串瞬间变成多个独立标签！
+const handleListInput = (key) => {
+  const vals = formData[key];
+  if (Array.isArray(vals)) {
+    let hasSplit = false;
+    const newVals = [];
+    
+    vals.forEach(v => {
+      // 如果发现这个词里面包含了逗号（兼容中英文）
+      if (typeof v === 'string' && (v.includes(',') || v.includes('，'))) {
+        hasSplit = true;
+        // 把它们劈开，去掉前后多余的空格，再过滤掉空文本
+        const parts = v.split(/[,，]/).map(s => s.trim()).filter(s => s);
+        newVals.push(...parts);
+      } else {
+        newVals.push(v);
+      }
+    });
+
+    if (hasSplit) {
+      // 触发响应式更新，并用 Set 自动去重（防止用户粘贴了重复的词）
+      formData[key] = [...new Set(newVals)];
+    }
+  }
+};
+
+// 🔥 新增：复选框防呆逻辑 —— 如果勾选了"所有"，自动清空其他已勾选的选项
+const handleCheckboxChange = (field, currentVals) => {
+  if (field.key === 'channel') {
+    // 你的 opt 是纯字符串，直接判断是否包含即可
+    if (currentVals.includes('所有销售渠道')) {
+      if (currentVals.length > 1) {
+        // 强制大清退！只保留“所有”这一个独苗
+        formData[field.key] = ['所有销售渠道'];
+      }
+    }
+  }
+};
+
+// 🔥 新增：动态禁用逻辑 —— 如果"所有"被选中，其余人全部强制变成灰色
+const isCheckboxDisabled = (field, opt) => {
+  if (field.key === 'channel') {
+    const selectedVals = formData[field.key] || [];
+    if (selectedVals.includes('所有销售渠道')) {
+      // 只要你不是“所有”本尊，通通变灰禁用！
+      return opt !== '所有销售渠道';
+    }
+  }
+  return false;
+};
+
 const isVisible = (field) => {
-  // 🎯 修复回归 BUG：增加包名隔离
-  // 只有在【商品行为】包中，商品ID 字段才受“商品类型”下拉框的联动控制
-  // 在【类目商品行为】等其他包中，商品ID 依然遵循逻辑表 (logicMatrix) 的配置
   if (field.key === 'item' && currentPackage.value === '商品行为') {
     return formData.selectedGoodsType === '指定商品ID';
   }
+  // 🔥 需求1：标题开关，必须在选择了“类目”之后才准出来！
+  if ((field.key === 'title_type' || field.key === 'keywords_type') && ['类目公域行为', '商品行为'].includes(currentPackage.value)) {
+    const hasCate = getArray(formData.leafCates).length > 0 || getArray(formData.cate).length > 0;
+    if (!hasCate) return false;
+  }
+
+  // 🔥 需求2：老标题输入框，必须开关选了“指定”才准出来！
+  if ((field.key === 'title' || field.key === 'keywords') && ['类目公域行为', '商品行为'].includes(currentPackage.value)) {
+    // 兼容取值：可能是 title_type，也可能是 keywords_type
+    const switchVal = formData.title_type || formData.keywords_type;
+    if (switchVal !== '指定商品标题关键字') return false;
+  }
+  
+
+  
 
   if (field.isDefault) return true
   

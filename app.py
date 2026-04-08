@@ -13,33 +13,39 @@ CORS(app)
 
 class ConfigEngine:
     def __init__(self):
+        self.load_config()
+
+    def load_config(self):
+        """🔥 核心升级：将读表逻辑独立，支持接口每次调用时热更新！"""
+        import os, glob, re
         try:
             self.params_df = pd.read_csv("1.参数表.csv", encoding='gb18030')
         except:
             self.params_df = pd.read_csv("1.参数表.csv", encoding='utf-8')
 
-        # 清洗列名
         self.params_df.columns = [c.strip() for c in self.params_df.columns]
 
-        # 🔥 核心升级 1：全局除尘器！清洗掉所有 Excel 里不小心敲进去的空格
         for col in self.params_df.columns:
             if self.params_df[col].dtype == 'object':
                 self.params_df[col] = self.params_df[col].apply(lambda x: str(x).strip() if pd.notna(x) else x)
 
         self.packages = {}
         logic_files = glob.glob("*_逻辑表.csv")
+
+        def sort_key(filename):
+            match = re.match(r'^(\d+)', filename)
+            return int(match.group(1)) if match else 999
+
+        logic_files.sort(key=sort_key)
         for f in logic_files:
             base_name = f.split('_逻辑表')[0]
             pkg_name = re.sub(r'^\d+\.', '', base_name)
             self.packages[pkg_name] = f
 
-        print(f"✅ 系统启动！成功发现并注册了 {len(self.packages)} 个行为包：", list(self.packages.keys()))
-
         self.label_map = {}
         for _, row in self.params_df.iterrows():
             if pd.notna(row['Label']):
                 cn_name = str(row['Label']).strip()
-                # 使用当前行的 Param_Key
                 eng_key = str(row['Param_Key']).strip()
                 self.label_map[cn_name] = eng_key
                 if "关键词" in cn_name: self.label_map[cn_name.replace("关键词", "关键字")] = eng_key
@@ -143,10 +149,12 @@ class ConfigEngine:
             self.dimensions[fname] = list(dict.fromkeys(self.dimensions[fname]))
 
     def get_package_meta(self, package_name):
+        # 🔥 绝杀：每次前端来拿数据，强制重新读一遍最新的参数表！永远告别重启烦恼！
+        self.load_config()
+
         logic_filename = self.packages.get(package_name)
         if not logic_filename or not os.path.exists(logic_filename): return {}
 
-        # --- 1. 读取参数配置表生成骨架 ---
         # --- 1. 读取参数配置表生成骨架 ---
         full_schema = []
         current_label_map = {}  # 🔥 新增：当前包专属的名称翻译字典
@@ -172,11 +180,19 @@ class ConfigEngine:
             data_source = item.get('Data_Source')
             # 精准下发专属动作
             if data_source == '行为维表.csv':
-                item['options'] = self.bhv_options.get(package_name, [])
+                opts = self.bhv_options.get(package_name, [])
+                item['options'] = opts.copy() if isinstance(opts, list) else []
             else:
                 # 🔥 升级：优先从专属隔离库里拿选项，完美解决“购买力”里混入“男/女”的问题
-                item['options'] = self.attr_options.get((package_name, data_source),
-                                                        self.dimensions.get(data_source, []))
+                opts = self.attr_options.get((package_name, data_source),
+                                             self.dimensions.get(data_source, []))
+                item['options'] = opts.copy() if isinstance(opts, list) else []
+
+            # 🔥 独家定制：如果是 AIPL人群 的类目，强制在最前面塞入“全部”
+            if package_name == 'AIPL状态' and item['key'] == 'cate':
+                if '全部' not in item['options']:
+                    item['options'].insert(0, '全部')
+
             # 🎯 防弹版解析：强行干掉 .0 尾巴以及任何隐形空格，确保 1 绝对生效
             is_def_raw = str(item.get('Is_Default', '0')).strip().lower()
             is_def_clean = is_def_raw.replace('.0', '')
@@ -234,8 +250,19 @@ class ConfigEngine:
 
         for key, raw_val in user_data.items():
 
+            # 🔥 AIPL 专属特判：如果选了“全部”，强制输出字符串 "ALL" 并跳过后续逻辑
+            if current_pkg == 'AIPL状态' and key == 'cate':
+                if (isinstance(raw_val, list) and '全部' in raw_val) or raw_val == '全部':
+                    self._merge_path(selection_lv3, "selectionLv3.cate", "ALL")
+                    continue
+
             # 精确匹配当前包的配置
             matched_rows = self.params_df[
+
+
+
+
+
                 (self.params_df['Param_Key'] == key) &
                 (self.params_df['Crowd_Package'].apply(
                     lambda x: current_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)]))
@@ -246,7 +273,8 @@ class ConfigEngine:
             template_str = config.get('Backend_Template')
             json_path = config.get('JSON_Path')
 
-            if pd.isna(json_path): continue
+            # 🔥 拦截前端控制字段：遇到 JSON_Path 是 - 的，直接无视！
+            if pd.isna(json_path) or str(json_path).strip() == "-": continue
 
             cleaned_val = raw_val
             vars_dict = {}
