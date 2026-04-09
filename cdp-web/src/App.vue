@@ -16,23 +16,63 @@
         </div>
         <el-button type="success" plain @click="goToDataBank">🌐 跳转数据引擎 ↗</el-button>
       </div>
-
       <el-form label-width="120px" class="dynamic-form" v-if="schema.length > 0">
         <template v-for="field in schema" :key="field.key">
-          <el-form-item :label="field.Label" v-show="isVisible(field)">
-            
-            <template v-if="field.Widget_Type === '普通输入框'">
-              <el-input v-model="formData[field.key]" :placeholder="`请输入${field.Label}`"></el-input>
+          <el-form-item v-show="isVisible(field)">
+            <template #label>
+              <span>{{ field.Label }}</span>
+              <template v-if="getDynamicDescription(field)">
+                
+                <el-tooltip 
+                  v-if="getDynamicStyle(field) !== '文字'" 
+                  :content="getDynamicDescription(field)" 
+                  placement="top" 
+                  effect="dark"
+                >
+                  <span style="margin-left: 6px; color: #a8abb2; cursor: pointer; font-size: 14px;">
+                    ⓘ
+                  </span>
+                </el-tooltip>
+                
+              </template>
             </template>
-            
+       
+
+            <template v-if="field.Widget_Type === '普通输入框'">
+              <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                <el-input v-model="formData[field.key]" :placeholder="`请输入${field.Label}`" style="flex: 1;"></el-input>
+                <span 
+                  v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" 
+                  style="font-size: 12px; color: #a8abb2; line-height: 1.2; flex-shrink: 0;"
+                >
+                  {{ getDynamicDescription(field) }}
+                </span>
+              </div>
+            </template>
             <template v-else-if="field.Widget_Type === '列表输入'">
-              <el-select 
-                v-model="formData[field.key]" 
-                multiple filterable allow-create default-first-option 
-                :placeholder="`输入并回车创建${field.Label}`"
-                @change="handleListInput(field.key)"
-                no-data-text="💡 敲击回车或输入逗号自动炸开标签"
-              ></el-select>
+              <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                <el-select 
+                  v-model="formData[field.key]" 
+                  multiple filterable allow-create default-first-option 
+                  :multiple-limit="getListLimit(field)"  :placeholder="`输入并回车创建${field.Label}`"
+                  @change="handleListInput(field.key)"
+                  no-data-text="💡 敲击回车或输入逗号自动炸开标签"
+                  style="flex: 1;"
+                ></el-select>
+            
+                <span 
+                  v-if="getSelectionCountHint(field)" 
+                  style="font-size: 12px; color: #409eff; background: #ecf5ff; padding: 4px 8px; border-radius: 4px; border: 1px solid #d9ecff; white-space: nowrap;"
+                >
+                  {{ getSelectionCountHint(field) }}
+                </span>
+                <span 
+                  v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" 
+                  style="font-size: 12px; color: #a8abb2; line-height: 1.2; flex-shrink: 0;"
+                >
+                  {{ getDynamicDescription(field) }}
+                </span>
+              </div>
             </template>
 
             <template v-else-if="field.Widget_Type === '单选组'">
@@ -41,19 +81,51 @@
                 <el-radio label="指定商品标题关键字">指定商品标题关键字</el-radio>
               </el-radio-group>
             </template>
-            
             <template v-else-if="field.Widget_Type === '搜索多选'">
-              <el-select-v2 v-model="formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable collapse-tags :placeholder="`请搜索并选择${field.Label}`" style="width: 100%"></el-select-v2>
+              <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                <el-select-v2 
+                  v-model="formData[field.key]" 
+                  :options="formatOptions(field.options)" 
+                  multiple 
+                  filterable 
+                  clearable 
+                  :reserve-keyword="false"  
+                  :placeholder="`请搜索并选择${field.Label}`" 
+                  style="flex: 1;"
+                  @change="handleMultiSelectChange(field.key)" 
+                ></el-select-v2>
+                <span 
+                  v-if="getSelectionCountHint(field)" 
+                  style="font-size: 12px; color: #409eff; background: #ecf5ff; padding: 4px 8px; border-radius: 4px; border: 1px solid #d9ecff; white-space: nowrap;"
+                >
+                  {{ getSelectionCountHint(field) }}
+                </span>
+                <span 
+                  v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" 
+                  style="font-size: 12px; color: #a8abb2; line-height: 1.2; flex-shrink: 0;"
+                >
+                  {{ getDynamicDescription(field) }}
+                </span>
+              </div>
             </template>
+            
             <template v-else-if="field.Widget_Type === '搜索单选'">
-              <el-select-v2 
-                :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${Array.isArray(formData.channel) ? formData.channel.join(',') : formData.channel}` : field.key"
-                v-model="formData[field.key]" 
-                :options="formatOptions(getDynamicOptions(field))" 
-                filterable clearable 
-                :placeholder="`请搜索并选择${field.Label}`" 
-                style="width: 100%"
-              ></el-select-v2>
+              <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                <el-select-v2 
+                  :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${Array.isArray(formData.channel) ? formData.channel.join(',') : formData.channel}` : field.key"
+                  v-model="formData[field.key]" 
+                  :options="formatOptions(getDynamicOptions(field))" 
+                  filterable clearable 
+                  :placeholder="`请搜索并选择${field.Label}`" 
+                  style="flex: 1;"
+                ></el-select-v2>
+                <span 
+                  v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" 
+                  style="font-size: 12px; color: #a8abb2; line-height: 1.2; flex-shrink: 0;"
+                >
+                  {{ getDynamicDescription(field) }}
+                </span>
+              </div>
             </template>
 
             <template v-else-if="field.Widget_Type === '复选组'">
@@ -83,20 +155,41 @@
                 </div>
               </div>
             </template>
-
             <template v-else-if="field.Widget_Type === '日期_切换'">
-              <div class="date-switch-container">
-                <el-radio-group v-model="modeData[field.key]" size="small" class="mode-switch">
+              <div style="display: flex; gap: 15px; align-items: center; width: 100%;">
+                
+                <el-radio-group v-model="modeData[field.key]" size="small" style="flex-shrink: 0;">
                   <el-radio-button label="recent">过去 N 天</el-radio-button>
-                  <el-radio-button label="range">固 定 日 期</el-radio-button>
+                  <el-radio-button label="range">固定日期</el-radio-button>
                 </el-radio-group>
-                <div class="date-inputs">
-                  <el-input-number v-if="modeData[field.key] === 'recent'" v-model="formData[field.key].days" :min="1" :max="365" size="small" controls-position="right"></el-input-number>
-                  <el-date-picker v-if="modeData[field.key] === 'range'" v-model="formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYYMMDD" size="small" style="width: 250px"></el-date-picker>
+                
+                <div v-if="modeData[field.key] === 'recent'" style="display: flex; align-items: center; gap: 10px;">
+                  <el-input-number v-model="formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" style="width: 120px;"></el-input-number>
+                  <span style="color: #606266; font-size: 14px; white-space: nowrap;">天</span>
+                  <span style="color: #a8abb2; font-size: 12px; margin-left: 8px; white-space: nowrap;">(最多向前追溯 366 天)</span>
                 </div>
+
+                <div v-if="modeData[field.key] === 'range'" style="display: flex; align-items: center; gap: 15px;">
+                  <el-date-picker 
+                    v-model="formData[field.key].dateRange" 
+                    type="daterange" 
+                    range-separator="至" 
+                    start-placeholder="开始日期" 
+                    end-placeholder="结束日期" 
+                    format="YYYY-MM-DD"
+                    value-format="YYYYMMDD" 
+                    size="small" 
+                    style="width: 260px;"
+                    :disabled-date="disabledDate"
+                    @calendar-change="handleCalendarChange"
+                  ></el-date-picker>
+                  <span style="color: #a8abb2; font-size: 12px; white-space: nowrap;">
+                    {{ getExactDateRangeHint() }}
+                  </span>
+                </div>
+                
               </div>
             </template>
-
           </el-form-item>
         </template>
         <div style="margin-top: 30px; text-align: center;">
@@ -143,7 +236,167 @@ const finalJson = ref(null)
 
 let formData = reactive({})
 let modeData = reactive({})
+// === 新增/更新：多选项动态实时计数器 ===
+const getSelectionCountHint = (field) => {
+  // 我们只给 搜索多选、列表输入（这就是老标题）、复选组 这三个组件加计数器
+  if (['搜索多选', '列表输入', '复选组'].includes(field.Widget_Type)) {
+    // 🎯 硬性屏蔽：不要给“渠道”、“行为”和那些只有几个选项的字段加计数器
+    if (['channel', 'bhv'].includes(field.key)) return null;
 
+    const vals = formData[field.key];
+    if (Array.isArray(vals) && vals.length > 0) {
+      // 智能判断上限提示
+      const isLimited = ['leafCates', 'stdBrand', 'cate'].includes(field.key) 
+                        || field.Label.includes('类目') 
+                        || field.Label.includes('品牌');
+                        
+      // 🔥 升级：针对老标题（列表输入），根据不同的包动态显示上限
+      // 🔥 升级：针对列表输入，根据不同的包和字段动态显示上限
+      if (field.Widget_Type === '列表输入') {
+        // 🎯 判断 1：商品标题关键词
+        if (['title', 'keywords'].includes(field.key) || field.Label.includes('商品标题关键词')) {
+          if (currentPackage.value === '类目公域行为') return `已输入 ${vals.length}/10`;
+          if (currentPackage.value === '商品行为') return `已输入 ${vals.length}/5`;
+        }
+        
+        // 🎯 判断 2：商品ID（新增逻辑）
+        if (['itemId', 'itemIds'].includes(field.key) || field.Label.includes('商品ID')) {
+          if (currentPackage.value === '商品行为') return `已输入 ${vals.length}/50`;
+        }
+        
+        return `已输入 ${vals.length} 个`;
+      }
+                        
+      return isLimited ? `已选 ${vals.length}/10` : `已选 ${vals.length}`;
+    }
+  }
+  return null; 
+}
+
+const getListLimit = (field) => {
+  if (field.Widget_Type === '列表输入') {
+    // 🎯 判断 1：商品标题关键词
+    if (['title', 'keywords'].includes(field.key) || field.Label.includes('商品标题关键词')) {
+      if (currentPackage.value === '类目公域行为') return 10;
+      if (currentPackage.value === '商品行为') return 5;
+    }
+    
+    // 🎯 判断 2：商品ID（新增逻辑）
+    if (['itemId', 'itemIds'].includes(field.key) || field.Label.includes('商品ID')) {
+      if (currentPackage.value === '商品行为') return 50;
+    }
+  }
+  return 0; // 返回 0 代表 Element Plus 默认的“不限制”
+}
+// === 新增：动态文案与样式分发器 ===
+const getDynamicDescription = (field) => {
+  // 🎯 把日期组件在标题旁的提示清空，我们要把它挪到右侧去！
+  if (field.Widget_Type === '日期_切换') {
+    return "";
+  }
+  return field.Description;
+}
+// === 新增：计算精准日期的辅助函数 ===
+const formatDate = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+const getExactDateRangeHint = () => {
+  const behaviors = Array.isArray(formData.bhv) ? formData.bhv : (formData.bhv ? [formData.bhv] : []);
+  
+  // 🔥 绝杀逻辑：只有在【类目公域行为】包里，且【纯购买】时，才给 2 年！
+  const isCategoryPackage = currentPackage.value === '类目公域行为';
+  const isOnlyPurchase = behaviors.includes('购买') && behaviors.length === 1;
+  
+  const isTwoYears = isCategoryPackage && isOnlyPurchase;
+  
+  const today = new Date();
+  const minDate = new Date();
+  
+  if (isTwoYears) {
+    minDate.setFullYear(minDate.getFullYear() - 2); 
+  } else {
+    minDate.setDate(minDate.getDate() - 366); 
+  }
+  
+  return `可选范围：${formatDate(minDate)} 至 ${formatDate(today)} (最大跨度366天)`;
+};
+
+const getDynamicStyle = (field) => {
+  // 🎯 特判：这种动态变化的极其重要的规则，强制用“文字”平铺展示给用户看，不折叠成图标
+  if (field.Widget_Type === '日期_切换') return '文字'
+  // 其他组件读取 CSV 里的 Style 配置
+  return field.Description_Style
+}
+// === 分发器逻辑结束 ===
+
+// === 新增：时间动态拦截器核心逻辑 ===
+const selectedFirstDate = ref(null)
+
+const handleCalendarChange = (val) => {
+  if (val && val[0] && !val[1]) {
+    const firstVal = val[0];
+    
+    // 🔥 绝杀修复：智能判断类型
+    if (firstVal instanceof Date) {
+      // 如果组件吐出来的是原生 Date 对象，直接用！
+      selectedFirstDate.value = firstVal;
+    } else if (typeof firstVal === 'string' && firstVal.length === 8) {
+      // 如果吐出来的是 YYYYMMDD 字符串，再去做切割
+      selectedFirstDate.value = new Date(
+        firstVal.substring(0, 4), 
+        parseInt(firstVal.substring(4, 6)) - 1, 
+        firstVal.substring(6, 8)
+      );
+    } else {
+      // 兜底保护
+      selectedFirstDate.value = new Date(firstVal); 
+    }
+  } else {
+    selectedFirstDate.value = null 
+  }
+}
+
+const disabledDate = (time) => {
+  // 1. 获取当前选中的“行为”
+  const behaviors = Array.isArray(formData.bhv) ? formData.bhv : (formData.bhv ? [formData.bhv] : [])
+  
+  // 🔥 绝杀逻辑：只有在【类目公域行为】包里，且【纯购买】时，才给 2 年！
+  const isCategoryPackage = currentPackage.value === '类目公域行为';
+  const isOnlyPurchase = behaviors.includes('购买') && behaviors.length === 1;
+  const isTwoYears = isCategoryPackage && isOnlyPurchase;
+
+  // 2. 动态计算底线日期
+  const today = new Date()
+  today.setHours(23, 59, 59, 999)
+
+  const minDate = new Date()
+  if (isTwoYears) {
+    minDate.setFullYear(minDate.getFullYear() - 2) 
+  } else {
+    minDate.setDate(minDate.getDate() - 366) 
+  }
+  minDate.setHours(0, 0, 0, 0)
+
+  // 规则A：大于今天，或小于底线日期，变灰
+  if (time.getTime() > today.getTime() || time.getTime() < minDate.getTime()) {
+    return true
+  }
+
+  // 规则B：区间跨度不能超过 366 天
+  if (selectedFirstDate.value) {
+    const oneDay = 24 * 3600 * 1000
+    const diffDays = Math.abs((time.getTime() - selectedFirstDate.value.getTime()) / oneDay)
+    if (diffDays > 366) {
+      return true
+    }
+  }
+  return false
+}
+
+// === 拦截器逻辑结束 ===
 
 // 🔥 升级版监听：仅在“商品行为”包中执行账号与商品的联动逻辑
 watch([() => formData.shop, () => formData.channel], ([newShop, newChannel]) => {
@@ -207,6 +460,7 @@ const loadPackages = async () => {
   }
 }
 
+
 // 切换包时清空旧数据
 // 切换包时清空旧数据
 const handlePackageChange = () => {
@@ -228,7 +482,10 @@ const loadData = async () => {
     logicMatrix.value = data.matrix
 
     schema.value.forEach(field => {
-      if (['搜索多选', '复选组', '多选下拉'].includes(field.Widget_Type) || ['bhv', 'channel', 'leafCates', 'stdBrand'].includes(field.key)) {
+      // 🔥 核心修复：如果是单选，坚决给字符串！否则下拉框绑定数组会直接罢工
+      if (field.Widget_Type === '搜索单选') {
+        formData[field.key] = ''
+      } else if (['搜索多选', '复选组', '多选下拉'].includes(field.Widget_Type) || ['bhv', 'channel', 'leafCates', 'stdBrand'].includes(field.key)) {
         formData[field.key] = []
       } else if (field.Widget_Type === '单选组') {
         // 🔥 新增：单选组默认选中“任意商品”
@@ -243,25 +500,50 @@ const loadData = async () => {
         formData[field.key] = ''
       }
     })
-
-    // 🔥 新增：如果切换到了 AIPL人群，类目默认自动勾选“全部”
+    // 🔥 升级：如果切换到了特定包，类目默认自动勾选“全部”（智能兼容单选和多选）
     if (currentPackage.value === 'AIPL状态') {
-      formData.cate = ['全部']
+      if (formData.cate !== undefined) {
+        formData.cate = Array.isArray(formData.cate) ? ['全部'] : '全部'
+      }
+    }
+    if (currentPackage.value === '商品行为') {
+      if (formData.cate !== undefined) {
+        formData.cate = Array.isArray(formData.cate) ? ['全部'] : '全部'
+      }
+      if (formData.leafCates !== undefined) {
+        formData.leafCates = Array.isArray(formData.leafCates) ? ['全部'] : '全部'
+      }
     }
 
   } catch (error) {
     console.error("加载元数据失败", error)
   }
-}  
+}
       
 
 const formatOptions = (opts) => {
   if (!opts) return []
   return opts.map(o => ({ value: o, label: o }))
 }
+
 // 小助手函数：确保拿到的是数组
 const getArray = (val) => Array.isArray(val) ? val : (val ? [val] : [])
 
+// 🔥 新增：下拉多选框的“全部”互斥防呆逻辑
+const handleMultiSelectChange = (key) => {
+  const vals = formData[key];
+  // 只有当数组里大于1个元素，并且包含“全部”时才触发清洗
+  if (Array.isArray(vals) && vals.length > 1 && vals.includes('全部')) {
+    // 如果“全部”在数组末尾，说明是最新点选的，霸道清场，只留“全部”！
+    if (vals[vals.length - 1] === '全部') {
+      formData[key] = ['全部'];
+    } 
+    // 否则说明是在已有“全部”时点选了具体选项，一脚把“全部”踢掉！
+    else {
+      formData[key] = vals.filter(v => v !== '全部');
+    }
+  }
+};
 // 🔥 新增：自动拆分中英文逗号，将长字符串瞬间变成多个独立标签！
 const handleListInput = (key) => {
   const vals = formData[key];

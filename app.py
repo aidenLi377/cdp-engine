@@ -187,11 +187,12 @@ class ConfigEngine:
                 opts = self.attr_options.get((package_name, data_source),
                                              self.dimensions.get(data_source, []))
                 item['options'] = opts.copy() if isinstance(opts, list) else []
-
-            # 🔥 独家定制：如果是 AIPL人群 的类目，强制在最前面塞入“全部”
-            if package_name == 'AIPL状态' and item['key'] == 'cate':
+                # 🔥 独家定制：给特定包的类目强行塞入“全部”选项
+            if package_name in ['AIPL状态', '商品行为'] and item['key'] in ['cate', 'leafCates']:
                 if '全部' not in item['options']:
                     item['options'].insert(0, '全部')
+
+
 
             # 🎯 防弹版解析：强行干掉 .0 尾巴以及任何隐形空格，确保 1 绝对生效
             is_def_raw = str(item.get('Is_Default', '0')).strip().lower()
