@@ -193,9 +193,15 @@
         </div>
       </div>
       <div class="right-panel">
+        <div style="padding: 15px; background: #343a46; border-radius: 8px; margin-bottom: 15px; border: 1px solid #454c59;">
+           <div style="color: #61afef; margin-bottom: 10px; font-weight: bold; font-size: 14px;">🏷️ 人群包名称</div>
+           <el-input v-model="crowdNameInput" placeholder="请输入人群包名称" size="small" clearable></el-input>
+        </div>
+
         <div class="json-header">
           <span>实时计算 JSON (调用原生后端)</span>
           <div style="display: flex; gap: 10px;">
+      
             <el-button type="success" size="small" plain @click="copyJson">一键复制</el-button>
             <el-button type="warning" size="small" plain @click="goToDataBank">去圈人 👉</el-button>
           </div>
@@ -217,6 +223,7 @@ const availablePackages = ref([])
 const schemaCache = ref({})
 const logicMatrixCache = ref({}) 
 const nodeList = ref([])
+const crowdNameInput = ref('未命名') // 🔥 新增：人群包名称绑定的变量
 
 const loadPackages = async () => {
   try {
@@ -541,12 +548,15 @@ const disabledDate = (time, node) => {
 // ==========================================
 // 🚀 调用后端引擎与防抖拼装逻辑 (加上暗网哨兵)
 // ==========================================
+
 const generatedJson = ref({ crowdName: "未命名", list: [], compute: "" })
 let jsonTimer = null
 
-watch(nodeList, (newList) => {
+// 🔥 升级：同时监听节点数组和输入框！使用解构 [newNodes] 取出节点数组
+watch([nodeList, crowdNameInput], ([newNodes]) => {
   // 🔥 核心复刻：暗网哨兵，实时监控并清理不合法的账号与商品ID！
-  newList.forEach(node => {
+  newNodes.forEach(node => {
+
     if (node.packageType !== '商品行为') return;
     
     const channels = getArray(node.formData.channel);
@@ -643,13 +653,14 @@ const buildFinalJson = async () => {
   }
   
   generatedJson.value = {
-    crowdName: "未命名",
+    crowdName: crowdNameInput.value, // 🔥 替换为：用户输入的名字
     list: newList,
     compute: computeStr
   }
 }
 
-onMounted(() => {
+onMounted(() => {  
+
   loadPackages()
 })
 
