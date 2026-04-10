@@ -1,9 +1,18 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="cdp-engine-container">
-      <div class="left-panel">
-        <div class="panel-header">✨ 行为组件库</div>
-        <div class="btn-group">
+      
+      <div style="position: absolute; top: 15px; left: 20px; z-index: 999; background: white; padding: 5px; border-radius: 6px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <el-radio-group v-model="appMode" size="small">
+          <el-radio-button label="normal">🖱️ 可视化点选模式</el-radio-button>
+          <el-radio-button label="batch">🚀 Excel 批量模式</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <template v-if="appMode === 'normal'">
+        <div class="left-panel" style="padding-top: 60px;">
+          <div class="panel-header">✨ 行为组件库</div>
+          <div class="btn-group">
           <el-button 
             v-for="pkg in availablePackages" 
             :key="pkg"
@@ -197,7 +206,6 @@
            <div style="color: #61afef; margin-bottom: 10px; font-weight: bold; font-size: 14px;">🏷️ 人群包名称</div>
            <el-input v-model="crowdNameInput" placeholder="请输入人群包名称" size="small" clearable></el-input>
         </div>
-
         <div class="json-header">
           <span>实时计算 JSON (调用原生后端)</span>
           <div style="display: flex; gap: 10px;">
@@ -208,22 +216,78 @@
         </div>
         <pre class="json-code">{{ JSON.stringify(generatedJson, null, 4) }}</pre>
       </div>
+      </template>
+
+      <template v-else-if="appMode === 'batch'">
+        <div style="width: 100%; height: 100%; display: flex; flex-direction: column; background: #f0f2f5;">
+          <div style="padding: 80px 40px 20px; background: white; border-bottom: 1px solid #dcdfe6; text-align: center;">
+            <h2 style="margin: 0 0 10px; color: #303133;">🚀 Excel 批量圈人引擎 (后端直连版)</h2>
+            <p style="color: #909399; font-size: 14px; margin-bottom: 20px;">上传包含【人群包名称】及具体业务参数的 CSV 文件，系统将瞬间将其翻译为底层 JSON</p>
+            
+            <div style="display: flex; justify-content: center; gap: 15px; margin-bottom: 20px;">
+               <input 
+                 type="file" 
+                 accept=".csv,.xlsx" 
+                 ref="batchFileRef" 
+                 style="display: none" 
+                 @change="handleBatchFileUpload"
+               >
+               <el-button type="primary" :loading="isBatchUploading" @click="triggerBatchUpload">📁 投喂 CSV 给后端解析</el-button>
+               <el-button type="success" plain>📥 下载标准模板</el-button>
+            </div>
+
+            <div v-if="batchDetectedPkg" style="color: #67c23a; font-weight: bold;">
+               ✅ 解析完成！智能识别模板：【{{ batchDetectedPkg }}】，共生成 {{ batchResults.length }} 个人群包。
+            </div>
+          </div>
+          
+          <div style="flex: 1; padding: 30px 40px; overflow-y: auto;">
+             <div v-if="batchResults.length > 0" style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: center;">
+                <el-popover
+                  v-for="(res, idx) in batchResults" 
+                  :key="idx"
+                  placement="top"
+                  :width="400"
+                  trigger="hover"
+                >
+                  <template #reference>
+                    <el-button type="primary" plain size="large" @click="copyBatchJson(res)">
+                      📦 {{ res.crowdName }}
+                    </el-button>
+                  </template>
+                  <div style="max-height: 300px; overflow-y: auto; background: #282c34; padding: 10px; border-radius: 4px;">
+                     <pre style="color: #abb2bf; font-family: Consolas; font-size: 12px; margin: 0;">{{ JSON.stringify(res, null, 2) }}</pre>
+                  </div>
+                </el-popover>
+             </div>
+             
+             <div v-else style="color: #a8abb2; text-align: center; margin-top: 50px;">
+                请先投喂数据文件。
+             </div>
+          </div>
+        </div>
+      </template>
+
     </div>
   </el-config-provider>
 </template>
 
 <script setup>
+
 import { ref, watch, onMounted } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 // ==========================================
 // 核心状态管理与后端对接
 // ==========================================
+const appMode = ref('normal') // 🔥 新增：掌控全局的双模式开关 ('normal' | 'batch')
+
 const availablePackages = ref([]) 
 const schemaCache = ref({})
 const logicMatrixCache = ref({}) 
 const nodeList = ref([])
 const crowdNameInput = ref('未命名') // 🔥 新增：人群包名称绑定的变量
+
 
 const loadPackages = async () => {
   try {
@@ -665,7 +729,7 @@ onMounted(() => {
 })
 
 // 🔥 引入 Element Plus 的消息提示弹窗
-import { ElMessage } from 'element-plus'
+
 
 // ==========================================
 // 🚀 实用工具：一键复制与外链跳转
@@ -683,7 +747,70 @@ const copyJson = async () => {
 
 const goToDataBank = () => {
   // 🔥 这里的跳转链接请替换为你真实的生产环境/测试环境数据银行地址
-  window.open('https://databank.tmall.com/', '_blank')
+  window.open('https://databank.tmall.com/#/userDefinedAnalyses', '_blank')
+}
+import { ElMessage, ElLoading } from 'element-plus'
+
+// ==========================================
+// 🚀 Excel 批量模式控制面板 (极简传文件版)
+// ==========================================
+const batchFileRef = ref(null)
+const batchResults = ref([])
+const batchDetectedPkg = ref('')
+const isBatchUploading = ref(false)
+
+const triggerBatchUpload = () => {
+  if (batchFileRef.value) batchFileRef.value.click()
+}
+
+const handleBatchFileUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  isBatchUploading.value = true
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const loading = ElLoading.service({
+    lock: true,
+    text: '正在将文件交由后端 Python 引擎进行降维解析...',
+    background: 'rgba(0, 0, 0, 0.7)',
+  })
+
+  try {
+    const res = await fetch(`http://127.0.0.1:5000/api/batch_generate`, {
+      method: 'POST',
+      body: formData // 直接把文件拍脸丢过去
+    })
+    
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error || '解析失败')
+    }
+
+    const data = await res.json()
+    batchResults.value = data.results || []
+    batchDetectedPkg.value = data.detected_pkg || '未知包'
+    
+    batchFileRef.value.value = null // 清除选中状态
+    ElMessage.success(`🎉 批量生成完毕！快去点击按钮复制吧！`)
+
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(`后端解析异常: ${error.message}`)
+  } finally {
+    loading.close()
+    isBatchUploading.value = false
+  }
+}
+
+const copyBatchJson = async (resObj) => {
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(resObj, null, 4))
+    ElMessage.success(`✅ 已复制人群包 [${resObj.crowdName}] 的代码！`)
+  } catch (err) {
+    ElMessage.error('复制失败')
+  }
 }
 </script>
 

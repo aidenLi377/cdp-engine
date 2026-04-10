@@ -467,6 +467,124 @@ def get_package_meta(package_name):
 def generate():
     return jsonify(engine.generate_json(request.json))
 
+import io
+
+@app.route('/api/batch_generate', methods=['POST'])
+def batch_generate():
+    if 'file' not in request.files:
+        return jsonify({"error": "未收到文件"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "文件名为空"}), 400
+
+    # 1. 从文件名嗅探包名 (例如: 批量圈人_类目公域行为_模版.csv -> 类目公域行为)
+    detected_pkg = '类目公域行为' # 兜底
+    if '_' in file.filename:
+        parts = file.filename.split('_')
+        if len(parts) >= 3:
+            detected_pkg = parts[1]
+
+    # 2. 用 pandas 读取上传的 CSV
+    try:
+        content = file.read().decode('utf-8-sig') # 兼容带BOM或GBK的中文CSV
+    except UnicodeDecodeError:
+        file.seek(0)
+        content = file.read().decode('gbk')
+    
+    df_upload = pd.read_csv(io.StringIO(content))
+    df_upload.columns = [str(c).strip() for c in df_upload.columns]
+    
+    if df_upload.empty:
+        return jsonify({"error": "CSV 文件为空"}), 400
+
+    # 3. 建立反向映射字典 (中文 Label -> 英文 Key)
+    # 取出当前包对应的所有参数配置
+    pkg_params = engine.params_df[
+        engine.params_df['Crowd_Package'].apply(
+            lambda x: detected_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)]
+        )
+    ]
+    label_to_key = {}
+    key_to_widget = {}
+    for _, row in pkg_params.iterrows():
+        if pd.notna(row['Label']):
+            label = str(row['Label']).strip()
+            label_to_key[label] = str(row['Param_Key']).strip()
+            key_to_widget[str(row['Param_Key']).strip()] = str(row['Widget_Type']).strip()
+
+    final_results = []
+    
+    # 4. 遍历 CSV 每一行进行清洗并调用你原有的 generate_json
+    first_col_name = df_upload.columns[0] # 强制认为第一列是人群包名字
+    
+    for idx, row in df_upload.iterrows():
+        crowd_name = str(row[first_col_name]).strip() if pd.notna(row[first_col_name]) else f"未命名包_{idx}"
+        
+        # 构造虚拟 payload (模拟前端点选的数据)
+        payload = {'_package': detected_pkg}
+        
+        for cn_label, val in row.items():
+            if cn_label == first_col_name or pd.isna(val):
+                continue
+                
+            val_str = str(val).strip()
+            if not val_str:
+                continue
+                
+            eng_key = label_to_key.get(cn_label)
+            if not eng_key:
+                continue # 表头不认识，跳过
+                
+            widget_type = key_to_widget.get(eng_key, "")
+            
+            # 💡 核心变态数据清洗器
+            if widget_type in ['复选组', '搜索多选', '列表输入', '下拉多选']:
+                # 逗号切割成数组
+                payload[eng_key] = [s.strip() for s in re.split(r'[,，]', val_str) if s.strip()]
+                
+            elif widget_type == '数值_切换':
+                if val_str == '不限':
+                    pass # 不限就相当于没填，让它隐身
+                elif '≥' in val_str or '>=' in val_str:
+                    num = re.sub(r'[^0-9.]', '', val_str)
+                    payload[eng_key] = {'min': num, 'max': None}
+                elif '-' in val_str and '月' not in val_str: # 排除弱智日期 10月20日 的干扰
+                    parts = val_str.split('-')
+                    if len(parts) == 2:
+                        payload[eng_key] = {'min': parts[0].strip(), 'max': parts[1].strip()}
+                        
+            elif widget_type == '日期_切换':
+                if '过去' in val_str or '天' in val_str:
+                    days = re.sub(r'[^0-9]', '', val_str)
+                    payload[eng_key] = {'min': 'recent', 'val': {'days': int(days)}}
+                elif '-' in val_str:
+                    parts = val_str.split('-')
+                    if len(parts) == 2:
+                        start_d = parts[0].strip().replace('-', '')
+                        end_d = parts[1].strip().replace('-', '')
+                        payload[eng_key] = {'min': 'range', 'val': {'start': start_d, 'end': end_d}}
+            
+            else:
+                # 单选、字符串直传
+                payload[eng_key] = val_str
+
+        # 5. 调用你极其完善的单节点生成引擎！！！
+        try:
+            node_json = engine.generate_json(payload)
+            if node_json and 'list' in node_json and len(node_json['list']) > 0:
+                base_tmpl = node_json['list'][0]
+                base_tmpl['fromPoolId'] = 0 # 批量全是单包
+                final_results.append({
+                    "crowdName": crowd_name,
+                    "list": [base_tmpl],
+                    "compute": "(0)"
+                })
+        except Exception as e:
+            print(f"Row {idx} translation error: {e}")
+            continue
+
+    return jsonify({"results": final_results, "detected_pkg": detected_pkg})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
