@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" --max-time 2 http://127.0.0.1:5000/api/packages)",
+      "Bash(start /B python app.py)"
+    ]
+  }
+}

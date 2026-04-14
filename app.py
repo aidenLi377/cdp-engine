@@ -1,4 +1,4 @@
-# app.py (全自动扫描引擎版 - 强化抗压版)
+# app.py (全自动扫描引擎版 - 强化抗压版 + Drawer 兼容)
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import pandas as pd
@@ -16,7 +16,6 @@ class ConfigEngine:
         self.load_config()
 
     def load_config(self):
-        """🔥 核心升级：将读表逻辑独立，支持接口每次调用时热更新！"""
         import os, glob, re
         try:
             self.params_df = pd.read_csv("1.参数表.csv", encoding='gb18030')
@@ -66,10 +65,9 @@ class ConfigEngine:
             except:
                 return pd.DataFrame()
 
-        self.bhv_translator = {}  # 🔥 升维：(包名, 行为名) -> ID
-        self.bhv_options = {}  # 🔥 隔离：每个包各自的下拉选项
+        self.bhv_translator = {}
+        self.bhv_options = {}
 
-        # 1. 独立解析行为维表，开启包隔离
         df_bhv = safe_read("行为维表.csv")
         for _, row in df_bhv.iterrows():
             pkg = str(row.get('适用的包', '')).strip()
@@ -77,27 +75,18 @@ class ConfigEngine:
             val = f"{row.get('ID', '')}#|#{row.get('Value', '')}"
             if not name or not pkg: continue
 
-            # 双重秘钥锁定
             if pkg and name:
-                # 🔥 获取适用的渠道
                 channel_name = str(row.get('适用的渠道', 'ALL')).strip()
-
-                # 💡 世纪 BUG 修复：如果 Excel 里是空单元格，Python 会读成 '' 或 'nan'，需要强制归一化为 'ALL'
                 if not channel_name or channel_name.lower() == 'nan':
                     channel_name = 'ALL'
-
-                # 🔥 升级为三维锁定：(包名, 渠道名, 行为名) -> ID
                 self.bhv_translator[(pkg, channel_name, name)] = val
 
             if pkg not in self.bhv_options: self.bhv_options[pkg] = []
             if name not in self.bhv_options[pkg]: self.bhv_options[pkg].append(name)
 
-        self.dim_translator = {}  # 🔥 新增：建立高维隔离字典
-        self.attr_options = {}  # 🔥 新增：维度表的专属包隔离选项库
+        self.dim_translator = {}
+        self.attr_options = {}
 
-        # 2. 解析其他全局维表
-
-        # 2. 解析其他全局维表
         loaders = [
             ("渠道维表.csv", "渠道名称", lambda r: f"{r.get('parentId', '')}#|#{r.get('BizID', '')}"),
             ("类目维表.csv", 1, lambda r: f"{r.get('cateId', '')}#|#{r.get('cateId', '')}"),
@@ -111,7 +100,7 @@ class ConfigEngine:
         for fname, name_col, id_func in loaders:
             df = safe_read(fname)
             self.dimensions[fname] = []
-            has_pkg = '适用的包' in df.columns  # 💡 动态探测这个表有没有“适用的包”这一列
+            has_pkg = '适用的包' in df.columns
 
             for _, row in df.iterrows():
                 try:
@@ -132,12 +121,9 @@ class ConfigEngine:
                         self.id_translator[name] = name
                         self.dimensions[fname].append(name)
                     elif val and val != "#|#":
-                        self.id_translator[name] = val  # 兜底全局映射
+                        self.id_translator[name] = val
                         if has_pkg and pkg_val:
-                            # 🔥 核心隔离！把 (包名, 名字) 映射为专属 ID
                             self.dim_translator[(pkg_val, name)] = val
-
-                            # 🔥 新增：把选项加入到各自包的专属列表中，防止串台
                             if (pkg_val, fname) not in self.attr_options:
                                 self.attr_options[(pkg_val, fname)] = []
                             if name not in self.attr_options[(pkg_val, fname)]:
@@ -149,22 +135,19 @@ class ConfigEngine:
             self.dimensions[fname] = list(dict.fromkeys(self.dimensions[fname]))
 
     def get_package_meta(self, package_name):
-        # 🔥 绝杀：每次前端来拿数据，强制重新读一遍最新的参数表！永远告别重启烦恼！
         self.load_config()
 
         logic_filename = self.packages.get(package_name)
         if not logic_filename or not os.path.exists(logic_filename): return {}
 
-        # --- 1. 读取参数配置表生成骨架 ---
         full_schema = []
-        current_label_map = {}  # 🔥 新增：当前包专属的名称翻译字典
+        current_label_map = {}
 
         for _, config in self.params_df.iterrows():
             pkg_col = config.get('Crowd_Package', '')
             if pd.isna(pkg_col): continue
             if package_name not in [p.strip() for p in str(pkg_col).split(',')]: continue
 
-            # 🔥 新增：只为当前选中的包建立映射，防止“商品行为”覆盖“类目公域行为”
             if pd.notna(config.get('Label')):
                 cn_name = str(config.get('Label')).strip()
                 eng_key = str(config.get('Param_Key')).strip()
@@ -178,29 +161,24 @@ class ConfigEngine:
 
             item['key'] = config['Param_Key']
             data_source = item.get('Data_Source')
-            # 精准下发专属动作
+
             if data_source == '行为维表.csv':
                 opts = self.bhv_options.get(package_name, [])
                 item['options'] = opts.copy() if isinstance(opts, list) else []
             else:
-                # 🔥 升级：优先从专属隔离库里拿选项，完美解决“购买力”里混入“男/女”的问题
                 opts = self.attr_options.get((package_name, data_source),
                                              self.dimensions.get(data_source, []))
                 item['options'] = opts.copy() if isinstance(opts, list) else []
-                # 🔥 独家定制：给特定包的类目强行塞入“全部”选项
+
             if package_name in ['AIPL状态', '商品行为'] and item['key'] in ['cate', 'leafCates']:
                 if '全部' not in item['options']:
                     item['options'].insert(0, '全部')
 
-
-
-            # 🎯 防弹版解析：强行干掉 .0 尾巴以及任何隐形空格，确保 1 绝对生效
             is_def_raw = str(item.get('Is_Default', '0')).strip().lower()
             is_def_clean = is_def_raw.replace('.0', '')
             item['isDefault'] = is_def_clean in ['1', 'true', 'yes', '是']
             full_schema.append(item)
 
-        # --- 2. 逻辑表解析 (V1.3 终极多维靶向雷达) ---
         logic_matrix = {}
         try:
             try:
@@ -209,21 +187,17 @@ class ConfigEngine:
                 temp_df = pd.read_csv(logic_filename, encoding='gb18030')
 
             trigger_cols = []
-            # 强制设定维度的拼接顺序：渠道在前，行为/状态在后
             for expected in ['渠道', '行为', '状态']:
                 for col in temp_df.columns:
                     if col.strip() == expected:
-                        # 💡 智能嗅探：第一行是 1 或 1.0 的，是被控制的靶子，绝不是触发器！
                         first_val = str(temp_df[col].dropna().iloc[0]).strip() if not temp_df[
                             col].dropna().empty else ""
                         if first_val not in ['1', '1.0', 'True', 'TRUE']:
                             trigger_cols.append(col.strip())
 
-            # 兜底：如果啥也没匹配上，抓第一列
             if not trigger_cols: trigger_cols = [temp_df.columns[0]]
 
             for _, row in temp_df.iterrows():
-                # 拼接多维主键 (如 "天猫国际|浏览" 或一维的 "购买")
                 key_parts = [str(row[c]).strip() for c in trigger_cols]
                 composite_key = "|".join(key_parts)
 
@@ -232,7 +206,6 @@ class ConfigEngine:
                     if col_name.strip() not in trigger_cols:
                         if str(val).strip() in ['1', '1.0', 'True', 'TRUE', 'true']:
                             cn = col_name.strip()
-                            # 🎯 核心修复：如果逻辑表头直接写了英文变量名（如 attributes），也必须无条件识别并放行！
                             real_key = current_label_map.get(cn, cn)
                             if real_key: visible_fields.append(real_key)
                 logic_matrix[composite_key] = visible_fields
@@ -243,27 +216,15 @@ class ConfigEngine:
 
     def generate_json(self, user_data):
         current_pkg = user_data.pop('_package', '类目公域行为')
-
         selection_lv3 = {}
 
-        # 🔥 核心原则落实：绝对信任前端发来的 user_data！
-        # 页面显示什么参数前端就发什么，页面隐藏的参数绝对不强行兜底补全！
-
         for key, raw_val in user_data.items():
-
-            # 🔥 AIPL 专属特判：如果选了“全部”，强制输出字符串 "ALL" 并跳过后续逻辑
             if current_pkg == 'AIPL状态' and key == 'cate':
                 if (isinstance(raw_val, list) and '全部' in raw_val) or raw_val == '全部':
                     self._merge_path(selection_lv3, "selectionLv3.cate", "ALL")
                     continue
 
-            # 精确匹配当前包的配置
             matched_rows = self.params_df[
-
-
-
-
-
                 (self.params_df['Param_Key'] == key) &
                 (self.params_df['Crowd_Package'].apply(
                     lambda x: current_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)]))
@@ -274,7 +235,6 @@ class ConfigEngine:
             template_str = config.get('Backend_Template')
             json_path = config.get('JSON_Path')
 
-            # 🔥 拦截前端控制字段：遇到 JSON_Path 是 - 的，直接无视！
             if pd.isna(json_path) or str(json_path).strip() == "-": continue
 
             cleaned_val = raw_val
@@ -322,15 +282,11 @@ class ConfigEngine:
                     if isinstance(v, list): return [translate(x) for x in v]
                     if isinstance(v, str):
                         if key == 'bhv':
-                            # 🔥 新增：提取当前选择的渠道名（比如'天猫'），去查三维字典
                             current_channel = user_data.get('channel', ['ALL'])
-                            # 兼容单选字符串或多选数组格式
                             ch_name = current_channel[0] if isinstance(current_channel,
                                                                        list) and current_channel else current_channel
                             if not ch_name:
                                 ch_name = 'ALL'
-
-                            # 🔥 优先查带渠道的专属ID（天猫->16709），查不到就退回到 ALL（所有渠道->16712）
                             return self.bhv_translator.get((current_pkg, str(ch_name), v),
                                                            self.bhv_translator.get((current_pkg, 'ALL', v), v))
 
@@ -349,7 +305,6 @@ class ConfigEngine:
                 if isinstance(final_val, (str, int, float, list)): vars_dict['val'] = final_val
                 if not vars_dict and final_val: vars_dict['val'] = final_val
 
-            # 🔥 修复：识别 "-", 空白，nan，直接塞值。防崩溃类型强转
             if pd.isna(template_str) or str(template_str).strip() in ["", "-", "nan"]:
                 if state == "isEmpty": continue
                 val_to_write = vars_dict.get('val', cleaned_val)
@@ -383,9 +338,7 @@ class ConfigEngine:
             if matched_template:
                 s = json.dumps(matched_template)
                 for v_key, v_val in vars_dict.items():
-                    # 🎯 核心修复：如果替换的是一个数组(复选框多选)，必须用 json.dumps 转换，防止 Python 单引号破坏 JSON 结构！
                     val_str = json.dumps(v_val, ensure_ascii=False) if isinstance(v_val, (list, dict)) else str(v_val)
-
                     s = s.replace(f"\"${{{v_key}}}\"", val_str)
                     if v_key in ['start', 'end', 'days']:
                         s = s.replace(f": {val_str}", f": \"{val_str}\"")
@@ -395,7 +348,6 @@ class ConfigEngine:
                 except Exception as e:
                     print(f"合并路径报错: {e}")
 
-        # 获取外壳
         base_tmpl = {}
         try:
             pkg_rows = self.params_df[self.params_df['Crowd_Package'].apply(
@@ -407,7 +359,6 @@ class ConfigEngine:
         except Exception as e:
             print(f"解析 Base_Template 失败: {e}")
 
-        # 智能动态融合 (不丢失任何层级)
         for k, v in selection_lv3.items():
             if k in base_tmpl and isinstance(base_tmpl[k], dict) and isinstance(v, dict):
                 self._deep_update(base_tmpl[k], v)
@@ -417,9 +368,7 @@ class ConfigEngine:
         if "selectionLv3" not in base_tmpl:
             base_tmpl["selectionLv3"] = {}
 
-        # 🔥 最稳妥的打包写法，兼容所有老版本系统，永不死机
         base_tmpl["fromPoolId"] = 0
-        # 🔥 新增：捕获前端发来的渠道中文名，原样回显到外壳上
         if 'channel' in user_data:
             channel_val = user_data['channel']
             base_tmpl["selectionLv2Name"] = channel_val[0] if isinstance(channel_val, list) and channel_val else str(
@@ -463,128 +412,124 @@ def get_package_meta(package_name):
     return jsonify(engine.get_package_meta(package_name))
 
 
+# 🔴 [重构修复] 补全被引用的 Drawer 依赖接口：获取包 Meta
+@app.route('/api/package_meta', methods=['GET'])
+def get_package_meta_alias():
+    name = request.args.get('name')
+    if not name:
+        return jsonify({"error": "缺少name参数"}), 400
+    return jsonify(engine.get_package_meta(name))
+
+
+# 🔴 [重构修复] 补全被引用的 Drawer 依赖接口：根据散装参数反向生成 JSON
+@app.route('/api/generate_json', methods=['POST'])
+def generate_json_alias():
+    data = request.json
+    pkg_name = data.get('pkgName')
+    params = data.get('params', {})
+    params['_package'] = pkg_name
+    try:
+        result = engine.generate_json(params)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/generate', methods=['POST'])
 def generate():
     return jsonify(engine.generate_json(request.json))
 
-import io
+
+TEMPLATE_DIR = r'E:\CDP_Project\批量圈人模板'
+
+
+@app.route('/api/list_templates')
+def list_templates():
+    if not os.path.exists(TEMPLATE_DIR): return jsonify([])
+    files = [f for f in os.listdir(TEMPLATE_DIR) if f.endswith('.csv') or f.endswith('.xlsx')]
+    return jsonify(files)
+
+
+@app.route('/api/download_template/<path:filename>')
+def download_template(filename):
+    from flask import send_from_directory
+    return send_from_directory(TEMPLATE_DIR, filename, as_attachment=True)
+
 
 @app.route('/api/batch_generate', methods=['POST'])
 def batch_generate():
-    if 'file' not in request.files:
-        return jsonify({"error": "未收到文件"}), 400
-    
+    import io
+    if 'file' not in request.files: return jsonify({"error": "未收到文件"}), 400
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "文件名为空"}), 400
 
-    # 1. 从文件名嗅探包名 (例如: 批量圈人_类目公域行为_模版.csv -> 类目公域行为)
-    detected_pkg = '类目公域行为' # 兜底
+    detected_pkg = '类目公域行为'
     if '_' in file.filename:
         parts = file.filename.split('_')
-        if len(parts) >= 3:
-            detected_pkg = parts[1]
+        if len(parts) >= 2: detected_pkg = parts[1]
 
-    # 2. 用 pandas 读取上传的 CSV
     try:
-        content = file.read().decode('utf-8-sig') # 兼容带BOM或GBK的中文CSV
-    except UnicodeDecodeError:
+        content = file.read().decode('utf-8-sig')
+    except:
         file.seek(0)
         content = file.read().decode('gbk')
-    
+
     df_upload = pd.read_csv(io.StringIO(content))
     df_upload.columns = [str(c).strip() for c in df_upload.columns]
-    
-    if df_upload.empty:
-        return jsonify({"error": "CSV 文件为空"}), 400
 
-    # 3. 建立反向映射字典 (中文 Label -> 英文 Key)
-    # 取出当前包对应的所有参数配置
-    pkg_params = engine.params_df[
-        engine.params_df['Crowd_Package'].apply(
-            lambda x: detected_pkg in [p.strip() for p in str(x).split(',') if pd.notna(x)]
-        )
-    ]
-    label_to_key = {}
-    key_to_widget = {}
-    for _, row in pkg_params.iterrows():
-        if pd.notna(row['Label']):
-            label = str(row['Label']).strip()
-            label_to_key[label] = str(row['Param_Key']).strip()
-            key_to_widget[str(row['Param_Key']).strip()] = str(row['Widget_Type']).strip()
+    engine.load_config()
+    pkg_params = engine.params_df[engine.params_df['Crowd_Package'].str.contains(detected_pkg, na=False)]
+    label_to_key = {str(r['Label']).strip(): str(r['Param_Key']).strip() for _, r in pkg_params.iterrows()}
+    key_to_widget = {str(r['Param_Key']).strip(): str(r['Widget_Type']).strip() for _, r in pkg_params.iterrows()}
 
     final_results = []
-    
-    # 4. 遍历 CSV 每一行进行清洗并调用你原有的 generate_json
-    first_col_name = df_upload.columns[0] # 强制认为第一列是人群包名字
-    
-    for idx, row in df_upload.iterrows():
-        crowd_name = str(row[first_col_name]).strip() if pd.notna(row[first_col_name]) else f"未命名包_{idx}"
-        
-        # 构造虚拟 payload (模拟前端点选的数据)
-        payload = {'_package': detected_pkg}
-        
-        for cn_label, val in row.items():
-            if cn_label == first_col_name or pd.isna(val):
-                continue
-                
-            val_str = str(val).strip()
-            if not val_str:
-                continue
-                
-            eng_key = label_to_key.get(cn_label)
-            if not eng_key:
-                continue # 表头不认识，跳过
-                
-            widget_type = key_to_widget.get(eng_key, "")
-            
-            # 💡 核心变态数据清洗器
-            if widget_type in ['复选组', '搜索多选', '列表输入', '下拉多选']:
-                # 逗号切割成数组
-                payload[eng_key] = [s.strip() for s in re.split(r'[,，]', val_str) if s.strip()]
-                
-            elif widget_type == '数值_切换':
-                if val_str == '不限':
-                    pass # 不限就相当于没填，让它隐身
-                elif '≥' in val_str or '>=' in val_str:
-                    num = re.sub(r'[^0-9.]', '', val_str)
-                    payload[eng_key] = {'min': num, 'max': None}
-                elif '-' in val_str and '月' not in val_str: # 排除弱智日期 10月20日 的干扰
-                    parts = val_str.split('-')
-                    if len(parts) == 2:
-                        payload[eng_key] = {'min': parts[0].strip(), 'max': parts[1].strip()}
-                        
-            elif widget_type == '日期_切换':
-                if '过去' in val_str or '天' in val_str:
-                    days = re.sub(r'[^0-9]', '', val_str)
-                    payload[eng_key] = {'min': 'recent', 'val': {'days': int(days)}}
-                elif '-' in val_str:
-                    parts = val_str.split('-')
-                    if len(parts) == 2:
-                        start_d = parts[0].strip().replace('-', '')
-                        end_d = parts[1].strip().replace('-', '')
-                        payload[eng_key] = {'min': 'range', 'val': {'start': start_d, 'end': end_d}}
-            
-            else:
-                # 单选、字符串直传
-                payload[eng_key] = val_str
+    first_col = df_upload.columns[0]
 
-        # 5. 调用你极其完善的单节点生成引擎！！！
+    for idx, row in df_upload.iterrows():
+        crowd_name = str(row[first_col]).strip() if pd.notna(row[first_col]) else f"未命名包_{idx}"
+        payload = {'_package': detected_pkg}
+
+        for cn_label, val in row.items():
+            if cn_label == first_col or pd.isna(val): continue
+            eng_key = label_to_key.get(cn_label)
+            if not eng_key: continue
+
+            val_str = str(val).strip()
+            w_type = key_to_widget.get(eng_key)
+
+            if w_type in ['复选组', '搜索多选', '列表输入', '下拉多选']:
+                payload[eng_key] = [s.strip() for s in re.split(r'[,，]', val_str) if s.strip()]
+            elif w_type == '数值_切换' and val_str != '不限':
+                if '≥' in val_str or '>=' in val_str:
+                    payload[eng_key] = {'min': re.sub(r'[^0-9.]', '', val_str), 'max': None}
+                elif '-' in val_str:
+                    pts = val_str.split('-')
+                    payload[eng_key] = {'min': pts[0].strip(), 'max': pts[1].strip()}
+            elif w_type == '日期_切换':
+                if '天' in val_str:
+                    payload[eng_key] = {'min': 'recent', 'val': {'days': int(re.sub(r'[^0-9]', '', val_str))}}
+                elif '-' in val_str:
+                    pts = val_str.split('-')
+                    if len(pts) == 2:
+                        payload[eng_key] = {'min': 'range',
+                                            'val': {'start': pts[0].replace('-', ''), 'end': pts[1].replace('-', '')}}
+            else:
+                payload[eng_key] = val_str
         try:
             node_json = engine.generate_json(payload)
-            if node_json and 'list' in node_json and len(node_json['list']) > 0:
-                base_tmpl = node_json['list'][0]
-                base_tmpl['fromPoolId'] = 0 # 批量全是单包
+            if node_json and node_json.get('list'):
+                node_json['list'][0]['fromPoolId'] = 0
                 final_results.append({
                     "crowdName": crowd_name,
-                    "list": [base_tmpl],
+                    "pkgName": detected_pkg,
+                    "localParams": payload,
+                    "list": node_json['list'],
                     "compute": "(0)"
                 })
         except Exception as e:
-            print(f"Row {idx} translation error: {e}")
-            continue
+            print(f"Row error: {e}")
 
     return jsonify({"results": final_results, "detected_pkg": detected_pkg})
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
