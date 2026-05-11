@@ -1,5 +1,29 @@
-cdp-web/node_modules/
-__pycache__/cdp-web/node_modules/
-__pycache__/
+# Python
 .venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Flask logs
+flask.log
+*.log
+
+# Node / frontend
+cdp-web/node_modules/
+cdp-web/dist/
+
+# IDE
+.vscode/
 .idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
