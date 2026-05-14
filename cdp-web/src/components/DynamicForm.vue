@@ -1,21 +1,31 @@
 <template>
-  <el-form label-position="top" size="large" class="dynamic-form">
+  <el-form label-position="top" size="large" class="dynamic-form airy-form">
     <template v-for="field in node.schema" :key="field.key">
-      <el-form-item v-show="isVisible(field, node)">
+      <el-form-item v-show="isVisible(field, node)" class="airy-form-item">
 
         <template #label>
-          <span class="display-body strong">{{ field.Label }}</span>
-          <template v-if="getDynamicDescription(field)">
-            <el-tooltip v-if="getDynamicStyle(field) !== '文字'" :content="getDynamicDescription(field)" placement="top" effect="dark">
+          <div class="airy-form-label">
+            <span class="airy-form-title">{{ field.Label }}</span>
+            <span
+              v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'"
+              class="airy-form-inline-hint"
+            >
+              {{ getDynamicDescription(field) }}
+            </span>
+            <el-tooltip
+              v-else-if="getDynamicDescription(field)"
+              :content="getDynamicDescription(field)"
+              placement="top"
+              effect="dark"
+            >
               <span class="tooltip-icon">ⓘ</span>
             </el-tooltip>
-          </template>
+          </div>
         </template>
 
         <template v-if="field.Widget_Type === '普通输入框'">
           <div class="form-row">
             <el-input v-model="node.formData[field.key]" :placeholder="`请输入${field.Label}`" class="flex-1 intercom-input"></el-input>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
 
@@ -23,7 +33,6 @@
           <div class="form-row">
             <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :multiple-limit="getListLimit(field, node)" :placeholder="`输入并回车创建${field.Label}`" @change="handleListInput(field.key, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
 
@@ -38,14 +47,12 @@
           <div class="form-row">
             <el-select-v2 v-model="node.formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable :reserve-keyword="false" :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input select-auto-height" @change="handleMultiSelectChange(field.key, node)"></el-select-v2>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
 
         <template v-else-if="field.Widget_Type === '搜索单选'">
           <div class="form-row">
             <el-select-v2 :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${getArray(node.formData.channel).join(',')}-${node.formData.shop}` : field.key" v-model="node.formData[field.key]" :options="formatOptions(getDynamicOptions(field, node))" filterable clearable :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input"></el-select-v2>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
 
