@@ -2,7 +2,7 @@
   <div class="batch-workspace">
     <div class="batch-header">
       <div class="action-area" style="margin-left: auto;">
-        <el-button class="intercom-btn-accent" @click="fetchTemplates">
+        <el-button class="primary-soft-btn" @click="fetchTemplates">
           <el-icon><Download /></el-icon> 获取标准模板
         </el-button>
       </div>
