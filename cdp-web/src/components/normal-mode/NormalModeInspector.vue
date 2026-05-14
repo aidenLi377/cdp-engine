@@ -13,7 +13,7 @@
       </div>
 
       <div class="json-area nm-inspector-section">
-        <div class="json-toolbar nm-inspector-tabs">
+        <div class="json-toolbar nm-inspector-controls">
           <slot name="tabs" />
         </div>
         <div class="nm-inspector-content">
@@ -81,5 +81,17 @@ defineEmits(['toggle-expanded'])
   line-height: 1.4;
   text-align: center;
   word-break: break-word;
+}
+
+@media (max-width: 960px) {
+  .nm-inspector-collapsed {
+    width: auto;
+    padding: 20px;
+  }
+
+  .nm-inspector-collapsed-body {
+    justify-content: flex-start;
+    padding-top: 0;
+  }
 }
 </style>
