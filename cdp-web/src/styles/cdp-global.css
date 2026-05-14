@@ -14,8 +14,7 @@
 .display-mono { font-family: "SF Mono", "Cascadia Code", ui-monospace; font-size: 11px; font-weight: 500; line-height: 1.30; letter-spacing: 0.2px; }
 
 /* ---- 全局 Element Plus ---- */
-.cdp-app-shell .offline-banner .el-button,
-.cdp-app-shell .cdp-topbar .el-button {
+.el-button {
   font-family: "PingFang SC", "Microsoft YaHei", ui-sans-serif !important;
   border-radius: 12px !important;
   font-size: 15px !important;
@@ -28,155 +27,14 @@
 }
 
 /* ---- 应用容器 ---- */
-body {
-  margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(223, 158, 142, 0.12), transparent 30%),
-    radial-gradient(circle at right 20%, rgba(151, 171, 142, 0.10), transparent 24%),
-    linear-gradient(180deg, #faf7f3 0%, #f4f0ea 100%);
-  color: var(--cdp-text-primary);
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-
-#app {
-  min-height: 100vh;
-}
-
-.cdp-app-shell {
-  min-height: 100vh;
-  padding: 20px;
-  box-sizing: border-box;
+.cdp-engine-container {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  position: relative;
-}
-
-.cdp-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 18px 22px;
-  border: 1px solid var(--cdp-line-soft);
-  border-radius: var(--cdp-radius-xl);
-  background: var(--cdp-bg-shell);
-  backdrop-filter: blur(18px);
-  box-shadow: var(--cdp-shadow-soft);
-  position: relative;
-  z-index: 1;
-}
-
-.cdp-topbar-brand {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-width: 0;
-}
-
-.cdp-brand-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 18px;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.72), transparent 42%),
-    linear-gradient(145deg, var(--cdp-accent) 0%, #e7b6a3 55%, #f2dccf 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.58),
-    0 12px 22px rgba(207, 141, 125, 0.18);
-}
-
-.cdp-topbar-eyebrow {
-  margin: 0 0 4px;
-  font-size: 12px;
-  line-height: 1.2;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--cdp-text-muted);
-}
-
-.cdp-topbar-title {
-  margin: 0;
-  font-size: 24px;
-  line-height: 1.2;
-  font-weight: 600;
-  color: var(--cdp-text-primary);
-}
-
-.cdp-topbar-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.cdp-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--cdp-success) 24%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--cdp-success) 14%, white);
-  color: color-mix(in srgb, var(--cdp-success) 72%, var(--cdp-text-primary));
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.cdp-status-pill.offline {
-  border-color: color-mix(in srgb, var(--cdp-accent-strong) 24%, transparent);
-  background: color-mix(in srgb, var(--cdp-accent) 16%, white);
-  color: color-mix(in srgb, var(--cdp-accent-strong) 72%, var(--cdp-text-primary));
-}
-
-.cdp-mode-switch .el-radio-button__inner {
-  min-width: 112px;
-  border-radius: 999px !important;
-  border: 1px solid var(--cdp-line-soft) !important;
-  background: rgba(255, 255, 255, 0.64) !important;
-  color: var(--cdp-text-secondary) !important;
-  font-family: "PingFang SC", "Microsoft YaHei", sans-serif !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  padding: 8px 16px !important;
-  box-shadow: none !important;
-}
-
-.cdp-mode-switch .el-radio-button:first-child .el-radio-button__inner,
-.cdp-mode-switch .el-radio-button:last-child .el-radio-button__inner {
-  border-radius: 999px !important;
-}
-
-.cdp-mode-switch .el-radio-button__original-radio:checked + .el-radio-button__inner {
-  background: var(--cdp-accent) !important;
-  border-color: var(--cdp-accent) !important;
-  color: #fffaf7 !important;
-  box-shadow: 0 10px 18px rgba(207, 141, 125, 0.18) !important;
-}
-
-.cdp-shell-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
+  height: 100vh;
+  width: 100vw;
+  background-color: #f5f5f7;
   overflow: hidden;
-}
-
-.cdp-shell-content {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-}
-
-.shell-link-btn {
-  color: #fff !important;
-  text-decoration: underline !important;
-  padding: 0 !important;
-  height: auto !important;
-  border-radius: 0 !important;
-  font-size: 14px !important;
+  font-family: "PingFang SC", "Microsoft YaHei", ui-sans-serif;
+  color: #171717;
 }
 
 /* ---- 工具类 ---- */
@@ -196,16 +54,26 @@ body {
 
 /* ---- 后端离线横幅 ---- */
 .offline-banner {
-  position: sticky; top: 0; z-index: 2;
-  background: color-mix(in srgb, var(--cdp-accent-strong) 72%, #8f3e37); color: #fff; text-align: center;
+  position: absolute; top: 0; left: 0; right: 0; z-index: 1000;
+  background: #ff3b30; color: #fff; text-align: center;
   padding: 10px 20px; font-size: 14px; font-weight: 500;
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  border-radius: var(--cdp-radius-md);
-  box-shadow: 0 12px 24px color-mix(in srgb, var(--cdp-accent-strong) 24%, transparent);
 }
 
 /* ---- 模式切换 ---- */
-
+.mode-switch-container {
+  position: absolute;
+  top: 20px;
+  left: 28px;
+  z-index: 999;
+  background: rgba(255,255,255,0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  padding: 5px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04);
+}
 
 /* ============================================================ */
 /* 按钮体系                                                      */
@@ -560,7 +428,7 @@ body {
 .batch-workspace {
   flex: 1; display: flex; flex-direction: column;
   background: transparent; padding-top: 0;
-  min-height: 0; overflow: hidden;
+  height: 100vh; overflow: hidden;
 }
 .batch-header {
   padding: 20px 44px; display: flex; justify-content: flex-end;
@@ -731,32 +599,4 @@ body {
 .upload-error-text {
   color: #ff3b30; display: inline-flex; align-items: center; gap: 6px;
   margin-top: 6px; font-weight: 500;
-}
-
-@media (max-width: 960px) {
-  .cdp-app-shell {
-    padding: 14px;
-  }
-
-  .cdp-topbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .cdp-topbar-actions {
-    justify-content: space-between;
-  }
-
-  .cdp-mode-switch {
-    width: 100%;
-  }
-
-  .cdp-mode-switch .el-radio-button {
-    flex: 1;
-  }
-
-  .cdp-mode-switch .el-radio-button__inner {
-    width: 100%;
-    min-width: 0;
-  }
 }

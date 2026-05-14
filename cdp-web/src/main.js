@@ -2,7 +2,6 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
-import './styles/cdp-tokens.css'
 import './styles/cdp-global.css'
 
 const app = createApp(App)
