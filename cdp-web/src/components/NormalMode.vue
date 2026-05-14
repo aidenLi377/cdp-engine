@@ -1,5 +1,5 @@
 <template>
-  <div class="normal-mode-layout" :class="{ 'inspector-collapsed': !inspectorExpanded }">
+  <div class="normal-mode-layout">
     <NormalModeSidebar
       :packages="filteredPackages"
       :search="pkgSearch"
@@ -31,47 +31,49 @@
           v-for="(node, index) in nodeList"
           :key="node.id"
           class="node-wrapper"
-          :ref="el => {
-            if (el) nodeRefs[index] = el
-            else delete nodeRefs[index]
-          }"
+          :ref="el => { if (el) nodeRefs[index] = el }"
           @dragover.prevent="onDragOver($event, index)"
           @drop="onDrop($event, index)"
           @dragleave="onDragLeave"
         >
-          <div v-if="index > 0" class="nm-operator-bridge">
-            <span class="bridge-line"></span>
-            <el-radio-group v-model="node.operator" size="small" class="nm-operator-group">
-              <el-radio-button label="n">交集</el-radio-button>
-              <el-radio-button label="u">并集</el-radio-button>
-              <el-radio-button label="d">差集</el-radio-button>
+          <div v-if="index > 0" class="logic-connector">
+            <div class="connector-line"></div>
+            <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
+              <el-radio-button label="n">交集 (n)</el-radio-button>
+              <el-radio-button label="u">并集 (u)</el-radio-button>
+              <el-radio-button label="d">差集 (d)</el-radio-button>
             </el-radio-group>
-            <span class="bridge-line"></span>
+            <div class="connector-line"></div>
           </div>
 
-          <div class="nm-node-card" :class="{ collapsed: node.collapsed }">
-            <div class="nm-node-card-head" :class="{ 'drag-over': dragOverIndex === index }">
-              <button
-                class="nm-node-handle"
-                type="button"
+          <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed }">
+            <div class="card-header-inner" :class="{ 'drag-over': dragOverIndex === index }">
+              <span
+                class="drag-handle"
                 draggable="true"
                 title="拖拽排序"
                 @dragstart="onDragStart($event, index)"
                 @dragend="onDragEnd"
               >
-                ⋮⋮
-              </button>
-
-              <div class="nm-node-meta" @click="node.collapsed = !node.collapsed">
-                <span class="nm-node-index">节点 {{ index + 1 }}</span>
-                <h3 class="nm-node-title">
-                  {{ node.packageType }}
-                  <span class="nm-node-collapse">{{ node.collapsed ? '展开' : '收起' }}</span>
-                </h3>
-              </div>
-
-              <div class="nm-node-tools">
-                <el-button class="ghost-btn" @click="duplicateNode(index)">复制</el-button>
+                ⋮⋯
+              </span>
+              <span
+                class="card-title-flex"
+                style="cursor: pointer"
+                @click="node.collapsed = !node.collapsed"
+              >
+                <span class="collapse-arrow">{{ node.collapsed ? '▸' : '▾' }}</span>
+                <span class="display-card-title" style="font-size: 20px">{{ node.packageType }}</span>
+                <span class="display-mono badge-mono">节点 {{ index }}</span>
+              </span>
+              <div style="display: flex; gap: 6px">
+                <el-button
+                  class="intercom-btn-outlined btn-small"
+                  title="复制此节点"
+                  @click="duplicateNode(index)"
+                >
+                  复制
+                </el-button>
                 <el-popconfirm
                   title="确定移除这个节点？"
                   confirm-button-text="移除"
@@ -79,7 +81,7 @@
                   @confirm="removeNode(index)"
                 >
                   <template #reference>
-                    <el-button class="ghost-btn danger">移除</el-button>
+                    <el-button class="intercom-btn-outlined btn-small">移除</el-button>
                   </template>
                 </el-popconfirm>
               </div>
@@ -98,7 +100,7 @@
           :title="node.packageType"
           @click="scrollToNode(idx)"
         >
-          <span class="minimap-num">{{ idx + 1 }}</span>
+          <span class="minimap-num">{{ idx }}</span>
         </div>
       </template>
     </NormalModeCanvas>
@@ -128,21 +130,21 @@
       </template>
 
       <template #tabs>
-        <div class="nm-inspector-tab-group">
-          <button
-            class="inspector-tab"
+        <div class="json-tabs">
+          <span
+            class="json-tab"
             :class="{ active: jsonViewMode === 'summary' }"
             @click="jsonViewMode = 'summary'"
           >
             摘要
-          </button>
-          <button
-            class="inspector-tab"
+          </span>
+          <span
+            class="json-tab"
             :class="{ active: jsonViewMode === 'json' }"
             @click="jsonViewMode = 'json'"
           >
             JSON
-          </button>
+          </span>
         </div>
         <div class="json-actions">
           <el-button class="intercom-btn-primary" size="small" @click="copyJson">复制</el-button>
@@ -156,37 +158,32 @@
         结果
       </template>
 
-      <div v-if="jsonViewMode === 'summary'" class="nm-summary-list">
+      <div v-if="jsonViewMode === 'summary'" class="json-summary">
         <div v-if="nodeList.length === 0" class="empty-state-sm display-body-light">
           请先在画布中添加行为组件
         </div>
-        <article
-          v-for="({ node, summaryItems }, index) in summaryCards"
-          :key="'summary-' + node.id"
-          class="nm-summary-card"
-        >
-          <div class="nm-summary-head">
-            <div class="nm-summary-head-main">
-              <span class="nm-summary-badge">{{ index + 1 }}</span>
-              <strong>{{ node.packageType }}</strong>
-            </div>
-            <span v-if="index > 0" class="nm-summary-operator">{{ getOperatorLabel(node.operator) }}</span>
+        <div v-for="(node, index) in nodeList" :key="'s-' + node.id" class="summary-node">
+          <div class="summary-node-head">
+            <span class="summary-idx">{{ index }}</span>
+            <span class="display-body strong">{{ node.packageType }}</span>
+            <span v-if="index > 0" class="summary-op">
+              {{ node.operator === 'n' ? '∩ 交集' : node.operator === 'u' ? '∪ 并集' : '− 差集' }}
+            </span>
           </div>
-
           <div class="summary-rows">
-            <div v-for="item in summaryItems" :key="item.key" class="summary-row">
+            <div v-for="item in getNodeSummary(node)" :key="item.key" class="summary-row">
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
             </div>
             <div
-              v-if="summaryItems.length === 0"
+              v-if="getNodeSummary(node).length === 0"
               class="display-body-light"
               style="padding: 8px 0; opacity: 0.5"
             >
               尚未配置任何参数
             </div>
           </div>
-        </article>
+        </div>
         <div v-if="nodeList.length > 1" class="summary-compute">
           <span class="display-body-light">运算链：</span>
           <span class="display-mono">{{ generatedJson.compute }}</span>
@@ -228,7 +225,6 @@ const generatedJson = ref({ crowdName: '未命名', list: [], compute: '' })
 let dragSrcIndex = null
 let saveTimer = null
 let jsonTimer = null
-const VALID_OPERATORS = ['n', 'u', 'd']
 
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every(node => node.collapsed))
 const canUndo = computed(() => historyPos.value > 0)
@@ -238,10 +234,6 @@ const filteredPackages = computed(() => {
   const query = pkgSearch.value.toLowerCase()
   return availablePackages.value.filter(pkg => pkg.toLowerCase().includes(query))
 })
-const summaryCards = computed(() => nodeList.value.map(node => ({
-  node,
-  summaryItems: getNodeSummary(node),
-})))
 
 const onNameManualEdit = () => {
   nameAuto.value = false
@@ -267,7 +259,9 @@ function onDrop(event, targetIndex) {
   takeSnapshot()
   const [moved] = nodeList.value.splice(dragSrcIndex, 1)
   nodeList.value.splice(targetIndex, 0, moved)
-  normalizeNodeOperators()
+  nodeList.value.forEach((node, index) => {
+    if (index === 0) node.operator = null
+  })
   dragSrcIndex = null
 }
 
@@ -317,19 +311,6 @@ function scrollToNode(index) {
   if (element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
-}
-
-function normalizeNodeOperators() {
-  nodeList.value.forEach((node, index) => {
-    if (index === 0) {
-      node.operator = null
-      return
-    }
-
-    if (!VALID_OPERATORS.includes(node.operator)) {
-      node.operator = 'n'
-    }
-  })
 }
 
 function takeSnapshot() {
@@ -449,7 +430,7 @@ const addNode = async pkgType => {
 const removeNode = index => {
   takeSnapshot()
   nodeList.value.splice(index, 1)
-  normalizeNodeOperators()
+  if (nodeList.value.length > 0) nodeList.value[0].operator = null
 }
 
 const duplicateNode = index => {
@@ -475,7 +456,6 @@ const duplicateNode = index => {
     selectedFirstDate: clone.selectedFirstDate,
     collapsed: false,
   })
-  normalizeNodeOperators()
   ElMessage.success('节点已复制')
 }
 
@@ -534,9 +514,8 @@ const buildFinalJson = async () => {
         const baseTemplate = nodeJson.list[0]
         baseTemplate.fromPoolId = index
         if (index > 0) {
-          const operator = VALID_OPERATORS.includes(node.operator) ? node.operator : 'n'
           baseTemplate.op = 'INIT'
-          computeStr += `${operator}(${index})`
+          computeStr += `${node.operator}(${index})`
         }
         newList.push(baseTemplate)
       }
@@ -602,12 +581,6 @@ const generateCrowdName = () => {
   crowdNameInput.value = nodeList.value.length > 1
     ? `${parts.join('_')}_等${nodeList.value.length}组`
     : parts.join('_')
-}
-
-const getOperatorLabel = operator => {
-  if (operator === 'u') return '并集'
-  if (operator === 'd') return '差集'
-  return '交集'
 }
 
 const getNodeSummary = node => {
@@ -706,7 +679,6 @@ function handleKeydown(event) {
 
 onMounted(() => {
   loadPackages()
-  normalizeNodeOperators()
   takeSnapshot()
   window.addEventListener('keydown', handleKeydown)
 })
@@ -718,6 +690,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .normal-mode-layout {
+  display: flex;
   min-height: 0;
   height: 100%;
 }
