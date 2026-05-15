@@ -12,7 +12,17 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+class SolutionNotFoundError(Exception):
+    pass
+
+
+class InvalidSolutionStateError(Exception):
+    pass
+
+
 class SolutionStore:
+    CLIENT_EDITABLE_FIELDS = ("name", "defaultCrowdName", "nodes", "workbenchFieldIds")
+
     def __init__(self, file_path):
         self.file_path = Path(file_path)
         self._lock = threading.RLock()
@@ -46,8 +56,21 @@ class SolutionStore:
     def _new_id(self) -> str:
         return f"solution_{uuid4().hex}"
 
+    def _client_fields(self, payload: dict) -> dict:
+        return {key: payload[key] for key in self.CLIENT_EDITABLE_FIELDS if key in payload}
+
+    def _find_solution(self, solutions: list[dict], solution_id: str) -> tuple[int, dict]:
+        for index, item in enumerate(solutions):
+            if item.get("id") == solution_id:
+                return index, item
+        raise SolutionNotFoundError(solution_id)
+
     def list_solutions(self, status=None) -> list[dict]:
-        solutions = self._load()["solutions"]
+        solutions = sorted(
+            self._load()["solutions"],
+            key=lambda item: item.get("updatedAt", ""),
+            reverse=True,
+        )
         if status is None:
             return list(solutions)
         return [item for item in solutions if item.get("status") == status]
@@ -63,8 +86,9 @@ class SolutionStore:
         with self._lock:
             now = utc_now()
             created = {
-                **payload,
+                **self._client_fields(payload),
                 "id": self._new_id(),
+                "source": "manual",
                 "status": "draft",
                 "createdAt": now,
                 "updatedAt": now,
@@ -74,114 +98,98 @@ class SolutionStore:
             self._write(data)
             return created
 
-    def update_draft(self, solution_id: str, payload: dict) -> dict | None:
+    def update_draft(self, solution_id: str, payload: dict) -> dict:
         with self._lock:
             data = self._load()
-            for index, item in enumerate(data["solutions"]):
-                if item.get("id") != solution_id:
-                    continue
-                if item.get("status") != "draft":
-                    return None
+            index, item = self._find_solution(data["solutions"], solution_id)
+            if item.get("status") != "draft":
+                raise InvalidSolutionStateError(solution_id)
+            updated = {
+                **item,
+                **self._client_fields(payload),
+                "id": item["id"],
+                "status": "draft",
+                "source": item.get("source", "manual"),
+                "createdAt": item["createdAt"],
+                "updatedAt": utc_now(),
+            }
+            data["solutions"][index] = updated
+            self._write(data)
+            return updated
+
+    def publish(self, solution_id: str) -> dict:
+        with self._lock:
+            data = self._load()
+            index, item = self._find_solution(data["solutions"], solution_id)
+            if item.get("status") != "draft":
+                raise InvalidSolutionStateError(solution_id)
+
+            now = utc_now()
+            base_published_id = item.get("basePublishedId")
+            if base_published_id:
+                published_index, published_item = self._find_solution(data["solutions"], base_published_id)
                 updated = {
-                    **item,
-                    **payload,
-                    "id": item["id"],
-                    "status": "draft",
-                    "createdAt": item["createdAt"],
-                    "updatedAt": utc_now(),
-                }
-                data["solutions"][index] = updated
-                self._write(data)
-                return updated
-        return None
-
-    def publish(self, solution_id: str) -> dict | None:
-        with self._lock:
-            data = self._load()
-            for index, item in enumerate(data["solutions"]):
-                if item.get("id") != solution_id:
-                    continue
-                if item.get("status") != "draft":
-                    return None
-
-                now = utc_now()
-                base_published_id = item.get("basePublishedId")
-                if base_published_id:
-                    for published_index, published_item in enumerate(data["solutions"]):
-                        if published_item.get("id") != base_published_id:
-                            continue
-                        updated = {
-                            **published_item,
-                            **item,
-                            "id": published_item["id"],
-                            "status": "published",
-                            "source": published_item.get("source", item.get("source")),
-                            "createdAt": published_item["createdAt"],
-                            "updatedAt": now,
-                            "publishedAt": now,
-                        }
-                        updated.pop("basePublishedId", None)
-                        data["solutions"][published_index] = updated
-                        del data["solutions"][index]
-                        self._write(data)
-                        return updated
-                    return None
-
-                published = {
-                    **item,
+                    **published_item,
+                    **self._client_fields(item),
+                    "id": published_item["id"],
+                    "source": published_item.get("source", "manual"),
                     "status": "published",
+                    "createdAt": published_item["createdAt"],
                     "updatedAt": now,
                     "publishedAt": now,
                 }
-                data["solutions"][index] = published
+                data["solutions"][published_index] = updated
+                del data["solutions"][index]
                 self._write(data)
-                return published
-        return None
+                return updated
 
-    def create_edit_draft(self, solution_id: str) -> dict | None:
+            published = {
+                **item,
+                "source": item.get("source", "manual"),
+                "status": "published",
+                "updatedAt": now,
+                "publishedAt": now,
+            }
+            data["solutions"][index] = published
+            self._write(data)
+            return published
+
+    def create_edit_draft(self, solution_id: str) -> dict:
         with self._lock:
             data = self._load()
-            for item in data["solutions"]:
-                if item.get("id") != solution_id:
-                    continue
-                if item.get("status") != "published":
-                    return None
-                now = utc_now()
-                created = {
-                    **item,
-                    "id": self._new_id(),
-                    "status": "draft",
-                    "source": "published-edit",
-                    "basePublishedId": solution_id,
-                    "createdAt": now,
-                    "updatedAt": now,
-                }
-                created.pop("publishedAt", None)
-                data["solutions"].append(created)
-                self._write(data)
-                return created
-        return None
+            _index, item = self._find_solution(data["solutions"], solution_id)
+            if item.get("status") != "published":
+                raise InvalidSolutionStateError(solution_id)
+            now = utc_now()
+            created = {
+                **self._client_fields(item),
+                "id": self._new_id(),
+                "source": "published-edit",
+                "status": "draft",
+                "basePublishedId": solution_id,
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            data["solutions"].append(created)
+            self._write(data)
+            return created
 
     def duplicate(self, solution_id: str) -> dict | None:
         with self._lock:
             data = self._load()
-            for item in data["solutions"]:
-                if item.get("id") != solution_id:
-                    continue
-                now = utc_now()
-                duplicated = {
-                    **item,
-                    "id": self._new_id(),
-                    "status": "draft",
-                    "createdAt": now,
-                    "updatedAt": now,
-                }
-                duplicated.pop("publishedAt", None)
-                duplicated.pop("basePublishedId", None)
-                data["solutions"].append(duplicated)
-                self._write(data)
-                return duplicated
-        return None
+            _index, item = self._find_solution(data["solutions"], solution_id)
+            now = utc_now()
+            duplicated = {
+                **self._client_fields(item),
+                "id": self._new_id(),
+                "source": "manual",
+                "status": "draft",
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            data["solutions"].append(duplicated)
+            self._write(data)
+            return duplicated
 
     def delete_solution(self, solution_id: str) -> bool:
         with self._lock:

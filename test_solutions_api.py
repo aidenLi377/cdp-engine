@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,10 +27,14 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         cls.temp_dir.cleanup()
         os.environ.pop("SOLUTIONS_FILE", None)
 
+    def setUp(self):
+        solutions_path = Path(self.solutions_file)
+        if solutions_path.exists():
+            solutions_path.unlink()
+
     def make_payload(self, name: str) -> dict:
         return {
             "name": name,
-            "source": "manual",
             "defaultCrowdName": f"{name} crowd",
             "nodes": [
                 {
@@ -43,11 +48,18 @@ class SolutionLifecycleApiTests(unittest.TestCase):
             "workbenchFieldIds": ["field_a"],
         }
 
+    def create_draft(self, name: str, **overrides) -> dict:
+        payload = self.make_payload(name)
+        payload.update(overrides)
+        response = self.client.post("/api/solutions/drafts", json=payload)
+        self.assertEqual(response.status_code, 201)
+        return response.get_json()
+
     def test_solution_lifecycle_routes(self):
-        create_response = self.client.post("/api/solutions/drafts", json=self.make_payload("Original"))
-        self.assertEqual(create_response.status_code, 201)
-        created = create_response.get_json()
+        created = self.create_draft("Original")
         self.assertEqual(created["status"], "draft")
+        self.assertEqual(created["source"], "manual")
+        self.assertNotIn("basePublishedId", created)
 
         publish_response = self.client.post(f"/api/solutions/{created['id']}/publish")
         self.assertEqual(publish_response.status_code, 200)
@@ -122,6 +134,75 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertEqual(list_all_response.status_code, 200)
         remaining = list_all_response.get_json()
         self.assertEqual([item["id"] for item in remaining], [created["id"]])
+
+    def test_update_published_solution_returns_409(self):
+        created = self.create_draft("Published")
+        publish_response = self.client.post(f"/api/solutions/{created['id']}/publish")
+        self.assertEqual(publish_response.status_code, 200)
+
+        update_response = self.client.put(
+            f"/api/solutions/{created['id']}",
+            json={"name": "Should Not Update"},
+        )
+        self.assertEqual(update_response.status_code, 409)
+        self.assertIn("error", update_response.get_json())
+
+        fetch_response = self.client.get(f"/api/solutions/{created['id']}")
+        self.assertEqual(fetch_response.status_code, 200)
+        self.assertEqual(fetch_response.get_json()["name"], "Published")
+
+    def test_create_edit_draft_from_draft_returns_409(self):
+        created = self.create_draft("Draft Only")
+
+        edit_draft_response = self.client.post(f"/api/solutions/{created['id']}/edit-draft")
+        self.assertEqual(edit_draft_response.status_code, 409)
+        self.assertIn("error", edit_draft_response.get_json())
+
+    def test_publish_published_solution_returns_409(self):
+        created = self.create_draft("Already Published")
+        first_publish_response = self.client.post(f"/api/solutions/{created['id']}/publish")
+        self.assertEqual(first_publish_response.status_code, 200)
+
+        second_publish_response = self.client.post(f"/api/solutions/{created['id']}/publish")
+        self.assertEqual(second_publish_response.status_code, 409)
+        self.assertIn("error", second_publish_response.get_json())
+
+    def test_create_draft_ignores_forged_lifecycle_fields(self):
+        created = self.create_draft(
+            "Forged",
+            id="solution_fake",
+            status="published",
+            source="published-edit",
+            basePublishedId="solution_base",
+            createdAt="2000-01-01T00:00:00Z",
+            updatedAt="2000-01-01T00:00:00Z",
+            publishedAt="2000-01-01T00:00:00Z",
+        )
+
+        self.assertNotEqual(created["id"], "solution_fake")
+        self.assertEqual(created["status"], "draft")
+        self.assertEqual(created["source"], "manual")
+        self.assertNotIn("basePublishedId", created)
+        self.assertNotIn("publishedAt", created)
+        self.assertNotEqual(created["createdAt"], "2000-01-01T00:00:00Z")
+        self.assertNotEqual(created["updatedAt"], "2000-01-01T00:00:00Z")
+
+        fetch_response = self.client.get(f"/api/solutions/{created['id']}")
+        self.assertEqual(fetch_response.status_code, 200)
+        fetched = fetch_response.get_json()
+        self.assertEqual(fetched["source"], "manual")
+        self.assertNotIn("basePublishedId", fetched)
+        self.assertNotIn("publishedAt", fetched)
+
+    def test_list_solutions_returns_newest_first(self):
+        older = self.create_draft("Older")
+        time.sleep(1.1)
+        newer = self.create_draft("Newer")
+
+        list_response = self.client.get("/api/solutions?status=all")
+        self.assertEqual(list_response.status_code, 200)
+        listed = list_response.get_json()
+        self.assertEqual([item["id"] for item in listed], [newer["id"], older["id"]])
 
 
 if __name__ == "__main__":
