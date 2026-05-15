@@ -4,10 +4,11 @@
 
 这是一个用于生成 CDP 圈人 JSON 的前后端工具，适合把“业务参数选择”转换成可直接用于数据银行/圈人平台的底层配置。
 
-项目提供两种使用方式：
+项目提供三种使用方式：
 
 - 可视化点选模式：适合单个人群包配置、调试、预览和复制 JSON。
 - 批量矩阵模式：适合按模板批量上传 CSV，自动生成多个人群包，并按交集/并集/差集进行组合。
+- 方案中心：适合沉淀可复用方案，管理草稿与已发布方案，并为工作台提供可加载的正式方案。
 
 ---
 
@@ -43,12 +44,14 @@
 - [cdp_backend/validator.py](/E:/CDP_Project_codex/cdp_backend/validator.py): 启动前配置校验
 - [cdp_backend/csv_utils.py](/E:/CDP_Project_codex/cdp_backend/csv_utils.py): CSV 读取、编码兼容、逻辑表扫描等工具函数
 - [cdp_backend/constants.py](/E:/CDP_Project_codex/cdp_backend/constants.py): 文件名和字段常量
+- [cdp_backend/solution_store.py](/E:/CDP_Project_codex/cdp_backend/solution_store.py): 方案草稿、正式方案、本地 JSON 存储与发布流程
 
 ### 前端
 
 - [cdp-web/src/App.vue](/E:/CDP_Project_codex/cdp-web/src/App.vue): 应用入口，负责模式切换和健康检查
 - [cdp-web/src/components/NormalMode.vue](/E:/CDP_Project_codex/cdp-web/src/components/NormalMode.vue): 可视化点选模式
 - [cdp-web/src/components/BatchMode.vue](/E:/CDP_Project_codex/cdp-web/src/components/BatchMode.vue): 批量矩阵模式
+- [cdp-web/src/components/SolutionCenter.vue](/E:/CDP_Project_codex/cdp-web/src/components/SolutionCenter.vue): 方案中心，负责草稿编辑、发布和工作台预览
 - [cdp-web/src/components/DynamicForm.vue](/E:/CDP_Project_codex/cdp-web/src/components/DynamicForm.vue): 动态表单渲染
 - [cdp-web/src/composables/useCdpShared.js](/E:/CDP_Project_codex/cdp-web/src/composables/useCdpShared.js): 前端共享逻辑，包括字段显隐、联动、数量限制、日期限制等
 - [cdp-web/vite.config.ts](/E:/CDP_Project_codex/cdp-web/vite.config.ts): 前端开发代理，`/api` 会转发到 `127.0.0.1:5000`
@@ -128,6 +131,32 @@ npm run dev -- --host 127.0.0.1 --port 5173
 7. 右侧最终卡片会生成按行合并后的最终结果。
 8. 点击任意结果项，可自动复制 JSON，并打开详情抽屉查看。
 
+### 5.3 方案中心
+
+适合把当前工作沉淀为可复用方案，并管理方案从草稿到正式发布的完整生命周期。
+
+进入方式：
+
+1. 在页面顶部模式切换中选择第三个一级模式“方案中心”。
+2. 左侧可按“草稿”或“已发布”筛选已有方案。
+3. 点击“新建草稿”可创建空白方案草稿。
+
+草稿与正式方案生命周期：
+
+1. 草稿方案可以直接在方案中心新建，也可以在工作台中通过“存为方案草稿”生成。
+2. 草稿支持继续编辑节点结构、默认名称，以及“工作台展示参数”。
+3. 点击“发布正式方案”后，当前草稿会变成已发布方案。
+4. 已发布方案在方案中心中默认只读；如需修改，应先点击“生成编辑草稿”，在草稿中调整后再重新发布。
+5. 工作台只消费已发布方案。草稿不会出现在工作台的“已发布方案”列表中，而是继续保留在方案中心里等待编辑或发布。
+
+工作台与方案中心的配合方式：
+
+1. 在自由搭建工作台中，可把当前画布通过“存为方案草稿”保存进方案中心。
+2. 工作台加载某个已发布方案后，会进入“方案使用”状态，只展示该方案开放到工作台的字段。
+3. 此时工作台结构会锁定，不能继续增删节点；如需改结构，应回到方案中心编辑草稿。
+4. 工作台中的“恢复方案默认值”会把当前已加载方案恢复到最近一次加载时的默认节点和默认字段值。
+5. 退出“方案使用”后，工作台会回到自由搭建状态。
+
 ---
 
 ## 6. 关键配置文件说明
@@ -153,6 +182,14 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ### 6.3 维表 `*维表.csv`
 
 维表主要解决“展示值”和“实际值”不一致的问题。页面展示中文，后端可翻译成对应 ID、编码或复合值。
+
+### 6.4 方案本地存储
+
+方案中心的数据默认保存在项目根目录下的 `.runtime/solutions.json`。
+
+- 这个文件由后端 `SolutionStore` 统一读写。
+- 草稿方案和已发布方案都会存放在这个本地 JSON 文件中。
+- 如果需要迁移或备份方案，优先备份这个文件。
 
 ---
 
@@ -190,6 +227,13 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `GET /api/list_templates`：获取批量模板文件列表
 - `GET /api/download_template/<filename>`：下载单个模板文件
 - `POST /api/batch_generate`：上传 CSV 后按行批量生成人群包 JSON
+- `GET /api/solutions`：获取方案列表，可按草稿或已发布状态筛选
+- `POST /api/solutions/drafts`：创建方案草稿
+- `PUT /api/solutions/<solution_id>`：更新草稿方案
+- `POST /api/solutions/<solution_id>/publish`：发布草稿方案
+- `POST /api/solutions/<solution_id>/edit-draft`：基于已发布方案生成编辑草稿
+- `POST /api/solutions/<solution_id>/duplicate`：复制当前方案为新草稿
+- `DELETE /api/solutions/<solution_id>`：删除方案
 
 ---
 
@@ -210,6 +254,14 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ### 9.4 修改了 CSV 但页面没变化
 
 后端会在启动时把配置加载进内存，所以修改参数表、逻辑表、维表后，通常需要重启后端服务。
+
+### 9.5 为什么工作台里看不到刚保存的方案草稿
+
+这是预期行为。工作台左侧列表只展示已发布方案，刚通过“存为方案草稿”保存的内容会先进入方案中心草稿区，待你在方案中心补充或确认内容后再发布。
+
+### 9.6 “恢复方案默认值”会恢复什么
+
+它会把当前工作台中已加载的正式方案恢复到该方案最近一次被加载时的默认状态，包括节点结构、开放字段以及这些字段的默认值。它不会把当前工作台内容回写到方案中心。
 
 ---
 
