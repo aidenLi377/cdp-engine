@@ -100,3 +100,7 @@ export function buildUsageSections(nodes, workbenchFieldIds) {
 
   return sections
 }
+
+export function isWorkbenchStructureLocked(solutionRecord) {
+  return solutionRecord?.status === 'published'
+}

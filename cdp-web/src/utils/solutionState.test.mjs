@@ -6,6 +6,7 @@ import {
   serializeNodesForSolution,
   cleanWorkbenchFieldIds,
   buildUsageSections,
+  isWorkbenchStructureLocked,
 } from './solutionState.js'
 
 test('serializeNodesForSolution strips runtime-only fields and preserves persisted shape', () => {
@@ -149,4 +150,10 @@ test('cleanWorkbenchFieldIds removes invalid field keys after schema changes', (
   )
 
   assert.deepEqual(cleaned, ['node-1:channel'])
+})
+
+test('isWorkbenchStructureLocked only locks workbench structure for active published solutions', () => {
+  assert.equal(isWorkbenchStructureLocked(null), false)
+  assert.equal(isWorkbenchStructureLocked({ id: 'draft-1', status: 'draft' }), false)
+  assert.equal(isWorkbenchStructureLocked({ id: 'pub-1', status: 'published' }), true)
 })

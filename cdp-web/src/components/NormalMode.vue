@@ -39,9 +39,7 @@
             <span class="display-mono">{{ item.nodes?.length || 0 }} 节点</span>
           </div>
           <div class="display-body strong published-solution-name">{{ item.name || '未命名方案' }}</div>
-          <div class="display-body-light published-solution-meta">
-            {{ formatTime(item.updatedAt) }}
-          </div>
+          <div class="display-body-light published-solution-meta">{{ formatTime(item.updatedAt) }}</div>
           <div v-if="loadingSolutionId === item.id" class="display-body-light published-solution-loading">
             正在加载...
           </div>
@@ -58,13 +56,17 @@
 
     <section
       class="workbench-section workbench-package-section"
-      :class="{ 'is-readonly': workbenchMode === 'solution-use' }"
+      :class="{ 'is-readonly': workbenchMode === 'solution-use' || structureLocked }"
     >
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">行为组件库</div>
           <div class="display-body-light">
-            {{ workbenchMode === 'solution-use' ? '当前为方案使用态，结构编辑已关闭' : '自由搭建时可继续增删节点' }}
+            {{ structureLocked
+              ? '已加载发布方案，如需自由搭建请先退出方案使用'
+              : workbenchMode === 'solution-use'
+                ? '当前为方案使用态，结构编辑已关闭'
+                : '自由搭建时可继续增删节点' }}
           </div>
         </div>
       </div>
@@ -75,7 +77,7 @@
         size="small"
         clearable
         class="intercom-input pkg-search"
-        :disabled="workbenchMode === 'solution-use'"
+        :disabled="workbenchMode === 'solution-use' || structureLocked"
       >
         <template #prefix><span style="opacity:0.3">🔍</span></template>
       </el-input>
@@ -88,7 +90,7 @@
           class="intercom-btn-outlined"
           @click="addNode(pkg)"
           :loading="loadingPkg === pkg"
-          :disabled="workbenchMode === 'solution-use'"
+          :disabled="workbenchMode === 'solution-use' || structureLocked"
         >
           添加 {{ pkg }}
         </el-button>
@@ -123,7 +125,7 @@
           class="intercom-radio-group workbench-mode-switch"
           @change="handleWorkbenchModeChange"
         >
-          <el-radio-button label="free-build">自由搭建</el-radio-button>
+          <el-radio-button label="free-build" :disabled="structureLocked">自由搭建</el-radio-button>
           <el-radio-button label="solution-use" :disabled="!currentSolution">方案使用</el-radio-button>
         </el-radio-group>
 
@@ -138,17 +140,26 @@
         </el-button>
 
         <el-button
+          v-if="structureLocked"
+          class="intercom-btn-outlined"
+          size="small"
+          @click="exitSolutionUse"
+        >
+          退出方案使用
+        </el-button>
+
+        <el-button
           v-if="workbenchMode === 'free-build'"
           class="intercom-btn-primary"
           size="small"
           @click="saveWorkbenchDraft"
-          :disabled="nodeList.length === 0"
+          :disabled="nodeList.length === 0 || structureLocked"
           :loading="savingDraft"
         >
           存为方案草稿
         </el-button>
 
-        <template v-if="workbenchMode === 'free-build'">
+        <template v-if="workbenchMode === 'free-build' && !structureLocked">
           <el-button v-if="nodeList.length > 0" size="small" text @click="toggleCollapseAll">
             {{ allCollapsed ? '展开全部' : '收起全部' }}
           </el-button>
@@ -185,8 +196,8 @@
             :key="node.id"
             class="node-wrapper"
             :ref="(el) => { if (el) nodeRefs[index] = el }"
-            @dragover.prevent="onDragOver($event, index)"
-            @drop="onDrop($event, index)"
+            @dragover.prevent="onDragOver(index)"
+            @drop="onDrop(index)"
             @dragleave="onDragLeave"
           >
             <div v-if="index > 0" class="logic-connector">
@@ -339,7 +350,11 @@ import SolutionUseForm from './SolutionUseForm.vue'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
-import { fieldToken, serializeNodesForSolution } from '../utils/solutionState.js'
+import {
+  fieldToken,
+  isWorkbenchStructureLocked,
+  serializeNodesForSolution,
+} from '../utils/solutionState.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
@@ -404,6 +419,7 @@ const filteredPublishedSolutions = computed(() => {
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
 const canUndo = computed(() => historyPos.value > 0)
 const canRedo = computed(() => historyPos.value < historyStack.value.length - 1)
+const structureLocked = computed(() => isWorkbenchStructureLocked(currentSolution.value))
 const usageSections = computed(() =>
   buildRuntimeUsageSections(nodeList.value, loadedSolutionFieldIds.value),
 )
@@ -425,7 +441,7 @@ function onDragStart(event, index) {
   event.dataTransfer.setData('text/plain', String(index))
 }
 
-function onDragOver(_event, index) {
+function onDragOver(index) {
   dragOverIndex.value = index
 }
 
@@ -433,9 +449,9 @@ function onDragLeave() {
   dragOverIndex.value = -1
 }
 
-function onDrop(_event, targetIndex) {
+function onDrop(targetIndex) {
   dragOverIndex.value = -1
-  if (dragSrcIndex === null || dragSrcIndex === targetIndex) return
+  if (dragSrcIndex === null || dragSrcIndex === targetIndex || structureLocked.value) return
 
   takeSnapshot()
   const [moved] = nodeList.value.splice(dragSrcIndex, 1)
@@ -465,6 +481,7 @@ function resetHistory() {
 }
 
 function clearCanvas() {
+  if (structureLocked.value) return
   if (nodeList.value.length === 0 && !currentSolution.value) return
 
   takeSnapshot()
@@ -579,7 +596,7 @@ async function loadPublishedSolutions() {
 }
 
 async function addNode(packageType) {
-  if (workbenchMode.value === 'solution-use') return
+  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
 
   loadingPkg.value = packageType
   try {
@@ -597,7 +614,7 @@ async function addNode(packageType) {
 }
 
 function removeNode(index) {
-  if (workbenchMode.value === 'solution-use') return
+  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
   takeSnapshot()
   nodeList.value.splice(index, 1)
   nodeList.value.forEach((node, nodeIndex) => {
@@ -606,7 +623,7 @@ function removeNode(index) {
 }
 
 function duplicateNode(index) {
-  if (workbenchMode.value === 'solution-use') return
+  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
   const source = nodeList.value[index]
   if (!source) return
 
@@ -638,19 +655,16 @@ function buildDraftWorkbenchFieldIds(nodes) {
 }
 
 async function saveWorkbenchDraft() {
-  if (workbenchMode.value !== 'free-build' || nodeList.value.length === 0) return
+  if (workbenchMode.value !== 'free-build' || nodeList.value.length === 0 || structureLocked.value) return
 
   savingDraft.value = true
   try {
     const trimmedCrowdName = String(crowdNameInput.value || '').trim()
-    const baseName = currentSolution.value?.name || trimmedCrowdName || DEFAULT_DRAFT_NAME
-    const draftName = currentSolution.value?.name
-      ? `${currentSolution.value.name}-工作台草稿`
-      : baseName
+    const baseName = trimmedCrowdName || DEFAULT_DRAFT_NAME
 
     await createDraft({
-      name: draftName,
-      defaultCrowdName: trimmedCrowdName || draftName,
+      name: baseName,
+      defaultCrowdName: trimmedCrowdName || baseName,
       nodes: serializeNodesForSolution(nodeList.value),
       workbenchFieldIds: buildDraftWorkbenchFieldIds(nodeList.value),
     })
@@ -726,7 +740,22 @@ async function restoreSolutionDefaults() {
   ElMessage.success('已恢复到方案默认值')
 }
 
+function exitSolutionUse() {
+  resetWorkbenchContext()
+  nodeList.value = []
+  nodeRefs.value = {}
+  activeNodeIndex.value = 0
+  crowdNameInput.value = DEFAULT_CROWD_NAME
+  nameAuto.value = true
+  resetHistory()
+  ElMessage.success('已退出方案使用，可重新自由搭建')
+}
+
 function handleWorkbenchModeChange(nextMode) {
+  if (nextMode === 'free-build' && structureLocked.value) {
+    ElMessage.warning('已加载发布方案，请先退出方案使用后再进入自由搭建')
+    return
+  }
   if (nextMode === 'solution-use' && !currentSolution.value) {
     ElMessage.warning('请先加载一个已发布方案')
     return
@@ -778,9 +807,7 @@ async function buildFinalJson() {
       }
 
       if (Array.isArray(value)) {
-        if (value.length > 0) {
-          payload[key] = value
-        }
+        if (value.length > 0) payload[key] = value
         return
       }
 

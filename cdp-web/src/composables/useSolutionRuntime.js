@@ -1,8 +1,34 @@
-import { useCdpShared } from './useCdpShared'
+import { useCdpShared } from './useCdpShared.js'
 import { buildUsageSections, cleanWorkbenchFieldIds } from '../utils/solutionState.js'
 
 function cloneValue(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value))
+}
+
+export function bindRuntimeUsageSections(baseSections, nodes) {
+  const nodeById = new Map(
+    (Array.isArray(nodes) ? nodes : []).map((node) => [String(node?.id), node]),
+  )
+
+  return (Array.isArray(baseSections) ? baseSections : []).map((section) => {
+    const runtimeNode = nodeById.get(section.nodeId)
+    if (!runtimeNode) return section
+
+    return {
+      ...section,
+      node: {
+        id: runtimeNode.id,
+        packageType: runtimeNode.packageType,
+        operator: runtimeNode.operator,
+        formData: runtimeNode.formData,
+        modeData: runtimeNode.modeData,
+        logicMatrix: runtimeNode.logicMatrix,
+        selectedFirstDate: runtimeNode.selectedFirstDate,
+        collapsed: runtimeNode.collapsed,
+        schema: section.fields,
+      },
+    }
+  })
 }
 
 export function useSolutionRuntime() {
@@ -101,28 +127,7 @@ export function useSolutionRuntime() {
 
   function buildRuntimeUsageSections(nodes, workbenchFieldIds) {
     const baseSections = buildUsageSections(nodes, workbenchFieldIds)
-    const nodeById = new Map(
-      (Array.isArray(nodes) ? nodes : []).map((node) => [String(node?.id), node]),
-    )
-
-    return baseSections.map((section) => {
-      const runtimeNode = nodeById.get(section.nodeId)
-      return {
-        ...section,
-        node: {
-          ...(cloneValue(runtimeNode) || {}),
-          id: runtimeNode?.id ?? section.node.id,
-          packageType: runtimeNode?.packageType ?? section.node.packageType,
-          operator: runtimeNode?.operator ?? section.node.operator,
-          formData: cloneValue(runtimeNode?.formData) || cloneValue(section.node.formData) || {},
-          modeData: cloneValue(runtimeNode?.modeData) || cloneValue(section.node.modeData) || {},
-          logicMatrix: cloneValue(runtimeNode?.logicMatrix) || {},
-          selectedFirstDate: runtimeNode?.selectedFirstDate ?? null,
-          collapsed: runtimeNode?.collapsed ?? false,
-          schema: section.fields,
-        },
-      }
-    })
+    return bindRuntimeUsageSections(baseSections, nodes)
   }
 
   return {
