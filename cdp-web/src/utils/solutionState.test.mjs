@@ -35,11 +35,16 @@ test('serializeNodesForSolution strips runtime-only fields and preserves persist
   ])
 })
 
-test('buildUsageSections keeps only selected fields and preserves node grouping', () => {
+test('fieldToken uses persisted nodeId:fieldKey format', () => {
+  assert.equal(fieldToken('node-1', 'channel'), 'node-1:channel')
+})
+
+test('buildUsageSections keeps only selected fields and preserves grouped node data for component use', () => {
   const nodes = [
     {
       id: 'node-1',
       packageType: 'category',
+      operator: 'AND',
       schema: [
         { key: 'channel', label: 'Channel' },
         { key: 'dateRange', label: 'Date Range' },
@@ -48,10 +53,12 @@ test('buildUsageSections keeps only selected fields and preserves node grouping'
         channel: ['tmall'],
         dateRange: ['2026-05-01', '2026-05-15'],
       },
+      modeData: { audience: 'vip' },
     },
     {
       id: 'node-2',
       packageType: 'product',
+      operator: 'OR',
       schema: [
         { key: 'behavior', label: 'Behavior' },
         { key: 'sku', label: 'SKU' },
@@ -64,36 +71,39 @@ test('buildUsageSections keeps only selected fields and preserves node grouping'
   ]
 
   const workbenchFieldIds = [
-    fieldToken('node-1', 'channel'),
-    fieldToken('node-2', 'sku'),
+    'node-1:channel',
+    'node-2:sku',
   ]
 
-  assert.deepEqual(buildUsageSections(nodes, workbenchFieldIds), [
-    {
-      nodeId: 'node-1',
-      packageType: 'category',
-      fields: [
-        {
-          fieldKey: 'channel',
-          label: 'Channel',
-          value: ['tmall'],
-          token: fieldToken('node-1', 'channel'),
-        },
-      ],
+  const sections = buildUsageSections(nodes, workbenchFieldIds)
+
+  assert.equal(sections.length, 2)
+  assert.deepEqual(sections.map((section) => section.index), [0, 1])
+  assert.deepEqual(sections.map((section) => section.node.id), ['node-1', 'node-2'])
+  assert.deepEqual(sections[0].node, {
+    id: 'node-1',
+    packageType: 'category',
+    operator: 'AND',
+    formData: {
+      channel: ['tmall'],
+      dateRange: ['2026-05-01', '2026-05-15'],
     },
-    {
-      nodeId: 'node-2',
-      packageType: 'product',
-      fields: [
-        {
-          fieldKey: 'sku',
-          label: 'SKU',
-          value: ['sku-1'],
-          token: fieldToken('node-2', 'sku'),
-        },
-      ],
+    modeData: { audience: 'vip' },
+    schema: [{ key: 'channel', label: 'Channel' }],
+  })
+  assert.deepEqual(sections[1].node, {
+    id: 'node-2',
+    packageType: 'product',
+    operator: 'OR',
+    formData: {
+      behavior: ['buy'],
+      sku: ['sku-1'],
     },
-  ])
+    modeData: {},
+    schema: [{ key: 'sku', label: 'SKU' }],
+  })
+  assert.deepEqual(sections[0].fields, [{ key: 'channel', label: 'Channel' }])
+  assert.deepEqual(sections[1].fields, [{ key: 'sku', label: 'SKU' }])
 })
 
 test('cleanWorkbenchFieldIds removes selections for deleted nodes', () => {
@@ -105,11 +115,11 @@ test('cleanWorkbenchFieldIds removes selections for deleted nodes', () => {
   ]
 
   const cleaned = cleanWorkbenchFieldIds(
-    [fieldToken('node-1', 'channel'), fieldToken('node-2', 'sku')],
+    ['node-1:channel', 'node-2:sku'],
     nodes,
   )
 
-  assert.deepEqual(cleaned, [fieldToken('node-1', 'channel')])
+  assert.deepEqual(cleaned, ['node-1:channel'])
 })
 
 test('buildUsageSections returns [] when no workbench fields are selected', () => {
@@ -134,9 +144,9 @@ test('cleanWorkbenchFieldIds removes invalid field keys after schema changes', (
   ]
 
   const cleaned = cleanWorkbenchFieldIds(
-    [fieldToken('node-1', 'channel'), fieldToken('node-1', 'oldField')],
+    ['node-1:channel', 'node-1:oldField'],
     nodes,
   )
 
-  assert.deepEqual(cleaned, [fieldToken('node-1', 'channel')])
+  assert.deepEqual(cleaned, ['node-1:channel'])
 })

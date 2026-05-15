@@ -1,4 +1,4 @@
-const FIELD_TOKEN_SEPARATOR = '::'
+const FIELD_TOKEN_SEPARATOR = ':'
 
 export function fieldToken(nodeId, fieldKey) {
   return `${String(nodeId)}${FIELD_TOKEN_SEPARATOR}${String(fieldKey)}`
@@ -79,20 +79,21 @@ export function buildUsageSections(nodes, workbenchFieldIds) {
     if (!selectedFieldKeys || selectedFieldKeys.size === 0) continue
 
     const schema = Array.isArray(node?.schema) ? node.schema : []
-    const fields = schema
-      .filter((field) => selectedFieldKeys.has(field?.key))
-      .map((field) => ({
-        fieldKey: field.key,
-        label: field.label ?? field.Label ?? field.key,
-        value: node?.formData?.[field.key],
-        token: fieldToken(nodeId, field.key),
-      }))
+    const fields = schema.filter((field) => selectedFieldKeys.has(field?.key))
 
     if (fields.length === 0) continue
 
     sections.push({
+      index: sections.length,
       nodeId,
-      packageType: node?.packageType ?? null,
+      node: {
+        id: node?.id ?? null,
+        packageType: node?.packageType ?? null,
+        operator: node?.operator ?? null,
+        formData: node?.formData ?? {},
+        modeData: node?.modeData ?? {},
+        schema: fields,
+      },
       fields,
     })
   }

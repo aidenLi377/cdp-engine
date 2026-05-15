@@ -10,6 +10,17 @@ function buildUrl(path, params) {
   return url.pathname + url.search
 }
 
+async function parseResponseBody(response) {
+  const text = await response.text()
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
 async function request(path, options = {}) {
   const response = await fetch(path, {
     headers: {
@@ -21,9 +32,12 @@ async function request(path, options = {}) {
 
   if (response.status === 204) return null
 
-  const data = await response.json()
+  const data = await parseResponseBody(response)
   if (!response.ok) {
-    const message = data?.error || `Request failed with status ${response.status}`
+    const message =
+      (data && typeof data === 'object' && data.error) ||
+      (typeof data === 'string' && data.trim()) ||
+      `Request failed with status ${response.status}`
     throw new Error(message)
   }
 
