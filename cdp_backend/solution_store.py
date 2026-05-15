@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -14,6 +15,7 @@ def utc_now() -> str:
 class SolutionStore:
     def __init__(self, file_path):
         self.file_path = Path(file_path)
+        self._lock = threading.RLock()
 
     def _empty(self) -> dict:
         return {"solutions": []}
@@ -51,15 +53,16 @@ class SolutionStore:
         return [item for item in solutions if item.get("status") == status]
 
     def create_draft(self, payload: dict) -> dict:
-        now = utc_now()
-        created = {
-            **payload,
-            "id": self._new_id(),
-            "status": "draft",
-            "createdAt": now,
-            "updatedAt": now,
-        }
-        data = self._load()
-        data["solutions"].append(created)
-        self._write(data)
-        return created
+        with self._lock:
+            now = utc_now()
+            created = {
+                **payload,
+                "id": self._new_id(),
+                "status": "draft",
+                "createdAt": now,
+                "updatedAt": now,
+            }
+            data = self._load()
+            data["solutions"].append(created)
+            self._write(data)
+            return created
