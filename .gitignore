@@ -15,6 +15,7 @@ flask.log
 # Node / frontend
 cdp-web/node_modules/
 cdp-web/dist/
+.worktrees/
 
 # IDE
 .vscode/
