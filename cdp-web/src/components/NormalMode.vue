@@ -665,6 +665,7 @@ async function saveWorkbenchDraft() {
     await createDraft({
       name: baseName,
       defaultCrowdName: trimmedCrowdName || baseName,
+      source: 'workbench',
       nodes: serializeNodesForSolution(nodeList.value),
       workbenchFieldIds: buildDraftWorkbenchFieldIds(nodeList.value),
     })
