@@ -8,8 +8,9 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from .constants import BASE_DIR
+from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME
 from .engine import ConfigEngine
+from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
 from .validator import ConfigValidationError
 
 
@@ -43,6 +44,8 @@ def create_app() -> tuple[Flask, ConfigEngine]:
     production = is_production()
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
     app.config["JSON_AS_ASCII"] = False
+    solutions_file = os.environ.get("SOLUTIONS_FILE", os.path.join(BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME))
+    solution_store = SolutionStore(solutions_file)
 
     if production:
         allowed_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -58,11 +61,11 @@ def create_app() -> tuple[Flask, ConfigEngine]:
         app.logger.error("Configuration validation failed at startup:\n%s", exc)
         raise
 
-    register_routes(app, engine, production)
+    register_routes(app, engine, production, solution_store)
     return app, engine
 
 
-def register_routes(app: Flask, engine: ConfigEngine, production: bool) -> None:
+def register_routes(app: Flask, engine: ConfigEngine, production: bool, solution_store: SolutionStore) -> None:
     @app.route("/api/packages")
     def get_packages():
         return jsonify(list(engine.packages.keys()))
@@ -139,6 +142,70 @@ def register_routes(app: Flask, engine: ConfigEngine, production: bool) -> None:
                 "errors": result.errors,
             }
         )
+
+    @app.route("/api/solutions")
+    def list_solutions():
+        status = request.args.get("status")
+        if status in (None, "all"):
+            return jsonify(solution_store.list_solutions())
+        return jsonify(solution_store.list_solutions(status=status))
+
+    @app.route("/api/solutions/<solution_id>")
+    def get_solution(solution_id: str):
+        solution = solution_store.get_solution(solution_id)
+        if solution is None:
+            return jsonify({"error": "solution not found"}), 404
+        return jsonify(solution)
+
+    @app.route("/api/solutions/drafts", methods=["POST"])
+    def create_solution_draft():
+        created = solution_store.create_draft(request.get_json(silent=True) or {})
+        return jsonify(created), 201
+
+    @app.route("/api/solutions/<solution_id>", methods=["PUT"])
+    def update_solution(solution_id: str):
+        try:
+            updated = solution_store.update_draft(solution_id, request.get_json(silent=True) or {})
+        except SolutionNotFoundError:
+            return jsonify({"error": "solution not found"}), 404
+        except InvalidSolutionStateError:
+            return jsonify({"error": "invalid solution state"}), 409
+        return jsonify(updated)
+
+    @app.route("/api/solutions/<solution_id>/publish", methods=["POST"])
+    def publish_solution(solution_id: str):
+        try:
+            published = solution_store.publish(solution_id)
+        except SolutionNotFoundError:
+            return jsonify({"error": "solution not found"}), 404
+        except InvalidSolutionStateError:
+            return jsonify({"error": "invalid solution state"}), 409
+        return jsonify(published)
+
+    @app.route("/api/solutions/<solution_id>/edit-draft", methods=["POST"])
+    def create_solution_edit_draft(solution_id: str):
+        try:
+            created = solution_store.create_edit_draft(solution_id)
+        except SolutionNotFoundError:
+            return jsonify({"error": "solution not found"}), 404
+        except InvalidSolutionStateError:
+            return jsonify({"error": "invalid solution state"}), 409
+        return jsonify(created), 201
+
+    @app.route("/api/solutions/<solution_id>/duplicate", methods=["POST"])
+    def duplicate_solution(solution_id: str):
+        try:
+            duplicated = solution_store.duplicate(solution_id)
+        except SolutionNotFoundError:
+            return jsonify({"error": "solution not found"}), 404
+        return jsonify(duplicated), 201
+
+    @app.route("/api/solutions/<solution_id>", methods=["DELETE"])
+    def delete_solution(solution_id: str):
+        deleted = solution_store.delete_solution(solution_id)
+        if not deleted:
+            return jsonify({"error": "solution not found"}), 404
+        return "", 204
 
     @app.errorhandler(404)
     def not_found(_error):

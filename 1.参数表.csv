@@ -30,6 +30,8 @@
 类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",bhv,行为,selectionLv3.bhv,复选组,行为维表.csv,,1,,
 类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",item,商品ID,selectionLv3.extraFilters.item,普通输入框,-,,1,只能输入一个ID,图标
 类目商品行为,"{""selectionLv1"":[""COMMON_TOUCH"",""PUBLIC_ITEM_BHV""]}",time,时间,selectionLv3,日期_切换,-,"[{""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}}, {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}]",1,,
+关键词搜索,"{""selectionLv1"":[""FIELD"",""SEARCH""],""selectionLv3"":{""contType"":""bhv""}}",searchs,关键词,selectionLv3.searchs,列表输入,-,,1,"最多输入20个关键词，可批量粘贴，“,”分割，回车确认",图标
+关键词搜索,"{""selectionLv1"":[""FIELD"",""SEARCH""],""selectionLv3"":{""contType"":""bhv""}}",time,时间,selectionLv3,日期_切换,-,"[{""trigger"": ""recent"", ""template"": {""dateType"": ""RELATIVE_RANGE"", ""dateValue"": ""${days}""}}, {""trigger"": ""range"", ""template"": {""dateType"": ""ABSOLUTE_DATE_RANGE"", ""dateValue"": {""from"": ""${start}"", ""to"": ""${end}""}}}]",1,,
 AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",types,状态,selectionLv3.types,复选组,状态维表.csv,,1,,
 AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",cate,二级类目,selectionLv3.cate,搜索单选,类目维表.csv,,1,单选,文字
 AIPL状态,"{""selectionLv1"":[""FULL_LINK"",""FULL_LINK""]}",time,时间,selectionLv3,日期_切换,-,"[

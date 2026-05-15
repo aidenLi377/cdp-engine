@@ -97,6 +97,9 @@ function getSelectionCountHint(field, node) {
     const vals = node.formData[field.key]
     if (Array.isArray(vals) && vals.length > 0) {
       if (field.Widget_Type === '列表输入') {
+        if (field.key === 'searchs' && node.packageType === '关键词搜索') {
+          return `已输入 ${vals.length}/20`
+        }
         if (['title', 'keywords'].includes(field.key) || field.Label.includes('商品标题关键词')) {
           if (node.packageType === '类目公域行为') return `已输入 ${vals.length}/10`
           if (node.packageType === '商品行为') return `已输入 ${vals.length}/5`
@@ -114,6 +117,9 @@ function getSelectionCountHint(field, node) {
 }
 
 function getListLimit(field, node) {
+  if (field.key === 'searchs' && node.packageType === '关键词搜索') {
+    return 20
+  }
   if (['title', 'keywords'].includes(field.key) || field.Label.includes('商品标题关键词')) {
     if (node.packageType === '类目公域行为') return 10
     if (node.packageType === '商品行为') return 5

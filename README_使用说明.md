@@ -73,6 +73,28 @@
 
 ## 4. 如何启动
 
+### 4.0 一键启动
+
+项目根目录已提供两个启动脚本：
+
+- `start-dev.ps1`：PowerShell 一键启动脚本
+- `start-dev.cmd`：可直接双击运行的包装脚本
+
+推荐方式：
+
+```powershell
+.\start-dev.cmd
+```
+
+脚本会自动：
+
+- 优先使用项目内的 `.venv\Scripts\python.exe`
+- 检查 `5000` 和 `5173` 端口是否已被占用
+- 分别启动后端和前端窗口
+- 将输出写入根目录的 `backend.stdout.log` 和 `frontend.stdout.log`
+
+如果启动窗口立即关闭，请先查看这两个日志文件。
+
 ### 4.1 后端启动
 
 在项目根目录执行：
