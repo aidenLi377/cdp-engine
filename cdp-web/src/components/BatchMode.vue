@@ -1,12 +1,8 @@
 <template>
   <div class="batch-workspace">
-    <div class="batch-header">
-      <div class="action-area" style="margin-left: auto;">
-        <el-button class="intercom-btn-accent" @click="fetchTemplates">
-          <el-icon><Download /></el-icon> 获取标准模板
-        </el-button>
-      </div>
-    </div>
+    <el-button class="batch-template-float" @click="fetchTemplates">
+      <el-icon><Download /></el-icon> 获取标准模板
+    </el-button>
 
     <div class="pipeline-scroll-area" :class="{'is-centered': pipeline.length === 1}">
       <template v-for="(item, index) in pipeline" :key="item.id">
@@ -58,7 +54,7 @@
 
       <div class="connector plus-connector">
         <div class="solid-line"></div>
-        <el-button class="intercom-btn-primary plus-btn" @click="addPipelineItem">
+        <el-button class="plus-btn" @click="addPipelineItem" aria-label="添加条件模板">
           <el-icon><Plus /></el-icon>
         </el-button>
         <div v-if="pipeline.length > 1" class="solid-line"></div>

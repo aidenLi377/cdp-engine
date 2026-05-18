@@ -9,6 +9,7 @@ from flask import Flask, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME
+from .databank_automation import DatabankAutomationError, DatabankAutomator
 from .engine import ConfigEngine
 from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
 from .validator import ConfigValidationError
@@ -39,7 +40,7 @@ def configure_logging(app: Flask, production: bool) -> None:
         )
 
 
-def create_app() -> tuple[Flask, ConfigEngine]:
+def create_app(databank_automator: DatabankAutomator | None = None) -> tuple[Flask, ConfigEngine]:
     app = Flask(__name__)
     production = is_production()
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
@@ -61,11 +62,17 @@ def create_app() -> tuple[Flask, ConfigEngine]:
         app.logger.error("Configuration validation failed at startup:\n%s", exc)
         raise
 
-    register_routes(app, engine, production, solution_store)
+    register_routes(app, engine, production, solution_store, databank_automator or DatabankAutomator())
     return app, engine
 
 
-def register_routes(app: Flask, engine: ConfigEngine, production: bool, solution_store: SolutionStore) -> None:
+def register_routes(
+    app: Flask,
+    engine: ConfigEngine,
+    production: bool,
+    solution_store: SolutionStore,
+    databank_automator: DatabankAutomator,
+) -> None:
     @app.route("/api/packages")
     def get_packages():
         return jsonify(list(engine.packages.keys()))
@@ -142,6 +149,18 @@ def register_routes(app: Flask, engine: ConfigEngine, production: bool, solution
                 "errors": result.errors,
             }
         )
+
+    @app.route("/api/databank/automate", methods=["POST"])
+    def automate_databank():
+        data = request.get_json(silent=True) or {}
+        json_text = str(data.get("jsonText") or "").strip()
+        if not json_text:
+            return jsonify({"error": "缺少 jsonText 参数"}), 400
+        try:
+            return jsonify(databank_automator.automate(json_text))
+        except DatabankAutomationError as exc:
+            app.logger.warning("databank automation failed: %s", exc)
+            return jsonify({"error": str(exc)}), 502
 
     @app.route("/api/solutions")
     def list_solutions():

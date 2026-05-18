@@ -1,6 +1,15 @@
 <template>
   <div class="left-panel workbench-left-panel">
-    <section class="workbench-section workbench-solution-section">
+    <button
+      type="button"
+      class="left-panel-edge-toggle"
+      :class="{ 'is-solutions': leftPanelMode === 'solutions' }"
+      @click="toggleLeftPanelMode"
+    >
+      {{ leftPanelMode === 'packages' ? '选方案' : '组件库' }}
+    </button>
+
+    <section v-if="leftPanelMode === 'solutions'" class="workbench-section workbench-solution-section">
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">已发布方案</div>
@@ -22,7 +31,7 @@
         clearable
         class="intercom-input pkg-search"
       >
-        <template #prefix><span style="opacity:0.3">🔎</span></template>
+        <template #prefix><el-icon class="search-prefix-icon"><Search /></el-icon></template>
       </el-input>
 
       <div class="published-solution-list">
@@ -55,6 +64,7 @@
     </section>
 
     <section
+      v-else
       class="workbench-section workbench-package-section"
       :class="{ 'is-readonly': workbenchMode === 'solution-use' || structureLocked }"
     >
@@ -79,7 +89,7 @@
         class="intercom-input pkg-search"
         :disabled="workbenchMode === 'solution-use' || structureLocked"
       >
-        <template #prefix><span style="opacity:0.3">🔍</span></template>
+        <template #prefix><el-icon class="search-prefix-icon"><Search /></el-icon></template>
       </el-input>
 
       <div class="btn-group">
@@ -107,7 +117,7 @@
 
   <div class="center-panel">
     <div class="panel-toolbar">
-      <div>
+      <div class="workbench-toolbar-copy">
         <div class="display-feature-title">
           {{ workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台' }}
         </div>
@@ -119,15 +129,19 @@
       </div>
 
       <div class="toolbar-actions workbench-toolbar-actions">
-        <el-radio-group
-          :model-value="workbenchMode"
-          size="small"
-          class="intercom-radio-group workbench-mode-switch"
-          @change="handleWorkbenchModeChange"
+        <div
+          class="workbench-phase-status"
+          :class="{
+            'is-free-build': workbenchMode === 'free-build',
+            'is-solution-use': workbenchMode === 'solution-use',
+          }"
+          aria-live="polite"
         >
-          <el-radio-button label="free-build" :disabled="structureLocked">自由搭建</el-radio-button>
-          <el-radio-button label="solution-use" :disabled="!currentSolution">方案使用</el-radio-button>
-        </el-radio-group>
+          <span class="workbench-phase-dot"></span>
+          <span class="display-body strong">
+            {{ workbenchMode === 'solution-use' ? '方案使用中' : '自由搭建中' }}
+          </span>
+        </div>
 
         <el-button
           v-if="workbenchMode === 'solution-use'"
@@ -148,28 +162,41 @@
           退出方案使用
         </el-button>
 
-        <el-button
-          v-if="workbenchMode === 'free-build'"
-          class="intercom-btn-primary"
-          size="small"
-          @click="saveWorkbenchDraft"
-          :disabled="nodeList.length === 0 || structureLocked"
-          :loading="savingDraft"
-        >
-          存为方案草稿
-        </el-button>
+        <div class="workbench-secondary-actions">
+          <template v-if="workbenchMode === 'free-build' && !structureLocked">
+            <el-button
+              class="workbench-compact-action save-draft"
+              size="small"
+              text
+              @click="saveWorkbenchDraft"
+              :disabled="nodeList.length === 0"
+              :loading="savingDraft"
+            >
+              存草稿
+            </el-button>
+            <el-button
+              v-if="nodeList.length > 0"
+              class="workbench-compact-action"
+              size="small"
+              text
+              @click="toggleCollapseAll"
+            >
+              {{ allCollapsed ? '展开全部' : '收起全部' }}
+            </el-button>
+            <el-button
+              v-if="nodeList.length > 0"
+              class="workbench-compact-action danger"
+              size="small"
+              text
+              @click="clearCanvas"
+            >
+              清空
+            </el-button>
+          </template>
 
-        <template v-if="workbenchMode === 'free-build' && !structureLocked">
-          <el-button v-if="nodeList.length > 0" size="small" text @click="toggleCollapseAll">
-            {{ allCollapsed ? '展开全部' : '收起全部' }}
-          </el-button>
-          <el-button v-if="nodeList.length > 0" size="small" text @click="clearCanvas" style="color:#ff3b30">
-            清空
-          </el-button>
-        </template>
-
-        <el-button :disabled="!canUndo" @click="undo" size="small" text title="撤销 Ctrl+Z">↶</el-button>
-        <el-button :disabled="!canRedo" @click="redo" size="small" text title="重做 Ctrl+Shift+Z">↷</el-button>
+          <el-button class="workbench-compact-action icon-only" :disabled="!canUndo" @click="undo" size="small" text title="撤销 Ctrl+Z">↶</el-button>
+          <el-button class="workbench-compact-action icon-only" :disabled="!canRedo" @click="redo" size="small" text title="重做 Ctrl+Shift+Z">↷</el-button>
+        </div>
       </div>
     </div>
 
@@ -265,8 +292,6 @@
     <div class="panel-name-area">
       <div class="workbench-name-top">
         <div class="display-body-light name-label-inline">人群包名称</div>
-        <span v-if="workbenchMode === 'solution-use'" class="solution-status-chip published">方案使用</span>
-        <span v-else class="solution-status-chip draft">自由搭建</span>
       </div>
 
       <div style="display:flex;align-items:center;gap:6px">
@@ -301,7 +326,16 @@
         </div>
         <div class="json-actions">
           <el-button class="intercom-btn-primary" size="small" @click="copyJson">复制</el-button>
-          <el-button class="intercom-btn-outlined" size="small" @click="goToDataBank">去圈人</el-button>
+          <el-dropdown split-button type="default" size="small" class="go-databank-dropdown" @click="goToDataBank" @command="handleDataBankCommand">
+            去圈人
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="auto" :disabled="databankAutomating">
+                  {{ databankAutomating ? '自动化执行中...' : '自动化圈人' }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
 
@@ -344,7 +378,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
+import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import SolutionUseForm from './SolutionUseForm.vue'
 import { useCdpShared } from '../composables/useCdpShared'
@@ -359,6 +394,10 @@ import {
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
 const MAX_HISTORY = 50
+const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
+const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
+const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
+const EXTENSION_RESPONSE_TIMEOUT_MS = 45000
 
 const { getArray, isVisible } = useCdpShared()
 const {
@@ -386,6 +425,7 @@ const crowdNameInput = ref(DEFAULT_CROWD_NAME)
 const nameAuto = ref(true)
 const pkgSearch = ref('')
 const solutionSearch = ref('')
+const leftPanelMode = ref('packages')
 const activeNodeIndex = ref(0)
 const canvasScrollRef = ref(null)
 const nodeRefs = ref({})
@@ -394,6 +434,7 @@ const historyStack = ref([])
 const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
 const snapshotPaused = ref(false)
+const databankAutomating = ref(false)
 
 let dragSrcIndex = null
 let saveTimer = null
@@ -429,6 +470,10 @@ function formatTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+function toggleLeftPanelMode() {
+  leftPanelMode.value = leftPanelMode.value === 'packages' ? 'solutions' : 'packages'
 }
 
 function onNameManualEdit() {
@@ -752,18 +797,6 @@ function exitSolutionUse() {
   ElMessage.success('已退出方案使用，可重新自由搭建')
 }
 
-function handleWorkbenchModeChange(nextMode) {
-  if (nextMode === 'free-build' && structureLocked.value) {
-    ElMessage.warning('已加载发布方案，请先退出方案使用后再进入自由搭建')
-    return
-  }
-  if (nextMode === 'solution-use' && !currentSolution.value) {
-    ElMessage.warning('请先加载一个已发布方案')
-    return
-  }
-  workbenchMode.value = nextMode
-}
-
 async function buildFinalJson() {
   if (nodeList.value.length === 0) {
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
@@ -979,9 +1012,13 @@ function getNodeSummary(node) {
   return items
 }
 
+function getGeneratedJsonText() {
+  return JSON.stringify(generatedJson.value, null, 4)
+}
+
 async function copyJson() {
   try {
-    await navigator.clipboard.writeText(JSON.stringify(generatedJson.value, null, 4))
+    await navigator.clipboard.writeText(getGeneratedJsonText())
     ElMessage.success('JSON 已复制到剪贴板')
   } catch {
     ElMessage.error('复制失败，请手动选择后复制')
@@ -989,7 +1026,80 @@ async function copyJson() {
 }
 
 function goToDataBank() {
-  window.open('https://databank.tmall.com/#/userDefinedAnalyses', '_blank')
+  window.open(DATABANK_URL, '_blank', 'noopener,noreferrer')
+}
+
+function sendMessageToDatabankExtension(jsonText) {
+  return new Promise((resolve, reject) => {
+    const requestId = `databank_${Date.now()}_${Math.random().toString(36).slice(2)}`
+
+    const cleanup = (handler, timer) => {
+      window.removeEventListener('message', handler)
+      window.clearTimeout(timer)
+    }
+
+    const handleMessage = (event) => {
+      if (event.source !== window) return
+      const payload = event.data
+      if (payload?.source !== EXTENSION_BRIDGE_SOURCE) return
+      if (payload?.requestId !== requestId) return
+
+      cleanup(handleMessage, timeoutId)
+      if (!payload.ok) {
+        reject(new Error(payload.error || '自动化圈人失败'))
+        return
+      }
+      resolve(payload)
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      cleanup(handleMessage, timeoutId)
+      reject(new Error('自动化插件响应超时，请确认插件已加载并检查后台日志'))
+    }, EXTENSION_RESPONSE_TIMEOUT_MS)
+
+    window.addEventListener('message', handleMessage)
+    window.postMessage(
+      {
+        source: 'cdp-web',
+        type: EXTENSION_MESSAGE_TYPE,
+        requestId,
+        jsonText,
+      },
+      window.location.origin,
+    )
+  })
+}
+
+function handleDataBankCommand(command) {
+  if (command === 'auto') {
+    void startAutoDataBankFlow()
+  }
+}
+
+async function startAutoDataBankFlow() {
+  if (databankAutomating.value) return
+
+  databankAutomating.value = true
+  const pendingMessage = ElMessage({
+    message: '自动化圈人后台处理中，请稍候...',
+    type: 'info',
+    duration: 0,
+  })
+  try {
+    const result = await sendMessageToDatabankExtension(getGeneratedJsonText())
+    if (!result?.ok) {
+      pendingMessage.close()
+      ElMessage.error(result?.error || result?.message || '自动化圈人失败')
+      return
+    }
+    pendingMessage.close()
+    ElMessage.success(result?.message || '已完成自动化圈人操作')
+  } catch (error) {
+    pendingMessage.close()
+    ElMessage.error(error?.message || '自动化圈人失败')
+  } finally {
+    databankAutomating.value = false
+  }
 }
 
 function handleKeydown(event) {

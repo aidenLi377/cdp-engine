@@ -82,11 +82,19 @@
 
 - `start-dev.ps1`：PowerShell 一键启动脚本
 - `start-dev.cmd`：可直接双击运行的包装脚本
+- `stop-dev.ps1`：PowerShell 一键停止脚本
+- `stop-dev.cmd`：可直接双击运行的停止包装脚本
 
 推荐方式：
 
 ```powershell
 .\start-dev.cmd
+```
+
+如不希望启动后自动打开前端页面，可执行：
+
+```powershell
+.\start-dev.cmd -NoBrowser
 ```
 
 脚本会自动：
@@ -95,8 +103,17 @@
 - 检查 `5000` 和 `5173` 端口是否已被占用
 - 分别启动后端和前端窗口
 - 将输出写入根目录的 `backend.stdout.log` 和 `frontend.stdout.log`
+- 默认自动打开前端页面 `http://127.0.0.1:5173`
 
 如果启动窗口立即关闭，请先查看这两个日志文件。
+
+停止服务可执行：
+
+```powershell
+.\stop-dev.cmd
+```
+
+停止脚本会优先根据 `.runtime/dev/*.pid` 和 `5000`、`5173` 端口关闭对应进程。
 
 ### 4.1 后端启动
 
@@ -153,7 +170,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
    - 参数摘要
    - 最终 JSON
 6. 点击“复制”即可把 JSON 复制到剪贴板。
-7. 点击“去圈人”可跳转到数据银行页面继续使用。
+7. 点击“去圈人”可直接打开数据银行页面继续使用。
+8. 点击“去圈人”右侧下拉菜单中的“自动化圈人”时，可把当前 JSON 发送给已安装的 Chrome 扩展，由扩展在数据银行页面自动执行“打开参数粘贴、写入 JSON、确认”这 3 个固定动作。
 
 这个模式下的特点：
 
@@ -186,9 +204,10 @@ npm run dev -- --host 127.0.0.1 --port 5173
 
 进入方式：
 
-1. 在页面顶部模式切换中选择第三个一级模式“方案中心”。
-2. 左侧可按“草稿”或“已发布”筛选已有方案。
-3. 点击“新建草稿”可创建空白方案草稿。
+1. 页面顶部一级导航保留“可视化点选”和“矩阵装配车间”两个入口。
+2. 进入“可视化点选”后，在右侧子导航中切换到“方案中心”。
+3. 左侧可按“草稿”或“已发布”筛选已有方案。
+4. 点击“新建草稿”可创建空白方案草稿。
 
 草稿与正式方案生命周期：
 
@@ -205,6 +224,30 @@ npm run dev -- --host 127.0.0.1 --port 5173
 3. 此时工作台结构会锁定，不能继续增删节点；如需改结构，应回到方案中心编辑草稿。
 4. 工作台中的“恢复方案默认值”会把当前已加载方案恢复到最近一次加载时的默认节点和默认字段值。
 5. 退出“方案使用”后，工作台会回到自由搭建状态。
+
+### 5.4 自动化圈人扩展
+
+适合在本地联调时，把工作台生成的 JSON 直接送到数据银行页面，减少手工粘贴步骤。
+
+安装方式：
+
+1. 打开 Chrome 扩展页：`chrome://extensions/`
+2. 打开右上角“开发者模式”
+3. 点击“加载已解压的扩展程序”
+4. 选择目录 `chrome-extension/databank-automation`
+
+使用前提：
+
+- 前端页面运行在 `http://127.0.0.1:5173`
+- Chrome 中已经打开并登录 `https://databank.tmall.com/*`
+- 扩展已成功加载
+
+使用方式：
+
+1. 在工作台生成最终 JSON。
+2. 点击“去圈人”按钮右侧下拉菜单中的“自动化圈人”。
+3. 扩展会在后台新建或复用数据银行标签页，并自动执行固定的参数粘贴流程。
+4. 成功时保持当前工作台页不跳走；失败时会切到目标页，方便直接查看卡住的位置。
 
 批量模式补充说明：
 
@@ -341,6 +384,9 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - `DELETE /api/solutions/<solution_id>`
   - 删除方案
 
+- `POST /api/databank/automate`
+  - 接收 `jsonText`，调用本地数据银行自动化执行器
+
 ---
 
 ## 9. 常见问题
@@ -388,4 +434,22 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - 后端负责翻译、模板渲染和结构输出。
 - 批量模式本质上是在单包生成能力上再封装一层流水线组合。
 
-我已本地执行 [test_api.py](E:\CDP_Project_codex\test_api.py)，10 项测试全部通过，可作为当前版本的基本可用性依据。
+本次新增内容还包括：
+
+- 工作台顶部导航改成“一级模式 + 可视化子页”结构。
+- “去圈人”补充了“自动化圈人”入口。
+- 后端增加了数据银行自动化接口。
+- 仓库新增了 `chrome-extension/databank-automation` 本地联调扩展。
+- 新增了自动化接口单测、自动化执行器单测，以及多项前端交互测试。
+
+建议至少执行下面这组检查：
+
+```powershell
+python -m unittest test_api.py test_databank_automation_api.py test_databank_automation_unit.py
+node cdp-web/src/App.navigation.test.mjs
+node cdp-web/src/components/BatchMode.layout.test.mjs
+node cdp-web/src/components/NormalMode.leftPanel.test.mjs
+node cdp-web/src/components/NormalMode.status.test.mjs
+node cdp-web/src/components/NormalMode.toolbar.test.mjs
+node cdp-web/src/components/SolutionCenter.listActions.test.mjs
+```

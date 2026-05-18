@@ -8,17 +8,41 @@
         </div>
       </transition>
 
-      <div class="mode-switch-container">
-        <el-radio-group v-model="appMode" size="small" class="intercom-radio-group">
-          <el-radio-button label="normal">可视化点选</el-radio-button>
-          <el-radio-button label="batch">矩阵装配车间</el-radio-button>
-          <el-radio-button label="solutions">方案中心</el-radio-button>
-        </el-radio-group>
-      </div>
+      <header class="app-shell-header">
+        <div class="app-shell-title">
+          <div class="display-feature-title">CDP 圈选工作台</div>
+          <div class="display-body-light">可视化搭建、方案管理与矩阵装配</div>
+        </div>
 
-      <NormalMode v-if="appMode === 'normal'" />
-      <BatchMode v-else-if="appMode === 'batch'" />
-      <SolutionCenter v-else />
+        <div class="app-shell-visual-nav">
+          <nav class="app-shell-nav" aria-label="主功能导航">
+            <el-radio-group v-model="appMode" size="small" class="intercom-radio-group">
+              <el-radio-button label="visual">可视化点选</el-radio-button>
+              <el-radio-button label="batch">矩阵装配车间</el-radio-button>
+            </el-radio-group>
+          </nav>
+
+          <nav
+            v-if="appMode === 'visual'"
+            class="app-shell-subnav"
+            aria-label="可视化点选子导航"
+          >
+            <span class="app-shell-subnav-label">子页面</span>
+            <el-radio-group v-model="visualSection" size="small" class="intercom-radio-group">
+              <el-radio-button label="workbench">工作台</el-radio-button>
+              <el-radio-button label="solutions">方案中心</el-radio-button>
+            </el-radio-group>
+          </nav>
+        </div>
+      </header>
+
+      <main class="app-shell-main">
+        <template v-if="appMode === 'visual'">
+          <NormalMode v-if="visualSection === 'workbench'" />
+          <SolutionCenter v-else-if="visualSection === 'solutions'" />
+        </template>
+        <BatchMode v-else-if="appMode === 'batch'" />
+      </main>
     </div>
   </el-config-provider>
 </template>
@@ -30,7 +54,8 @@ import NormalMode from './components/NormalMode.vue'
 import BatchMode from './components/BatchMode.vue'
 import SolutionCenter from './components/SolutionCenter.vue'
 
-const appMode = ref('normal')
+const appMode = ref('visual')
+const visualSection = ref('workbench')
 const backendOnline = ref(true)
 let healthTimer = null
 

@@ -40,24 +40,35 @@
       </div>
 
       <div class="solution-list">
-        <button
+        <div
           v-for="item in filteredSolutions"
           :key="item.id"
-          type="button"
+          role="button"
+          tabindex="0"
           class="solution-list-item"
           :class="{ active: item.id === activeSolution?.id }"
           @click="openSolution(item.id)"
+          @keydown.enter.prevent="openSolution(item.id)"
+          @keydown.space.prevent="openSolution(item.id)"
         >
           <div class="solution-list-item-head">
             <span class="solution-status-chip" :class="item.status">{{ statusText(item.status) }}</span>
-            <span class="display-mono">{{ item.source === 'published-edit' ? 'published-edit' : item.source || 'manual' }}</span>
+            <el-button
+              class="solution-list-delete"
+              text
+              size="small"
+              :disabled="deleting"
+              @click.stop="deleteListedSolution(item)"
+            >
+              删除
+            </el-button>
           </div>
           <div class="display-body strong solution-list-name">{{ item.name || '未命名方案' }}</div>
           <div class="solution-list-meta">
             <span>{{ item.nodes?.length || 0 }} 个节点</span>
             <span>{{ formatTime(item.updatedAt) }}</span>
           </div>
-        </button>
+        </div>
 
         <div v-if="!loadingList && filteredSolutions.length === 0" class="empty-state-sm display-body-light">
           当前筛选下没有方案
@@ -101,43 +112,56 @@
         </div>
 
         <div class="solution-toolbar-actions">
-          <el-select
-            v-model="pendingPackageType"
-            filterable
-            clearable
-            placeholder="添加组件..."
-            class="intercom-input solution-package-select"
-            :disabled="isPublished"
-          >
-            <el-option v-for="pkg in availablePackages" :key="pkg" :label="pkg" :value="pkg" />
-          </el-select>
-          <el-button
-            class="intercom-btn-outlined"
-            @click="addNodeFromSelector"
-            :disabled="!pendingPackageType || isPublished"
-            :loading="addingNode"
-          >
-            添加节点
-          </el-button>
-          <el-button class="intercom-btn-outlined" @click="previewVisible = true">
-            预览工作台使用态
-          </el-button>
-          <el-button
-            v-if="!isPublished"
-            class="intercom-btn-primary"
-            @click="saveDraft"
-            :loading="saving"
-          >
-            保存草稿
-          </el-button>
-          <el-button
-            v-if="!isPublished"
-            class="intercom-btn-accent"
-            @click="publishDraft"
-            :loading="publishing"
-          >
-            发布正式方案
-          </el-button>
+          <div class="solution-add-node-control">
+            <el-select
+              v-model="pendingPackageType"
+              filterable
+              clearable
+              placeholder="添加组件..."
+              class="intercom-input solution-package-select"
+              :disabled="isPublished"
+            >
+              <el-option v-for="pkg in availablePackages" :key="pkg" :label="pkg" :value="pkg" />
+            </el-select>
+            <el-tooltip content="添加节点" placement="bottom">
+              <el-button
+                class="solution-toolbar-icon-btn"
+                @click="addNodeFromSelector"
+                :disabled="!pendingPackageType || isPublished"
+                :loading="addingNode"
+                aria-label="添加节点"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
+          <div class="solution-toolbar-icon-actions">
+            <el-tooltip content="预览工作台使用态" placement="bottom">
+              <el-button class="solution-toolbar-icon-btn" @click="previewVisible = true" aria-label="预览工作台使用态">
+                <el-icon><View /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip v-if="!isPublished" content="保存草稿" placement="bottom">
+              <el-button
+                class="solution-toolbar-icon-btn"
+                @click="saveDraft"
+                :loading="saving"
+                aria-label="保存草稿"
+              >
+                <el-icon><Check /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip v-if="!isPublished" content="发布正式方案" placement="bottom">
+              <el-button
+                class="solution-toolbar-icon-btn publish"
+                @click="publishDraft"
+                :loading="publishing"
+                aria-label="发布正式方案"
+              >
+                <el-icon><Upload /></el-icon>
+              </el-button>
+            </el-tooltip>
+          </div>
         </div>
       </div>
 
@@ -234,43 +258,31 @@
           />
         </div>
 
-        <div class="intercom-card solution-settings-card solution-meta-card">
-          <div class="display-feature-title mb-16">状态信息</div>
-          <div class="solution-meta-grid">
-            <div class="solution-meta-row">
-              <span class="display-body-light">状态</span>
-              <span class="display-body strong">{{ statusText(activeSolution.status) }}</span>
-            </div>
-            <div class="solution-meta-row">
-              <span class="display-body-light">来源</span>
-              <span class="display-body strong">{{ activeSolution.source || 'manual' }}</span>
-            </div>
-            <div class="solution-meta-row">
-              <span class="display-body-light">创建时间</span>
-              <span class="display-body strong">{{ formatTime(activeSolution.createdAt) }}</span>
-            </div>
-            <div class="solution-meta-row">
-              <span class="display-body-light">更新时间</span>
-              <span class="display-body strong">{{ formatTime(activeSolution.updatedAt) }}</span>
-            </div>
-            <div v-if="activeSolution.publishedAt" class="solution-meta-row">
-              <span class="display-body-light">发布时间</span>
-              <span class="display-body strong">{{ formatTime(activeSolution.publishedAt) }}</span>
-            </div>
-            <div v-if="activeSolution.basePublishedId" class="solution-meta-row">
-              <span class="display-body-light">覆盖正式版</span>
-              <span class="display-mono">{{ activeSolution.basePublishedId }}</span>
-            </div>
-          </div>
-        </div>
-
         <div class="intercom-card solution-settings-card">
           <div class="solution-settings-head">
             <div>
               <div class="display-feature-title">工作台字段</div>
-              <div class="display-body-light">勾选后会进入工作台方案使用态与预览抽屉</div>
+              <div class="display-body-light">用于工作台预览</div>
             </div>
-            <span class="display-mono">{{ workbenchFieldIds.length }} 个字段</span>
+            <div class="solution-field-actions">
+              <span class="display-mono">{{ workbenchFieldIds.length }} 个字段</span>
+              <el-button
+                class="solution-field-action"
+                text
+                :disabled="isPublished || availableWorkbenchFieldTokens.length === 0"
+                @click="selectAllWorkbenchFields"
+              >
+                全选
+              </el-button>
+              <el-button
+                class="solution-field-action"
+                text
+                :disabled="isPublished || workbenchFieldIds.length === 0"
+                @click="clearWorkbenchFields"
+              >
+                清空
+              </el-button>
+            </div>
           </div>
 
           <div v-if="fieldGroups.length === 0" class="empty-state-sm display-body-light">
@@ -316,6 +328,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Check, Plus, Upload, View } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import SolutionPreviewDrawer from './SolutionPreviewDrawer.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
@@ -369,8 +382,7 @@ const filteredSolutions = computed(() => {
   if (!keyword) return solutions.value
   return solutions.value.filter((item) => {
     const name = String(item?.name || '').toLowerCase()
-    const source = String(item?.source || '').toLowerCase()
-    return name.includes(keyword) || source.includes(keyword)
+    return name.includes(keyword)
   })
 })
 
@@ -392,6 +404,10 @@ const fieldGroups = computed(() =>
       }
     })
     .filter((group) => group.fields.length > 0),
+)
+
+const availableWorkbenchFieldTokens = computed(() =>
+  fieldGroups.value.flatMap((group) => group.fields.map((field) => field.token)),
 )
 
 const previewSections = computed(() =>
@@ -479,6 +495,16 @@ function syncWorkbenchSelections(nextIds) {
   if (!arrayEquals(cleaned, workbenchFieldIds.value)) {
     workbenchFieldIds.value = cleaned
   }
+}
+
+function selectAllWorkbenchFields() {
+  if (isPublished.value) return
+  syncWorkbenchSelections(availableWorkbenchFieldTokens.value)
+}
+
+function clearWorkbenchFields() {
+  if (isPublished.value) return
+  workbenchFieldIds.value = []
 }
 
 function buildSolutionPayload() {
@@ -694,15 +720,17 @@ async function duplicateActiveSolution() {
   if (!proceeded) return
 }
 
-async function deleteActiveSolution() {
-  if (!activeSolution.value) return
+async function deleteListedSolution(item) {
+  if (!item?.id) return
 
-  const shouldDiscard = isPublished.value ? true : await confirmDiscardDraftChanges()
+  const deletingActive = item.id === activeSolution.value?.id
+  const shouldDiscard =
+    deletingActive && item.status !== 'published' ? await confirmDiscardDraftChanges() : true
   if (!shouldDiscard) return
 
   try {
     await ElMessageBox.confirm(
-      `删除「${activeSolution.value.name || '未命名方案'}」后将无法恢复，是否继续？`,
+      `删除「${item.name || '未命名方案'}」后将无法恢复，是否继续？`,
       '删除方案',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
     )
@@ -712,11 +740,13 @@ async function deleteActiveSolution() {
 
   deleting.value = true
   try {
-    await deleteSolution(activeSolution.value.id)
-    activeSolution.value = null
-    nodeList.value = []
-    workbenchFieldIds.value = []
-    lastSavedSnapshot.value = null
+    await deleteSolution(item.id)
+    if (deletingActive) {
+      activeSolution.value = null
+      nodeList.value = []
+      workbenchFieldIds.value = []
+      lastSavedSnapshot.value = null
+    }
     await loadSolutions()
     ElMessage.success('方案已删除')
   } catch (error) {
@@ -724,6 +754,11 @@ async function deleteActiveSolution() {
   } finally {
     deleting.value = false
   }
+}
+
+async function deleteActiveSolution() {
+  if (!activeSolution.value) return
+  await deleteListedSolution(activeSolution.value)
 }
 
 watch(statusFilter, () => {

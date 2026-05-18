@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "参数辅助助手",
+  "version": "0.1.0",
+  "description": "用于参数导入与页面辅助操作的浏览器插件。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": ["tabs", "scripting"],
+  "externally_connectable": {
+    "matches": ["http://127.0.0.1:5173/*"]
+  },
+  "host_permissions": [
+    "https://databank.tmall.com/*",
+    "http://127.0.0.1:5173/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:5173/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
