@@ -199,8 +199,18 @@ function formatOptions(options) {
 }
 
 function getSectionOptions(section) {
-  const firstBinding = section.bindings?.[0]
-  return formatOptions(firstBinding?.options || [])
+  const allOptions = []
+  const seen = new Set()
+  ;(section.bindings || []).forEach(binding => {
+    formatOptions(binding.options || []).forEach(opt => {
+      const key = typeof opt === 'object' ? opt.value : opt
+      if (!seen.has(key)) {
+        seen.add(key)
+        allOptions.push(opt)
+      }
+    })
+  })
+  return allOptions
 }
 
 function getInitialValue(section) {
