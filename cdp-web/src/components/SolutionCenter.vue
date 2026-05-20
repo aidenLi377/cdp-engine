@@ -180,6 +180,7 @@
           v-for="(node, index) in nodeList"
           :key="node.id"
           class="node-wrapper solution-node-wrapper"
+          :class="{ 'node-highlighted': isNodeHighlighted(node.id) }"
         >
           <div v-if="index > 0" class="logic-connector">
             <div class="connector-line"></div>
@@ -261,53 +262,115 @@
         <div class="intercom-card solution-settings-card">
           <div class="solution-settings-head">
             <div>
-              <div class="display-feature-title">工作台字段</div>
-              <div class="display-body-light">用于工作台预览</div>
+              <div class="display-feature-title">自定义字段（一对多）</div>
+              <div class="display-body-light">创建字段，让一个字段控制多个组件</div>
             </div>
             <div class="solution-field-actions">
-              <span class="display-mono">{{ workbenchFieldIds.length }} 个字段</span>
+              <span class="display-mono">{{ customFields.length }} 个字段</span>
               <el-button
                 class="solution-field-action"
                 text
-                :disabled="isPublished || availableWorkbenchFieldTokens.length === 0"
-                @click="selectAllWorkbenchFields"
-              >
-                全选
-              </el-button>
-              <el-button
-                class="solution-field-action"
-                text
-                :disabled="isPublished || workbenchFieldIds.length === 0"
-                @click="clearWorkbenchFields"
+                :disabled="isPublished || customFields.length === 0"
+                @click="clearAllCustomFields"
               >
                 清空
               </el-button>
             </div>
           </div>
 
-          <div v-if="fieldGroups.length === 0" class="empty-state-sm display-body-light">
-            当前没有可供工作台使用的字段
+          <div v-if="customFields.length === 0 && !creatingCustomField" class="empty-state-sm display-body-light">
+            点击下方按钮创建第一个自定义字段
           </div>
 
-          <div v-else class="solution-field-groups">
-            <div v-for="group in fieldGroups" :key="group.nodeId" class="solution-field-group">
-              <div class="solution-field-group-head">
-                <div class="display-body strong">节点 {{ group.index + 1 }}</div>
-                <div class="display-body-light">{{ group.packageType }}</div>
-              </div>
-
-              <el-checkbox-group v-model="workbenchFieldIds" class="custom-checkbox-group solution-checkbox-group">
-                <el-checkbox
-                  v-for="field in group.fields"
-                  :key="field.token"
-                  :label="field.token"
+          <div v-else class="custom-field-list">
+            <div
+              v-for="cf in customFields"
+              :key="cf.id"
+              class="custom-field-item"
+              :class="{ active: highlightedCustomFieldId === cf.id }"
+              @click="highlightCustomField(cf.id)"
+              @mouseenter="highlightCustomField(cf.id)"
+              @mouseleave="highlightCustomField(null)"
+            >
+              <div class="custom-field-item-head">
+                <span class="display-body strong">{{ cf.name }}</span>
+                <el-button
+                  class="solution-field-action"
+                  text
+                  size="small"
                   :disabled="isPublished"
+                  @click.stop="removeCustomField(cf.id)"
                 >
-                  {{ field.label }}
-                </el-checkbox>
-              </el-checkbox-group>
+                  &times;
+                </el-button>
+              </div>
+              <div class="display-body-light custom-field-meta">
+                <span>{{ cf.type }}</span>
+                <span>{{ (cf.bindings || []).length }} 个绑定</span>
+                <span v-if="cf.group">分组: {{ cf.group }}</span>
+              </div>
             </div>
           </div>
+
+          <div v-if="creatingCustomField" class="creating-custom-field-panel">
+            <div class="creating-steps">
+              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 1, done: creatingCustomFieldStep > 1 }">选择字段类型</span>
+              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 2 }">绑定组件</span>
+            </div>
+
+            <div v-if="creatingCustomFieldStep === 1" class="creating-step-body">
+              <el-input
+                v-model="creatingCustomFieldName"
+                class="intercom-input"
+                placeholder="输入自定义字段名称（如: 今年、去年）"
+                size="small"
+              />
+              <div class="display-body-light creating-hint">
+                在左侧主区域点击一个原始字段来确定类型。非同类型字段会自动置灰。
+                <template v-if="creatingCustomFieldType">
+                  <br/>已选类型: <strong>{{ creatingCustomFieldType }}</strong>
+                </template>
+              </div>
+              <el-button
+                v-if="creatingCustomFieldType && creatingCustomFieldName"
+                class="intercom-btn-primary btn-small"
+                @click="creatingCustomFieldStep = 2"
+              >
+                下一步: 绑定同类型字段 (已选 {{ creatingCustomFieldBindings.length }} 个)
+              </el-button>
+            </div>
+
+            <div v-if="creatingCustomFieldStep === 2" class="creating-step-body">
+              <div class="display-body-light creating-hint">
+                在左侧主区域继续点击同类型字段以关联到「{{ creatingCustomFieldName }}」。已选 {{ creatingCustomFieldBindings.length }} 个绑定。
+              </div>
+              <div class="creating-step-actions">
+                <el-button
+                  class="intercom-btn-primary btn-small"
+                  :disabled="creatingCustomFieldBindings.length === 0"
+                  @click="finishCreateCustomField"
+                >
+                  完成创建
+                </el-button>
+                <el-button
+                  class="intercom-btn-outlined btn-small"
+                  @click="cancelCreateCustomField"
+                >
+                  取消
+                </el-button>
+              </div>
+            </div>
+          </div>
+
+          <el-button
+            v-if="!creatingCustomField"
+            class="intercom-btn-primary btn-small"
+            style="width:100%;margin-top:8px"
+            :disabled="isPublished || nodeList.length === 0"
+            @click="startCreateCustomField"
+          >
+            + 新增自定义字段（一对多）
+          </el-button>
         </div>
       </div>
 
@@ -319,14 +382,14 @@
 
     <SolutionPreviewDrawer
       v-model="previewVisible"
-      :sections="previewSections"
+      :custom-field-sections="previewSections"
       :solution-name="activeSolution?.name || ''"
     />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Plus, Upload, View } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -334,7 +397,7 @@ import SolutionPreviewDrawer from './SolutionPreviewDrawer.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { fieldToken, serializeNodesForSolution } from '../utils/solutionState.js'
+import { fieldToken, serializeNodesForSolution, buildCustomFieldSections } from '../utils/solutionState.js'
 
 const {
   listSolutions,
@@ -375,6 +438,27 @@ const pendingPackageType = ref('')
 const addingNode = ref(false)
 const lastSavedSnapshot = ref(null)
 
+const customFields = ref([])
+const highlightedCustomFieldId = ref(null)
+const creatingCustomField = ref(false)
+const creatingCustomFieldStep = ref(1)
+const creatingCustomFieldName = ref('')
+const creatingCustomFieldType = ref('')
+const creatingCustomFieldBindings = ref([])
+
+provide('solutionCenterContext', {
+  highlightedCustomFieldId,
+  customFields,
+  creatingCustomField,
+  creatingCustomFieldType,
+  creatingCustomFieldStep,
+  creatingCustomFieldBindings,
+  onFieldClickForBinding,
+  isFieldHighlighted,
+  isNodeHighlighted,
+  isFieldSelectableForBinding,
+})
+
 const isPublished = computed(() => activeSolution.value?.status === 'published')
 
 const filteredSolutions = computed(() => {
@@ -411,7 +495,7 @@ const availableWorkbenchFieldTokens = computed(() =>
 )
 
 const previewSections = computed(() =>
-  buildRuntimeUsageSections(nodeList.value, workbenchFieldIds.value),
+  buildCustomFieldSections(customFields.value, nodeList.value),
 )
 
 const currentDraftSnapshot = computed(() => {
@@ -425,6 +509,7 @@ const currentDraftSnapshot = computed(() => {
     defaultCrowdName,
     nodes: serializeNodesForSolution(nodeList.value),
     workbenchFieldIds: [...workbenchFieldIds.value],
+    customFields: cloneValue(customFields.value),
   })
 })
 
@@ -468,6 +553,7 @@ function setSavedSnapshotFromRecord(record) {
     defaultCrowdName,
     nodes: record?.nodes || [],
     workbenchFieldIds: [...fieldIds],
+    customFields: Array.isArray(record?.customFields) ? [...record.customFields] : [],
   })
 }
 
@@ -517,6 +603,7 @@ function buildSolutionPayload() {
     defaultCrowdName,
     nodes: serializeNodesForSolution(nodeList.value),
     workbenchFieldIds: [...workbenchFieldIds.value],
+    customFields: cloneValue(customFields.value),
   }
 }
 
@@ -524,6 +611,7 @@ async function applySolutionRecord(record) {
   activeSolution.value = cloneValue(record)
   nodeList.value = await hydrateNodes(record?.nodes || [])
   syncWorkbenchSelections(Array.isArray(record?.workbenchFieldIds) ? record.workbenchFieldIds : [])
+  loadCustomFields(record)
   setSavedSnapshotFromRecord(record)
 }
 
@@ -759,6 +847,106 @@ async function deleteListedSolution(item) {
 async function deleteActiveSolution() {
   if (!activeSolution.value) return
   await deleteListedSolution(activeSolution.value)
+}
+
+function loadCustomFields(record) {
+  customFields.value = Array.isArray(record?.customFields) ? [...record.customFields] : []
+}
+
+function startCreateCustomField() {
+  if (isPublished.value || nodeList.value.length === 0) return
+  creatingCustomField.value = true
+  creatingCustomFieldStep.value = 1
+  creatingCustomFieldName.value = ''
+  creatingCustomFieldType.value = ''
+  creatingCustomFieldBindings.value = []
+}
+
+function cancelCreateCustomField() {
+  creatingCustomField.value = false
+  creatingCustomFieldStep.value = 1
+  creatingCustomFieldName.value = ''
+  creatingCustomFieldType.value = ''
+  creatingCustomFieldBindings.value = []
+}
+
+function onFieldClickForBinding(nodeId, fieldKey) {
+  if (!creatingCustomField.value) return
+  const node = nodeList.value.find(n => n.id === nodeId)
+  if (!node) return
+  const field = (Array.isArray(node.schema) ? node.schema : []).find(f => f.key === fieldKey)
+  if (!field) return
+
+  if (creatingCustomFieldStep.value === 1) {
+    if (!creatingCustomFieldName.value.trim()) {
+      creatingCustomFieldName.value = field.Label || field.label || fieldKey
+    }
+    creatingCustomFieldType.value = field.Widget_Type
+    creatingCustomFieldBindings.value = [{ nodeId, fieldKey }]
+    creatingCustomFieldStep.value = 2
+  } else if (creatingCustomFieldStep.value === 2) {
+    if (field.Widget_Type !== creatingCustomFieldType.value) return
+    const existingIdx = creatingCustomFieldBindings.value.findIndex(
+      b => b.nodeId === nodeId && b.fieldKey === fieldKey
+    )
+    if (existingIdx >= 0) {
+      creatingCustomFieldBindings.value.splice(existingIdx, 1)
+    } else {
+      creatingCustomFieldBindings.value.push({ nodeId, fieldKey })
+    }
+  }
+}
+
+function finishCreateCustomField() {
+  if (!creatingCustomFieldName.value.trim() || creatingCustomFieldBindings.value.length === 0) return
+  const name = creatingCustomFieldName.value.trim()
+  customFields.value.push({
+    id: `cf_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    name,
+    type: creatingCustomFieldType.value,
+    group: '',
+    defaultValue: {},
+    bindings: [...creatingCustomFieldBindings.value],
+  })
+  cancelCreateCustomField()
+  ElMessage.success(`自定义字段「${name}」创建成功`)
+}
+
+function removeCustomField(cfId) {
+  customFields.value = customFields.value.filter(cf => cf.id !== cfId)
+  if (highlightedCustomFieldId.value === cfId) highlightedCustomFieldId.value = null
+}
+
+function clearAllCustomFields() {
+  customFields.value = []
+  highlightedCustomFieldId.value = null
+}
+
+function highlightCustomField(cfId) {
+  highlightedCustomFieldId.value = cfId
+}
+
+function getNodeHighlightedFieldKeys(nodeId) {
+  if (!highlightedCustomFieldId.value) return new Set()
+  const cf = customFields.value.find(c => c.id === highlightedCustomFieldId.value)
+  if (!cf) return new Set()
+  return new Set(
+    (cf.bindings || []).filter(b => b.nodeId === nodeId).map(b => b.fieldKey)
+  )
+}
+
+function isFieldHighlighted(nodeId, fieldKey) {
+  return getNodeHighlightedFieldKeys(nodeId).has(fieldKey)
+}
+
+function isNodeHighlighted(nodeId) {
+  return getNodeHighlightedFieldKeys(nodeId).size > 0
+}
+
+function isFieldSelectableForBinding(field) {
+  if (!creatingCustomField.value) return false
+  if (creatingCustomFieldStep.value === 1) return true
+  return field.Widget_Type === creatingCustomFieldType.value
 }
 
 watch(statusFilter, () => {
