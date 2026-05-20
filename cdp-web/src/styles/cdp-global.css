@@ -1706,6 +1706,12 @@ body {
   padding: 1px 7px;
   border-radius: 99px;
   font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.cf-use-card-count:hover {
+  background: #ff6b4a;
+  color: #fff;
 }
 .cf-expand-all-btn.el-button {
   height: 34px !important;

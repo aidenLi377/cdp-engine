@@ -212,11 +212,14 @@
             class="cf-use-card"
             :class="{ 'cf-use-card-active': highlightedCfId === section.customFieldId }"
             @click="onHighlightCf(section.customFieldId)"
-            @dblclick="openCfEditDialog(section)"
           >
             <span class="cf-type-indicator" :class="getCfUseTypeClass(section.type)"></span>
             <span class="display-body strong">{{ section.name }}</span>
-            <span class="display-mono cf-use-card-count">{{ section.bindings.length }}</span>
+            <span
+              class="display-mono cf-use-card-count"
+              title="点击编辑"
+              @click.stop="openCfEditDialog(section)"
+            >{{ section.bindings.length }}</span>
           </div>
           <el-button
             v-if="highlightedCfId"

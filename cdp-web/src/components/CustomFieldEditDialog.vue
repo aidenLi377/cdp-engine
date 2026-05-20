@@ -161,7 +161,7 @@ function save() {
   if (isDateType.value || isNumberType.value) {
     payload = { ...editValue.value, mode: editMode.value }
   }
-  emit('save', { customFieldId: props.customField?.id, value: payload })
+  emit('save', { customFieldId: props.customField?.customFieldId, value: payload })
   emit('update:modelValue', false)
 }
 
