@@ -204,14 +204,47 @@
       <div v-if="!currentSolution" class="empty-hint display-body-light">
         请先从左侧选择一个已发布方案
       </div>
-      <SolutionUseForm
-        v-else
-        :custom-field-sections="customFieldSections"
-        :solution-name="currentSolution?.name || ''"
-        :highlighted-cf-id="highlightedCfId"
-        @highlight-cf="onHighlightCf"
-        @cf-value-change="onCfValueChange"
-      />
+      <template v-else>
+        <div class="solution-use-area">
+          <SolutionUseForm
+            :custom-field-sections="customFieldSections"
+            :solution-name="currentSolution?.name || ''"
+            :highlighted-cf-id="highlightedCfId"
+            @highlight-cf="onHighlightCf"
+            @cf-value-change="onCfValueChange"
+          />
+          <div v-if="nodeList.length > 0" class="solution-use-nodes">
+            <div class="display-feature-title" style="margin-bottom:14px">原始组件参考</div>
+            <div
+              v-for="(node, index) in nodeList"
+              :key="node.id"
+              class="node-wrapper"
+              :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
+            >
+              <div v-if="index > 0" class="logic-connector">
+                <div class="connector-line"></div>
+                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" disabled>
+                  <el-radio-button label="n">交集</el-radio-button>
+                  <el-radio-button label="u">并集</el-radio-button>
+                  <el-radio-button label="d">差集</el-radio-button>
+                </el-radio-group>
+                <div class="connector-line"></div>
+              </div>
+              <div class="intercom-card behavior-card">
+                <div class="card-header-inner">
+                  <span class="card-title-flex">
+                    <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
+                    <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                  </span>
+                </div>
+                <div class="solution-readonly-surface">
+                  <DynamicForm :node="node" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </template>
 
     <template v-else>
@@ -462,7 +495,7 @@ provide('solutionCenterContext', {
     if (!cf) return false
     return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
   },
-  isNodeHighlighted: () => false,
+  isNodeHighlighted: (nodeId) => isNodeHighlightedForCf(nodeId),
   isFieldSelectableForBinding: () => false,
 })
 
