@@ -510,6 +510,16 @@ function onCfValueChange({ customFieldId, value }) {
     currentSolution.value?.customFields || [],
     value,
   )
+  // Show feedback
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(c => c.id === customFieldId)
+  if (cf) {
+    const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
+    const count = uniqueNodes.size
+    if (count > 0) {
+      ElMessage.success(`已同步到 ${count} 个组件`)
+    }
+  }
 }
 
 function isNodeHighlightedForCf(nodeId) {
