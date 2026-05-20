@@ -201,7 +201,14 @@
     </div>
 
     <template v-if="workbenchMode === 'solution-use'">
-      <div v-if="!currentSolution" class="empty-hint display-body-light">
+      <div v-if="loadingSolutionId" class="solution-use-area">
+        <div class="cf-loading-state">
+          <div class="skeleton-bar skeleton-bar-header"></div>
+          <div class="skeleton-bar skeleton-bar-body"></div>
+          <div class="skeleton-bar skeleton-bar-body short"></div>
+        </div>
+      </div>
+      <div v-else-if="!currentSolution" class="empty-hint display-body-light">
         请先从左侧选择一个已发布方案
       </div>
       <div v-else class="solution-use-area">
@@ -214,7 +221,10 @@
             @click="onHighlightCf(section.customFieldId)"
           >
             <span class="cf-type-indicator" :class="getCfUseTypeClass(section.type)"></span>
-            <span class="display-body strong">{{ section.name }}</span>
+            <div class="cf-use-card-info">
+              <span class="display-body strong">{{ section.name }}</span>
+              <span class="display-body-light cf-use-card-value">{{ getCfValueSummary(section) }}</span>
+            </div>
             <span
               class="display-mono cf-use-card-count"
               title="点击编辑"
@@ -236,6 +246,7 @@
             <div
               v-for="(node, index) in nodeList"
               :key="node.id"
+              v-show="!collapsedCfId || getNodeFocusBindings(node.id).length > 0"
               class="node-wrapper"
               :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
               :ref="(el) => { if (el) nodeRefs[index] = el }"
@@ -251,7 +262,7 @@
               </div>
               <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed }">
                 <div class="card-header-inner">
-                  <span class="card-title-flex" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
+                  <span class="card-title-flex" @click="collapsedCfId ? null : (node.collapsed = !node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
                     <span class="collapse-arrow">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
                     <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
                     <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
@@ -636,6 +647,26 @@ function getFocusFieldDisplay(fieldKey, node) {
     return { label, value: JSON.stringify(value) }
   }
   return { label, value: value || '(空)' }
+}
+
+function getCfValueSummary(section) {
+  const firstBinding = section.bindings?.[0]
+  if (!firstBinding) return ''
+  const node = nodeList.value.find(n => n.id === firstBinding.nodeId)
+  const value = node?.formData?.[firstBinding.fieldKey]
+  if (value === undefined || value === null) return '(未设置)'
+  if (Array.isArray(value)) return value.length > 0 ? value.slice(0, 3).join('、') + (value.length > 3 ? '…' : '') : '(空)'
+  if (typeof value === 'object') {
+    if (value.days !== undefined) return `过去 ${value.days} 天`
+    if (value.min !== undefined) {
+      const mode = node?.modeData?.[firstBinding.fieldKey]
+      if (mode === 'unlimited') return '不限'
+      if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
+      return `≥ ${value.min ?? '?'}`
+    }
+    return ''
+  }
+  return String(value).slice(0, 20)
 }
 
 function getCfUseTypeClass(type) {
@@ -1024,6 +1055,8 @@ function exitSolutionUse() {
   activeNodeIndex.value = 0
   crowdNameInput.value = DEFAULT_CROWD_NAME
   nameAuto.value = true
+  highlightedCfId.value = null
+  collapsedCfId.value = null
   resetHistory()
   ElMessage.success('已退出方案使用，可重新自由搭建')
 }
