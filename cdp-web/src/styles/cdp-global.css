@@ -1260,6 +1260,94 @@ body {
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
+/* ---- 自定义字段类型色彩指示 ---- */
+.cf-type-indicator {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cf-type-indicator.date  { background: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+.cf-type-indicator.number { background: #8b5cf6; box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
+.cf-type-indicator.text  { background: #10b981; box-shadow: 0 0 0 2px rgba(16,185,129,0.15); }
+.cf-type-indicator.select { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,0.15); }
+
+/* ---- 卡片入场交错动画 ---- */
+@keyframes cfCardReveal {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.cf-card-enter { animation: cfCardReveal 0.35s cubic-bezier(0.16, 1, 0.30, 1) both; }
+
+/* ---- 创建面板步骤进度条 ---- */
+.creating-progress-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.creating-progress-segment {
+  flex: 1;
+  height: 3px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 2px;
+  transition: background 0.3s ease;
+}
+.creating-progress-segment.filled {
+  background: #ff6b4a;
+}
+
+/* ---- 使用端标签溢出折叠 ---- */
+.solution-use-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 50%;
+}
+.solution-use-tags .tag-more {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: rgba(0,0,0,0.04);
+  color: #a1a1a6;
+  cursor: default;
+}
+
+/* ---- 摘要行高亮动画 ---- */
+.summary-row-highlighted {
+  animation: summaryHighlightIn 0.3s ease both;
+}
+@keyframes summaryHighlightIn {
+  from { background: transparent; border-left-color: transparent; }
+  to   { background: rgba(255,107,74,0.08); border-left-color: #ff6b4a; }
+}
+
+/* ---- 使用态卡片呼吸高亮 ---- */
+.use-card-highlighted {
+  animation: useCardBreathe 2s ease-in-out infinite;
+}
+@keyframes useCardBreathe {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255,107,74,0.12); }
+  50%      { box-shadow: 0 0 0 6px rgba(255,107,74,0.06); }
+}
+
+/* ---- 空状态图形 ---- */
+.empty-state-illustration {
+  width: 64px; height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.empty-state-illustration.create {
+  background: linear-gradient(135deg, rgba(255,107,74,0.08), rgba(255,107,74,0.04));
+  color: #ff6b4a;
+}
+.empty-state-illustration.use {
+  background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(59,130,246,0.04));
+  color: #3b82f6;
+}
+
 /* ============================================================ */
 /* 工作台方案接入                                                    */
 /* ============================================================ */

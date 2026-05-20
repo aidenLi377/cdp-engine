@@ -1,6 +1,7 @@
 <template>
   <div class="solution-use-shell">
     <div v-if="customFieldSections.length === 0" class="solution-use-empty">
+      <div class="empty-state-illustration use">⌁</div>
       <div class="display-sub">当前方案暂无自定义字段</div>
       <div class="display-body-light">
         {{ solutionName || '当前方案' }} 尚未配置自定义字段，请在方案中心创建后再使用。
@@ -18,18 +19,20 @@
         @mouseleave="emit('highlightCf', null)"
       >
         <div class="solution-use-card-head">
-          <div>
-            <div class="display-feature-title">{{ section.name }}</div>
-            <div class="display-body-light">{{ section.type }}</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="cf-type-indicator" :class="getUseCfTypeClass(section.type)"></span>
+            <div>
+              <div class="display-feature-title">{{ section.name }}</div>
+              <div class="display-body-light">{{ section.type }}</div>
+            </div>
           </div>
           <div class="solution-use-tags">
-            <span
-              v-for="binding in section.bindings"
-              :key="binding.nodeId + binding.fieldKey"
-              class="badge-mono"
-            >
-              {{ binding.packageType }} &middot; {{ binding.fieldLabel }}
-            </span>
+            <template v-for="(binding, bi) in section.bindings" :key="binding.nodeId + binding.fieldKey">
+              <span v-if="bi < 4" class="badge-mono">
+                {{ binding.packageType }} &middot; {{ binding.fieldLabel }}
+              </span>
+            </template>
+            <span v-if="section.bindings.length > 4" class="tag-more">+{{ section.bindings.length - 4 }}</span>
           </div>
         </div>
 
@@ -187,6 +190,14 @@ const emit = defineEmits(['highlightCf', 'cfValueChange'])
 
 const cfValues = reactive({})
 const cfValueModes = reactive({})
+
+function getUseCfTypeClass(type) {
+  if (!type) return 'text'
+  if (type.includes('日期')) return 'date'
+  if (type.includes('数值')) return 'number'
+  if (type.includes('搜索') || type.includes('下拉')) return 'select'
+  return 'text'
+}
 
 function isMultiSelectType(type) {
   return type === '搜索多选' || type === '列表输入' || type === '下拉多选'

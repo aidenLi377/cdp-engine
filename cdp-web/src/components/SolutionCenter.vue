@@ -278,15 +278,17 @@
             </div>
           </div>
 
-          <div v-if="customFields.length === 0 && !creatingCustomField" class="empty-state-sm display-body-light">
-            点击下方按钮创建第一个自定义字段
+          <div v-if="customFields.length === 0 && !creatingCustomField" class="empty-state-sm">
+            <div class="empty-state-illustration create">+</div>
+            <div class="display-body-light">点击下方按钮创建第一个自定义字段<br/>让一个字段控制多个组件参数</div>
           </div>
 
           <div v-else class="custom-field-list">
             <div
               v-for="(cf, cfIndex) in customFields"
               :key="cf.id"
-              class="custom-field-item"
+              class="custom-field-item cf-card-enter"
+              :style="{ animationDelay: (cfIndex * 0.04) + 's' }"
               :class="{ active: highlightedCustomFieldId === cf.id, 'drag-over': dragCustomFieldIndex >= 0 && dragCustomFieldIndex === cfIndex }"
               draggable="true"
               @dragstart="onDragCustomFieldStart(cfIndex)"
@@ -298,6 +300,7 @@
             >
               <div class="custom-field-item-head">
                 <span class="drag-handle" title="拖拽排序">⠿</span>
+                <span class="cf-type-indicator" :class="getCfTypeClass(cf.type)"></span>
                 <span class="display-body strong">{{ cf.name }}</span>
                 <div class="custom-field-item-actions">
                   <el-button
@@ -322,8 +325,10 @@
               </div>
               <div class="display-body-light custom-field-meta">
                 <span>{{ cf.type }}</span>
+                <span class="cf-meta-sep">·</span>
                 <span>{{ (cf.bindings || []).length }} 个绑定</span>
-                <span v-if="cf.group">分组: {{ cf.group }}</span>
+                <span v-if="cf.group" class="cf-meta-sep">·</span>
+                <span v-if="cf.group">{{ cf.group }}</span>
               </div>
             </div>
           </div>
@@ -331,6 +336,10 @@
           <div v-if="creatingCustomField" class="creating-custom-field-panel">
             <div class="creating-panel-title">
               {{ editingCustomFieldId ? '编辑自定义字段' : '新增自定义字段' }}
+            </div>
+            <div v-if="!editingCustomFieldId" class="creating-progress-bar">
+              <div class="creating-progress-segment filled"></div>
+              <div class="creating-progress-segment" :class="{ filled: creatingCustomFieldStep >= 2 }"></div>
             </div>
             <el-input
               v-if="editingCustomFieldId"
@@ -341,8 +350,9 @@
               style="margin-bottom:8px"
             />
             <div v-if="!editingCustomFieldId" class="creating-steps">
-              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 1, done: creatingCustomFieldStep > 1 }">选择字段类型</span>
-              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 2 }">绑定组件</span>
+              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 1, done: creatingCustomFieldStep > 1 }">① 选择字段类型</span>
+              <span class="creating-step-arrow">→</span>
+              <span class="creating-step" :class="{ active: creatingCustomFieldStep === 2 }">② 绑定组件</span>
             </div>
 
             <div v-if="creatingCustomFieldStep === 1" class="creating-step-body">
@@ -1075,6 +1085,14 @@ function clearAllCustomFields() {
   highlightedCustomFieldId.value = null
 }
 
+function getCfTypeClass(type) {
+  if (!type) return 'text'
+  if (type.includes('日期')) return 'date'
+  if (type.includes('数值')) return 'number'
+  if (type.includes('搜索') || type.includes('下拉')) return 'select'
+  return 'text'
+}
+
 function highlightCustomField(cfId) {
   highlightedCustomFieldId.value = cfId
 }
@@ -1146,14 +1164,25 @@ onMounted(async () => {
 }
 .custom-field-item-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+.custom-field-item-head .display-body {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .custom-field-meta {
   display: flex;
-  gap: 10px;
+  gap: 6px;
   margin-top: 4px;
+  margin-left: 26px;
   font-size: 11px;
+}
+.cf-meta-sep {
+  color: #c7c7cc;
 }
 .creating-custom-field-panel {
   background: rgba(255, 107, 74, 0.04);
@@ -1177,6 +1206,10 @@ onMounted(async () => {
 }
 .creating-step.done {
   color: #78787d;
+}
+.creating-step-arrow {
+  color: #c7c7cc;
+  font-size: 12px;
 }
 .creating-step-body {
   margin-top: 8px;
