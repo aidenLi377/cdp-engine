@@ -976,3 +976,70 @@ onMounted(async () => {
   await Promise.all([loadSolutions(), loadAvailablePackages()])
 })
 </script>
+
+<style scoped>
+.custom-field-item {
+  padding: 10px 12px;
+  border: 1px solid #e0dcd6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 6px;
+}
+.custom-field-item:hover,
+.custom-field-item.active {
+  border-color: #ff6b4a;
+  background: rgba(255, 107, 74, 0.04);
+}
+.custom-field-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.custom-field-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.creating-custom-field-panel {
+  background: rgba(255, 107, 74, 0.04);
+  border: 1px solid rgba(255, 107, 74, 0.2);
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.creating-steps {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.creating-step {
+  font-size: 11px;
+  color: #a1a1a6;
+}
+.creating-step.active {
+  color: #ff6b4a;
+  font-weight: 600;
+}
+.creating-step.done {
+  color: #78787d;
+}
+.creating-step-body {
+  margin-top: 8px;
+}
+.creating-hint {
+  font-size: 11px;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+.creating-step-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.node-highlighted {
+  border-color: #ff6b4a !important;
+  box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15) !important;
+}
+</style>
