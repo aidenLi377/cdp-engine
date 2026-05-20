@@ -1,5 +1,5 @@
 import { useCdpShared } from './useCdpShared.js'
-import { buildUsageSections, cleanWorkbenchFieldIds } from '../utils/solutionState.js'
+import { buildUsageSections, cleanWorkbenchFieldIds, buildCustomFieldSections, syncCustomFieldValue, getNodeBindingFieldKeys } from '../utils/solutionState.js'
 
 function cloneValue(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value))
@@ -130,6 +130,18 @@ export function useSolutionRuntime() {
     return bindRuntimeUsageSections(baseSections, nodes)
   }
 
+  function buildCustomFieldUsageSections(customFields, nodes) {
+    return buildCustomFieldSections(customFields, nodes)
+  }
+
+  function applyCustomFieldValue(nodes, customFieldId, customFields, newValue) {
+    return syncCustomFieldValue(nodes, customFieldId, customFields, newValue)
+  }
+
+  function getCustomFieldBoundFieldKeys(customFieldId, customFields) {
+    return getNodeBindingFieldKeys(customFieldId, customFields)
+  }
+
   return {
     cloneValue,
     buildInitialNodeState,
@@ -138,5 +150,8 @@ export function useSolutionRuntime() {
     hydrateNodes,
     normalizeWorkbenchFieldIds,
     buildRuntimeUsageSections,
+    buildCustomFieldUsageSections,
+    applyCustomFieldValue,
+    getCustomFieldBoundFieldKeys,
   }
 }
