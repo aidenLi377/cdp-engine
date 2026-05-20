@@ -218,6 +218,15 @@
             <span class="display-body strong">{{ section.name }}</span>
             <span class="display-mono cf-use-card-count">{{ section.bindings.length }}</span>
           </div>
+          <el-button
+            v-if="highlightedCfId"
+            class="cf-expand-all-btn"
+            size="small"
+            text
+            @click="expandAllNodes"
+          >
+            展开全部
+          </el-button>
         </div>
         <div v-if="nodeList.length > 0" class="canvas-with-minimap cf-use-node-area">
           <div class="canvas-scroll-area" ref="canvasScrollRef" @scroll="onCanvasScroll">
@@ -237,15 +246,31 @@
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
-              <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed }">
+              <div class="intercom-card behavior-card" :class="{ collapsed: highlightedCfId || node.collapsed }">
                 <div class="card-header-inner">
                   <span class="card-title-flex" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
-                    <span class="collapse-arrow">{{ node.collapsed ? '▶' : '▼' }}</span>
+                    <span class="collapse-arrow">{{ (highlightedCfId || node.collapsed) ? '▶' : '▼' }}</span>
                     <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
                     <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
                   </span>
                 </div>
-                <div class="solution-readonly-surface">
+                <!-- Focus mode: show only bound fields -->
+                <div v-if="highlightedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
+                  <div
+                    v-for="binding in getNodeFocusBindings(node.id)"
+                    :key="binding.fieldKey"
+                    class="cf-focus-field-row"
+                  >
+                    <span class="display-body-light">{{ getFocusFieldDisplay(binding.fieldKey, node).label }}</span>
+                    <span class="display-body strong">{{ getFocusFieldDisplay(binding.fieldKey, node).value }}</span>
+                  </div>
+                </div>
+                <!-- No matching bindings in focus mode: show subtle hint -->
+                <div v-else-if="highlightedCfId" class="cf-focus-fields">
+                  <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
+                </div>
+                <!-- Normal mode: full DynamicForm -->
+                <div v-else class="solution-readonly-surface">
                   <DynamicForm v-show="!node.collapsed" :node="node" />
                 </div>
               </div>
@@ -550,7 +575,47 @@ const customFieldSections = computed(() =>
 )
 
 function onHighlightCf(cfId) {
-  highlightedCfId.value = cfId
+  if (highlightedCfId.value === cfId) {
+    // Click same card again -> unfocus, expand all
+    highlightedCfId.value = null
+    nodeList.value.forEach(n => { n.collapsed = false })
+  } else {
+    // Focus on this custom field -> collapse all nodes
+    highlightedCfId.value = cfId
+    nodeList.value.forEach(n => { n.collapsed = true })
+  }
+}
+
+function expandAllNodes() {
+  highlightedCfId.value = null
+  nodeList.value.forEach(n => { n.collapsed = false })
+}
+
+function getNodeFocusBindings(nodeId) {
+  if (!highlightedCfId.value) return []
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  if (!cf) return []
+  return (cf.bindings || []).filter(b => b.nodeId === nodeId)
+}
+
+function getFocusFieldDisplay(fieldKey, node) {
+  const schema = Array.isArray(node.schema) ? node.schema : []
+  const field = schema.find(f => f.key === fieldKey)
+  const label = field?.Label || field?.label || fieldKey
+  const value = node.formData?.[fieldKey]
+  if (Array.isArray(value)) return { label, value: value.join('、') || '(空)' }
+  if (value && typeof value === 'object') {
+    if (value.days !== undefined) return { label, value: `过去 ${value.days} 天` }
+    if (value.min !== undefined) {
+      const mode = node.modeData?.[fieldKey]
+      if (mode === 'unlimited') return { label, value: '不限' }
+      if (mode === 'range') return { label, value: `${value.min ?? '?'} — ${value.max ?? '?'}` }
+      return { label, value: `≥ ${value.min ?? '?'}` }
+    }
+    return { label, value: JSON.stringify(value) }
+  }
+  return { label, value: value || '(空)' }
 }
 
 function getCfUseTypeClass(type) {

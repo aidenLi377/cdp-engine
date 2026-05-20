@@ -1707,6 +1707,34 @@ body {
   border-radius: 99px;
   font-size: 10px;
 }
+.cf-expand-all-btn.el-button {
+  height: 34px !important;
+  padding: 0 12px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  color: #ff6b4a !important;
+  flex-shrink: 0;
+  align-self: center;
+}
+.cf-expand-all-btn.el-button:hover {
+  background: rgba(255,107,74,0.08) !important;
+}
+
+/* ---- 聚焦模式下的字段迷你展示 ---- */
+.cf-focus-fields {
+  padding: 8px 18px 12px;
+}
+.cf-focus-field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  margin-bottom: 4px;
+  background: rgba(255,107,74,0.04);
+  border-left: 3px solid #ff6b4a;
+  border-radius: 4px;
+  font-size: 13px;
+}
 
 /* ---- 使用态下方节点区域 ---- */
 .cf-use-node-area {
