@@ -448,12 +448,12 @@ let saveTimer = null
 let jsonTimer = null
 
 provide('solutionCenterContext', {
-  highlightedCustomFieldId: highlightedCfId,
-  customFields: computed(() => currentSolution.value?.customFields || []),
-  creatingCustomField: ref(false),
-  creatingCustomFieldType: ref(''),
-  creatingCustomFieldStep: ref(2),
-  creatingCustomFieldBindings: ref([]),
+  highlightedCustomFieldId: null,
+  customFields: [],
+  creatingCustomField: false,
+  creatingCustomFieldType: '',
+  creatingCustomFieldStep: 2,
+  creatingCustomFieldBindings: [],
   onFieldClickForBinding: () => {},
   isFieldHighlighted: (nodeId, fieldKey) => {
     if (!highlightedCfId.value) return false

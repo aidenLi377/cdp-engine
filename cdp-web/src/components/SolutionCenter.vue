@@ -394,7 +394,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Plus, Upload, View } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -451,18 +451,18 @@ const creatingCustomFieldName = ref('')
 const creatingCustomFieldType = ref('')
 const creatingCustomFieldBindings = ref([])
 
-provide('solutionCenterContext', {
-  highlightedCustomFieldId,
-  customFields,
-  creatingCustomField,
-  creatingCustomFieldType,
-  creatingCustomFieldStep,
-  creatingCustomFieldBindings,
+provide('solutionCenterContext', reactive({
+  get highlightedCustomFieldId() { return highlightedCustomFieldId.value },
+  get customFields() { return customFields.value },
+  get creatingCustomField() { return creatingCustomField.value },
+  get creatingCustomFieldType() { return creatingCustomFieldType.value },
+  get creatingCustomFieldStep() { return creatingCustomFieldStep.value },
+  get creatingCustomFieldBindings() { return creatingCustomFieldBindings.value },
   onFieldClickForBinding,
   isFieldHighlighted,
   isNodeHighlighted,
   isFieldSelectableForBinding,
-})
+}))
 
 const isPublished = computed(() => activeSolution.value?.status === 'published')
 
