@@ -1669,6 +1669,51 @@ body {
   flex-direction: column;
 }
 
+/* ---- 使用态自定义字段卡片横排 ---- */
+.cf-cards-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  flex-shrink: 0;
+}
+.cf-use-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.70);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.cf-use-card:hover {
+  border-color: rgba(0,0,0,0.16);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+.cf-use-card-active {
+  border-color: #ff6b4a !important;
+  background: rgba(255,107,74,0.06) !important;
+  box-shadow: 0 0 0 2px rgba(255,107,74,0.12);
+}
+.cf-use-card-count {
+  background: rgba(0,0,0,0.04);
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 10px;
+}
+
+/* ---- 使用态下方节点区域 ---- */
+.cf-use-node-area {
+  flex: 1;
+  margin-top: 12px;
+}
+
 .solution-use-nodes {
   margin-top: 28px;
   padding-top: 20px;

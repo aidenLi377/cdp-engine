@@ -204,13 +204,65 @@
       <div v-if="!currentSolution" class="empty-hint display-body-light">
         请先从左侧选择一个已发布方案
       </div>
-      <SolutionUseForm
-        v-else
-        :custom-field-sections="customFieldSections"
-        :solution-name="currentSolution?.name || ''"
-        :highlighted-cf-id="highlightedCfId"
-        @highlight-cf="onHighlightCf"
-        @cf-value-change="onCfValueChange"
+      <div v-else class="solution-use-area">
+        <div v-if="customFieldSections.length > 0" class="cf-cards-bar">
+          <div
+            v-for="section in customFieldSections"
+            :key="section.customFieldId"
+            class="cf-use-card"
+            :class="{ 'cf-use-card-active': highlightedCfId === section.customFieldId }"
+            @click="onHighlightCf(section.customFieldId)"
+            @dblclick="openCfEditDialog(section)"
+          >
+            <span class="cf-type-indicator" :class="getCfUseTypeClass(section.type)"></span>
+            <span class="display-body strong">{{ section.name }}</span>
+            <span class="display-mono cf-use-card-count">{{ section.bindings.length }}</span>
+          </div>
+        </div>
+        <div v-if="nodeList.length > 0" class="canvas-with-minimap cf-use-node-area">
+          <div class="canvas-scroll-area" ref="canvasScrollRef" @scroll="onCanvasScroll">
+            <div
+              v-for="(node, index) in nodeList"
+              :key="node.id"
+              class="node-wrapper"
+              :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
+              :ref="(el) => { if (el) nodeRefs[index] = el }"
+            >
+              <div v-if="index > 0" class="logic-connector">
+                <div class="connector-line"></div>
+                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" disabled>
+                  <el-radio-button label="n">交集</el-radio-button>
+                  <el-radio-button label="u">并集</el-radio-button>
+                  <el-radio-button label="d">差集</el-radio-button>
+                </el-radio-group>
+                <div class="connector-line"></div>
+              </div>
+              <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed }">
+                <div class="card-header-inner">
+                  <span class="card-title-flex" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
+                    <span class="collapse-arrow">{{ node.collapsed ? '▶' : '▼' }}</span>
+                    <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
+                    <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                  </span>
+                </div>
+                <div class="solution-readonly-surface">
+                  <DynamicForm v-show="!node.collapsed" :node="node" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-hint display-body-light">
+          当前方案没有节点
+        </div>
+      </div>
+
+      <CustomFieldEditDialog
+        v-model="cfEditDialogVisible"
+        :custom-field="editingCfSection"
+        :bound-nodes="editingCfSection?.bindings || []"
+        :current-value="editingCfCurrentValue"
+        @save="onCfDialogSave"
       />
     </template>
 
@@ -358,12 +410,7 @@
           </div>
 
           <div class="summary-rows">
-            <div
-              v-for="item in getNodeSummary(node)"
-              :key="item.key"
-              class="summary-row"
-              :class="{ 'summary-row-highlighted': isSummaryRowHighlighted(node.id, item.key) }"
-            >
+            <div v-for="item in getNodeSummary(node)" :key="item.key" class="summary-row">
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
             </div>
@@ -390,7 +437,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
-import SolutionUseForm from './SolutionUseForm.vue'
+import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
@@ -447,6 +494,9 @@ const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: ''
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
+const cfEditDialogVisible = ref(false)
+const editingCfSection = ref(null)
+const editingCfCurrentValue = ref(null)
 
 let dragSrcIndex = null
 let saveTimer = null
@@ -503,21 +553,44 @@ function onHighlightCf(cfId) {
   highlightedCfId.value = cfId
 }
 
-function onCfValueChange({ customFieldId, value }) {
+function getCfUseTypeClass(type) {
+  if (!type) return 'text'
+  if (type.includes('日期')) return 'date'
+  if (type.includes('数值')) return 'number'
+  if (type.includes('搜索') || type.includes('下拉')) return 'select'
+  return 'text'
+}
+
+function openCfEditDialog(section) {
+  editingCfSection.value = section
+  // Read current value from the first bound node
+  const firstBinding = section.bindings?.[0]
+  if (firstBinding) {
+    const node = nodeList.value.find(n => n.id === firstBinding.nodeId)
+    const fieldValue = node?.formData?.[firstBinding.fieldKey]
+    const modeValue = node?.modeData?.[firstBinding.fieldKey]
+    if (section.type?.includes('日期') || section.type?.includes('数值')) {
+      editingCfCurrentValue.value = { ...(fieldValue || {}), mode: modeValue }
+    } else {
+      editingCfCurrentValue.value = fieldValue
+    }
+  }
+  cfEditDialogVisible.value = true
+}
+
+function onCfDialogSave({ customFieldId, value }) {
   syncCustomFieldValue(
     nodeList.value,
     customFieldId,
     currentSolution.value?.customFields || [],
     value,
   )
-  // Show feedback
   const cfs = currentSolution.value?.customFields || []
   const cf = cfs.find(c => c.id === customFieldId)
   if (cf) {
     const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
-    const count = uniqueNodes.size
-    if (count > 0) {
-      ElMessage.success(`已同步到 ${count} 个组件`)
+    if (uniqueNodes.size > 0) {
+      ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
     }
   }
 }
@@ -528,14 +601,6 @@ function isNodeHighlightedForCf(nodeId) {
   const cf = cfs.find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId)
-}
-
-function isSummaryRowHighlighted(nodeId, fieldKey) {
-  if (!highlightedCfId.value) return false
-  const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === highlightedCfId.value)
-  if (!cf) return false
-  return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
 
 function formatTime(value) {
