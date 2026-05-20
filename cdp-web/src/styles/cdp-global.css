@@ -538,7 +538,7 @@ body {
   border-left: 3px solid #ff6b4a;
   padding-left: 6px;
   border-radius: 3px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 .summary-label { flex-shrink: 0; width: 56px; color: #86868b; font-weight: 450; }
 .summary-val {
@@ -1257,7 +1257,7 @@ body {
 .node-highlighted {
   border-color: #ff6b4a !important;
   box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15) !important;
-  transition: all 0.25s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
 /* ============================================================ */

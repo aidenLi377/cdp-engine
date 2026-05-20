@@ -129,6 +129,7 @@ const {
   border-radius: 4px;
   padding: 8px;
   margin: 2px 0;
+  transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 .field-dimmed {
   opacity: 0.35;

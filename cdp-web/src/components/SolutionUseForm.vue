@@ -284,6 +284,6 @@ watch(() => props.customFieldSections, initCfValues, { deep: true })
 .use-card-highlighted {
   border-color: #ff6b4a !important;
   box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15) !important;
-  transition: all 0.2s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 </style>
