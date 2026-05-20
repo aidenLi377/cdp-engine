@@ -49,8 +49,8 @@
                     class="intercom-radio-group"
                     @change="onCfValueChange(section)"
                   >
-                    <el-radio-button label="recent">过去 N 天</el-radio-button>
-                    <el-radio-button label="range">固定日期</el-radio-button>
+                    <el-radio-button value="recent">过去 N 天</el-radio-button>
+                    <el-radio-button value="range">固定日期</el-radio-button>
                   </el-radio-group>
                   <div v-if="cfValueModes[section.customFieldId] === 'recent'" class="range-inputs">
                     <el-input-number
@@ -92,9 +92,9 @@
                     class="intercom-radio-group"
                     @change="onCfValueChange(section)"
                   >
-                    <el-radio-button label="unlimited">不限</el-radio-button>
-                    <el-radio-button label="min">≥ 最小值</el-radio-button>
-                    <el-radio-button label="range">自定义区间</el-radio-button>
+                    <el-radio-button value="unlimited">不限</el-radio-button>
+                    <el-radio-button value="min">≥ 最小值</el-radio-button>
+                    <el-radio-button value="range">自定义区间</el-radio-button>
                   </el-radio-group>
                   <div class="range-inputs" v-if="cfValueModes[section.customFieldId] !== 'unlimited'">
                     <el-input-number
