@@ -1,7 +1,17 @@
 <template>
   <el-form label-position="top" size="large" class="dynamic-form">
     <template v-for="field in node.schema" :key="field.key">
-      <el-form-item v-show="isVisible(field, node)">
+      <el-form-item
+        v-show="isVisible(field, node)"
+        :class="{
+          'field-highlighted': ctx && ctx.isFieldHighlighted && ctx.isFieldHighlighted(node.id, field.key),
+          'field-dimmed': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldStep === 2 && field.Widget_Type !== ctx.creatingCustomFieldType,
+          'field-selectable': ctx && ctx.creatingCustomField && (ctx.creatingCustomFieldStep === 1 || field.Widget_Type === ctx.creatingCustomFieldType),
+          'field-selected': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldBindings && ctx.creatingCustomFieldBindings.some(b => b.nodeId === node.id && b.fieldKey === field.key)
+        }"
+        @click="ctx && ctx.creatingCustomField && (ctx.creatingCustomFieldStep === 1 || field.Widget_Type === ctx.creatingCustomFieldType) ? ctx.onFieldClickForBinding(node.id, field.key) : null"
+      >
+        <div v-if="ctx && ctx.creatingCustomField && ctx.creatingCustomFieldBindings && ctx.creatingCustomFieldBindings.some(b => b.nodeId === node.id && b.fieldKey === field.key)" class="check-mark">&check;</div>
 
         <template #label>
           <span class="display-body strong">{{ field.Label }}</span>
@@ -94,9 +104,12 @@
 </template>
 
 <script setup>
+import { inject } from 'vue'
 import { useCdpShared } from '../composables/useCdpShared'
 
 const props = defineProps({ node: { type: Object, required: true } })
+
+const ctx = inject('solutionCenterContext', null)
 
 const {
   isVisible, getDynamicDescription, getDynamicStyle,
@@ -106,3 +119,52 @@ const {
   getExactDateRangeHint, handleCalendarChange, disabledDate
 } = useCdpShared()
 </script>
+
+<style scoped>
+.field-highlighted {
+  border: 1px solid #ff6b4a !important;
+  background: rgba(255, 107, 74, 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(255, 107, 74, 0.1);
+  border-radius: 4px;
+  padding: 8px;
+  margin: 2px 0;
+}
+.field-dimmed {
+  opacity: 0.35;
+  pointer-events: none;
+  filter: grayscale(0.6);
+}
+.field-selectable {
+  cursor: pointer;
+  border: 2px dashed transparent;
+  padding: 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.field-selectable:hover {
+  border-color: #ff6b4a;
+  background: rgba(255, 107, 74, 0.03);
+}
+.field-selected {
+  border-color: #ff6b4a !important;
+  background: rgba(255, 107, 74, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 107, 74, 0.2);
+  position: relative;
+}
+.check-mark {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ff6b4a;
+  color: #fff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+</style>
