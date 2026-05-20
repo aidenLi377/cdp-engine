@@ -100,6 +100,7 @@
               <span class="display-body">{{ bn.packageType }}</span>
               <span class="cf-bound-arrow">→</span>
               <span class="display-body-light">{{ bn.fieldLabel }}</span>
+              <span class="cf-bound-value">{{ formatBoundValue(bn) }}</span>
             </div>
           </div>
         </div>
@@ -121,6 +122,7 @@ const props = defineProps({
   customField: { type: Object, default: null },
   boundNodes: { type: Array, default: () => [] },
   currentValue: { type: [String, Number, Array, Object], default: null },
+  nodeList: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
@@ -154,6 +156,25 @@ function initEditState() {
   } else {
     editValue.value = v ?? ''
   }
+}
+
+function formatBoundValue(binding) {
+  const node = (props.nodeList || []).find(n => n.id === binding.nodeId)
+  if (!node) return ''
+  const value = node.formData?.[binding.fieldKey]
+  const mode = node.modeData?.[binding.fieldKey]
+  if (value === undefined || value === null) return '(未设置)'
+  if (Array.isArray(value)) return value.join('、') || '(空)'
+  if (typeof value === 'object') {
+    if (value.days !== undefined) return `过去 ${value.days} 天`
+    if (value.min !== undefined) {
+      if (mode === 'unlimited') return '不限'
+      if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
+      return `≥ ${value.min ?? '?'}`
+    }
+    return ''
+  }
+  return String(value)
 }
 
 function save() {
@@ -199,5 +220,11 @@ watch(() => props.modelValue, (val) => {
 .cf-bound-arrow {
   color: #c7c7cc;
   font-size: 12px;
+}
+.cf-bound-value {
+  margin-left: auto;
+  font-size: 12px;
+  color: #ff6b4a;
+  font-weight: 500;
 }
 </style>

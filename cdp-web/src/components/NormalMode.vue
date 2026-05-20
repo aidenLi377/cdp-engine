@@ -301,6 +301,7 @@
         :custom-field="editingCfSection"
         :bound-nodes="editingCfSection?.bindings || []"
         :current-value="editingCfCurrentValue"
+        :node-list="nodeList"
         @save="onCfDialogSave"
       />
     </template>
