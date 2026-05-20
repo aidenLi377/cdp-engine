@@ -284,25 +284,41 @@
 
           <div v-else class="custom-field-list">
             <div
-              v-for="cf in customFields"
+              v-for="(cf, cfIndex) in customFields"
               :key="cf.id"
               class="custom-field-item"
-              :class="{ active: highlightedCustomFieldId === cf.id }"
+              :class="{ active: highlightedCustomFieldId === cf.id, 'drag-over': dragCustomFieldIndex >= 0 && dragCustomFieldIndex === cfIndex }"
+              draggable="true"
+              @dragstart="onDragCustomFieldStart(cfIndex)"
+              @dragover.prevent="onDragCustomFieldOver(cfIndex)"
+              @dragend="onDragCustomFieldEnd"
               @click="highlightCustomField(cf.id)"
               @mouseenter="highlightCustomField(cf.id)"
               @mouseleave="highlightCustomField(null)"
             >
               <div class="custom-field-item-head">
+                <span class="drag-handle" title="拖拽排序">⠿</span>
                 <span class="display-body strong">{{ cf.name }}</span>
-                <el-button
-                  class="solution-field-action"
-                  text
-                  size="small"
-                  :disabled="isPublished"
-                  @click.stop="removeCustomField(cf.id)"
-                >
-                  &times;
-                </el-button>
+                <div class="custom-field-item-actions">
+                  <el-button
+                    class="solution-field-action"
+                    text
+                    size="small"
+                    :disabled="isPublished"
+                    @click.stop="editCustomField(cf)"
+                  >
+                    编辑
+                  </el-button>
+                  <el-button
+                    class="solution-field-action"
+                    text
+                    size="small"
+                    :disabled="isPublished"
+                    @click.stop="removeCustomField(cf.id)"
+                  >
+                    &times;
+                  </el-button>
+                </div>
               </div>
               <div class="display-body-light custom-field-meta">
                 <span>{{ cf.type }}</span>
@@ -313,7 +329,10 @@
           </div>
 
           <div v-if="creatingCustomField" class="creating-custom-field-panel">
-            <div class="creating-steps">
+            <div class="creating-panel-title">
+              {{ editingCustomFieldId ? '编辑自定义字段' : '新增自定义字段' }}
+            </div>
+            <div v-if="!editingCustomFieldId" class="creating-steps">
               <span class="creating-step" :class="{ active: creatingCustomFieldStep === 1, done: creatingCustomFieldStep > 1 }">选择字段类型</span>
               <span class="creating-step" :class="{ active: creatingCustomFieldStep === 2 }">绑定组件</span>
             </div>
@@ -350,7 +369,7 @@
                   :disabled="creatingCustomFieldBindings.length === 0"
                   @click="finishCreateCustomField"
                 >
-                  完成创建
+                  {{ editingCustomFieldId ? '保存编辑' : '完成创建' }}
                 </el-button>
                 <el-button
                   class="intercom-btn-outlined btn-small"
@@ -450,6 +469,8 @@ const creatingCustomFieldStep = ref(1)
 const creatingCustomFieldName = ref('')
 const creatingCustomFieldType = ref('')
 const creatingCustomFieldBindings = ref([])
+const editingCustomFieldId = ref(null)
+const dragCustomFieldIndex = ref(-1)
 
 provide('solutionCenterContext', reactive({
   get highlightedCustomFieldId() { return highlightedCustomFieldId.value },
@@ -746,10 +767,22 @@ function duplicateNode(index) {
 
 function removeNode(index) {
   if (isPublished.value) return
+  const removedId = nodeList.value[index]?.id
   nodeList.value.splice(index, 1)
   nodeList.value.forEach((node, nodeIndex) => {
     if (nodeIndex === 0) node.operator = null
   })
+  if (removedId) {
+    let cleanedCount = 0
+    customFields.value.forEach(cf => {
+      const before = (cf.bindings || []).length
+      cf.bindings = (cf.bindings || []).filter(b => b.nodeId !== removedId)
+      cleanedCount += before - cf.bindings.length
+    })
+    if (cleanedCount > 0) {
+      ElMessage.warning(`已自动清理 ${cleanedCount} 个失效的自定义字段绑定`)
+    }
+  }
 }
 
 async function saveDraft() {
@@ -894,6 +927,7 @@ function cancelCreateCustomField() {
   creatingCustomFieldName.value = ''
   creatingCustomFieldType.value = ''
   creatingCustomFieldBindings.value = []
+  editingCustomFieldId.value = null
 }
 
 function onFieldClickForBinding(nodeId, fieldKey) {
@@ -923,24 +957,71 @@ function onFieldClickForBinding(nodeId, fieldKey) {
   }
 }
 
+function checkDuplicateCustomFieldName(name, excludeId) {
+  return customFields.value.some(cf => cf.name === name && cf.id !== excludeId)
+}
+
 function finishCreateCustomField() {
   if (!creatingCustomFieldName.value.trim() || creatingCustomFieldBindings.value.length === 0) return
   const name = creatingCustomFieldName.value.trim()
-  customFields.value.push({
-    id: `cf_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-    name,
-    type: creatingCustomFieldType.value,
-    group: '',
-    defaultValue: {},
-    bindings: [...creatingCustomFieldBindings.value],
-  })
+  if (checkDuplicateCustomFieldName(name, editingCustomFieldId.value)) {
+    ElMessage.warning(`自定义字段名称「${name}」已存在，请使用其他名称`)
+    return
+  }
+  if (editingCustomFieldId.value) {
+    const cf = customFields.value.find(c => c.id === editingCustomFieldId.value)
+    if (cf) {
+      cf.name = name
+      cf.bindings = [...creatingCustomFieldBindings.value]
+    }
+    ElMessage.success(`自定义字段「${name}」已更新`)
+  } else {
+    customFields.value.push({
+      id: `cf_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+      name,
+      type: creatingCustomFieldType.value,
+      group: '',
+      defaultValue: {},
+      bindings: [...creatingCustomFieldBindings.value],
+    })
+    ElMessage.success(`自定义字段「${name}」创建成功`)
+  }
+  editingCustomFieldId.value = null
   cancelCreateCustomField()
-  ElMessage.success(`自定义字段「${name}」创建成功`)
+}
+
+function editCustomField(cf) {
+  if (isPublished.value) return
+  editingCustomFieldId.value = cf.id
+  creatingCustomField.value = true
+  creatingCustomFieldStep.value = 2
+  creatingCustomFieldName.value = cf.name
+  creatingCustomFieldType.value = cf.type
+  creatingCustomFieldBindings.value = [...(cf.bindings || [])]
 }
 
 function removeCustomField(cfId) {
   customFields.value = customFields.value.filter(cf => cf.id !== cfId)
   if (highlightedCustomFieldId.value === cfId) highlightedCustomFieldId.value = null
+  if (editingCustomFieldId.value === cfId) {
+    editingCustomFieldId.value = null
+    cancelCreateCustomField()
+  }
+}
+
+function onDragCustomFieldStart(index) {
+  dragCustomFieldIndex.value = index
+}
+
+function onDragCustomFieldOver(index) {
+  if (dragCustomFieldIndex.value < 0 || dragCustomFieldIndex.value === index) return
+  const moved = customFields.value.splice(dragCustomFieldIndex.value, 1)[0]
+  customFields.value.splice(index, 0, moved)
+  dragCustomFieldIndex.value = index
+}
+
+function onDragCustomFieldEnd() {
+  dragCustomFieldIndex.value = -1
 }
 
 function clearAllCustomFields() {
@@ -1067,5 +1148,31 @@ onMounted(async () => {
 .node-highlighted {
   border-color: #ff6b4a !important;
   box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15) !important;
+}
+.custom-field-item.drag-over {
+  border-color: #ff6b4a;
+  background: rgba(255, 107, 74, 0.08);
+  transform: translateY(2px);
+}
+.drag-handle {
+  cursor: grab;
+  color: #a1a1a6;
+  font-size: 14px;
+  margin-right: 6px;
+  user-select: none;
+  flex-shrink: 0;
+}
+.drag-handle:active { cursor: grabbing; }
+.custom-field-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.creating-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff6b4a;
+  margin-bottom: 8px;
 }
 </style>
