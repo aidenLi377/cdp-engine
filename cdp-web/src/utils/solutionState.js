@@ -169,7 +169,9 @@ export function syncCustomFieldValue(nodes, customFieldId, customFields, newValu
     if (!node) return
 
     if (!node.formData) node.formData = {}
-    if (typeof newValue === 'object' && newValue !== null) {
+    if (Array.isArray(newValue)) {
+      node.formData[binding.fieldKey] = [...newValue]
+    } else if (typeof newValue === 'object' && newValue !== null) {
       // Spread-existing merge so we don't lose other properties
       node.formData[binding.fieldKey] = { ...(node.formData[binding.fieldKey] || {}), ...newValue }
     } else {

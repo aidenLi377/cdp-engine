@@ -358,7 +358,12 @@
           </div>
 
           <div class="summary-rows">
-            <div v-for="item in getNodeSummary(node)" :key="item.key" class="summary-row">
+            <div
+              v-for="item in getNodeSummary(node)"
+              :key="item.key"
+              class="summary-row"
+              :class="{ 'summary-row-highlighted': isSummaryRowHighlighted(node.id, item.key) }"
+            >
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
             </div>
@@ -513,6 +518,14 @@ function isNodeHighlightedForCf(nodeId) {
   const cf = cfs.find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId)
+}
+
+function isSummaryRowHighlighted(nodeId, fieldKey) {
+  if (!highlightedCfId.value) return false
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  if (!cf) return false
+  return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
 
 function formatTime(value) {
