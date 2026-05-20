@@ -226,9 +226,9 @@
             class="cf-expand-all-btn"
             size="small"
             text
-            @click="expandAllNodes"
+            @click="toggleCollapseMode"
           >
-            展开全部
+            {{ collapsedCfId ? '展开全部' : '收缩' }}
           </el-button>
         </div>
         <div v-if="nodeList.length > 0" class="canvas-with-minimap cf-use-node-area">
@@ -249,16 +249,16 @@
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
-              <div class="intercom-card behavior-card" :class="{ collapsed: highlightedCfId || node.collapsed }">
+              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed }">
                 <div class="card-header-inner">
                   <span class="card-title-flex" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
-                    <span class="collapse-arrow">{{ (highlightedCfId || node.collapsed) ? '▶' : '▼' }}</span>
+                    <span class="collapse-arrow">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
                     <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
                     <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
                   </span>
                 </div>
-                <!-- Focus mode: show only bound fields -->
-                <div v-if="highlightedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
+                <!-- Collapse mode: show only bound fields -->
+                <div v-if="collapsedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
                   <div
                     v-for="binding in getNodeFocusBindings(node.id)"
                     :key="binding.fieldKey"
@@ -268,8 +268,8 @@
                     <span class="display-body strong">{{ getFocusFieldDisplay(binding.fieldKey, node).value }}</span>
                   </div>
                 </div>
-                <!-- No matching bindings in focus mode: show subtle hint -->
-                <div v-else-if="highlightedCfId" class="cf-focus-fields">
+                <!-- No matching bindings in collapse mode: subtle hint -->
+                <div v-else-if="collapsedCfId" class="cf-focus-fields">
                   <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
                 </div>
                 <!-- Normal mode: full DynamicForm -->
@@ -438,7 +438,12 @@
           </div>
 
           <div class="summary-rows">
-            <div v-for="item in getNodeSummary(node)" :key="item.key" class="summary-row">
+            <div
+              v-for="item in getNodeSummary(node)"
+              :key="item.key"
+              class="summary-row"
+              :class="{ 'summary-row-highlighted': collapsedCfId && isSummaryRowHighlighted(node.id, item.key) }"
+            >
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
             </div>
@@ -522,6 +527,7 @@ const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: ''
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
+const collapsedCfId = ref(null)
 const cfEditDialogVisible = ref(false)
 const editingCfSection = ref(null)
 const editingCfCurrentValue = ref(null)
@@ -579,25 +585,36 @@ const customFieldSections = computed(() =>
 
 function onHighlightCf(cfId) {
   if (highlightedCfId.value === cfId) {
-    // Click same card again -> unfocus, expand all
+    // Click same card again -> unhighlight + expand
     highlightedCfId.value = null
+    if (collapsedCfId.value) toggleCollapseMode()
+  } else {
+    // Click different card -> switch highlight, keep collapse state
+    highlightedCfId.value = cfId
+    if (collapsedCfId.value) {
+      // Already collapsed on another field, switch collapse to this one
+      collapsedCfId.value = cfId
+    }
+  }
+}
+
+function toggleCollapseMode() {
+  if (collapsedCfId.value) {
+    // Currently collapsed -> expand
+    collapsedCfId.value = null
     nodeList.value.forEach(n => { n.collapsed = false })
   } else {
-    // Focus on this custom field -> collapse all nodes
-    highlightedCfId.value = cfId
+    // Currently expanded -> collapse on highlighted field
+    if (!highlightedCfId.value) return
+    collapsedCfId.value = highlightedCfId.value
     nodeList.value.forEach(n => { n.collapsed = true })
   }
 }
 
-function expandAllNodes() {
-  highlightedCfId.value = null
-  nodeList.value.forEach(n => { n.collapsed = false })
-}
-
 function getNodeFocusBindings(nodeId) {
-  if (!highlightedCfId.value) return []
+  if (!collapsedCfId.value) return []
   const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  const cf = cfs.find(c => c.id === collapsedCfId.value)
   if (!cf) return []
   return (cf.bindings || []).filter(b => b.nodeId === nodeId)
 }
@@ -669,6 +686,14 @@ function isNodeHighlightedForCf(nodeId) {
   const cf = cfs.find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId)
+}
+
+function isSummaryRowHighlighted(nodeId, fieldKey) {
+  if (!collapsedCfId.value) return false
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(c => c.id === collapsedCfId.value)
+  if (!cf) return false
+  return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
 
 function formatTime(value) {
