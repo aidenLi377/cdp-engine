@@ -405,6 +405,12 @@
               <div class="display-body-light creating-hint">
                 {{ editingCustomFieldId ? '点击左侧字段可添加或移除绑定' : '在左侧主区域继续点击同类型字段以关联到「' + creatingCustomFieldName + '」' }}。已选 {{ creatingCustomFieldBindings.length }} 个绑定。
               </div>
+              <div v-if="creatingCustomFieldBindings.length > 0" class="creating-bindings-list">
+                <div v-for="(b, bi) in creatingCustomFieldBindings" :key="bi" class="creating-binding-item">
+                  <span class="display-body-light">{{ getBindingLabel(b) }}</span>
+                  <el-button class="creating-binding-remove" text size="small" @click="removeBinding(bi)">&times;</el-button>
+                </div>
+              </div>
               <div class="creating-step-actions">
                 <el-button
                   class="intercom-btn-primary btn-small"
@@ -1123,6 +1129,16 @@ function getCfTypeClass(type) {
   return 'text'
 }
 
+function getBindingLabel(binding) {
+  const node = nodeList.value.find(n => n.id === binding.nodeId)
+  const field = node?.schema?.find(f => f.key === binding.fieldKey)
+  return `${node?.packageType || '?'} → ${field?.Label || field?.label || binding.fieldKey}`
+}
+
+function removeBinding(index) {
+  creatingCustomFieldBindings.value.splice(index, 1)
+}
+
 function highlightCustomField(cfId) {
   highlightedCustomFieldId.value = cfId
 }
@@ -1339,5 +1355,28 @@ onMounted(async () => {
   font-weight: 600;
   color: #ff6b4a;
   margin-bottom: 8px;
+}
+.creating-bindings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.creating-binding-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(0,0,0,0.02);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.creating-binding-remove.el-button {
+  color: #d94e32 !important;
+  font-size: 14px !important;
+  height: 20px !important;
+  padding: 0 4px !important;
 }
 </style>
