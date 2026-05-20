@@ -134,6 +134,8 @@ export function buildCustomFieldSections(customFields, nodes) {
         packageType: node.packageType,
         fieldKey: field.key,
         fieldLabel: field.Label || field.label || field.key,
+        widgetType: field.Widget_Type,
+        options: field.options || [],
       })
     })
 
