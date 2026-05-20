@@ -3,6 +3,7 @@
     <template v-for="field in node.schema" :key="field.key">
       <el-form-item
         v-show="isVisible(field, node)"
+        :title="ctx && ctx.creatingCustomField && ctx.creatingCustomFieldStep === 2 && field.Widget_Type !== ctx.creatingCustomFieldType ? '仅可选择「' + (ctx.creatingCustomFieldType || '') + '」类型的字段' : undefined"
         :class="{
           'field-highlighted': ctx && ctx.isFieldHighlighted && ctx.isFieldHighlighted(node.id, field.key),
           'field-dimmed': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldStep === 2 && field.Widget_Type !== ctx.creatingCustomFieldType,
