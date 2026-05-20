@@ -1028,6 +1028,7 @@ body {
   flex-direction: column;
   padding: 28px 34px 28px 32px;
   overflow: hidden;
+  position: relative;
 }
 
 .solution-editor-toolbar {

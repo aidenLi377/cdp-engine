@@ -136,11 +136,6 @@
             </el-tooltip>
           </div>
           <div class="solution-toolbar-icon-actions">
-            <el-tooltip content="预览工作台使用态" placement="bottom">
-              <el-button class="solution-toolbar-icon-btn" @click="previewVisible = true" aria-label="预览工作台使用态">
-                <el-icon><View /></el-icon>
-              </el-button>
-            </el-tooltip>
             <el-tooltip v-if="!isPublished" content="保存草稿" placement="bottom">
               <el-button
                 class="solution-toolbar-icon-btn"
@@ -168,6 +163,15 @@
       <div v-if="!activeSolution" class="solution-empty-state">
         <div class="display-section">方案从这里开始</div>
         <div class="display-body-light">左侧选择现有方案，或先创建一个新的方案草稿。</div>
+      </div>
+
+      <div v-else-if="loadingDetail" class="solution-node-scroll">
+        <div v-for="i in 3" :key="'sk-'+i" class="node-skeleton">
+          <div class="skeleton-bar skeleton-bar-header"></div>
+          <div class="skeleton-bar skeleton-bar-body"></div>
+          <div class="skeleton-bar skeleton-bar-body short"></div>
+          <div class="skeleton-bar skeleton-bar-body shorter"></div>
+        </div>
       </div>
 
       <div v-else-if="nodeList.length === 0" class="solution-empty-state">
@@ -235,6 +239,15 @@
           </div>
         </div>
       </div>
+
+      <div v-if="nodeList.length > 0" class="solution-preview-float">
+        <el-tooltip content="预览工作台使用态" placement="left">
+          <el-button class="preview-float-btn" @click="previewVisible = true" aria-label="预览工作台使用态">
+            <el-icon><View /></el-icon>
+            <span>预览使用态</span>
+          </el-button>
+        </el-tooltip>
+      </div>
     </section>
 
     <aside class="solution-settings">
@@ -284,8 +297,19 @@
           </div>
 
           <div v-else class="custom-field-list">
+            <el-input
+              v-if="customFields.length > 3"
+              v-model="customFieldSearch"
+              class="intercom-input cf-search-input"
+              placeholder="搜索字段..."
+              size="small"
+              clearable
+            />
+            <div v-if="filteredCustomFields.length === 0 && customFieldSearch" class="display-body-light" style="text-align:center;padding:12px 0">
+              没有匹配的字段
+            </div>
             <div
-              v-for="(cf, cfIndex) in customFields"
+              v-for="(cf, cfIndex) in filteredCustomFields"
               :key="cf.id"
               class="custom-field-item cf-card-enter"
               :style="{ animationDelay: (cfIndex * 0.04) + 's' }"
@@ -481,6 +505,11 @@ const addingNode = ref(false)
 const lastSavedSnapshot = ref(null)
 
 const customFields = ref([])
+const filteredCustomFields = computed(() => {
+  const kw = customFieldSearch.value.trim().toLowerCase()
+  if (!kw) return customFields.value
+  return customFields.value.filter(cf => cf.name.toLowerCase().includes(kw))
+})
 const highlightedCustomFieldId = ref(null)
 const creatingCustomField = ref(false)
 const creatingCustomFieldStep = ref(1)
@@ -489,6 +518,7 @@ const creatingCustomFieldType = ref('')
 const creatingCustomFieldBindings = ref([])
 const editingCustomFieldId = ref(null)
 const dragCustomFieldIndex = ref(-1)
+const customFieldSearch = ref('')
 
 provide('solutionCenterContext', reactive({
   get highlightedCustomFieldId() { return highlightedCustomFieldId.value },
@@ -1211,6 +1241,59 @@ onMounted(async () => {
   color: #c7c7cc;
   font-size: 12px;
 }
+
+/* ---- 节点加载骨架屏 ---- */
+.node-skeleton {
+  background: rgba(255,255,255,0.60);
+  border: 1px solid rgba(0,0,0,0.05);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.skeleton-bar {
+  height: 14px;
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background-size: 200% 100%;
+  animation: skeletonPulse 1.5s ease-in-out infinite;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+.skeleton-bar-header { width: 45%; height: 20px; margin-bottom: 16px; }
+.skeleton-bar-body { width: 80%; }
+.skeleton-bar-body.short { width: 55%; }
+.skeleton-bar-body.shorter { width: 35%; }
+@keyframes skeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---- 底部悬浮预览按钮 ---- */
+.solution-preview-float {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10;
+}
+.preview-float-btn.el-button {
+  height: 40px !important;
+  padding: 0 18px !important;
+  border-radius: 20px !important;
+  background: #1d1d1f !important;
+  color: #fff !important;
+  border: none !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  transition: all 0.25s ease !important;
+}
+.preview-float-btn.el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.24), 0 2px 8px rgba(0,0,0,0.12) !important;
+  background: #333336 !important;
+}
 .creating-step-body {
   margin-top: 8px;
 }
@@ -1223,6 +1306,9 @@ onMounted(async () => {
   display: flex;
   gap: 8px;
   margin-top: 8px;
+}
+.cf-search-input {
+  margin-bottom: 8px;
 }
 .node-highlighted {
   border-color: #ff6b4a !important;
