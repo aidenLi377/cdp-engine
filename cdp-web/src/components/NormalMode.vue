@@ -206,8 +206,11 @@
       </div>
       <SolutionUseForm
         v-else
-        :sections="usageSections"
+        :custom-field-sections="customFieldSections"
         :solution-name="currentSolution?.name || ''"
+        :highlighted-cf-id="highlightedCfId"
+        @highlight-cf="onHighlightCf"
+        @cf-value-change="onCfValueChange"
       />
     </template>
 
@@ -222,6 +225,7 @@
             v-for="(node, index) in nodeList"
             :key="node.id"
             class="node-wrapper"
+            :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
             :ref="(el) => { if (el) nodeRefs[index] = el }"
             @dragover.prevent="onDragOver(index)"
             @drop="onDrop(index)"
@@ -377,7 +381,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -389,6 +393,8 @@ import {
   fieldToken,
   isWorkbenchStructureLocked,
   serializeNodesForSolution,
+  buildCustomFieldSections,
+  syncCustomFieldValue,
 } from '../utils/solutionState.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
@@ -435,10 +441,30 @@ const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
+const highlightedCfId = ref(null)
 
 let dragSrcIndex = null
 let saveTimer = null
 let jsonTimer = null
+
+provide('solutionCenterContext', {
+  highlightedCustomFieldId: highlightedCfId,
+  customFields: computed(() => currentSolution.value?.customFields || []),
+  creatingCustomField: ref(false),
+  creatingCustomFieldType: ref(''),
+  creatingCustomFieldStep: ref(2),
+  creatingCustomFieldBindings: ref([]),
+  onFieldClickForBinding: () => {},
+  isFieldHighlighted: (nodeId, fieldKey) => {
+    if (!highlightedCfId.value) return false
+    const cfs = currentSolution.value?.customFields || []
+    const cf = cfs.find(c => c.id === highlightedCfId.value)
+    if (!cf) return false
+    return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
+  },
+  isNodeHighlighted: () => false,
+  isFieldSelectableForBinding: () => false,
+})
 
 const filteredPackages = computed(() => {
   if (!pkgSearch.value) return availablePackages.value
@@ -461,9 +487,33 @@ const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.
 const canUndo = computed(() => historyPos.value > 0)
 const canRedo = computed(() => historyPos.value < historyStack.value.length - 1)
 const structureLocked = computed(() => isWorkbenchStructureLocked(currentSolution.value))
-const usageSections = computed(() =>
-  buildRuntimeUsageSections(nodeList.value, loadedSolutionFieldIds.value),
+const customFieldSections = computed(() =>
+  buildCustomFieldSections(
+    currentSolution.value?.customFields || [],
+    nodeList.value,
+  ),
 )
+
+function onHighlightCf(cfId) {
+  highlightedCfId.value = cfId
+}
+
+function onCfValueChange({ customFieldId, value }) {
+  syncCustomFieldValue(
+    nodeList.value,
+    customFieldId,
+    currentSolution.value?.customFields || [],
+    value,
+  )
+}
+
+function isNodeHighlightedForCf(nodeId) {
+  if (!highlightedCfId.value) return false
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  if (!cf) return false
+  return (cf.bindings || []).some(b => b.nodeId === nodeId)
+}
 
 function formatTime(value) {
   if (!value) return '刚刚更新'
