@@ -332,6 +332,14 @@
             <div class="creating-panel-title">
               {{ editingCustomFieldId ? '编辑自定义字段' : '新增自定义字段' }}
             </div>
+            <el-input
+              v-if="editingCustomFieldId"
+              v-model="creatingCustomFieldName"
+              class="intercom-input"
+              placeholder="自定义字段名称"
+              size="small"
+              style="margin-bottom:8px"
+            />
             <div v-if="!editingCustomFieldId" class="creating-steps">
               <span class="creating-step" :class="{ active: creatingCustomFieldStep === 1, done: creatingCustomFieldStep > 1 }">选择字段类型</span>
               <span class="creating-step" :class="{ active: creatingCustomFieldStep === 2 }">绑定组件</span>
@@ -361,7 +369,7 @@
 
             <div v-if="creatingCustomFieldStep === 2" class="creating-step-body">
               <div class="display-body-light creating-hint">
-                在左侧主区域继续点击同类型字段以关联到「{{ creatingCustomFieldName }}」。已选 {{ creatingCustomFieldBindings.length }} 个绑定。
+                {{ editingCustomFieldId ? '点击左侧字段可添加或移除绑定' : '在左侧主区域继续点击同类型字段以关联到「' + creatingCustomFieldName + '」' }}。已选 {{ creatingCustomFieldBindings.length }} 个绑定。
               </div>
               <div class="creating-step-actions">
                 <el-button
@@ -763,6 +771,27 @@ function duplicateNode(index) {
   nodeList.value.forEach((node, nodeIndex) => {
     if (nodeIndex === 0) node.operator = null
   })
+
+  // Check custom fields that bind to source node
+  const relatedCfs = customFields.value.filter(cf =>
+    (cf.bindings || []).some(b => b.nodeId === source.id)
+  )
+  if (relatedCfs.length > 0) {
+    const names = relatedCfs.map(cf => cf.name).join('、')
+    ElMessageBox.confirm(
+      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（节点 ${index + 2}）的对应字段绑定到这些自定义字段？`,
+      '复制节点',
+      { confirmButtonText: '自动绑定', cancelButtonText: '跳过', type: 'info' }
+    ).then(() => {
+      relatedCfs.forEach(cf => {
+        const sourceBinding = (cf.bindings || []).find(b => b.nodeId === source.id)
+        if (sourceBinding) {
+          cf.bindings.push({ nodeId: duplicated.id, fieldKey: sourceBinding.fieldKey })
+        }
+      })
+      ElMessage.success(`已自动绑定 ${relatedCfs.length} 个自定义字段到新节点`)
+    }).catch(() => {})
+  }
 }
 
 function removeNode(index) {
@@ -976,12 +1005,26 @@ function finishCreateCustomField() {
     }
     ElMessage.success(`自定义字段「${name}」已更新`)
   } else {
+    const firstBinding = creatingCustomFieldBindings.value[0]
+    const boundNode = nodeList.value.find(n => n.id === firstBinding.nodeId)
+    const boundField = boundNode?.schema?.find(f => f.key === firstBinding.fieldKey)
+    const defaultVal = boundNode?.formData?.[firstBinding.fieldKey]
+    let defaultValue = {}
+    if (defaultVal !== undefined && defaultVal !== null) {
+      if (Array.isArray(defaultVal)) {
+        defaultValue = [...defaultVal]
+      } else if (typeof defaultVal === 'object') {
+        defaultValue = { ...defaultVal }
+      } else {
+        defaultValue = defaultVal
+      }
+    }
     customFields.value.push({
       id: `cf_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       name,
       type: creatingCustomFieldType.value,
       group: '',
-      defaultValue: {},
+      defaultValue,
       bindings: [...creatingCustomFieldBindings.value],
     })
     ElMessage.success(`自定义字段「${name}」创建成功`)
@@ -1025,6 +1068,9 @@ function onDragCustomFieldEnd() {
 }
 
 function clearAllCustomFields() {
+  if (creatingCustomField.value) {
+    cancelCreateCustomField()
+  }
   customFields.value = []
   highlightedCustomFieldId.value = null
 }
