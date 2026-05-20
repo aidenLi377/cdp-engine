@@ -104,3 +104,94 @@ export function buildUsageSections(nodes, workbenchFieldIds) {
 export function isWorkbenchStructureLocked(solutionRecord) {
   return solutionRecord?.status === 'published'
 }
+
+// --- Custom Fields (1:N mapping) ---
+
+/**
+ * Build usage sections from custom fields list.
+ * Each custom field becomes a section with bound node info for highlighting.
+ */
+export function buildCustomFieldSections(customFields, nodes) {
+  const fieldList = Array.isArray(customFields) ? customFields : []
+  if (fieldList.length === 0) return []
+
+  const nodeMap = new Map()
+  ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
+    nodeMap.set(String(node?.id), node)
+  })
+
+  return fieldList.map((cf) => {
+    const boundNodes = []
+    ;(Array.isArray(cf.bindings) ? cf.bindings : []).forEach((binding) => {
+      const node = nodeMap.get(String(binding.nodeId))
+      if (!node) return
+      const field = (Array.isArray(node.schema) ? node.schema : []).find(
+        (f) => f.key === binding.fieldKey
+      )
+      if (!field) return
+      boundNodes.push({
+        nodeId: node.id,
+        packageType: node.packageType,
+        fieldKey: field.key,
+        fieldLabel: field.Label || field.label || field.key,
+      })
+    })
+
+    return {
+      customFieldId: cf.id,
+      name: cf.name,
+      type: cf.type,
+      group: cf.group || '',
+      defaultValue: cf.defaultValue || {},
+      bindings: boundNodes,
+    }
+  })
+}
+
+/**
+ * Sync a custom field's value to all bound nodes' formData/modeData.
+ * Mutates nodes in place. Returns nodes for chaining.
+ */
+export function syncCustomFieldValue(nodes, customFieldId, customFields, newValue) {
+  const cfs = Array.isArray(customFields) ? customFields : []
+  const cf = cfs.find((c) => c.id === customFieldId)
+  if (!cf) return nodes
+
+  const nodeMap = new Map()
+  ;(Array.isArray(nodes) ? nodes : []).forEach((node) => {
+    nodeMap.set(String(node?.id), node)
+  })
+
+  ;(Array.isArray(cf.bindings) ? cf.bindings : []).forEach((binding) => {
+    const node = nodeMap.get(String(binding.nodeId))
+    if (!node) return
+
+    if (!node.formData) node.formData = {}
+    if (typeof newValue === 'object' && newValue !== null) {
+      // Spread-existing merge so we don't lose other properties
+      node.formData[binding.fieldKey] = { ...(node.formData[binding.fieldKey] || {}), ...newValue }
+    } else {
+      node.formData[binding.fieldKey] = newValue
+    }
+
+    // If value contains a mode property, sync it to modeData
+    if (newValue && typeof newValue === 'object' && newValue.mode !== undefined) {
+      if (!node.modeData) node.modeData = {}
+      node.modeData[binding.fieldKey] = newValue.mode
+    }
+  })
+
+  return nodes
+}
+
+/**
+ * Get the set of fieldKeys bound by a specific custom field for a given node.
+ * Used for highlight detection: call per node to check which fields should glow.
+ */
+export function getNodeBindingFieldKeys(customFieldId, customFields) {
+  const cfs = Array.isArray(customFields) ? customFields : []
+  const cf = cfs.find((c) => c.id === customFieldId)
+  if (!cf) return []
+
+  return (Array.isArray(cf.bindings) ? cf.bindings : []).map((b) => b)
+}
