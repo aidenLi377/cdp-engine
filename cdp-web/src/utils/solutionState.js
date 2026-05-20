@@ -174,6 +174,10 @@ export function syncCustomFieldValue(nodes, customFieldId, customFields, newValu
     } else if (typeof newValue === 'object' && newValue !== null) {
       // Spread-existing merge so we don't lose other properties
       node.formData[binding.fieldKey] = { ...(node.formData[binding.fieldKey] || {}), ...newValue }
+      // Clean up mode property — it belongs in modeData only
+      if ('mode' in node.formData[binding.fieldKey]) {
+        delete node.formData[binding.fieldKey].mode
+      }
     } else {
       node.formData[binding.fieldKey] = newValue
     }
