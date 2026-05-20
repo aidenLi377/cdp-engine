@@ -97,6 +97,7 @@
           </div>
           <div class="cf-bound-list">
             <div v-for="bn in boundNodes" :key="bn.nodeId + bn.fieldKey" class="cf-bound-item">
+              <span class="display-mono cf-bound-node-label">{{ getNodeLabel(bn.nodeId) }}</span>
               <span class="display-body">{{ bn.packageType }}</span>
               <span class="cf-bound-arrow">→</span>
               <span class="display-body-light">{{ bn.fieldLabel }}</span>
@@ -158,6 +159,11 @@ function initEditState() {
   }
 }
 
+function getNodeLabel(nodeId) {
+  const idx = (props.nodeList || []).findIndex(n => n.id === nodeId)
+  return idx >= 0 ? `节点 ${idx + 1}` : ''
+}
+
 function formatBoundValue(binding) {
   const node = (props.nodeList || []).find(n => n.id === binding.nodeId)
   if (!node) return ''
@@ -216,6 +222,13 @@ watch(() => props.modelValue, (val) => {
   background: rgba(255,255,255,0.70);
   border-radius: 8px;
   font-size: 13px;
+}
+.cf-bound-node-label {
+  background: rgba(0,0,0,0.04);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  flex-shrink: 0;
 }
 .cf-bound-arrow {
   color: #c7c7cc;
