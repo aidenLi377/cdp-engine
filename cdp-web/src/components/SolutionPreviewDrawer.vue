@@ -11,35 +11,35 @@
       <div class="drawer-notice intercom-card">
         <span class="display-body">
           <strong class="display-mono">{{ solutionName || '当前方案' }}</strong>
-          将按下方分组暴露给工作台使用，未勾选的字段不会进入方案使用态表单。
+          将按下方自定义字段暴露给工作台使用，每个字段可控制多个原始组件。
         </span>
       </div>
 
-      <div v-if="sections.length === 0" class="empty-state solution-preview-empty">
-        <div class="empty-icon">⌁</div>
-        <div class="display-body-light">当前还没有勾选任何工作台可编辑字段。</div>
+      <div v-if="customFieldSections.length === 0" class="empty-state solution-preview-empty">
+        <div class="empty-icon">&#8991;</div>
+        <div class="display-body-light">当前还没有创建任何自定义字段。</div>
       </div>
 
       <div v-else class="drawer-scroll">
         <div
-          v-for="section in sections"
-          :key="section.nodeId"
+          v-for="section in customFieldSections"
+          :key="section.customFieldId"
           class="intercom-card drawer-form-card solution-preview-card"
         >
           <div class="drawer-form-title solution-preview-title">
             <div>
-              <div class="display-feature-title">节点 {{ section.index + 1 }}</div>
-              <div class="display-body-light">{{ section.node.packageType }}</div>
+              <div class="display-feature-title">{{ section.name }}</div>
+              <div class="display-body-light">{{ section.type }}</div>
             </div>
             <div class="solution-preview-tags">
-              <span v-for="field in section.fields" :key="field.key" class="badge-mono">
-                {{ field.Label || field.label || field.key }}
+              <span
+                v-for="binding in section.bindings"
+                :key="binding.nodeId + binding.fieldKey"
+                class="badge-mono"
+              >
+                {{ binding.packageType }} &middot; {{ binding.fieldLabel }}
               </span>
             </div>
-          </div>
-
-          <div class="solution-readonly-surface solution-preview-surface">
-            <DynamicForm :node="section.node" />
           </div>
         </div>
       </div>
@@ -48,11 +48,9 @@
 </template>
 
 <script setup>
-import DynamicForm from './DynamicForm.vue'
-
 defineProps({
   modelValue: { type: Boolean, default: false },
-  sections: { type: Array, default: () => [] },
+  customFieldSections: { type: Array, default: () => [] },
   solutionName: { type: String, default: '' },
 })
 
