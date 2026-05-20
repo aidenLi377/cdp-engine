@@ -237,6 +237,15 @@ function getInitialValue(section) {
 }
 
 function initCfValues() {
+  // Clean up stale entries for custom fields no longer present
+  const currentIds = new Set(props.customFieldSections.map(s => s.customFieldId))
+  Object.keys(cfValues).forEach(key => {
+    if (!currentIds.has(key)) {
+      delete cfValues[key]
+      delete cfValueModes[key]
+    }
+  })
+
   props.customFieldSections.forEach((section) => {
     const id = section.customFieldId
 
