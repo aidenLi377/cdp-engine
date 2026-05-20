@@ -615,9 +615,15 @@ function buildSolutionPayload() {
 async function applySolutionRecord(record) {
   activeSolution.value = cloneValue(record)
   try {
-    const nodes = record?.nodes || []
-    if (nodes.length > 0) {
-      nodeList.value = await hydrateNodes(nodes)
+    const sourceNodes = record?.nodes || []
+    if (sourceNodes.length > 0) {
+      nodeList.value = await hydrateNodes(sourceNodes)
+      if (nodeList.value.length === 0) {
+        console.error('所有节点加载失败')
+        ElMessage.error('所有组件节点加载失败，请检查后端服务是否正常运行')
+      } else if (nodeList.value.length < sourceNodes.length) {
+        console.warn(`部分节点加载失败: ${nodeList.value.length}/${sourceNodes.length}`)
+      }
     } else {
       nodeList.value = []
     }
