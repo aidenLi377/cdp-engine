@@ -362,15 +362,20 @@
             </div>
           </div>
 
-          <el-button
-            v-if="!creatingCustomField"
-            class="intercom-btn-primary btn-small"
-            style="width:100%;margin-top:8px"
-            :disabled="isPublished || nodeList.length === 0"
-            @click="startCreateCustomField"
+          <el-tooltip
+            :content="isPublished ? '已发布方案无法编辑，请先生成编辑草稿' : nodeList.length === 0 ? '请先从上方添加组件节点' : '创建一个自定义字段来关联多个组件的同类型字段'"
+            placement="top"
           >
-            + 新增自定义字段（一对多）
-          </el-button>
+            <el-button
+              v-if="!creatingCustomField"
+              class="intercom-btn-primary btn-small"
+              style="width:100%;margin-top:8px"
+              :disabled="isPublished"
+              @click="startCreateCustomField"
+            >
+              + 新增自定义字段（一对多）
+            </el-button>
+          </el-tooltip>
         </div>
       </div>
 
@@ -609,7 +614,18 @@ function buildSolutionPayload() {
 
 async function applySolutionRecord(record) {
   activeSolution.value = cloneValue(record)
-  nodeList.value = await hydrateNodes(record?.nodes || [])
+  try {
+    const nodes = record?.nodes || []
+    if (nodes.length > 0) {
+      nodeList.value = await hydrateNodes(nodes)
+    } else {
+      nodeList.value = []
+    }
+  } catch (error) {
+    console.error('节点加载失败:', error)
+    ElMessage.error('组件节点加载失败，请检查后端服务是否正常运行')
+    nodeList.value = []
+  }
   syncWorkbenchSelections(Array.isArray(record?.workbenchFieldIds) ? record.workbenchFieldIds : [])
   loadCustomFields(record)
   setSavedSnapshotFromRecord(record)
@@ -854,7 +870,11 @@ function loadCustomFields(record) {
 }
 
 function startCreateCustomField() {
-  if (isPublished.value || nodeList.value.length === 0) return
+  if (isPublished.value) return
+  if (nodeList.value.length === 0) {
+    ElMessage.warning('请先从上方添加组件节点，节点中的字段将作为自定义字段的绑定源')
+    return
+  }
   creatingCustomField.value = true
   creatingCustomFieldStep.value = 1
   creatingCustomFieldName.value = ''

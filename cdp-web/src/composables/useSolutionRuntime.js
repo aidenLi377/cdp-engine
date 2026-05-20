@@ -118,7 +118,18 @@ export function useSolutionRuntime() {
 
   async function hydrateNodes(nodes) {
     const sourceNodes = Array.isArray(nodes) ? nodes : []
-    return Promise.all(sourceNodes.map((node, index) => createRuntimeNode(node, index)))
+    const results = await Promise.allSettled(
+      sourceNodes.map((node, index) => createRuntimeNode(node, index))
+    )
+    const hydrated = []
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        hydrated.push(result.value)
+      } else {
+        console.error(`节点 ${sourceNodes[i]?.packageType || i} 加载失败:`, result.reason)
+      }
+    })
+    return hydrated
   }
 
   function normalizeWorkbenchFieldIds(workbenchFieldIds, nodes) {
