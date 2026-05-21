@@ -11,6 +11,12 @@
         </el-button>
       </div>
 
+      <FolderTree
+        :folders="folderTree"
+        @select-folder="onFolderSelect"
+        @folders-changed="handleFolderChange"
+      />
+
       <div class="solution-sidebar-controls">
         <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
           <el-radio-button label="all">全部</el-radio-button>
@@ -47,6 +53,8 @@
           tabindex="0"
           class="solution-list-item"
           :class="{ active: item.id === activeSolution?.id }"
+          draggable="true"
+          @dragstart="onSolutionDragStart($event, item)"
           @click="openSolution(item.id)"
           @keydown.enter.prevent="openSolution(item.id)"
           @keydown.space.prevent="openSolution(item.id)"
@@ -66,6 +74,7 @@
           <div class="display-body strong solution-list-name">{{ item.name || '未命名方案' }}</div>
           <div class="solution-list-meta">
             <span>{{ item.nodes?.length || 0 }} 个节点</span>
+            <span>{{ getFolderName(item.folderId) }}</span>
             <span>{{ formatTime(item.updatedAt) }}</span>
           </div>
         </div>
@@ -470,6 +479,8 @@ import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { fieldToken, serializeNodesForSolution, buildCustomFieldSections } from '../utils/solutionState.js'
+import { useFoldersApi } from '../composables/useFoldersApi'
+import FolderTree from './FolderTree.vue'
 
 const {
   listSolutions,
@@ -481,6 +492,14 @@ const {
   duplicateSolution,
   deleteSolution,
 } = useSolutionsApi()
+
+const {
+  listFolders,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  moveFolder,
+} = useFoldersApi()
 
 const { isVisible } = useCdpShared()
 const {
@@ -505,6 +524,9 @@ const creatingEditDraft = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
 const deleting = ref(false)
+const folderTree = ref([])
+const selectedFolderId = ref(null)
+const loadingFolders = ref(false)
 const availablePackages = ref([])
 const pendingPackageType = ref('')
 const addingNode = ref(false)
@@ -543,8 +565,18 @@ const isPublished = computed(() => activeSolution.value?.status === 'published')
 
 const filteredSolutions = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
-  if (!keyword) return solutions.value
-  return solutions.value.filter((item) => {
+  let list = solutions.value
+
+  if (selectedFolderId.value) {
+    if (selectedFolderId.value === '__uncategorized__') {
+      list = list.filter(item => !item.folderId)
+    } else {
+      list = list.filter(item => item.folderId === selectedFolderId.value)
+    }
+  }
+
+  if (!keyword) return list
+  return list.filter((item) => {
     const name = String(item?.name || '').toLowerCase()
     return name.includes(keyword)
   })
@@ -765,6 +797,7 @@ async function createBlankDraft() {
         defaultCrowdName: '未命名人群包',
         nodes: [],
         workbenchFieldIds: [],
+        folderId: selectedFolderId.value === '__uncategorized__' ? null : (selectedFolderId.value || null),
       })
       if (statusFilter.value === 'published') {
         statusFilter.value = 'all'
@@ -1189,8 +1222,73 @@ watch(
   { deep: true },
 )
 
+async function loadFolders() {
+  loadingFolders.value = true
+  try {
+    folderTree.value = await listFolders()
+  } catch (error) {
+    ElMessage.error(error.message || '文件夹列表加载失败')
+  } finally {
+    loadingFolders.value = false
+  }
+}
+
+async function handleFolderChange(event) {
+  try {
+    if (event.action === 'create') {
+      await createFolder(event.name, event.parentId)
+      ElMessage.success('文件夹已创建')
+    } else if (event.action === 'rename') {
+      await updateFolder(event.id, event.name)
+      ElMessage.success('文件夹已重命名')
+    } else if (event.action === 'delete') {
+      await deleteFolder(event.id)
+      ElMessage.success('文件夹已删除')
+    } else if (event.action === 'move-folder') {
+      await moveFolder(event.id, event.targetParentId)
+      ElMessage.success('文件夹已移动')
+    } else if (event.action === 'move-solution') {
+      await fetch(`/api/solutions/${event.solutionId}/move`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId: event.targetFolderId }),
+      })
+      ElMessage.success('方案已移动')
+    }
+    await loadFolders()
+    await loadSolutions()
+  } catch (error) {
+    ElMessage.error(error.message || '操作失败')
+  }
+}
+
+function onFolderSelect(folderId) {
+  selectedFolderId.value = folderId
+  loadSolutions()
+}
+
+function getFolderName(folderId) {
+  if (!folderId) return '未分类'
+  const findIn = (list) => {
+    for (const f of list) {
+      if (f.id === folderId) return f.name
+      if (f.children) {
+        const found = findIn(f.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return findIn(folderTree.value) || '未知文件夹'
+}
+
+function onSolutionDragStart(event, item) {
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/solution-id', item.id)
+}
+
 onMounted(async () => {
-  await Promise.all([loadSolutions(), loadAvailablePackages()])
+  await Promise.all([loadSolutions(), loadAvailablePackages(), loadFolders()])
 })
 </script>
 
