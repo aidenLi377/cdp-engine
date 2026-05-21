@@ -191,6 +191,15 @@ class SolutionStore:
             self._write(data)
             return duplicated
 
+    def move_solution(self, solution_id: str, folder_id: str | None) -> dict:
+        with self._lock:
+            data = self._load()
+            index, item = self._find_solution(data["solutions"], solution_id)
+            updated = {**item, "folderId": folder_id, "updatedAt": utc_now()}
+            data["solutions"][index] = updated
+            self._write(data)
+            return updated
+
     def delete_solution(self, solution_id: str) -> bool:
         with self._lock:
             data = self._load()

@@ -11,7 +11,7 @@ from flask_cors import CORS
 from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME, FOLDERS_FILENAME
 from .engine import ConfigEngine
 from .folder_store import FolderNotFoundError, FolderStore
-from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore, utc_now
+from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
 from .validator import ConfigValidationError
 
 
@@ -229,15 +229,10 @@ def register_routes(
     def move_solution(solution_id: str):
         payload = request.get_json(silent=True) or {}
         folder_id = payload.get("folderId")
-        solution = solution_store.get_solution(solution_id)
-        if solution is None:
+        try:
+            updated = solution_store.move_solution(solution_id, folder_id)
+        except SolutionNotFoundError:
             return jsonify({"error": "solution not found"}), 404
-        updated = {**solution, "folderId": folder_id, "updatedAt": utc_now()}
-        with solution_store._lock:
-            data = solution_store._load()
-            index, _item = solution_store._find_solution(data["solutions"], solution_id)
-            data["solutions"][index] = updated
-            solution_store._write(data)
         return jsonify(updated)
 
     @app.route("/api/folders")
