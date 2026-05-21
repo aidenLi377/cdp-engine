@@ -96,13 +96,14 @@ class FolderStore:
             self._write(data)
             return updated
 
-    def delete_folder(self, folder_id: str) -> None:
+    def delete_folder(self, folder_id: str) -> set[str]:
         with self._lock:
             data = self._load()
             self._find_folder(data["folders"], folder_id)
             ids_to_delete = self._collect_subtree_ids(data["folders"], folder_id)
             data["folders"] = [f for f in data["folders"] if f["id"] not in ids_to_delete]
             self._write(data)
+            return ids_to_delete
 
     def _collect_subtree_ids(self, folders: list[dict], folder_id: str) -> set[str]:
         result = {folder_id}

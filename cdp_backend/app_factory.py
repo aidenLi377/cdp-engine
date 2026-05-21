@@ -100,7 +100,7 @@ def register_routes(
     def get_package_meta_alias():
         name = request.args.get("name")
         if not name:
-            return jsonify({"error": "missing name parameter"}), 400
+            return jsonify({"error": "缺少 name 参数"}), 400
         return jsonify(engine.get_package_meta(name))
 
     @app.route("/api/generate_json", methods=["POST"])
@@ -146,7 +146,7 @@ def register_routes(
     @app.route("/api/batch_generate", methods=["POST"])
     def batch_generate():
         if "file" not in request.files:
-            return jsonify({"error": "missing file"}), 400
+            return jsonify({"error": "未收到文件"}), 400
         result = engine.batch_generate(request.files["file"])
         return jsonify(
             {
@@ -215,12 +215,9 @@ def register_routes(
 
     @app.route("/api/solutions/<solution_id>", methods=["DELETE"])
     def delete_solution(solution_id: str):
-        try:
-            solution_store.delete_solution(solution_id)
-        except SolutionNotFoundError:
+        deleted = solution_store.delete_solution(solution_id)
+        if not deleted:
             return jsonify({"error": "solution not found"}), 404
-        except InvalidSolutionStateError:
-            return jsonify({"error": "invalid solution state"}), 409
         return "", 204
 
     @app.route("/api/folders")
@@ -252,13 +249,13 @@ def register_routes(
     @app.route("/api/folders/<folder_id>", methods=["DELETE"])
     def delete_folder(folder_id: str):
         try:
-            folder_store.delete_folder(folder_id)
+            deleted_ids = folder_store.delete_folder(folder_id)
         except FolderNotFoundError:
             return jsonify({"error": "folder not found"}), 404
         with solution_store._lock:
             data = solution_store._load()
             for item in data["solutions"]:
-                if item.get("folderId") == folder_id:
+                if item.get("folderId") in deleted_ids:
                     item["folderId"] = None
             solution_store._write(data)
         return "", 204
@@ -274,3 +271,12 @@ def register_routes(
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         return jsonify(updated)
+
+    @app.errorhandler(404)
+    def not_found(_error):
+        return jsonify({"error": "接口不存在"}), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        app.logger.error("500 error: %s", error, exc_info=True)
+        return jsonify({"error": "服务器内部错误"}), 500
