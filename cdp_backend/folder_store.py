@@ -117,6 +117,8 @@ class FolderStore:
             index, item = self._find_folder(data["folders"], folder_id)
             if parent_id is not None:
                 self._find_folder(data["folders"], parent_id)
+                if parent_id in self._collect_subtree_ids(data["folders"], folder_id):
+                    raise ValueError("Cannot move a folder into itself or one of its descendants")
             updated = {**item, "parentId": parent_id, "updatedAt": _utc_now()}
             data["folders"][index] = updated
             self._write(data)
