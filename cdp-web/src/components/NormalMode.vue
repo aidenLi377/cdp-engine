@@ -24,6 +24,11 @@
         </el-button>
       </div>
 
+      <FolderTree
+        :folders="publishedFolderTree"
+        @select-folder="onPublishedFolderSelect"
+      />
+
       <el-input
         v-model="solutionSearch"
         placeholder="搜索方案..."
@@ -482,10 +487,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
+import FolderTree from './FolderTree.vue'
 import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
+import { useFoldersApi } from '../composables/useFoldersApi'
 import {
   fieldToken,
   isWorkbenchStructureLocked,
@@ -511,6 +518,7 @@ const {
   buildRuntimeUsageSections,
 } = useSolutionRuntime()
 const { listSolutions, getSolution, createDraft } = useSolutionsApi()
+const { listFolders } = useFoldersApi()
 
 const jsonViewMode = ref('summary')
 const workbenchMode = ref('free-build')
@@ -540,6 +548,8 @@ const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
 const collapsedCfId = ref(null)
+const publishedFolderTree = ref([])
+const selectedPublishedFolderId = ref(null)
 const cfEditDialogVisible = ref(false)
 const editingCfSection = ref(null)
 const editingCfCurrentValue = ref(null)
@@ -575,9 +585,10 @@ const filteredPackages = computed(() => {
 
 const filteredPublishedSolutions = computed(() => {
   const keyword = solutionSearch.value.trim().toLowerCase()
-  if (!keyword) return publishedSolutions.value
+  const baseList = getPublishedSolutionsInFolder()
 
-  return publishedSolutions.value.filter((item) => {
+  if (!keyword) return baseList
+  return baseList.filter((item) => {
     const name = String(item?.name || '').toLowerCase()
     const source = String(item?.source || '').toLowerCase()
     return name.includes(keyword) || source.includes(keyword)
@@ -896,11 +907,47 @@ async function loadPublishedSolutions() {
   loadingPublishedSolutions.value = true
   try {
     publishedSolutions.value = await listSolutions('published')
+    await loadPublishedFolders()
   } catch (error) {
     ElMessage.error(error.message || '已发布方案列表加载失败')
   } finally {
     loadingPublishedSolutions.value = false
   }
+}
+
+async function loadPublishedFolders() {
+  try {
+    const allFolders = await listFolders()
+    const publishedIds = new Set(
+      publishedSolutions.value.map(s => s.folderId).filter(Boolean)
+    )
+    publishedFolderTree.value = filterFoldersByPublished(allFolders, publishedIds)
+  } catch {
+    // silently ignore folder load failures in workbench
+  }
+}
+
+function filterFoldersByPublished(folders, publishedIds) {
+  return folders.reduce((acc, f) => {
+    const childResults = f.children ? filterFoldersByPublished(f.children, publishedIds) : []
+    const hasPublishedInTree = publishedIds.has(f.id) || childResults.length > 0
+    if (hasPublishedInTree) {
+      acc.push({ ...f, children: childResults.length > 0 ? childResults : (f.children || []) })
+    }
+    return acc
+  }, [])
+}
+
+function onPublishedFolderSelect(folderId) {
+  selectedPublishedFolderId.value = folderId
+}
+
+function getPublishedSolutionsInFolder() {
+  if (!selectedPublishedFolderId.value) return publishedSolutions.value
+  if (selectedPublishedFolderId.value === '__uncategorized__') {
+    return publishedSolutions.value.filter(s => !s.folderId)
+  }
+  return publishedSolutions.value.filter(s => s.folderId === selectedPublishedFolderId.value)
 }
 
 async function addNode(packageType) {
