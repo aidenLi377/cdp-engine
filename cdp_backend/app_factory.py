@@ -8,9 +8,9 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask, abort, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME
-from .databank_automation import DatabankAutomationError, DatabankAutomator
+from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME, FOLDERS_FILENAME
 from .engine import ConfigEngine
+from .folder_store import FolderNotFoundError, FolderStore
 from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
 from .validator import ConfigValidationError
 
@@ -40,13 +40,15 @@ def configure_logging(app: Flask, production: bool) -> None:
         )
 
 
-def create_app(databank_automator: DatabankAutomator | None = None) -> tuple[Flask, ConfigEngine]:
+def create_app() -> tuple[Flask, ConfigEngine]:
     app = Flask(__name__)
     production = is_production()
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
     app.config["JSON_AS_ASCII"] = False
     solutions_file = os.environ.get("SOLUTIONS_FILE", os.path.join(BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME))
     solution_store = SolutionStore(solutions_file)
+    folders_file = os.environ.get("FOLDERS_FILE", os.path.join(BASE_DIR, RUNTIME_DIRNAME, FOLDERS_FILENAME))
+    folder_store = FolderStore(folders_file)
 
     if production:
         allowed_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -62,7 +64,7 @@ def create_app(databank_automator: DatabankAutomator | None = None) -> tuple[Fla
         app.logger.error("Configuration validation failed at startup:\n%s", exc)
         raise
 
-    register_routes(app, engine, production, solution_store, databank_automator or DatabankAutomator())
+    register_routes(app, engine, production, solution_store, folder_store)
     return app, engine
 
 
@@ -71,7 +73,7 @@ def register_routes(
     engine: ConfigEngine,
     production: bool,
     solution_store: SolutionStore,
-    databank_automator: DatabankAutomator,
+    folder_store: FolderStore,
 ) -> None:
     @app.route("/api/packages")
     def get_packages():
@@ -98,7 +100,7 @@ def register_routes(
     def get_package_meta_alias():
         name = request.args.get("name")
         if not name:
-            return jsonify({"error": "缺少 name 参数"}), 400
+            return jsonify({"error": "missing name parameter"}), 400
         return jsonify(engine.get_package_meta(name))
 
     @app.route("/api/generate_json", methods=["POST"])
@@ -137,10 +139,14 @@ def register_routes(
             abort(404)
         return send_from_directory(engine.template_dir, filename, as_attachment=True)
 
+    @app.route("/route-interface-demo")
+    def route_interface_demo():
+        return send_from_directory(os.path.join(BASE_DIR, "cdp_backend", "static"), "route-interface-demo.html")
+
     @app.route("/api/batch_generate", methods=["POST"])
     def batch_generate():
         if "file" not in request.files:
-            return jsonify({"error": "未收到文件"}), 400
+            return jsonify({"error": "missing file"}), 400
         result = engine.batch_generate(request.files["file"])
         return jsonify(
             {
@@ -149,18 +155,6 @@ def register_routes(
                 "errors": result.errors,
             }
         )
-
-    @app.route("/api/databank/automate", methods=["POST"])
-    def automate_databank():
-        data = request.get_json(silent=True) or {}
-        json_text = str(data.get("jsonText") or "").strip()
-        if not json_text:
-            return jsonify({"error": "缺少 jsonText 参数"}), 400
-        try:
-            return jsonify(databank_automator.automate(json_text))
-        except DatabankAutomationError as exc:
-            app.logger.warning("databank automation failed: %s", exc)
-            return jsonify({"error": str(exc)}), 502
 
     @app.route("/api/solutions")
     def list_solutions():
@@ -221,16 +215,62 @@ def register_routes(
 
     @app.route("/api/solutions/<solution_id>", methods=["DELETE"])
     def delete_solution(solution_id: str):
-        deleted = solution_store.delete_solution(solution_id)
-        if not deleted:
+        try:
+            solution_store.delete_solution(solution_id)
+        except SolutionNotFoundError:
             return jsonify({"error": "solution not found"}), 404
+        except InvalidSolutionStateError:
+            return jsonify({"error": "invalid solution state"}), 409
         return "", 204
 
-    @app.errorhandler(404)
-    def not_found(_error):
-        return jsonify({"error": "接口不存在"}), 404
+    @app.route("/api/folders")
+    def list_folders():
+        return jsonify(folder_store.list_folders())
 
-    @app.errorhandler(500)
-    def internal_error(error):
-        app.logger.error("500 error: %s", error, exc_info=True)
-        return jsonify({"error": "服务器内部错误"}), 500
+    @app.route("/api/folders", methods=["POST"])
+    def create_folder():
+        payload = request.get_json(silent=True) or {}
+        name = (payload.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "folder name is required"}), 400
+        parent_id = payload.get("parentId")
+        created = folder_store.create_folder(name, parent_id)
+        return jsonify(created), 201
+
+    @app.route("/api/folders/<folder_id>", methods=["PUT"])
+    def update_folder(folder_id: str):
+        payload = request.get_json(silent=True) or {}
+        name = (payload.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "folder name is required"}), 400
+        try:
+            updated = folder_store.update_folder(folder_id, name)
+        except FolderNotFoundError:
+            return jsonify({"error": "folder not found"}), 404
+        return jsonify(updated)
+
+    @app.route("/api/folders/<folder_id>", methods=["DELETE"])
+    def delete_folder(folder_id: str):
+        try:
+            folder_store.delete_folder(folder_id)
+        except FolderNotFoundError:
+            return jsonify({"error": "folder not found"}), 404
+        with solution_store._lock:
+            data = solution_store._load()
+            for item in data["solutions"]:
+                if item.get("folderId") == folder_id:
+                    item["folderId"] = None
+            solution_store._write(data)
+        return "", 204
+
+    @app.route("/api/folders/<folder_id>/move", methods=["PUT"])
+    def move_folder(folder_id: str):
+        payload = request.get_json(silent=True) or {}
+        parent_id = payload.get("parentId")
+        try:
+            updated = folder_store.move_folder(folder_id, parent_id)
+        except FolderNotFoundError:
+            return jsonify({"error": "folder not found"}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify(updated)
