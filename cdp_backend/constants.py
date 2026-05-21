@@ -5,6 +5,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME_DIRNAME = ".runtime"
 SOLUTIONS_FILENAME = "solutions.json"
+FOLDERS_FILENAME = "folders.json"
 PARAMS_FILE = "1.参数表.csv"
 TEMPLATE_DIRNAME = "批量圈人模板"
 
