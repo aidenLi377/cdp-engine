@@ -11,7 +11,7 @@ from flask_cors import CORS
 from .constants import BASE_DIR, RUNTIME_DIRNAME, SOLUTIONS_FILENAME, FOLDERS_FILENAME
 from .engine import ConfigEngine
 from .folder_store import FolderNotFoundError, FolderStore
-from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
+from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore, utc_now
 from .validator import ConfigValidationError
 
 
@@ -159,9 +159,14 @@ def register_routes(
     @app.route("/api/solutions")
     def list_solutions():
         status = request.args.get("status")
+        folder_id = request.args.get("folderId")
         if status in (None, "all"):
-            return jsonify(solution_store.list_solutions())
-        return jsonify(solution_store.list_solutions(status=status))
+            solutions = solution_store.list_solutions()
+        else:
+            solutions = solution_store.list_solutions(status=status)
+        if folder_id:
+            solutions = [s for s in solutions if s.get("folderId") == folder_id]
+        return jsonify(solutions)
 
     @app.route("/api/solutions/<solution_id>")
     def get_solution(solution_id: str):
@@ -219,6 +224,21 @@ def register_routes(
         if not deleted:
             return jsonify({"error": "solution not found"}), 404
         return "", 204
+
+    @app.route("/api/solutions/<solution_id>/move", methods=["PUT"])
+    def move_solution(solution_id: str):
+        payload = request.get_json(silent=True) or {}
+        folder_id = payload.get("folderId")
+        solution = solution_store.get_solution(solution_id)
+        if solution is None:
+            return jsonify({"error": "solution not found"}), 404
+        updated = {**solution, "folderId": folder_id, "updatedAt": utc_now()}
+        with solution_store._lock:
+            data = solution_store._load()
+            index, _item = solution_store._find_solution(data["solutions"], solution_id)
+            data["solutions"][index] = updated
+            solution_store._write(data)
+        return jsonify(updated)
 
     @app.route("/api/folders")
     def list_folders():

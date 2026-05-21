@@ -21,7 +21,7 @@ class InvalidSolutionStateError(Exception):
 
 
 class SolutionStore:
-    CLIENT_EDITABLE_FIELDS = ("name", "defaultCrowdName", "nodes", "workbenchFieldIds", "customFields")
+    CLIENT_EDITABLE_FIELDS = ("name", "defaultCrowdName", "nodes", "workbenchFieldIds", "customFields", "folderId")
 
     def __init__(self, file_path):
         self.file_path = Path(file_path)
