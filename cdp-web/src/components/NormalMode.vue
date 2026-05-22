@@ -248,6 +248,7 @@
             >{{ section.bindings.length }}</span>
           </div>
           <div
+            ref="overflowBtnRef"
             v-if="cfHiddenCount > 0"
             class="cf-overflow-btn"
             @click="cfShowAll = !cfShowAll"
@@ -582,6 +583,7 @@ const cfEditDialogVisible = ref(false)
 const editingCfSection = ref(null)
 const editingCfCurrentValue = ref(null)
 const cfCardsBarRef = ref(null)
+const overflowBtnRef = ref(null)
 const cfShowAll = ref(false)
 const cfVisibleCount = ref(10)
 const dragCfIndex = ref(-1)
@@ -1606,6 +1608,14 @@ watch(
 
 watch(customFieldSections, () => {
   nextTick(() => updateCfOverflow())
+})
+
+watch(cfHiddenCount, (newVal, oldVal) => {
+  if (newVal !== oldVal && newVal > 0 && overflowBtnRef.value) {
+    overflowBtnRef.value.classList.remove('count-bounce')
+    void overflowBtnRef.value.offsetWidth
+    overflowBtnRef.value.classList.add('count-bounce')
+  }
 })
 
 onMounted(async () => {
