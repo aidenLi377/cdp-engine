@@ -42,10 +42,12 @@
           字段详情与绑定关系
         </div>
 
+        <TransitionGroup name="preview-stagger">
         <div
-          v-for="section in customFieldSections"
+          v-for="(section, index) in customFieldSections"
           :key="section.customFieldId"
-          class="intercom-card drawer-form-card solution-preview-card"
+          class="intercom-card drawer-form-card solution-preview-card cascade-enter"
+          :style="{ animationDelay: `${index * 60}ms` }"
         >
           <div class="drawer-form-title solution-preview-title">
             <div>
@@ -79,6 +81,7 @@
             </div>
           </div>
         </div>
+        </TransitionGroup>
 
         <div class="preview-empty-hint display-body-light" style="margin-top:24px">
           以上为工作台使用该方案时用户将看到的界面结构与字段绑定关系。
