@@ -1217,36 +1217,6 @@ body {
   flex-shrink: 0;
 }
 
-.solution-preview-drawer {
-  min-height: 0;
-}
-
-.solution-preview-empty {
-  height: 100%;
-}
-
-.solution-preview-card {
-  padding: 0;
-}
-
-.solution-preview-title {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.solution-preview-tags {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.solution-preview-surface {
-  border-radius: 0 0 20px 20px;
-}
-
 .solution-readonly-surface {
   position: relative;
   pointer-events: none;
@@ -2012,11 +1982,6 @@ body {
 .drag-elastic {
   transition: transform var(--motion-fast) var(--ease-out-expo);
 }
-
-.preview-stagger-enter-active { transition: all var(--motion-normal) var(--ease-out-expo); }
-.preview-stagger-leave-active { transition: all var(--motion-fast) ease-in; }
-.preview-stagger-enter-from { opacity: 0; transform: translateX(16px); }
-.preview-stagger-leave-to { opacity: 0; transform: translateX(-12px); }
 
 @keyframes countBounce {
   0%, 100% { transform: scale(1); }

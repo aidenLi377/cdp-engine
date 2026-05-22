@@ -15,16 +15,13 @@ test('solution sidebar controls are compact and visually secondary', () => {
   assert.match(css, /\.solution-sidebar-controls \.solution-sidebar-actions \.el-button \{[^}]*height: 28px !important;[^}]*font-size: 12px !important;/s)
 })
 
-test('workbench fields support compact select-all and clear actions', () => {
+test('custom field management actions exist in right panel', () => {
   assert.match(solutionCenterVue, /class="solution-field-actions"/)
-  assert.match(solutionCenterVue, /@click="selectAllWorkbenchFields"/)
-  assert.match(solutionCenterVue, /@click="clearWorkbenchFields"/)
-  assert.match(solutionCenterVue, /:disabled="isPublished \|\| availableWorkbenchFieldTokens\.length === 0"/)
-  assert.match(solutionCenterVue, /:disabled="isPublished \|\| workbenchFieldIds\.length === 0"/)
-  assert.match(solutionCenterVue, /const availableWorkbenchFieldTokens = computed/)
-  assert.match(solutionCenterVue, /function selectAllWorkbenchFields\(\)/)
-  assert.match(solutionCenterVue, /syncWorkbenchSelections\(availableWorkbenchFieldTokens\.value\)/)
-  assert.match(solutionCenterVue, /function clearWorkbenchFields\(\)/)
+  assert.match(solutionCenterVue, /@click="startCreateCustomField"/)
+  assert.match(solutionCenterVue, /@click="clearAllCustomFields"/)
+  assert.match(solutionCenterVue, /const customFields = ref/)
+  assert.match(solutionCenterVue, /function startCreateCustomField\(\)/)
+  assert.match(solutionCenterVue, /function clearAllCustomFields\(\)/)
   assert.match(css, /\.solution-field-action\.el-button \{[^}]*height: 24px !important;[^}]*font-size: 12px !important;/s)
 })
 
@@ -32,8 +29,7 @@ test('solution editor toolbar uses compact icon actions in one row', () => {
   assert.match(solutionCenterVue, /class="solution-add-node-control"/)
   assert.match(solutionCenterVue, /class="solution-toolbar-icon-actions"/)
   assert.match(solutionCenterVue, /class="solution-toolbar-icon-btn publish"/)
-  assert.match(solutionCenterVue, /aria-label="预览工作台使用态"/)
-  assert.match(solutionCenterVue, /import \{ Check, Plus, Upload, View \} from '@element-plus\/icons-vue'/)
+  assert.match(solutionCenterVue, /import \{ Check, Plus, Upload \} from '@element-plus\/icons-vue'/)
   assert.doesNotMatch(solutionCenterVue, /class="intercom-btn-primary"[\s\S]*?saveDraft/)
   assert.doesNotMatch(solutionCenterVue, /class="intercom-btn-accent"[\s\S]*?publishDraft/)
   assert.match(css, /\.solution-editor-toolbar \{[^}]*flex-wrap: nowrap;/s)
@@ -42,8 +38,8 @@ test('solution editor toolbar uses compact icon actions in one row', () => {
   assert.match(css, /\.solution-package-select \{[^}]*width: 176px;/s)
 })
 
-test('workbench field helper copy stays concise', () => {
-  assert.match(solutionCenterVue, />用于工作台预览</)
+test('solution center description copy stays concise', () => {
+  assert.match(solutionCenterVue, />草稿编辑、发布与工作台预览</)
   assert.doesNotMatch(solutionCenterVue, /勾选后会进入工作台方案使用态与预览抽屉/)
 })
 

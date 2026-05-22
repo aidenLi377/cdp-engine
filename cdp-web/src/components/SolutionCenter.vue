@@ -260,14 +260,6 @@
         </div>
       </div>
 
-      <div v-if="nodeList.length > 0" class="solution-preview-float">
-        <el-tooltip content="预览工作台使用态" placement="left">
-          <el-button class="preview-float-btn" @click="previewVisible = true" aria-label="预览工作台使用态">
-            <el-icon><View /></el-icon>
-            <span>预览使用态</span>
-          </el-button>
-        </el-tooltip>
-      </div>
     </section>
 
     <aside class="solution-settings">
@@ -474,24 +466,18 @@
       </div>
     </aside>
 
-    <SolutionPreviewDrawer
-      v-model="previewVisible"
-      :custom-field-sections="previewSections"
-      :solution-name="activeSolution?.name || ''"
-    />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, provide, reactive, ref, toRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Plus, Upload, View } from '@element-plus/icons-vue'
+import { Check, Plus, Upload } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
-import SolutionPreviewDrawer from './SolutionPreviewDrawer.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { fieldToken, serializeNodesForSolution, buildCustomFieldSections } from '../utils/solutionState.js'
+import { fieldToken, serializeNodesForSolution } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import FolderTree from './FolderTree.vue'
@@ -528,7 +514,6 @@ const solutions = ref([])
 const activeSolution = ref(null)
 const nodeList = ref([])
 const workbenchFieldIds = ref([])
-const previewVisible = ref(false)
 const searchKeyword = ref('')
 const statusFilter = ref('all')
 const loadingList = ref(false)
@@ -624,10 +609,6 @@ const fieldGroups = computed(() =>
 
 const availableWorkbenchFieldTokens = computed(() =>
   fieldGroups.value.flatMap((group) => group.fields.map((field) => field.token)),
-)
-
-const previewSections = computed(() =>
-  buildCustomFieldSections(customFields.value, nodeList.value),
 )
 
 const currentDraftSnapshot = computed(() => {
@@ -1436,33 +1417,6 @@ onMounted(async () => {
   100% { background-position: -200% 0; }
 }
 
-/* ---- 底部悬浮预览按钮 ---- */
-.solution-preview-float {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  z-index: 10;
-}
-.preview-float-btn.el-button {
-  height: 40px !important;
-  padding: 0 18px !important;
-  border-radius: 20px !important;
-  background: #1d1d1f !important;
-  color: #fff !important;
-  border: none !important;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 1px 4px rgba(0,0,0,0.10) !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 6px !important;
-  transition: all 0.25s ease !important;
-}
-.preview-float-btn.el-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.24), 0 2px 8px rgba(0,0,0,0.12) !important;
-  background: #333336 !important;
-}
 .creating-step-body {
   margin-top: 8px;
 }

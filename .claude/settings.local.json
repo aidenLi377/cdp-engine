@@ -28,7 +28,9 @@
       "Bash(tasklist //FI \"PID eq 24344\")",
       "Bash(taskkill //F //IM python.exe)",
       "Bash(taskkill //F //IM node.exe)",
-      "Bash(PYTHONPATH=/e/CDP_Project_codex python app.py)"
+      "Bash(PYTHONPATH=/e/CDP_Project_codex python app.py)",
+      "Bash(sed -n '1,472p' \"cdp-web/src/components/SolutionCenter.vue\")",
+      "Read(//tmp/**)"
     ]
   }
 }
