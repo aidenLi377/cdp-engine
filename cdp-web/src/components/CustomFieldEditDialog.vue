@@ -135,7 +135,7 @@ const props = defineProps({
   nodeList: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['update:modelValue', 'save', 'writeBack'])
+const emit = defineEmits(['update:modelValue', 'save'])
 
 const editValue = ref(null)
 const editMode = ref('recent')
@@ -203,10 +203,11 @@ function save() {
   if (isDateType.value || isNumberType.value) {
     payload = { ...editValue.value, mode: editMode.value }
   }
-  if (writeBackMarked.value) {
-    emit('writeBack', { customFieldId: props.customField?.customFieldId, value: payload })
-  }
-  emit('save', { customFieldId: props.customField?.customFieldId, value: payload })
+  emit('save', {
+    customFieldId: props.customField?.customFieldId,
+    value: payload,
+    writeBack: writeBackMarked.value,
+  })
   emit('update:modelValue', false)
 }
 

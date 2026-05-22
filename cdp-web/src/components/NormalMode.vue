@@ -308,7 +308,6 @@
         :current-value="editingCfCurrentValue"
         :node-list="nodeList"
         @save="onCfDialogSave"
-        @write-back="onCfWriteBack"
       />
     </template>
 
@@ -707,45 +706,44 @@ function openCfEditDialog(section) {
   cfEditDialogVisible.value = true
 }
 
-function onCfDialogSave({ customFieldId, value }) {
+async function onCfDialogSave({ customFieldId, value, writeBack }) {
+  if (writeBack) {
+    const solution = loadedSolutionRecord.value
+    if (solution?.id) {
+      const cfs = [...(solution.customFields || [])]
+      const cf = cfs.find(c => c.id === customFieldId)
+      if (cf) {
+        cf.defaultValue = value
+        try {
+          await updateCustomFields(solution.id, cfs)
+          loadedSolutionRecord.value = { ...solution, customFields: cfs }
+          if (currentSolution.value?.id === solution.id) {
+            currentSolution.value = { ...currentSolution.value, customFields: cfs }
+          }
+          ElMessage.success(`已回写「${cf.name || ''}」到方案`)
+        } catch (error) {
+          ElMessage.error(error.message || '回写失败')
+          return
+        }
+      }
+    }
+  }
+
   syncCustomFieldValue(
     nodeList.value,
     customFieldId,
     currentSolution.value?.customFields || [],
     value,
   )
-  const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === customFieldId)
-  if (cf) {
-    const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
-    if (uniqueNodes.size > 0) {
-      ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
+  if (!writeBack) {
+    const cfs = currentSolution.value?.customFields || []
+    const cf = cfs.find(c => c.id === customFieldId)
+    if (cf) {
+      const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
+      if (uniqueNodes.size > 0) {
+        ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
+      }
     }
-  }
-}
-
-async function onCfWriteBack({ customFieldId, value }) {
-  const solution = loadedSolutionRecord.value
-  if (!solution?.id) {
-    ElMessage.error('未找到方案记录，无法回写')
-    return
-  }
-  const cfs = [...(solution.customFields || [])]
-  const cf = cfs.find(c => c.id === customFieldId)
-  if (!cf) {
-    ElMessage.error('未找到对应的自定义字段')
-    return
-  }
-  cf.defaultValue = value
-  try {
-    await updateCustomFields(solution.id, cfs)
-    loadedSolutionRecord.value = { ...solution, customFields: cfs }
-    if (currentSolution.value?.id === solution.id) {
-      currentSolution.value = { ...currentSolution.value, customFields: cfs }
-    }
-    ElMessage.success(`已回写「${cf.name || ''}」到方案`)
-  } catch (error) {
-    ElMessage.error(error.message || '回写失败')
   }
 }
 
