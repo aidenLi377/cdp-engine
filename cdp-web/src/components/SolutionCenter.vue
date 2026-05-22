@@ -88,7 +88,7 @@
         <div class="display-body-light">当前选中</div>
         <div class="display-body strong">{{ activeSolution.name || '未命名方案' }}</div>
         <div v-if="hasUnsavedChanges && !isPublished" class="solution-dirty-indicator">
-          <span class="solution-dirty-dot"></span>
+          <span class="solution-dirty-dot pulse-breath"></span>
           <span class="display-body-light">有未保存修改</span>
         </div>
         <div class="solution-sidebar-actions">
@@ -150,6 +150,7 @@
                 class="solution-toolbar-icon-btn"
                 @click="saveDraft"
                 :loading="saving"
+                ref="saveBtnRef"
                 aria-label="保存草稿"
               >
                 <el-icon><Check /></el-icon>
@@ -160,6 +161,7 @@
                 class="solution-toolbar-icon-btn publish"
                 @click="publishDraft"
                 :loading="publishing"
+                ref="publishBtnRef"
                 aria-label="发布正式方案"
               >
                 <el-icon><Upload /></el-icon>
@@ -528,6 +530,8 @@ const creatingDraft = ref(false)
 const creatingEditDraft = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
+const saveBtnRef = ref(null)
+const publishBtnRef = ref(null)
 const deleting = ref(false)
 const folderTree = ref([])
 const selectedFolderId = ref(null)
@@ -910,6 +914,10 @@ async function saveDraft() {
     await loadSolutions()
     await applySolutionRecord(updated)
     ElMessage.success('草稿已保存')
+    if (saveBtnRef.value?.$el) {
+      saveBtnRef.value.$el.classList.add('success-flash')
+      setTimeout(() => saveBtnRef.value.$el.classList.remove('success-flash'), 600)
+    }
   } catch (error) {
     ElMessage.error(error.message || '草稿保存失败')
   } finally {
@@ -930,6 +938,10 @@ async function publishDraft() {
     await applySolutionRecord(published)
     setSavedSnapshotFromRecord(saved)
     ElMessage.success('方案已发布')
+    if (publishBtnRef.value?.$el) {
+      publishBtnRef.value.$el.classList.add('publish-ring')
+      setTimeout(() => publishBtnRef.value.$el.classList.remove('publish-ring'), 700)
+    }
   } catch (error) {
     ElMessage.error(error.message || '方案发布失败')
   } finally {
