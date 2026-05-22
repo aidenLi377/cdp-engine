@@ -1704,13 +1704,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0;
-  min-width: 0;
+  flex-shrink: 0;
 }
 .cf-use-card-value {
   font-size: 11px;
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .cf-use-card:hover {
