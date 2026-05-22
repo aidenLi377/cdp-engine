@@ -183,12 +183,14 @@ function formatBoundValue(binding) {
   if (value === undefined || value === null) return '(未设置)'
   if (Array.isArray(value)) return value.join('、') || '(空)'
   if (typeof value === 'object') {
-    if (value.days !== undefined) return `过去 ${value.days} 天`
+    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
+    if (value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return `${value.dateRange[0]} ~ ${value.dateRange[1]}`
     if (value.min !== undefined) {
       if (mode === 'unlimited') return '不限'
       if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
       return `≥ ${value.min ?? '?'}`
     }
+    if (value.days !== undefined) return `过去 ${value.days} 天`
     return ''
   }
   return String(value)

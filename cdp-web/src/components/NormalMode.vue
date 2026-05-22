@@ -650,13 +650,15 @@ function getFocusFieldDisplay(fieldKey, node) {
   const value = node.formData?.[fieldKey]
   if (Array.isArray(value)) return { label, value: value.join('、') || '(空)' }
   if (value && typeof value === 'object') {
-    if (value.days !== undefined) return { label, value: `过去 ${value.days} 天` }
+    const mode = node.modeData?.[fieldKey]
+    if (value.days !== undefined && mode !== 'range') return { label, value: `过去 ${value.days} 天` }
+    if (value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return { label, value: `${value.dateRange[0]} ~ ${value.dateRange[1]}` }
     if (value.min !== undefined) {
-      const mode = node.modeData?.[fieldKey]
       if (mode === 'unlimited') return { label, value: '不限' }
       if (mode === 'range') return { label, value: `${value.min ?? '?'} — ${value.max ?? '?'}` }
       return { label, value: `≥ ${value.min ?? '?'}` }
     }
+    if (value.days !== undefined) return { label, value: `过去 ${value.days} 天` }
     return { label, value: JSON.stringify(value) }
   }
   return { label, value: value || '(空)' }
@@ -670,13 +672,15 @@ function getCfValueSummary(section) {
   if (value === undefined || value === null) return '(未设置)'
   if (Array.isArray(value)) return value.length > 0 ? value.slice(0, 3).join('、') + (value.length > 3 ? '…' : '') : '(空)'
   if (typeof value === 'object') {
-    if (value.days !== undefined) return `过去 ${value.days} 天`
+    const mode = node?.modeData?.[firstBinding.fieldKey]
+    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
+    if (value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return `${value.dateRange[0]} ~ ${value.dateRange[1]}`
     if (value.min !== undefined) {
-      const mode = node?.modeData?.[firstBinding.fieldKey]
       if (mode === 'unlimited') return '不限'
       if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
       return `≥ ${value.min ?? '?'}`
     }
+    if (value.days !== undefined) return `过去 ${value.days} 天`
     return ''
   }
   return String(value).slice(0, 20)
