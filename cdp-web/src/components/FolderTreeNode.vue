@@ -45,8 +45,9 @@
       <span v-if="dragOverFolderId === folder.id" class="folder-drop-hint">释放到此处</span>
     </div>
 
-    <div v-if="expandedIds.has(folder.id) && (folder.children && folder.children.length > 0)" class="folder-children">
-      <FolderTreeNode
+    <Transition name="folder-children">
+      <div v-if="expandedIds.has(folder.id) && (folder.children && folder.children.length > 0)" class="folder-children">
+        <FolderTreeNode
         v-for="child in folder.children"
         :key="child.id"
         :folder="child"
@@ -66,7 +67,8 @@
         @cancel-edit="$emit('cancel-edit')"
         @save-edit="(id) => $emit('save-edit', id)"
       />
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
