@@ -84,17 +84,19 @@
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="contextMenu.visible"
-        class="folder-context-menu"
-        :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
-        @click.stop
-      >
-        <div class="context-menu-item" @click="contextRename">✏️ 重命名</div>
-        <div class="context-menu-item" @click="contextNewChild">📂 新建子文件夹</div>
-        <div class="context-menu-divider"></div>
-        <div class="context-menu-item danger" @click="contextDelete">🗑 删除</div>
-      </div>
+      <Transition name="scale-in">
+        <div
+          v-if="contextMenu.visible"
+          class="folder-context-menu"
+          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+          @click.stop
+        >
+          <div class="context-menu-item" @click="contextRename">✏️ 重命名</div>
+          <div class="context-menu-item" @click="contextNewChild">📂 新建子文件夹</div>
+          <div class="context-menu-divider"></div>
+          <div class="context-menu-item danger" @click="contextDelete">🗑 删除</div>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
