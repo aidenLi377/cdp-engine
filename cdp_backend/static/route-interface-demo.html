@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Route vs API Demo</title>
+    <style>
+      :root {
+        --bg: #f4efe6;
+        --panel: rgba(255, 255, 255, 0.84);
+        --text: #1f2a35;
+        --muted: #5f6b76;
+        --line: #d8c8af;
+        --accent: #d65a31;
+        --accent-soft: #ffd7c2;
+        --blue: #2f6fed;
+        --blue-soft: #dbe6ff;
+        --green: #0d8a6a;
+        --green-soft: #cdeee3;
+        --shadow: 0 20px 50px rgba(67, 47, 21, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(214, 90, 49, 0.18), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(47, 111, 237, 0.18), transparent 30%),
+          linear-gradient(180deg, #fbf7ef 0%, var(--bg) 100%);
+      }
+
+      .page {
+        max-width: 1220px;
+        margin: 0 auto;
+        padding: 32px 24px 48px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: fit-content;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--accent);
+        background: rgba(214, 90, 49, 0.1);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(30px, 4vw, 52px);
+        line-height: 1.05;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 860px;
+        font-size: 17px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin: 18px 0 24px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 18px;
+        font-size: 15px;
+        font-weight: 600;
+        color: white;
+        background: var(--accent);
+        cursor: pointer;
+        box-shadow: 0 10px 24px rgba(214, 90, 49, 0.26);
+      }
+
+      button.secondary {
+        color: var(--text);
+        background: white;
+        box-shadow: none;
+        border: 1px solid var(--line);
+      }
+
+      .status {
+        min-height: 24px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) minmax(260px, 1.2fr);
+        gap: 18px;
+        align-items: stretch;
+      }
+
+      .card {
+        position: relative;
+        overflow: hidden;
+        padding: 18px;
+        border: 1px solid rgba(216, 200, 175, 0.9);
+        border-radius: 18px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        box-shadow: var(--shadow);
+      }
+
+      .card-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .card-label strong {
+        font-size: 18px;
+      }
+
+      .badge {
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .badge.orange {
+        color: #8f391f;
+        background: var(--accent-soft);
+      }
+
+      .badge.blue {
+        color: #1e4db5;
+        background: var(--blue-soft);
+      }
+
+      .badge.green {
+        color: #0a6d55;
+        background: var(--green-soft);
+      }
+
+      .request-ticket,
+      .response-ticket {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        display: grid;
+        gap: 6px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: white;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        box-shadow: 0 14px 30px rgba(31, 42, 53, 0.08);
+        opacity: 0;
+        transform: translateY(0) scale(0.96);
+      }
+
+      .request-ticket {
+        top: 72px;
+      }
+
+      .response-ticket {
+        bottom: 18px;
+      }
+
+      .request-ticket.active,
+      .response-ticket.active {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        transition: transform 0.5s ease, opacity 0.5s ease;
+      }
+
+      .request-ticket.fly-to-router {
+        animation: request-to-router 1.2s ease forwards;
+      }
+
+      .response-ticket.fly-to-client {
+        animation: response-to-client 1.2s ease forwards;
+      }
+
+      .ticket-title {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .ticket-main {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .ticket-sub {
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .router-list,
+      .api-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .route-item,
+      .api-item {
+        position: relative;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease;
+      }
+
+      .route-item.active {
+        transform: translateX(6px);
+        border-color: rgba(214, 90, 49, 0.5);
+        box-shadow: 0 10px 24px rgba(214, 90, 49, 0.14);
+      }
+
+      .api-item.active {
+        transform: translateX(-6px);
+        border-color: rgba(13, 138, 106, 0.5);
+        box-shadow: 0 10px 24px rgba(13, 138, 106, 0.14);
+      }
+
+      .route-item small,
+      .api-item small {
+        display: block;
+        color: var(--muted);
+        margin-top: 6px;
+        line-height: 1.5;
+      }
+
+      .definition {
+        margin-top: 22px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .definition .card p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .code {
+        margin-top: 12px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #1f2630;
+        color: #eef4ff;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 13px;
+        line-height: 1.65;
+        overflow: auto;
+      }
+
+      @keyframes request-to-router {
+        0% {
+          transform: translate(0, 0) scale(1);
+          opacity: 1;
+        }
+        55% {
+          transform: translate(110%, 0) scale(1.02);
+          opacity: 1;
+        }
+        100% {
+          transform: translate(110%, 0) scale(0.9);
+          opacity: 0;
+        }
+      }
+
+      @keyframes response-to-client {
+        0% {
+          transform: translate(0, 0) scale(1);
+          opacity: 1;
+        }
+        55% {
+          transform: translate(-116%, 0) scale(1.02);
+          opacity: 1;
+        }
+        100% {
+          transform: translate(-116%, 0) scale(0.9);
+          opacity: 0;
+        }
+      }
+
+      @media (max-width: 980px) {
+        .stage,
+        .definition {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <span class="eyebrow">概念动画</span>
+        <h1>Route vs API</h1>
+        <p>
+          这个页面专门用来演示你刚才问的区别。你点一次按钮，就会看到一个请求先进入
+          <strong>路由</strong>，再被分发到对应的 <strong>接口能力</strong>，最后把响应返回给前端。
+        </p>
+      </section>
+
+      <section class="toolbar">
+        <button id="play-demo" type="button">播放一次</button>
+        <button id="reset-demo" class="secondary" type="button">重置</button>
+        <div id="status" class="status">当前状态：等待开始</div>
+      </section>
+
+      <section class="stage" aria-label="route and api animation">
+        <article class="card">
+          <div class="card-label">
+            <strong>前端发起请求</strong>
+            <span class="badge orange">Client</span>
+          </div>
+          <div id="request-ticket" class="request-ticket active">
+            <span class="ticket-title">Request</span>
+            <span class="ticket-main">GET /api/solutions</span>
+            <span class="ticket-sub">前端想拿到方案列表</span>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-label">
+            <strong>路由表匹配</strong>
+            <span class="badge blue">Route</span>
+          </div>
+          <div class="router-list">
+            <div class="route-item" data-route="health">
+              <div>GET /api/health</div>
+              <small>匹配后进入 health_check()</small>
+            </div>
+            <div class="route-item" data-route="solutions">
+              <div>GET /api/solutions</div>
+              <small>匹配后进入 list_solutions()</small>
+            </div>
+            <div class="route-item" data-route="publish">
+              <div>POST /api/solutions/&lt;id&gt;/publish</div>
+              <small>匹配后进入 publish_solution(id)</small>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-label">
+            <strong>接口能力执行</strong>
+            <span class="badge green">API</span>
+          </div>
+          <div class="api-list">
+            <div class="api-item" data-api="health">
+              <div>/api/health</div>
+              <small>对外能力：返回服务健康状态</small>
+            </div>
+            <div class="api-item" data-api="solutions">
+              <div>/api/solutions</div>
+              <small>对外能力：返回方案列表 JSON</small>
+            </div>
+            <div class="api-item" data-api="publish">
+              <div>/api/solutions/&lt;id&gt;/publish</div>
+              <small>对外能力：发布方案并返回发布结果</small>
+            </div>
+          </div>
+          <div id="response-ticket" class="response-ticket">
+            <span class="ticket-title">Response</span>
+            <span class="ticket-main">200 OK</span>
+            <span class="ticket-sub">[{ "id": "solution_1", "name": "方案A" }]</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="definition">
+        <article class="card">
+          <div class="card-label">
+            <strong>路由是什么</strong>
+            <span class="badge blue">定义</span>
+          </div>
+          <p>
+            路由负责把“请求地址 + 请求方法”分发给正确的处理函数。它强调的是
+            <strong>请求怎么被转发</strong>。
+          </p>
+          <div class="code">@app.route("/api/solutions")
+def list_solutions():
+    return jsonify(solution_store.list_solutions())</div>
+        </article>
+
+        <article class="card">
+          <div class="card-label">
+            <strong>接口是什么</strong>
+            <span class="badge green">定义</span>
+          </div>
+          <p>
+            接口强调的是系统对外提供了什么能力。比如
+            <strong>GET /api/solutions</strong> 这个能力，就是“获取方案列表”。
+          </p>
+          <div class="code">接口 = URL + 方法 + 参数 + 返回结果
+
+示例:
+GET /api/solutions
+返回: [{ "id": "...", "name": "..." }]</div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const playButton = document.getElementById("play-demo");
+      const resetButton = document.getElementById("reset-demo");
+      const statusEl = document.getElementById("status");
+      const requestTicket = document.getElementById("request-ticket");
+      const responseTicket = document.getElementById("response-ticket");
+      const routeItem = document.querySelector('[data-route="solutions"]');
+      const apiItem = document.querySelector('[data-api="solutions"]');
+
+      let running = false;
+
+      const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+      function resetDemo() {
+        running = false;
+        requestTicket.className = "request-ticket active";
+        responseTicket.className = "response-ticket";
+        routeItem.classList.remove("active");
+        apiItem.classList.remove("active");
+        statusEl.textContent = "当前状态：等待开始";
+      }
+
+      async function playDemo() {
+        if (running) {
+          return;
+        }
+
+        running = true;
+        resetDemo();
+        running = true;
+
+        statusEl.textContent = "当前状态：前端发出 GET /api/solutions 请求";
+        await wait(500);
+
+        requestTicket.className = "request-ticket active fly-to-router";
+        statusEl.textContent = "当前状态：路由开始匹配 URL 和请求方法";
+        await wait(1200);
+
+        routeItem.classList.add("active");
+        statusEl.textContent = "当前状态：命中路由 -> list_solutions()";
+        await wait(900);
+
+        apiItem.classList.add("active");
+        statusEl.textContent = "当前状态：接口能力执行，准备返回方案列表";
+        await wait(1000);
+
+        responseTicket.className = "response-ticket active";
+        statusEl.textContent = "当前状态：接口返回 200 OK 和 JSON 数据";
+        await wait(1000);
+
+        responseTicket.className = "response-ticket active fly-to-client";
+        statusEl.textContent = "当前状态：响应回到前端，页面拿到结果";
+        await wait(1200);
+
+        routeItem.classList.remove("active");
+        apiItem.classList.remove("active");
+        requestTicket.className = "request-ticket active";
+        responseTicket.className = "response-ticket";
+        statusEl.textContent = "当前状态：演示结束，可以再播放一次";
+        running = false;
+      }
+
+      playButton.addEventListener("click", playDemo);
+      resetButton.addEventListener("click", resetDemo);
+    </script>
+  </body>
+</html>

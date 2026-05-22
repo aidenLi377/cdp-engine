@@ -106,6 +106,14 @@ class CdpApiTests(unittest.TestCase):
         response = self.client.get("/api/package_meta")
         self.assertEqual(response.status_code, 400)
 
+    def test_route_interface_demo_page(self):
+        response = self.client.get("/route-interface-demo")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.content_type)
+        body = response.get_data(as_text=True)
+        self.assertIn("Route vs API", body)
+        self.assertIn("/api/solutions", body)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

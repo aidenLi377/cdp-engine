@@ -743,8 +743,10 @@ async function onCfWriteBack({ customFieldId, value }) {
     if (currentSolution.value?.id === solution.id) {
       currentSolution.value = { ...currentSolution.value, customFields: cfs }
     }
-    ElMessage.success(`「${cf.name}」已回写到方案`)
+    console.log('[writeBack] Updated solution', solution.id, 'cf', customFieldId, 'value', value)
+    ElMessage.success(`「${cf.name}」已回写到方案: ${JSON.stringify(value)}`)
   } catch (error) {
+    console.error('[writeBack] Failed', error)
     ElMessage.error(error.message || '回写失败')
   }
 }

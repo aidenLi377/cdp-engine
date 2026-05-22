@@ -5,6 +5,7 @@ const ALLOWED_ORIGINS = new Set([
 const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const PROJECT_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
 const CONTENT_MESSAGE_TYPE = 'AUTOMATE_DATABANK'
+const CONTENT_READY_MESSAGE_TYPE = 'PING_AUTOMATION_READY'
 
 function logInfo(message, extra) {
   if (extra !== undefined) {
@@ -20,12 +21,6 @@ function logError(message, extra) {
     return
   }
   console.error(`[Databank Automation][background] ${message}`)
-}
-
-async function findDatabankTab() {
-  const tabs = await chrome.tabs.query({ url: ['https://databank.tmall.com/*'] })
-  logInfo('findDatabankTab result', tabs.map((tab) => ({ id: tab.id, url: tab.url, status: tab.status })))
-  return tabs[0] || null
 }
 
 async function focusTab(tab) {
@@ -59,6 +54,28 @@ async function ensureContentScriptInjected(tabId) {
     files: ['content.js'],
   })
   logInfo('content script injected', { tabId })
+}
+
+async function waitForAutomationReady(tabId, retries = 90) {
+  let lastError = null
+
+  for (let index = 0; index < retries; index += 1) {
+    try {
+      logInfo('ping automation readiness', { tabId, attempt: index + 1 })
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: CONTENT_READY_MESSAGE_TYPE,
+      })
+      logInfo('received readiness response', { tabId, attempt: index + 1, response })
+      if (response?.ok && response?.ready) return
+    } catch (error) {
+      lastError = error
+      logError('ping automation readiness failed', { tabId, attempt: index + 1, error: error?.message || String(error) })
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+
+  throw lastError || new Error('达摩盘页面未就绪，请稍后重试')
 }
 
 async function sendAutomationToTab(tabId, jsonText, retries = 20) {
@@ -110,6 +127,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   ;(async () => {
     let tab = null
+    const senderTab = sender?.tab?.id ? {
+      id: sender.tab.id,
+      windowId: sender.tab.windowId,
+    } : null
     try {
       tab = await createDatabankTab()
       if (!tab?.id) {
@@ -120,8 +141,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
       await waitForTabComplete(tab.id)
       await ensureContentScriptInjected(tab.id)
+      await focusTab(tab)
+      logInfo('focused databank tab before automation', { tabId: tab.id })
+      await waitForAutomationReady(tab.id)
       const result = await sendAutomationToTab(tab.id, jsonText)
       logInfo('automation finished silently', { tabId: tab.id, result })
+      if (senderTab?.id) {
+        try {
+          await focusTab(senderTab)
+          logInfo('restored sender tab after automation', { tabId: senderTab.id })
+        } catch (restoreError) {
+          logError('failed to restore sender tab after automation', restoreError)
+        }
+      }
       sendResponse(result)
     } catch (error) {
       logError('automation execution failed', error)

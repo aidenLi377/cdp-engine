@@ -1,0 +1,111 @@
+<h2>方案中心 — 文件夹放在哪里？</h2>
+<p class="subtitle">当前方案中心是三层布局：左侧方案列表 | 中间编辑区 | 右侧设置面板。文件夹树加在哪里？</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>左侧新增文件夹树</h3>
+      <p>在现有方案列表上方加文件夹树。先选文件夹 → 下方显示该文件夹的方案列表。最自然的方式。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>最左侧新加一栏</h3>
+      <p>在现有三栏布局基础上再增加一栏，变成四栏：文件夹树 | 方案列表 | 编辑区 | 设置面板。</p>
+    </div>
+  </div>
+</div>
+
+<div class="split">
+
+<div class="mockup">
+  <div class="mockup-header">A: 左侧栏内嵌文件夹树 + 方案列表</div>
+  <div class="mockup-body" style="padding:12px">
+    <div style="display:flex;gap:8px;min-height:240px">
+      <div style="width:140px;background:#f8f8f6;border-radius:6px;padding:10px;font-size:11px;flex-shrink:0">
+        <div style="color:#999;font-size:10px;margin-bottom:4px">方案文件夹</div>
+        <div style="padding:3px 0;font-weight:600">📂 双11活动</div>
+        <div style="padding:3px 0;margin-left:14px;font-size:10px;color:#999">📂 预售期</div>
+        <div style="padding:3px 0;margin-left:14px;color:#666">📂 爆发期</div>
+        <div style="padding:3px 0">📂 日常运营</div>
+        <div style="padding:3px 0;color:#999;margin-top:6px">+ 新建文件夹</div>
+        <div style="border-top:1px solid #eee;margin:8px 0"></div>
+        <div style="color:#999;font-size:10px;margin-bottom:2px">全部 | 草稿 | 已发布</div>
+        <div style="padding:3px 6px;background:#ff6b4a10;border-radius:3px;font-weight:600;font-size:10px">新品推广方案</div>
+        <div style="padding:3px 6px;font-size:10px;color:#666">双11大促方案</div>
+        <div style="padding:3px 6px;font-size:10px;color:#666">老客复购方案</div>
+      </div>
+      <div style="flex:1;background:#fff;border-radius:6px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#999;font-size:11px">编辑区</div>
+      <div style="width:120px;background:#f8f8f6;border-radius:6px;padding:10px;font-size:10px;color:#999;text-align:center;flex-shrink:0">设置面板</div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup">
+  <div class="mockup-header">B: 新增独立文件夹栏（四栏布局）</div>
+  <div class="mockup-body" style="padding:12px">
+    <div style="display:flex;gap:8px;min-height:240px">
+      <div style="width:100px;background:#f8f8f6;border-radius:6px;padding:8px;font-size:11px;flex-shrink:0">
+        <div style="color:#999;font-size:9px;margin-bottom:4px">文件夹</div>
+        <div style="padding:3px 0;font-weight:600">📂 双11</div>
+        <div style="padding:3px 0;margin-left:12px;font-size:10px;color:#999">预售期</div>
+        <div style="padding:3px 0;margin-left:12px">爆发期</div>
+        <div style="padding:3px 0">📂 日常</div>
+        <div style="padding:3px 0;color:#ff6b4a;margin-top:4px;font-size:10px">+ 新建</div>
+      </div>
+      <div style="width:120px;background:#f8f8f6;border-radius:6px;padding:8px;font-size:10px;flex-shrink:0">
+        <div style="color:#999;font-size:9px;margin-bottom:4px">方案列表</div>
+        <div style="padding:3px 6px;background:#ff6b4a10;border-radius:3px;font-weight:600">新品推广</div>
+        <div style="padding:3px 6px;color:#666">双11大促</div>
+        <div style="padding:3px 6px;color:#666">老客复购</div>
+      </div>
+      <div style="flex:1;background:#fff;border-radius:6px;border:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#999;font-size:11px">编辑区</div>
+      <div style="width:120px;background:#f8f8f6;border-radius:6px;padding:10px;font-size:10px;color:#999;text-align:center;flex-shrink:0">设置面板</div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<h2 style="margin-top:32px">工作台 — 方案文件夹放哪里？</h2>
+<p class="subtitle">工作台左侧可以切换「组件库」和「已发布方案」两个面板。文件夹放在"已发布方案"面板里即可。</p>
+
+<div class="mockup" style="margin-top:16px">
+  <div class="mockup-header">工作台：在"已发布方案"面板中加入文件夹树</div>
+  <div class="mockup-body" style="padding:12px">
+    <div style="width:200px;background:#f8f8f6;border-radius:6px;padding:10px;font-size:11px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:600;font-size:12px">已发布方案</span>
+        <span style="font-size:9px;color:#999;cursor:pointer">选方案 | 组件库</span>
+      </div>
+      <div style="padding:3px 0;font-weight:600">📂 双11活动</div>
+      <div style="padding:3px 0;margin-left:14px;font-size:10px;color:#999">📂 预售期</div>
+      <div style="padding:3px 0;margin-left:14px;color:#666">📂 爆发期</div>
+      <div style="padding:3px 0">📂 日常运营</div>
+      <div style="padding:3px 0">📂 会员专享</div>
+      <div style="border-top:1px solid #eee;margin:8px 0"></div>
+      <div style="padding:3px 6px;background:#ff6b4a10;border-radius:3px;font-weight:600;font-size:10px">✧ 新品推广方案</div>
+      <div style="padding:3px 6px;font-size:10px;color:#666">  双11大促方案</div>
+      <div style="padding:3px 6px;font-size:10px;color:#666">  老客复购方案</div>
+    </div>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="layout-a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>方案中心：文件夹树内嵌在左侧栏</h3>
+      <p>上面是文件夹树，下面是筛选后的方案列表。三栏布局不变，适配现有 UI。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="layout-b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>方案中心：新增独立文件夹栏</h3>
+      <p>新加一栏专门放文件夹树。方案列表保持不变，结构更清晰。</p>
+    </div>
+  </div>
+</div>

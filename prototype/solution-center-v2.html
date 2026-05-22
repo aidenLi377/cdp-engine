@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案中心 V2 — 一对多自定义字段</title>
+<style>
+/* ============================================
+   Design System — Industrial Utilitarian
+   ============================================ */
+:root {
+  --bg-root: #f5f3f0;
+  --bg-surface: #fefdfb;
+  --bg-elevated: #ffffff;
+  --bg-muted: #eeebe6;
+  --bg-hover: #e8e4de;
+  --bg-active: #fff3e6;
+  --bg-highlight: #fff7ed;
+  --bg-highlight-strong: #ffe8cc;
+  --border-light: #e0dcd6;
+  --border-mid: #cfc9c0;
+  --border-strong: #b0a99e;
+  --text-primary: #2c2416;
+  --text-secondary: #6b6054;
+  --text-muted: #9b8f82;
+  --text-inverse: #ffffff;
+  --accent: #e86514;
+  --accent-hover: #d1550a;
+  --accent-subtle: #fff3e6;
+  --accent-border: #f5c89a;
+  --date-color: #3b82f6;
+  --date-bg: #eff6ff;
+  --date-border: #93c5fd;
+  --number-color: #8b5cf6;
+  --number-bg: #f5f3ff;
+  --number-border: #c4b5fd;
+  --text-color: #059669;
+  --text-bg: #ecfdf5;
+  --text-border: #6ee7b7;
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-elevated: 0 4px 16px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
+  --shadow-drawer: -4px 0 24px rgba(0,0,0,0.15);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --font-display: 'Source Serif 4', 'Noto Serif SC', serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Layout */
+.app-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Left Sidebar */
+.left-sidebar {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-head {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sidebar-head h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.sidebar-head p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.solution-item {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.solution-item:hover { background: var(--bg-hover); }
+.solution-item.active {
+  background: var(--bg-active);
+  border-color: var(--accent-border);
+}
+
+.solution-item .name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.solution-item .meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 12px; }
+
+/* Center Editor */
+.center-editor {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-root);
+}
+
+.editor-toolbar {
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+
+.editor-toolbar h3 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.editor-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* Node Cards */
+.node-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-card);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.node-card.highlighted {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 101, 20, 0.15), var(--shadow-elevated);
+  animation: pulse-highlight 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(232, 101, 20, 0.15), var(--shadow-elevated); }
+  50% { box-shadow: 0 0 0 6px rgba(232, 101, 20, 0.08), var(--shadow-elevated); }
+}
+
+.node-card-header {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-muted);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.node-card-header .node-title {
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.node-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--bg-root);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+}
+
+.node-card-body {
+  padding: 12px 20px 20px;
+}
+
+/* Field Items */
+.field-item {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  border: 1px solid transparent;
+  background: var(--bg-muted);
+  position: relative;
+  transition: all 0.25s ease;
+}
+
+.field-item.field-highlighted {
+  animation: field-glow 1.2s ease-in-out infinite;
+  border-color: var(--accent-border);
+  background: var(--bg-highlight);
+}
+
+@keyframes field-glow {
+  0%, 100% { background: var(--bg-highlight); border-color: var(--accent-border); }
+  50% { background: var(--bg-highlight-strong); border-color: var(--accent); }
+}
+
+.field-item.field-dimmed {
+  opacity: 0.35;
+  background: var(--bg-muted);
+  filter: grayscale(0.6);
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-type-chip {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+.field-type-chip.date { background: var(--date-bg); color: var(--date-color); border: 1px solid var(--date-border); }
+.field-type-chip.number { background: var(--number-bg); color: var(--number-color); border: 1px solid var(--number-border); }
+.field-type-chip.text { background: var(--text-bg); color: var(--text-color); border: 1px solid var(--text-border); }
+
+.field-control {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font-body);
+  background: #fff;
+  transition: border-color 0.2s;
+}
+
+.field-control:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(232, 101, 20, 0.12);
+}
+
+.field-selectable {
+  cursor: pointer;
+  border: 2px dashed transparent;
+  transition: all 0.2s ease;
+}
+
+.field-selectable:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+.field-selectable.selected {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px rgba(232, 101, 20, 0.2);
+}
+
+.field-selectable .check-mark {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.field-selectable.selected .check-mark { display: flex; }
+
+/* Logic Connector */
+.logic-connector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 4px 20px;
+  margin-bottom: 12px;
+}
+
+.connector-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-mid);
+}
+
+.logic-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-muted);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  border: 1px solid var(--border-light);
+}
+
+.logic-opt {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  transition: all 0.15s;
+}
+
+.logic-opt.active {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-card);
+  font-weight: 600;
+}
+
+/* Right Sidebar */
+.right-sidebar {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-light);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.right-sidebar-head {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.right-sidebar-head h2 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.right-sidebar-head p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.right-sidebar-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* Section Card */
+.settings-card {
+  background: var(--bg-muted);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-light);
+}
+
+.settings-card h4 {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.settings-card .input-row {
+  margin-bottom: 10px;
+}
+
+.settings-card label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.settings-card input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font-body);
+  background: #fff;
+}
+
+/* Custom Field List */
+.custom-field-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.custom-field-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.custom-field-item:hover {
+  border-color: var(--border-strong);
+}
+
+.custom-field-item.active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 2px rgba(232, 101, 20, 0.12);
+}
+
+.custom-field-item .cf-name {
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.custom-field-item .cf-name .delete-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.custom-field-item:hover .cf-name .delete-btn { opacity: 1; }
+.custom-field-item .cf-name .delete-btn:hover { color: #dc2626; }
+
+.custom-field-item .cf-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.custom-field-item .cf-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(232, 101, 20, 0.3);
+}
+
+.btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: var(--text-secondary);
+}
+
+.btn-outline:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.btn-block { width: 100%; justify-content: center; }
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Toast / Prompt */
+.toast-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.toast-dialog {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  padding: 28px 32px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: var(--shadow-elevated);
+  text-align: center;
+}
+
+.toast-dialog h3 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.toast-dialog p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+/* Binding Modal */
+.binding-modal {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 480px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-drawer);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.25s ease;
+}
+
+@keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.binding-modal-head {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.binding-modal-head h3 { font-family: var(--font-display); font-size: 16px; }
+
+.binding-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
+
+.binding-modal-foot {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.binding-group {
+  margin-bottom: 20px;
+}
+
+.binding-group-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.binding-field-option {
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.binding-field-option:hover { border-color: var(--accent-border); background: var(--accent-subtle); }
+.binding-field-option.type-mismatch {
+  opacity: 0.3;
+  cursor: not-allowed;
+  background: var(--bg-muted);
+  filter: grayscale(0.8);
+}
+
+.binding-field-option.type-mismatch::after {
+  content: '类型不匹配';
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.binding-field-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px rgba(232, 101, 20, 0.2);
+}
+
+.binding-field-option .field-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.binding-field-option .field-info .fname { font-size: 13px; font-weight: 500; }
+.binding-field-option .field-info .fnode { font-size: 11px; color: var(--text-muted); }
+
+/* Step indicator */
+.steps {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.step {
+  flex: 1;
+  height: 3px;
+  background: var(--border-light);
+  border-radius: 2px;
+  transition: background 0.3s;
+}
+
+.step.done { background: var(--accent); }
+.step.current { background: var(--accent); animation: stepPulse 1s ease-in-out infinite; }
+
+@keyframes stepPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 13px; }
+
+/* Tab switcher */
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px;
+  font-size: 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-body);
+  color: var(--text-muted);
+  transition: all 0.15s;
+  position: relative;
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  width: 60%;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+
+/* Mode indicator */
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+}
+
+.mode-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Usage mode */
+.usage-shell {
+  padding: 24px;
+}
+
+.usage-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+/* reset / demo controls */
+.demo-controls {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 50;
+  background: var(--bg-elevated);
+  padding: 8px 14px;
+  border-radius: 99px;
+  box-shadow: var(--shadow-elevated);
+  border: 1px solid var(--border-light);
+}
+
+.demo-controls button {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 12px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-surface);
+  cursor: pointer;
+  font-family: var(--font-body);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.demo-controls button:hover { background: var(--bg-hover); }
+.demo-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <!-- ===== LEFT SIDEBAR ===== -->
+  <aside class="left-sidebar">
+    <div class="sidebar-head">
+      <h2>方案中心</h2>
+      <p>草稿编辑、发布与工作台预览</p>
+      <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="createNewDraft()">
+        + 新建草稿
+      </button>
+    </div>
+    <div class="sidebar-list" id="solutionList">
+      <div class="solution-item active" data-id="draft-1">
+        <div class="name">春季上新人群包</div>
+        <div class="meta"><span>草稿</span><span>3 个节点</span><span>5/20 10:30</span></div>
+      </div>
+      <div class="solution-item" data-id="draft-2">
+        <div class="name">大促意向人群</div>
+        <div class="meta"><span>已发布</span><span>2 个节点</span><span>5/19 15:01</span></div>
+      </div>
+      <div class="solution-item" data-id="draft-3">
+        <div class="name">竞品拦截方案</div>
+        <div class="meta"><span>草稿</span><span>4 个节点</span><span>5/18 09:22</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== CENTER EDITOR ===== -->
+  <main class="center-editor">
+    <div class="tab-bar" id="tabBar">
+      <button class="tab-btn active" onclick="switchTab('config')">方案配置</button>
+      <button class="tab-btn" onclick="switchTab('usage')">使用态预览</button>
+    </div>
+    <div class="editor-scroll" id="editorContent"></div>
+  </main>
+
+  <!-- ===== RIGHT SIDEBAR ===== -->
+  <aside class="right-sidebar" id="rightSidebar">
+    <div class="right-sidebar-head">
+      <h2>自定义字段（一对多）</h2>
+      <p id="rightSidebarDesc">创建自定义字段，让一个字段控制多个组件</p>
+    </div>
+    <div class="right-sidebar-scroll" id="rightSidebarContent"></div>
+  </aside>
+</div>
+
+<!-- Toast overlay container -->
+<div id="toastContainer"></div>
+
+<!-- Demo controls -->
+<div class="demo-controls" id="demoControls">
+  <span style="font-size:11px;color:var(--text-muted);margin-right:4px">演示流程:</span>
+  <button onclick="demoStep1()" id="demoBtn1">① 新建自定义字段</button>
+  <button onclick="demoStep2()" id="demoBtn2">② 完成绑定</button>
+  <button onclick="demoStep3()" id="demoBtn3">③ 查看使用态</button>
+  <button onclick="demoReset()">↺ 重置</button>
+</div>
+
+<script>
+// ============================================
+// State
+// ============================================
+const NODES = [
+  {
+    id: 'node_1',
+    packageType: '商品行为',
+    operator: null,
+    fields: [
+      { key: 'channel', label: '渠道', widgetType: '复选组', value: ['天猫'] },
+      { key: 'bhv', label: '行为', widgetType: '复选组', value: ['购买', '加购'] },
+      { key: 'date_range', label: '时间维度', widgetType: '日期_切换', value: { mode: 'recent', days: 30 } },
+      { key: 'cate', label: '类目', widgetType: '搜索多选', value: ['美妆'] },
+    ]
+  },
+  {
+    id: 'node_2',
+    packageType: '商品行为',
+    operator: 'n',
+    fields: [
+      { key: 'channel', label: '渠道', widgetType: '复选组', value: ['京东'] },
+      { key: 'bhv', label: '行为', widgetType: '复选组', value: ['浏览'] },
+      { key: 'date_range', label: '时间维度', widgetType: '日期_切换', value: { mode: 'recent', days: 30 } },
+      { key: 'stdBrand', label: '品牌', widgetType: '搜索多选', value: ['欧莱雅'] },
+    ]
+  },
+  {
+    id: 'node_3',
+    packageType: '类目公域行为',
+    operator: 'n',
+    fields: [
+      { key: 'channel', label: '渠道', widgetType: '复选组', value: ['天猫'] },
+      { key: 'bhv', label: '行为', widgetType: '复选组', value: ['浏览'] },
+      { key: 'date_range', label: '时间维度', widgetType: '日期_切换', value: { mode: 'recent', days: 365 } },
+      { key: 'amount', label: '消费金额', widgetType: '数值_切换', value: { mode: 'min', min: 500 } },
+    ]
+  }
+];
+
+let state = {
+  mode: 'config',           // 'config' | 'usage'
+  activeCustomFieldId: null,
+  customFields: [],
+  creatingField: null,      // { name, type, step: 1|2, bindings: [] }
+  highlightedFieldId: null,
+};
+
+function getWidgetTypeClass(widgetType) {
+  if (widgetType.includes('日期')) return 'date';
+  if (widgetType.includes('数值')) return 'number';
+  return 'text';
+}
+
+function getWidgetTypeLabel(widgetType) {
+  if (widgetType.includes('日期')) return '日期';
+  if (widgetType.includes('数值')) return '数值';
+  return '文本/选择';
+}
+
+// ============================================
+// Render
+// ============================================
+function render() {
+  if (state.mode === 'config') renderConfigMode();
+  else renderUsageMode();
+  renderRightSidebar();
+}
+
+function renderConfigMode() {
+  const container = document.getElementById('editorContent');
+  let html = '';
+
+  NODES.forEach((node, idx) => {
+    const highlighted = state.highlightedFieldId && hasHighlightedFields(node);
+    const nodeHighlightClass = highlighted ? ' highlighted' : '';
+
+    html += `<div class="node-card${nodeHighlightClass}" id="node-${node.id}">`;
+
+    // Connector
+    if (idx > 0) {
+      const opLabel = node.operator === 'n' ? '交集' : node.operator === 'u' ? '并集' : '差集';
+      html += `
+        <div class="logic-connector">
+          <div class="connector-line"></div>
+          <div class="logic-toggle">
+            <button class="logic-opt${node.operator==='n'?' active':''}">交集</button>
+            <button class="logic-opt${node.operator==='u'?' active':''}">并集</button>
+            <button class="logic-opt${node.operator==='d'?' active':''}">差集</button>
+          </div>
+          <div class="connector-line"></div>
+        </div>
+      `;
+    }
+
+    html += `
+      <div class="node-card-header">
+        <span class="node-title">
+          ${node.packageType}
+          <span class="node-badge">节点 ${idx + 1}</span>
+        </span>
+        <span style="font-size:11px;color:var(--text-muted)">${node.operator ? opLabel : ''}</span>
+      </div>
+    `;
+
+    html += '<div class="node-card-body">';
+
+    node.fields.forEach(field => {
+      const isSelecting = state.creatingField && state.creatingField.step === 1;
+      const isSelected = state.creatingField && state.creatingField.bindings.some(b => b.nodeId === node.id && b.fieldKey === field.key);
+      const isTypeMismatch = isSelecting && state.creatingField.type && !field.widgetType.includes(state.creatingField.typeKeyword);
+      const isHighlighted = state.highlightedFieldId && state.customFields.some(cf =>
+        cf.id === state.highlightedFieldId && cf.bindings.some(b => b.nodeId === node.id && b.fieldKey === field.key)
+      );
+      const isDimmed = isSelecting && state.creatingField.type && isTypeMismatch;
+
+      const typeClass = getWidgetTypeClass(field.widgetType);
+      const typeLabel = getWidgetTypeLabel(field.widgetType);
+      const selectableClass = isSelecting ? ' field-selectable' : '';
+      const selectedClass = isSelected ? ' selected' : '';
+      const highlightClass = isHighlighted ? ' field-highlighted' : '';
+      const dimmedClass = isDimmed ? ' field-dimmed' : '';
+
+      html += `
+        <div class="field-item${selectableClass}${selectedClass}${highlightClass}${dimmedClass}"
+             id="field-${node.id}-${field.key}"
+             ${isSelecting && !isTypeMismatch ? `onclick="selectFieldForBinding('${node.id}', '${field.key}')"` : ''}>
+          <span class="check-mark">✓</span>
+          <div class="field-label">
+            ${field.label}
+            <span class="field-type-chip ${typeClass}">${typeLabel}</span>
+            ${isHighlighted ? '<span style="font-size:10px;color:var(--accent)">✦ 已关联</span>' : ''}
+          </div>
+          ${renderFieldControl(field, node)}
+        </div>
+      `;
+    });
+
+    html += '</div></div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function renderFieldControl(field, node) {
+  const val = field.value;
+  if (field.widgetType.includes('日期')) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">过去</span>
+        <input class="field-control" type="number" value="${val.days || 30}" style="width:80px" disabled />
+        <span style="font-size:12px;color:var(--text-secondary)">天</span>
+      </div>`;
+  }
+  if (field.widgetType.includes('数值')) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--text-secondary)">≥</span>
+        <input class="field-control" type="number" value="${val.min || ''}" style="width:120px" disabled />
+      </div>`;
+  }
+  if (Array.isArray(val)) {
+    return `<div style="display:flex;flex-wrap:wrap;gap:4px">${val.map(v => `<span style="font-size:11px;padding:2px 8px;background:var(--bg-muted);border-radius:99px;border:1px solid var(--border-light)">${v}</span>`).join('')}</div>`;
+  }
+  return `<input class="field-control" value="${val || ''}" disabled />`;
+}
+
+function hasHighlightedFields(node) {
+  if (!state.highlightedFieldId) return false;
+  const cf = state.customFields.find(c => c.id === state.highlightedFieldId);
+  if (!cf) return false;
+  return cf.bindings.some(b => b.nodeId === node.id);
+}
+
+function renderUsageMode() {
+  const container = document.getElementById('editorContent');
+  let html = '<div class="usage-shell">';
+
+  if (state.customFields.length === 0) {
+    html += `
+      <div class="usage-empty">
+        <div class="empty-icon">⌁</div>
+        <p style="font-size:14px;font-weight:600">当前方案还没有自定义字段</p>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:4px">请先在方案配置中创建自定义字段，使用端将只展示这些字段</p>
+      </div>
+    `;
+  } else {
+    state.customFields.forEach((cf, idx) => {
+      const highlighted = state.highlightedFieldId === cf.id;
+      html += `
+        <div class="node-card${highlighted ? ' highlighted' : ''}" style="cursor:pointer"
+             onclick="highlightCustomField('${cf.id}')"
+             onmouseenter="highlightCustomField('${cf.id}')"
+             onmouseleave="clearHighlight()">
+          <div class="node-card-header">
+            <span class="node-title">
+              ${cf.name}
+              <span class="node-badge">自定义字段</span>
+            </span>
+            <span class="mode-badge"><span class="dot"></span>使用中</span>
+          </div>
+          <div class="node-card-body">
+            ${renderCustomFieldControl(cf)}
+            <div style="margin-top:10px;font-size:11px;color:var(--text-muted)">
+              控制 ${cf.bindings.length} 个组件: ${cf.bindings.map(b => {
+                const node = NODES.find(n => n.id === b.nodeId);
+                const field = node ? node.fields.find(f => f.key === b.fieldKey) : null;
+                return node ? `${node.packageType}·${field ? field.label : b.fieldKey}` : b.fieldKey;
+              }).join('、')}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  html += '</div>';
+  container.innerHTML = html;
+
+  // Also update right sidebar to show custom fields in usage mode
+  document.getElementById('rightSidebarDesc').textContent = '点击字段查看关联的组件高亮';
+}
+
+function renderCustomFieldControl(cf) {
+  if (cf.type.includes('日期')) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:500">过去</span>
+        <input class="field-control" type="number" value="${(cf.defaultValue && cf.defaultValue.days) || 30}" style="width:80px" />
+        <span style="font-size:13px;color:var(--text-secondary)">天</span>
+      </div>`;
+  }
+  if (cf.type.includes('数值')) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:13px;font-weight:500">≥</span>
+        <input class="field-control" type="number" value="${(cf.defaultValue && cf.defaultValue.min) || ''}" style="width:120px" />
+      </div>`;
+  }
+  return `<input class="field-control" value="" placeholder="输入值" />`;
+}
+
+function renderRightSidebar() {
+  const container = document.getElementById('rightSidebarContent');
+
+  if (state.mode === 'usage') {
+    // In usage mode, show custom fields list
+    let html = `
+      <div class="settings-card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h4 style="margin:0">字段列表</h4>
+          <span style="font-size:11px;color:var(--text-muted)">${state.customFields.length} 个</span>
+        </div>
+      </div>
+    `;
+
+    html += '<div class="custom-field-list">';
+    state.customFields.forEach(cf => {
+      const active = state.highlightedFieldId === cf.id;
+      html += `
+        <div class="custom-field-item${active ? ' active' : ''}"
+             onclick="highlightCustomField('${cf.id}')"
+             onmouseenter="highlightCustomField('${cf.id}')"
+             onmouseleave="clearHighlight()">
+          <div class="cf-name">
+            ${cf.name}
+            <span class="cf-count">${cf.bindings.length} 组件</span>
+          </div>
+          <div class="cf-meta">
+            <span class="field-type-chip ${getWidgetTypeClass(cf.type)}">${getWidgetTypeLabel(cf.type)}</span>
+            ${cf.group ? `<span>分组: ${cf.group}</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    return;
+  }
+
+  // Config mode - show custom fields + create button
+  let html = '';
+
+  // Name section
+  html += `
+    <div class="settings-card">
+      <h4>方案名称</h4>
+      <input value="春季上新人群包" placeholder="请输入方案名称" />
+    </div>
+  `;
+
+  // Custom fields section
+  html += `
+    <div class="settings-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h4 style="margin:0">自定义字段列表</h4>
+        <span style="font-size:11px;color:var(--text-muted)">${state.customFields.length} 个</span>
+      </div>
+  `;
+
+  if (state.customFields.length === 0 && !state.creatingField) {
+    html += `
+      <div class="empty-state" style="padding:20px 0">
+        <p style="font-size:12px">点击下方按钮创建第一个自定义字段</p>
+      </div>
+    `;
+  }
+
+  if (state.customFields.length > 0) {
+    html += '<div class="custom-field-list">';
+    state.customFields.forEach(cf => {
+      const active = state.activeCustomFieldId === cf.id;
+      html += `
+        <div class="custom-field-item${active ? ' active' : ''}"
+             onclick="highlightCustomField('${cf.id}')"
+             onmouseenter="highlightCustomField('${cf.id}')"
+             onmouseleave="clearHighlight()">
+          <div class="cf-name">
+            ${cf.name}
+            <button class="delete-btn" onclick="event.stopPropagation();deleteCustomField('${cf.id}')">×</button>
+          </div>
+          <div class="cf-meta">
+            <span class="field-type-chip ${getWidgetTypeClass(cf.type)}">${getWidgetTypeLabel(cf.type)}</span>
+            <span class="cf-count">${cf.bindings.length} 组件</span>
+            ${cf.group ? `<span>分组: ${cf.group}</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  // Creating state
+  if (state.creatingField) {
+    const cf = state.creatingField;
+    html += `
+      <div style="margin-top:12px;background:var(--accent-subtle);border:1px solid var(--accent-border);border-radius:var(--radius-sm);padding:14px">
+        <div class="steps">
+          <div class="step ${cf.step >= 1 ? 'done' : ''} ${cf.step === 1 ? 'current' : ''}"></div>
+          <div class="step ${cf.step >= 2 ? 'done' : ''} ${cf.step === 2 ? 'current' : ''}"></div>
+        </div>
+        ${cf.step === 1 ? `
+          <p style="font-size:12px;font-weight:600;margin-bottom:8px">步骤 1: 选择字段类型</p>
+          <p style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">
+            请在左侧点击一个字段来确定类型。
+            ${cf.type ? `<br><strong>已选类型: ${cf.type}</strong> — 同类型字段现在可选` : '<br>非同类型字段将自动置灰。'}
+          </p>
+          ${cf.type ? `
+            <button class="btn btn-primary btn-block" onclick="goToStep2()">
+              下一步: 绑定同类型字段 (已选 ${cf.bindings.length} 个)
+            </button>
+          ` : '<p style="font-size:11px;color:var(--text-muted)">等待选择首个字段...</p>'}
+        ` : `
+          <p style="font-size:12px;font-weight:600;margin-bottom:8px">步骤 2: 绑定字段</p>
+          <p style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">
+            点击选中更多同类型的字段，将它们关联到「${cf.name}」。
+          </p>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <button class="btn btn-primary btn-block" onclick="completeCreateField()"
+                    ${cf.bindings.length === 0 ? 'disabled' : ''}>
+              完成创建 (${cf.bindings.length} 个绑定)
+            </button>
+            <button class="btn btn-outline btn-block" onclick="cancelCreateField()">取消</button>
+          </div>
+        `}
+      </div>
+    `;
+  } else if (state.customFields.length === 0 || true) {
+    html += `
+      <button class="btn btn-primary btn-block" style="margin-top:12px" onclick="startCreateField()"
+              id="addCustomFieldBtn">
+        + 新增自定义字段（一对多）
+      </button>
+    `;
+  }
+
+  html += '</div>'; // close settings-card
+
+  // Save button
+  html += `
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1">保存草稿</button>
+      <button class="btn btn-primary" style="flex:1">发布正式方案</button>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+// ============================================
+// Actions
+// ============================================
+function startCreateField() {
+  // Show name input first via a simple prompt
+  const name = prompt('请输入自定义字段名称（如: 今年、去年）:', '');
+  if (!name || !name.trim()) return;
+
+  state.creatingField = {
+    name: name.trim(),
+    type: null,
+    typeKeyword: null,
+    step: 1,
+    bindings: [],
+  };
+
+  render();
+  showToast('info', `请在左侧主区域点击一个字段来确定「${name}」的类型，非同类型字段会自动置灰`);
+}
+
+function selectFieldForBinding(nodeId, fieldKey) {
+  if (!state.creatingField) return;
+
+  const node = NODES.find(n => n.id === nodeId);
+  const field = node ? node.fields.find(f => f.key === fieldKey) : null;
+  if (!field) return;
+
+  if (state.creatingField.step === 1) {
+    // First selection -> set the type
+    state.creatingField.type = field.widgetType;
+    state.creatingField.typeKeyword = field.widgetType.includes('日期') ? '日期' :
+                                       field.widgetType.includes('数值') ? '数值' : '文本';
+    // Auto-bind this field
+    state.creatingField.bindings.push({ nodeId, fieldKey });
+    render();
+    showToast('success', `类型已确定为「${field.widgetType}」。请继续在左侧点击同类型的字段来绑定更多组件。`);
+  } else if (state.creatingField.step === 2) {
+    // Toggle binding
+    const existingIdx = state.creatingField.bindings.findIndex(b => b.nodeId === nodeId && b.fieldKey === fieldKey);
+    if (existingIdx >= 0) {
+      state.creatingField.bindings.splice(existingIdx, 1);
+    } else {
+      // Check type match
+      if (field.widgetType !== state.creatingField.type) return;
+      state.creatingField.bindings.push({ nodeId, fieldKey });
+    }
+    render();
+  }
+}
+
+function goToStep2() {
+  if (!state.creatingField || state.creatingField.bindings.length === 0) return;
+  state.creatingField.step = 2;
+  render();
+  showToast('info', `现在点击左侧同类型字段来绑定更多组件，或直接点「完成创建」`);
+}
+
+function completeCreateField() {
+  if (!state.creatingField || state.creatingField.bindings.length === 0) return;
+
+  const defaultValue = {};
+  // Copy default value from first binding
+  const firstBinding = state.creatingField.bindings[0];
+  const firstNode = NODES.find(n => n.id === firstBinding.nodeId);
+  const firstField = firstNode ? firstNode.fields.find(f => f.key === firstBinding.fieldKey) : null;
+  if (firstField) {
+    Object.assign(defaultValue, firstField.value);
+  }
+
+  state.customFields.push({
+    id: 'cf_' + Date.now(),
+    name: state.creatingField.name,
+    type: state.creatingField.type,
+    group: '',
+    defaultValue,
+    bindings: [...state.creatingField.bindings],
+  });
+
+  state.creatingField = null;
+  state.highlightedFieldId = null;
+  render();
+  showToast('success', `自定义字段「${state.customFields[state.customFields.length - 1].name}」创建成功！`);
+}
+
+function cancelCreateField() {
+  state.creatingField = null;
+  state.highlightedFieldId = null;
+  render();
+}
+
+function deleteCustomField(id) {
+  if (!confirm('确定删除这个自定义字段？')) return;
+  state.customFields = state.customFields.filter(cf => cf.id !== id);
+  if (state.highlightedFieldId === id) state.highlightedFieldId = null;
+  render();
+}
+
+function highlightCustomField(id) {
+  state.highlightedFieldId = id;
+  render();
+}
+
+function clearHighlight() {
+  state.highlightedFieldId = null;
+  render();
+}
+
+function switchTab(tab) {
+  state.mode = tab;
+  state.highlightedFieldId = null;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.textContent.includes(tab === 'config' ? '方案配置' : '使用态预览')) {
+      b.classList.add('active');
+    }
+  });
+  render();
+}
+
+function createNewDraft() {
+  showToast('info', '演示模式：新建草稿功能');
+}
+
+// ============================================
+// Toast
+// ============================================
+function showToast(type, message) {
+  const container = document.getElementById('toastContainer');
+  const colors = {
+    info: { bg: '#eff6ff', border: '#93c5fd', text: '#1e40af' },
+    success: { bg: '#ecfdf5', border: '#6ee7b7', text: '#065f46' },
+  };
+  const c = colors[type] || colors.info;
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed; top: 20px; right: 20px; z-index: 300;
+    padding: 12px 20px; border-radius: 8px; font-size: 13px;
+    background: ${c.bg}; border: 1px solid ${c.border}; color: ${c.text};
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1); max-width: 380px;
+    animation: slideIn 0.3s ease;
+  `;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ============================================
+// Demo Flow
+// ============================================
+function demoStep1() {
+  state.customFields = [];
+  state.creatingField = {
+    name: '今年',
+    type: null,
+    typeKeyword: null,
+    step: 1,
+    bindings: [],
+  };
+  state.mode = 'config';
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn')[0].classList.add('active');
+  render();
+  showToast('info', '请在左侧点击「商品行为·节点1」的「时间维度」字段来确立类型');
+  highlightDemoBtn(1);
+}
+
+function demoStep2() {
+  // Simulate step 1 completion
+  state.creatingField = {
+    name: '今年',
+    type: '日期_切换',
+    typeKeyword: '日期',
+    step: 2,
+    bindings: [
+      { nodeId: 'node_1', fieldKey: 'date_range' },
+      { nodeId: 'node_2', fieldKey: 'date_range' },
+    ],
+  };
+  render();
+  showToast('success', '已完成绑定 2 个组件的时间维度。点击「完成创建」保存。');
+  highlightDemoBtn(2);
+}
+
+function demoStep3() {
+  // Auto-complete field creation
+  if (state.creatingField) {
+    completeCreateField();
+  }
+  if (state.customFields.length === 0) {
+    // Create a demo field
+    state.customFields.push({
+      id: 'cf_demo',
+      name: '今年',
+      type: '日期_切换',
+      group: '',
+      defaultValue: { mode: 'recent', days: 30 },
+      bindings: [
+        { nodeId: 'node_1', fieldKey: 'date_range' },
+        { nodeId: 'node_2', fieldKey: 'date_range' },
+      ],
+    });
+  }
+  switchTab('usage');
+  showToast('info', '使用态：只展示自定义字段。悬停/点击「今年」查看联动高亮效果');
+  highlightDemoBtn(3);
+}
+
+function demoReset() {
+  state.customFields = [];
+  state.creatingField = null;
+  state.highlightedFieldId = null;
+  state.mode = 'config';
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-btn')[0].classList.add('active');
+  document.querySelectorAll('#demoControls button').forEach(b => b.classList.remove('active'));
+  render();
+}
+
+function highlightDemoBtn(num) {
+  document.querySelectorAll('#demoControls button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('demoBtn' + num);
+  if (btn) btn.classList.add('active');
+}
+
+// ============================================
+// Init
+// ============================================
+render();
+</script>
+
+</body>
+</html>

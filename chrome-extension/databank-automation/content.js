@@ -6,6 +6,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DATABANK_PARAM_TRIGGER_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div[3]/span[2]'
   const DATABANK_TEXTAREA_XPATH = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div/span/textarea'
   const DATABANK_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/button[1]'
+  const DIALOG_ROOT_SELECTORS = '[role="dialog"], .el-dialog, .el-overlay-dialog, .next-dialog, .ant-modal, .ui-dialog'
 
   function getNodeByXpath(xpath) {
     return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
@@ -13,6 +14,12 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   function getVisibleNodeByText(tagName, text) {
     const nodes = Array.from(document.querySelectorAll(tagName))
+    return nodes.find((node) => isNodeVisible(node) && String(node.textContent || '').trim().includes(text)) || null
+  }
+
+  function getVisibleNodeByTextWithin(root, tagName, text) {
+    if (!root || typeof root.querySelectorAll !== 'function') return null
+    const nodes = Array.from(root.querySelectorAll(tagName))
     return nodes.find((node) => isNodeVisible(node) && String(node.textContent || '').trim().includes(text)) || null
   }
 
@@ -33,8 +40,66 @@ if (!window.__databankAutomationContentScriptLoaded) {
     if (node instanceof HTMLButtonElement || node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
       return !node.disabled && !node.readOnly
     }
-    const ariaDisabled = node.getAttribute('aria-disabled')
+    const ariaDisabled = node.getAttribute?.('aria-disabled')
     return ariaDisabled !== 'true'
+  }
+
+  function getDialogRoot(node) {
+    if (!node || typeof node.closest !== 'function') return null
+    return node.closest(DIALOG_ROOT_SELECTORS)
+  }
+
+  function getVisibleTextareaNode() {
+    const xpathNode = getNodeByXpath(DATABANK_TEXTAREA_XPATH)
+    if (isNodeInteractive(xpathNode)) return xpathNode
+    const visibleTextareas = getVisibleTextareas()
+    return visibleTextareas[0] || null
+  }
+
+  function getVisibleDialogRoot() {
+    const textareaNode = getVisibleTextareaNode()
+    if (textareaNode) {
+      const textareaDialogRoot = getDialogRoot(textareaNode)
+      if (isNodeVisible(textareaDialogRoot)) return textareaDialogRoot
+    }
+
+    const confirmNode = getNodeByXpath(DATABANK_CONFIRM_XPATH)
+    const confirmDialogRoot = getDialogRoot(confirmNode)
+    if (isNodeVisible(confirmDialogRoot)) return confirmDialogRoot
+
+    return null
+  }
+
+  function isDialogRootActive(dialogRoot) {
+    if (!isNodeVisible(dialogRoot)) return false
+    const textareaNode = typeof dialogRoot.querySelectorAll === 'function'
+      ? Array.from(dialogRoot.querySelectorAll('textarea')).find((node) => isNodeInteractive(node)) || null
+      : null
+    if (textareaNode) return true
+    const confirmNode = getVisibleNodeByTextWithin(dialogRoot, 'button', '确定')
+    return isNodeInteractive(confirmNode)
+  }
+
+  function getVisibleDialogConfirmNode() {
+    const xpathNode = getNodeByXpath(DATABANK_CONFIRM_XPATH)
+    if (isNodeInteractive(xpathNode)) return xpathNode
+
+    const textareaNode = getVisibleTextareaNode()
+    const dialogRoot = getDialogRoot(textareaNode) || getVisibleDialogRoot()
+    if (dialogRoot) {
+      const scopedConfirmNode = getVisibleNodeByTextWithin(dialogRoot, 'button', '确定')
+      if (isNodeInteractive(scopedConfirmNode)) return scopedConfirmNode
+    }
+
+    return null
+  }
+
+  function getVisibleConfirmNode() {
+    const dialogConfirmNode = getVisibleDialogConfirmNode()
+    if (dialogConfirmNode) return dialogConfirmNode
+
+    const globalConfirmNode = getVisibleNodeByText('button', '确定')
+    return isNodeInteractive(globalConfirmNode) ? globalConfirmNode : null
   }
 
   async function waitForLocator(resolveNode, label, timeoutMs = 20000, intervalMs = 250) {
@@ -50,13 +115,13 @@ if (!window.__databankAutomationContentScriptLoaded) {
     throw new Error(`等待页面元素超时: ${label}`)
   }
 
-  async function waitForConfirmButtonRemoved(timeoutMs = 10000, intervalMs = 250) {
+  async function waitForImportDialogClosed(dialogRoot, timeoutMs = 800, intervalMs = 80) {
+    if (!dialogRoot) return
+
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
-      const byXpath = getNodeByXpath(DATABANK_CONFIRM_XPATH)
-      const byText = getVisibleNodeByText('button', '确定')
-      if ((!byXpath || !isNodeVisible(byXpath)) && !byText) {
-        console.info('[Databank Automation][content] confirm button removed')
+      if (!isDialogRootActive(dialogRoot)) {
+        console.info('[Databank Automation][content] import dialog removed')
         return
       }
       await new Promise((resolve) => setTimeout(resolve, intervalMs))
@@ -85,6 +150,19 @@ if (!window.__databankAutomationContentScriptLoaded) {
     node.value = value
     node.dispatchEvent(new Event('input', { bubbles: true }))
     node.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  function isAutomationPageReady() {
+    const currentUrl = window.location.href
+    if (!currentUrl.includes('databank.tmall.com/#/userDefinedAnalyses')) return false
+    if (document.readyState && document.readyState !== 'complete') return false
+
+    const triggerNode = getNodeByXpath(DATABANK_PARAM_TRIGGER_XPATH)
+    if (isNodeInteractive(triggerNode)) return true
+    if (getVisibleNodeByText('span', '参数粘贴')) return true
+    if (getVisibleTextareaNode()) return true
+    if (getVisibleDialogConfirmNode()) return true
+    return false
   }
 
   async function runPreflightChecks() {
@@ -119,37 +197,37 @@ if (!window.__databankAutomationContentScriptLoaded) {
     clickNode(triggerNode)
     statusTrail.push({ step: 'clicked_paste', message: '已点击参数粘贴' })
 
-    await sleep(300)
+    await sleep(50)
 
     const textareaNode = await waitForLocator(
-      () => {
-        const xpathNode = getNodeByXpath(DATABANK_TEXTAREA_XPATH)
-        if (isNodeInteractive(xpathNode)) return xpathNode
-        const visibleTextareas = getVisibleTextareas()
-        return visibleTextareas[0] || null
-      },
+      () => getVisibleTextareaNode(),
       '导入输入框',
     )
     console.info('[Databank Automation][content] input textarea')
     inputTextarea(textareaNode, jsonText)
     statusTrail.push({ step: 'filled_textarea', message: '已写入参数内容' })
 
-    await sleep(150)
+    await sleep(50)
 
     const confirmNode = await waitForLocator(
-      () => {
-        const xpathNode = getNodeByXpath(DATABANK_CONFIRM_XPATH)
-        if (isNodeInteractive(xpathNode)) return xpathNode
-        return getVisibleNodeByText('button', '确定')
-      },
+      () => getVisibleConfirmNode(),
       '确定按钮',
     )
+    const importDialogRoot = getDialogRoot(confirmNode) || getDialogRoot(textareaNode) || getVisibleDialogRoot()
     console.info('[Databank Automation][content] click 确定')
     clickNode(confirmNode)
     statusTrail.push({ step: 'clicked_confirm', message: '已点击确定' })
 
-    await waitForConfirmButtonRemoved()
-    statusTrail.push({ step: 'dialog_closed', message: '导入弹窗已关闭' })
+    try {
+      await waitForImportDialogClosed(importDialogRoot)
+      statusTrail.push({ step: 'dialog_closed', message: '导入弹窗已关闭' })
+    } catch (error) {
+      console.warn('[Databank Automation][content] import dialog close check timed out', error)
+      statusTrail.push({
+        step: 'dialog_close_check_skipped',
+        message: '已点击确定，未继续阻塞等待弹窗关闭',
+      })
+    }
 
     console.info('[Databank Automation][content] automate success')
     return {
@@ -160,6 +238,14 @@ if (!window.__databankAutomationContentScriptLoaded) {
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'PING_AUTOMATION_READY') {
+      sendResponse({
+        ok: true,
+        ready: isAutomationPageReady(),
+      })
+      return false
+    }
+
     if (message?.type !== 'AUTOMATE_DATABANK') return
 
     if (window.__databankAutomationRunning) {

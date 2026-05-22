@@ -5,7 +5,30 @@
       "Bash(start /B python app.py)",
       "mcp__utools__utools_everythingfind_search_files",
       "Bash(git:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(start *)",
+      "Bash(python -c \"from cdp_backend.solution_store import SolutionStore; print\\('OK'\\)\")",
+      "Bash(node -e \"import\\('./cdp-web/src/utils/solutionState.js'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
+      "Bash(node -e \"import\\('./cdp-web/src/composables/useSolutionRuntime.js'\\).then\\(m => console.log\\('OK'\\)\\)\")",
+      "Bash(node *)",
+      "Bash(python -m pytest test_solution_store.py test_solutions_api.py -v)",
+      "Bash(python test_solution_store.py)",
+      "Bash(python *)",
+      "Bash(npx vite *)",
+      "Bash(bash *)",
+      "Bash(PYTHONPATH=/e/CDP_Project_codex python *)",
+      "Bash(tasklist)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 23264 //F)",
+      "Bash(curl -s http://localhost:5000/api/health)",
+      "Bash(curl *)",
+      "Bash(taskkill //PID 8680 //F)",
+      "Bash(taskkill //PID 9284 //F)",
+      "Bash(tasklist //FI \"PID eq 8680\")",
+      "Bash(tasklist //FI \"PID eq 24344\")",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(PYTHONPATH=/e/CDP_Project_codex python app.py)"
     ]
   }
 }
