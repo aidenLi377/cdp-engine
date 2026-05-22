@@ -49,11 +49,11 @@
         <div
           v-for="(item, solIdx) in filteredSolutions"
           :key="item.id"
+          :style="{ transitionDelay: `${solIdx * 30}ms` }"
           role="button"
           tabindex="0"
           class="solution-list-item"
           :class="{ active: item.id === activeSolution?.id }"
-          :style="{ transitionDelay: `${solIdx * 30}ms` }"
           draggable="true"
           @dragstart="onSolutionDragStart($event, item)"
           @click="openSolution(item.id)"
@@ -148,10 +148,10 @@
           <div class="solution-toolbar-icon-actions">
             <el-tooltip v-if="!isPublished" content="保存草稿" placement="bottom">
               <el-button
+                ref="saveBtnRef"
                 class="solution-toolbar-icon-btn"
                 @click="saveDraft"
                 :loading="saving"
-                ref="saveBtnRef"
                 aria-label="保存草稿"
               >
                 <el-icon><Check /></el-icon>
@@ -159,10 +159,10 @@
             </el-tooltip>
             <el-tooltip v-if="!isPublished" content="发布正式方案" placement="bottom">
               <el-button
+                ref="publishBtnRef"
                 class="solution-toolbar-icon-btn publish"
                 @click="publishDraft"
                 :loading="publishing"
-                ref="publishBtnRef"
                 aria-label="发布正式方案"
               >
                 <el-icon><Upload /></el-icon>
@@ -172,28 +172,26 @@
         </div>
       </div>
 
-      <Transition name="solution-switch" mode="out-in">
-        <div v-if="!activeSolution" key="empty" class="solution-empty-state">
-          <div class="display-section">方案从这里开始</div>
-          <div class="display-body-light">左侧选择现有方案，或先创建一个新的方案草稿。</div>
-        </div>
+      <div v-if="!activeSolution" class="solution-empty-state">
+        <div class="display-section">方案从这里开始</div>
+        <div class="display-body-light">左侧选择现有方案，或先创建一个新的方案草稿。</div>
+      </div>
 
-        <div v-else-if="loadingDetail" key="loading" class="solution-node-scroll">
-          <div v-for="i in 3" :key="'sk-'+i" class="node-skeleton">
-            <div class="skeleton-bar skeleton-bar-header"></div>
-            <div class="skeleton-bar skeleton-bar-body"></div>
-            <div class="skeleton-bar skeleton-bar-body short"></div>
-            <div class="skeleton-bar skeleton-bar-body shorter"></div>
-          </div>
+      <div v-else-if="loadingDetail" class="solution-node-scroll">
+        <div v-for="i in 3" :key="'sk-'+i" class="node-skeleton">
+          <div class="skeleton-bar skeleton-bar-header"></div>
+          <div class="skeleton-bar skeleton-bar-body"></div>
+          <div class="skeleton-bar skeleton-bar-body short"></div>
+          <div class="skeleton-bar skeleton-bar-body shorter"></div>
         </div>
+      </div>
 
-        <div v-else-if="nodeList.length === 0" key="no-nodes" class="solution-empty-state">
-          <div class="display-sub">当前方案还没有节点</div>
-          <div class="display-body-light">从上方选择组件后添加节点，搭建这个方案的结构。</div>
-        </div>
+      <div v-else-if="nodeList.length === 0" class="solution-empty-state">
+        <div class="display-sub">当前方案还没有节点</div>
+        <div class="display-body-light">从上方选择组件后添加节点，搭建这个方案的结构。</div>
+      </div>
 
-        <div v-else key="nodes" class="solution-node-scroll">
-        <TransitionGroup name="node-list">
+      <div v-else class="solution-node-scroll">
         <div
           v-for="(node, index) in nodeList"
           :key="node.id"
@@ -259,10 +257,8 @@
               </div>
             </Transition>
           </div>
-          </div>
-        </TransitionGroup>
         </div>
-      </Transition>
+      </div>
 
       <div v-if="nodeList.length > 0" class="solution-preview-float">
         <el-tooltip content="预览工作台使用态" placement="left">
@@ -381,6 +377,7 @@
               </div>
             </div>
           </TransitionGroup>
+          </div>
 
           <div v-if="creatingCustomField" class="creating-custom-field-panel">
             <div class="creating-panel-title">
