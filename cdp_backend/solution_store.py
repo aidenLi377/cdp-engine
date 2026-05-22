@@ -191,6 +191,15 @@ class SolutionStore:
             self._write(data)
             return duplicated
 
+    def update_custom_fields(self, solution_id: str, custom_fields: list[dict]) -> dict:
+        with self._lock:
+            data = self._load()
+            index, item = self._find_solution(data["solutions"], solution_id)
+            updated = {**item, "customFields": custom_fields, "updatedAt": utc_now()}
+            data["solutions"][index] = updated
+            self._write(data)
+            return updated
+
     def move_solution(self, solution_id: str, folder_id: str | None) -> dict:
         with self._lock:
             data = self._load()

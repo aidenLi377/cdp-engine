@@ -84,5 +84,11 @@ export function useSolutionsApi() {
         method: 'DELETE',
       })
     },
+    updateCustomFields(id, customFields) {
+      return request(`/api/solutions/${id}/custom-fields`, {
+        method: 'PUT',
+        body: JSON.stringify({ customFields }),
+      })
+    },
   }
 }

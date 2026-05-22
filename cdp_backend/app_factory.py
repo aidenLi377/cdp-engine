@@ -235,6 +235,18 @@ def register_routes(
             return jsonify({"error": "solution not found"}), 404
         return jsonify(updated)
 
+    @app.route("/api/solutions/<solution_id>/custom-fields", methods=["PUT"])
+    def update_solution_custom_fields(solution_id: str):
+        payload = request.get_json(silent=True) or {}
+        custom_fields = payload.get("customFields")
+        if custom_fields is None:
+            return jsonify({"error": "customFields is required"}), 400
+        try:
+            updated = solution_store.update_custom_fields(solution_id, custom_fields)
+        except SolutionNotFoundError:
+            return jsonify({"error": "solution not found"}), 404
+        return jsonify(updated)
+
     @app.route("/api/folders")
     def list_folders():
         return jsonify(folder_store.list_folders())

@@ -308,6 +308,7 @@
         :current-value="editingCfCurrentValue"
         :node-list="nodeList"
         @save="onCfDialogSave"
+        @write-back="onCfWriteBack"
       />
     </template>
 
@@ -517,7 +518,7 @@ const {
   normalizeWorkbenchFieldIds,
   buildRuntimeUsageSections,
 } = useSolutionRuntime()
-const { listSolutions, getSolution, createDraft } = useSolutionsApi()
+const { listSolutions, getSolution, createDraft, updateCustomFields } = useSolutionsApi()
 const { listFolders } = useFoldersApi()
 
 const jsonViewMode = ref('summary')
@@ -720,6 +721,31 @@ function onCfDialogSave({ customFieldId, value }) {
     if (uniqueNodes.size > 0) {
       ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
     }
+  }
+}
+
+async function onCfWriteBack({ customFieldId, value }) {
+  const solution = loadedSolutionRecord.value
+  if (!solution?.id) {
+    ElMessage.error('未找到方案记录，无法回写')
+    return
+  }
+  const cfs = [...(solution.customFields || [])]
+  const cf = cfs.find(c => c.id === customFieldId)
+  if (!cf) {
+    ElMessage.error('未找到对应的自定义字段')
+    return
+  }
+  cf.defaultValue = value
+  try {
+    await updateCustomFields(solution.id, cfs)
+    loadedSolutionRecord.value = { ...solution, customFields: cfs }
+    if (currentSolution.value?.id === solution.id) {
+      currentSolution.value = { ...currentSolution.value, customFields: cfs }
+    }
+    ElMessage.success(`已回写「${cf.name || ''}」到方案`)
+  } catch (error) {
+    ElMessage.error(error.message || '回写失败')
   }
 }
 

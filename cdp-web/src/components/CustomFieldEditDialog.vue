@@ -91,9 +91,19 @@
 
         <!-- 影响范围 -->
         <div class="cf-edit-section">
-          <div class="display-body strong" style="margin-bottom:12px">
-            影响范围
-            <span class="display-mono" style="margin-left:8px">{{ boundNodes.length }} 个组件</span>
+          <div class="cf-section-header">
+            <div>
+              <span class="display-body strong">影响范围</span>
+              <span class="display-mono" style="margin-left:8px">{{ boundNodes.length }} 个组件</span>
+            </div>
+            <el-button
+              class="intercom-btn-outlined btn-small"
+              :disabled="!writeBackReady"
+              :loading="writingBack"
+              @click="writeBack"
+            >
+              回写进方案
+            </el-button>
           </div>
           <div class="cf-bound-list">
             <div v-for="bn in boundNodes" :key="bn.nodeId + bn.fieldKey" class="cf-bound-item">
@@ -126,10 +136,12 @@ const props = defineProps({
   nodeList: { type: Array, default: () => [] },
 })
 
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits(['update:modelValue', 'save', 'writeBack'])
 
 const editValue = ref(null)
 const editMode = ref('recent')
+const writingBack = ref(false)
+const writeBackReady = ref(false)
 
 const isDateType = computed(() => props.customField?.type?.includes('日期'))
 const isNumberType = computed(() => props.customField?.type?.includes('数值'))
@@ -157,6 +169,8 @@ function initEditState() {
   } else {
     editValue.value = v ?? ''
   }
+  writeBackReady.value = false
+  writingBack.value = false
 }
 
 function getNodeLabel(nodeId) {
@@ -183,13 +197,21 @@ function formatBoundValue(binding) {
   return String(value)
 }
 
+function writeBack() {
+  let payload = editValue.value
+  if (isDateType.value || isNumberType.value) {
+    payload = { ...editValue.value, mode: editMode.value }
+  }
+  emit('writeBack', { customFieldId: props.customField?.customFieldId, value: payload })
+}
+
 function save() {
   let payload = editValue.value
   if (isDateType.value || isNumberType.value) {
     payload = { ...editValue.value, mode: editMode.value }
   }
   emit('save', { customFieldId: props.customField?.customFieldId, value: payload })
-  emit('update:modelValue', false)
+  writeBackReady.value = true
 }
 
 watch(() => props.modelValue, (val) => {
@@ -198,6 +220,12 @@ watch(() => props.modelValue, (val) => {
 </script>
 
 <style scoped>
+.cf-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
 .cf-edit-dialog-body {
   display: flex;
   flex-direction: column;
