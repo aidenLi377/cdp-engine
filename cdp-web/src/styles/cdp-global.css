@@ -1672,33 +1672,43 @@ body {
 /* ---- 使用态自定义字段卡片横排 ---- */
 .cf-cards-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 14px 0;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 8px 0;
   border-bottom: 1px solid rgba(0,0,0,0.06);
   flex-shrink: 0;
+  overflow: hidden;
+  align-items: center;
 }
 .cf-use-card {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border-radius: 10px;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
   border: 1px solid rgba(0,0,0,0.08);
   background: rgba(255,255,255,0.70);
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
+  flex-shrink: 0;
+}
+.cf-use-card.dragging {
+  opacity: 0.4;
+}
+.cf-use-card.drag-over {
+  border-color: #ff6b4a;
+  box-shadow: 0 0 0 2px rgba(255,107,74,0.12);
 }
 .cf-use-card-info {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 0;
   min-width: 0;
 }
 .cf-use-card-value {
   font-size: 11px;
-  max-width: 120px;
+  max-width: 100px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1716,19 +1726,40 @@ body {
 }
 .cf-use-card-count {
   background: rgba(0,0,0,0.04);
-  padding: 1px 7px;
+  padding: 1px 6px;
   border-radius: 99px;
   font-size: 10px;
   cursor: pointer;
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 .cf-use-card-count:hover {
   background: #ff6b4a;
   color: #fff;
 }
+.cf-overflow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: rgba(255,255,255,0.70);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: #ff6b4a;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.cf-overflow-btn:hover {
+  background: rgba(255,107,74,0.08);
+  border-color: #ff6b4a;
+}
 .cf-expand-all-btn.el-button {
-  height: 34px !important;
-  padding: 0 12px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
   border-radius: 8px !important;
   font-size: 12px !important;
   color: #ff6b4a !important;

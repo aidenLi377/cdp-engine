@@ -217,12 +217,22 @@
         请先从左侧选择一个已发布方案
       </div>
       <div v-else class="solution-use-area">
-        <div v-if="customFieldSections.length > 0" class="cf-cards-bar">
+        <div v-if="customFieldSections.length > 0" class="cf-cards-bar" ref="cfCardsBarRef">
           <div
-            v-for="section in customFieldSections"
+            v-for="(section, cfIndex) in cfVisibleSections"
             :key="section.customFieldId"
             class="cf-use-card"
-            :class="{ 'cf-use-card-active': highlightedCfId === section.customFieldId }"
+            :class="{
+              'cf-use-card-active': highlightedCfId === section.customFieldId,
+              'dragging': dragCfIndex === cfIndex,
+              'drag-over': dragOverCfIndex === cfIndex && dragCfIndex !== cfIndex,
+            }"
+            draggable="true"
+            @dragstart="onCfDragStart($event, cfIndex)"
+            @dragover.prevent="onCfDragOver($event, cfIndex)"
+            @dragleave="onCfDragLeave"
+            @drop.prevent="onCfDrop($event, cfIndex)"
+            @dragend="onCfDragEnd"
             @click="onHighlightCf(section.customFieldId)"
           >
             <span class="cf-type-indicator" :class="getCfUseTypeClass(section.type)"></span>
@@ -236,6 +246,12 @@
               @click.stop="openCfEditDialog(section)"
             >{{ section.bindings.length }}</span>
           </div>
+          <div
+            v-if="cfHiddenCount > 0"
+            class="cf-overflow-btn"
+            @click="cfShowAll = !cfShowAll"
+            :title="cfShowAll ? '收起' : '展开更多'"
+          >{{ cfShowAll ? '−' : '+' + cfHiddenCount }}</div>
           <el-button
             v-if="highlightedCfId"
             class="cf-expand-all-btn"
@@ -484,7 +500,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -554,6 +570,12 @@ const selectedPublishedFolderId = ref(null)
 const cfEditDialogVisible = ref(false)
 const editingCfSection = ref(null)
 const editingCfCurrentValue = ref(null)
+const cfCardsBarRef = ref(null)
+const cfShowAll = ref(false)
+const cfVisibleCount = ref(10)
+const dragCfIndex = ref(-1)
+const dragOverCfIndex = ref(-1)
+let cfResizeObserver = null
 
 let dragSrcIndex = null
 let saveTimer = null
@@ -606,6 +628,79 @@ const customFieldSections = computed(() =>
     nodeList.value,
   ),
 )
+
+const cfVisibleSections = computed(() => {
+  const sections = customFieldSections.value
+  if (cfShowAll.value) return sections
+  return sections.slice(0, cfVisibleCount.value)
+})
+
+const cfHiddenCount = computed(() => {
+  const total = customFieldSections.value.length
+  const visible = cfVisibleSections.value.length
+  return total - visible
+})
+
+function updateCfOverflow() {
+  const el = cfCardsBarRef.value
+  if (!el || cfShowAll.value) return
+  // Measure: count how many cards fit in the container
+  const children = el.children
+  let totalWidth = 0
+  const containerWidth = el.clientWidth - 40 // reserve space for overflow btn
+  let count = 0
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i]
+    if (child.classList.contains('cf-overflow-btn') || child.classList.contains('cf-expand-all-btn')) continue
+    totalWidth += child.offsetWidth + 6 // 6 = gap
+    if (totalWidth > containerWidth) break
+    count++
+  }
+  cfVisibleCount.value = Math.max(1, count)
+}
+
+function onCfDragStart(event, index) {
+  dragCfIndex.value = index
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', String(index))
+}
+
+function onCfDragOver(event, index) {
+  if (dragCfIndex.value < 0) return
+  dragOverCfIndex.value = index
+}
+
+function onCfDragLeave() {
+  dragOverCfIndex.value = -1
+}
+
+function onCfDrop(_event, targetIndex) {
+  const srcIndex = dragCfIndex.value
+  dragOverCfIndex.value = -1
+  dragCfIndex.value = -1
+  if (srcIndex < 0 || srcIndex === targetIndex) return
+
+  // Reorder within customFieldSections by reordering the solution's customFields
+  const cfs = [...(currentSolution.value?.customFields || [])]
+  const sections = customFieldSections.value
+  const srcId = sections[srcIndex]?.customFieldId
+  const targetId = sections[targetIndex]?.customFieldId
+  const srcIdx = cfs.findIndex(c => c.id === srcId)
+  const targetIdx = cfs.findIndex(c => c.id === targetId)
+  if (srcIdx < 0 || targetIdx < 0) return
+
+  const [moved] = cfs.splice(srcIdx, 1)
+  cfs.splice(targetIdx, 0, moved)
+  currentSolution.value = { ...currentSolution.value, customFields: cfs }
+  if (loadedSolutionRecord.value) {
+    loadedSolutionRecord.value = { ...loadedSolutionRecord.value, customFields: cfs }
+  }
+}
+
+function onCfDragEnd() {
+  dragCfIndex.value = -1
+  dragOverCfIndex.value = -1
+}
 
 function onHighlightCf(cfId) {
   if (highlightedCfId.value === cfId) {
@@ -1498,15 +1593,29 @@ watch(
   { deep: true },
 )
 
+watch(customFieldSections, () => {
+  nextTick(() => updateCfOverflow())
+})
+
 onMounted(async () => {
   await Promise.all([loadPackages(), loadPublishedSolutions()])
   resetHistory()
   window.addEventListener('keydown', handleKeydown)
+  cfResizeObserver = new ResizeObserver(() => {
+    nextTick(() => updateCfOverflow())
+  })
+  if (cfCardsBarRef.value) {
+    cfResizeObserver.observe(cfCardsBarRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(jsonTimer)
   window.removeEventListener('keydown', handleKeydown)
+  if (cfResizeObserver) {
+    cfResizeObserver.disconnect()
+    cfResizeObserver = null
+  }
 })
 </script>
