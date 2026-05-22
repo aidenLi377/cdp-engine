@@ -98,11 +98,10 @@
             </div>
             <el-button
               class="intercom-btn-outlined btn-small"
-              :disabled="!writeBackReady"
-              :loading="writingBack"
+              :class="{ 'write-back-marked': writeBackMarked }"
               @click="writeBack"
             >
-              回写进方案
+              {{ writeBackMarked ? '✓ 回写进方案' : '回写进方案' }}
             </el-button>
           </div>
           <div class="cf-bound-list">
@@ -140,8 +139,7 @@ const emit = defineEmits(['update:modelValue', 'save', 'writeBack'])
 
 const editValue = ref(null)
 const editMode = ref('recent')
-const writingBack = ref(false)
-const writeBackReady = ref(false)
+const writeBackMarked = ref(false)
 
 const isDateType = computed(() => props.customField?.type?.includes('日期'))
 const isNumberType = computed(() => props.customField?.type?.includes('数值'))
@@ -169,8 +167,7 @@ function initEditState() {
   } else {
     editValue.value = v ?? ''
   }
-  writeBackReady.value = false
-  writingBack.value = false
+  writeBackMarked.value = false
 }
 
 function getNodeLabel(nodeId) {
@@ -198,11 +195,7 @@ function formatBoundValue(binding) {
 }
 
 function writeBack() {
-  let payload = editValue.value
-  if (isDateType.value || isNumberType.value) {
-    payload = { ...editValue.value, mode: editMode.value }
-  }
-  emit('writeBack', { customFieldId: props.customField?.customFieldId, value: payload })
+  writeBackMarked.value = !writeBackMarked.value
 }
 
 function save() {
@@ -210,8 +203,11 @@ function save() {
   if (isDateType.value || isNumberType.value) {
     payload = { ...editValue.value, mode: editMode.value }
   }
+  if (writeBackMarked.value) {
+    emit('writeBack', { customFieldId: props.customField?.customFieldId, value: payload })
+  }
   emit('save', { customFieldId: props.customField?.customFieldId, value: payload })
-  writeBackReady.value = true
+  emit('update:modelValue', false)
 }
 
 watch(() => props.modelValue, (val) => {
