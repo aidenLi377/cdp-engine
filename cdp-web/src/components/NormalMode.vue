@@ -206,7 +206,7 @@
     </div>
 
     <Transition name="mode-switch" mode="out-in">
-    <div v-if="workbenchMode === 'solution-use'" key="solution-use">
+    <div v-if="workbenchMode === 'solution-use'" key="solution-use" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
       <div v-if="loadingSolutionId" class="solution-use-area">
         <div class="cf-loading-state">
           <div class="skeleton-bar skeleton-bar-header"></div>
@@ -334,7 +334,7 @@
       />
     </div>
 
-    <div v-else key="free-build">
+    <div v-else key="free-build" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
       <div v-if="nodeList.length === 0" class="empty-hint display-body-light">
         请从左侧点击添加行为组件，或直接加载已发布方案
       </div>
