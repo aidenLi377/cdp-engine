@@ -1083,6 +1083,16 @@ async function setWorkbenchFromSolution(record) {
   snapshotPaused.value = true
   try {
     const hydratedNodes = await hydrateNodes(record?.nodes || [])
+    const cfs = record?.customFields || []
+    for (const cf of cfs) {
+      const dv = cf.defaultValue
+      const hasValue = dv != null
+        && !(typeof dv === 'object' && Object.keys(dv).length === 0 && !Array.isArray(dv))
+        && !(Array.isArray(dv) && dv.length === 0)
+      if (hasValue) {
+        syncCustomFieldValue(hydratedNodes, cf.id, cfs, dv)
+      }
+    }
     currentSolution.value = cloneValue(record)
     loadedSolutionRecord.value = cloneValue(record)
     loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(record?.workbenchFieldIds || [], hydratedNodes)
