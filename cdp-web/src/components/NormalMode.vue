@@ -205,7 +205,8 @@
       </div>
     </div>
 
-    <template v-if="workbenchMode === 'solution-use'">
+    <Transition name="mode-switch" mode="out-in">
+    <div v-if="workbenchMode === 'solution-use'" key="solution-use">
       <div v-if="loadingSolutionId" class="solution-use-area">
         <div class="cf-loading-state">
           <div class="skeleton-bar skeleton-bar-header"></div>
@@ -330,9 +331,9 @@
         :on-write-back="onCfWriteBack"
         @save="onCfDialogSave"
       />
-    </template>
+    </div>
 
-    <template v-else>
+    <div v-else key="free-build">
       <div v-if="nodeList.length === 0" class="empty-hint display-body-light">
         请从左侧点击添加行为组件，或直接加载已发布方案
       </div>
@@ -411,7 +412,8 @@
           </div>
         </div>
       </div>
-    </template>
+    </div>
+  </Transition>
   </div>
 
   <div class="right-panel">
