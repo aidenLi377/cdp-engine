@@ -84,10 +84,12 @@ export function useSolutionsApi() {
         method: 'DELETE',
       })
     },
-    updateCustomFields(id, customFields) {
+    updateCustomFields(id, customFields, nodes) {
+      const body = { customFields }
+      if (nodes !== undefined) body.nodes = nodes
       return request(`/api/solutions/${id}/custom-fields`, {
         method: 'PUT',
-        body: JSON.stringify({ customFields }),
+        body: JSON.stringify(body),
       })
     },
   }

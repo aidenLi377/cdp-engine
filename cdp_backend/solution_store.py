@@ -191,11 +191,13 @@ class SolutionStore:
             self._write(data)
             return duplicated
 
-    def update_custom_fields(self, solution_id: str, custom_fields: list[dict]) -> dict:
+    def update_custom_fields(self, solution_id: str, custom_fields: list[dict], nodes: list[dict] | None = None) -> dict:
         with self._lock:
             data = self._load()
             index, item = self._find_solution(data["solutions"], solution_id)
             updated = {**item, "customFields": custom_fields, "updatedAt": utc_now()}
+            if nodes is not None:
+                updated["nodes"] = nodes
             data["solutions"][index] = updated
             self._write(data)
             return updated

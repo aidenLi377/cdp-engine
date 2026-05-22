@@ -737,11 +737,25 @@ async function onCfWriteBack({ customFieldId, value }) {
     return
   }
   cf.defaultValue = value
+
+  // Also sync node formData back
+  const nodes = (solution.nodes || []).map(n => {
+    const runtimeNode = nodeList.value.find(rn => rn.id === n.id)
+    if (!runtimeNode) return n
+    const updatedFormData = { ...n.formData }
+    for (const b of (cf.bindings || [])) {
+      if (b.nodeId === n.id) {
+        updatedFormData[b.fieldKey] = value
+      }
+    }
+    return { ...n, formData: updatedFormData }
+  })
+
   try {
-    await updateCustomFields(solution.id, cfs)
-    loadedSolutionRecord.value = { ...solution, customFields: cfs }
+    await updateCustomFields(solution.id, cfs, nodes)
+    loadedSolutionRecord.value = { ...solution, customFields: cfs, nodes }
     if (currentSolution.value?.id === solution.id) {
-      currentSolution.value = { ...currentSolution.value, customFields: cfs }
+      currentSolution.value = { ...currentSolution.value, customFields: cfs, nodes }
     }
     console.log('[writeBack] Updated solution', solution.id, 'cf', customFieldId, 'value', value)
     ElMessage.success(`「${cf.name}」已回写到方案: ${JSON.stringify(value)}`)

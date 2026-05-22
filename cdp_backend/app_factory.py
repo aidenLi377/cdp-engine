@@ -239,16 +239,11 @@ def register_routes(
     def update_solution_custom_fields(solution_id: str):
         payload = request.get_json(silent=True) or {}
         custom_fields = payload.get("customFields")
-        app.logger.info("custom-fields update: solution=%s fields_count=%d", solution_id, len(custom_fields or []))
-        if custom_fields is not None and len(custom_fields) > 0:
-            app.logger.info("custom-fields first field: id=%s name=%s defaultValue=%s",
-                custom_fields[0].get("id"), custom_fields[0].get("name"), custom_fields[0].get("defaultValue"))
+        nodes = payload.get("nodes")
         if custom_fields is None:
             return jsonify({"error": "customFields is required"}), 400
         try:
-            updated = solution_store.update_custom_fields(solution_id, custom_fields)
-            app.logger.info("custom-fields updated successfully: solution=%s cf0_defaultValue=%s",
-                solution_id, updated["customFields"][0].get("defaultValue") if updated.get("customFields") else "N/A")
+            updated = solution_store.update_custom_fields(solution_id, custom_fields, nodes)
         except SolutionNotFoundError:
             return jsonify({"error": "solution not found"}), 404
         return jsonify(updated)
