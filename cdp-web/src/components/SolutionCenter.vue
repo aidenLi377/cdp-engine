@@ -193,6 +193,7 @@
         </div>
 
         <div v-else key="nodes" class="solution-node-scroll">
+        <TransitionGroup name="node-list">
         <div
           v-for="(node, index) in nodeList"
           :key="node.id"
@@ -247,14 +248,18 @@
               </div>
             </div>
 
-            <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
-              <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新打开方案。</p>
-            </div>
-            <div v-else v-show="!node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
-              <DynamicForm :node="node" />
-            </div>
+            <Transition name="node-collapse">
+              <div v-if="node._hydrationError && !node.collapsed" class="hydration-error-body">
+                <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新打开方案。</p>
+              </div>
+            </Transition>
+            <Transition name="node-collapse">
+              <div v-if="!node._hydrationError && !node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
+                <DynamicForm :node="node" />
+              </div>
+            </Transition>
           </div>
-        </div>
+        </TransitionGroup>
         </div>
       </Transition>
 
