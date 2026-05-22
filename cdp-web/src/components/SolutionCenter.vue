@@ -210,7 +210,7 @@
             <div class="connector-line"></div>
           </div>
 
-          <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed }">
+          <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
             <div class="card-header-inner">
               <span class="card-title-flex">
                 <button
@@ -222,6 +222,7 @@
                 </button>
                 <span class="display-card-title solution-node-title">{{ node.packageType }}</span>
                 <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
               </span>
 
               <div class="solution-node-actions">
@@ -242,7 +243,10 @@
               </div>
             </div>
 
-            <div v-show="!node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
+            <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
+              <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新打开方案。</p>
+            </div>
+            <div v-else v-show="!node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
               <DynamicForm :node="node" />
             </div>
           </div>
@@ -470,7 +474,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, onMounted, provide, reactive, ref, toRaw, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Plus, Upload, View } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -479,6 +483,7 @@ import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { fieldToken, serializeNodesForSolution, buildCustomFieldSections } from '../utils/solutionState.js'
+import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import FolderTree from './FolderTree.vue'
 
@@ -640,19 +645,6 @@ function arrayEquals(left, right) {
   return left.every((item, index) => item === right[index])
 }
 
-function statusText(status) {
-  if (status === 'draft') return '草稿'
-  if (status === 'published') return '已发布'
-  return status || '未知'
-}
-
-function formatTime(value) {
-  if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString('zh-CN', { hour12: false })
-}
-
 function setSavedSnapshotFromRecord(record) {
   if (!record || record.status !== 'draft') {
     lastSavedSnapshot.value = null
@@ -729,11 +721,14 @@ async function applySolutionRecord(record) {
     const sourceNodes = record?.nodes || []
     if (sourceNodes.length > 0) {
       nodeList.value = await hydrateNodes(sourceNodes)
-      if (nodeList.value.length === 0) {
+      const errorCount = nodeList.value.filter(n => n._hydrationError).length
+      const successCount = nodeList.value.length - errorCount
+      if (successCount === 0) {
         console.error('所有节点加载失败')
         ElMessage.error('所有组件节点加载失败，请检查后端服务是否正常运行')
-      } else if (nodeList.value.length < sourceNodes.length) {
-        console.warn(`部分节点加载失败: ${nodeList.value.length}/${sourceNodes.length}`)
+      } else if (errorCount > 0) {
+        console.warn(`部分节点加载失败: ${errorCount}/${nodeList.value.length}`)
+        ElMessage.warning(`${errorCount} 个节点加载失败，已显示为错误占位`)
       }
     } else {
       nodeList.value = []
@@ -776,14 +771,24 @@ async function loadAvailablePackages() {
   }
 }
 
+let openSolutionAbort = null
+
 async function openSolution(solutionId) {
   const switched = await replaceActiveSolutionState(async () => {
+    if (openSolutionAbort) {
+      openSolutionAbort.abort()
+    }
+    openSolutionAbort = new AbortController()
+    const { signal } = openSolutionAbort
+
     loadingDetail.value = true
     try {
-      const detail = await getSolution(solutionId)
+      const detail = await getSolution(solutionId, { signal })
       await applySolutionRecord(detail)
     } catch (error) {
-      ElMessage.error(error.message || '方案详情加载失败')
+      if (error.name !== 'AbortError') {
+        ElMessage.error(error.message || '方案详情加载失败')
+      }
     } finally {
       loadingDetail.value = false
     }
@@ -1135,8 +1140,11 @@ function removeCustomField(cfId) {
   }
 }
 
+let dragCfOriginalOrder = null
+
 function onDragCustomFieldStart(index) {
   dragCustomFieldIndex.value = index
+  dragCfOriginalOrder = customFields.value.map(cf => cf.id)
 }
 
 function onDragCustomFieldOver(index) {
@@ -1148,6 +1156,14 @@ function onDragCustomFieldOver(index) {
 
 function onDragCustomFieldEnd() {
   dragCustomFieldIndex.value = -1
+  if (dragCfOriginalOrder) {
+    const currentOrder = customFields.value.map(cf => cf.id)
+    const reordered = JSON.stringify(currentOrder) !== JSON.stringify(dragCfOriginalOrder)
+    dragCfOriginalOrder = null
+    if (reordered && !isPublished.value) {
+      saveDraft()
+    }
+  }
 }
 
 function clearAllCustomFields() {
@@ -1156,14 +1172,6 @@ function clearAllCustomFields() {
   }
   customFields.value = []
   highlightedCustomFieldId.value = null
-}
-
-function getCfTypeClass(type) {
-  if (!type) return 'text'
-  if (type.includes('日期')) return 'date'
-  if (type.includes('数值')) return 'number'
-  if (type.includes('搜索') || type.includes('下拉')) return 'select'
-  return 'text'
 }
 
 function getBindingLabel(binding) {
@@ -1203,16 +1211,39 @@ function isFieldSelectableForBinding(field) {
   return field.Widget_Type === creatingCustomFieldType.value
 }
 
+function syncActiveToSolutionsList() {
+  if (!activeSolution.value) return
+  const idx = solutions.value.findIndex(s => s.id === activeSolution.value.id)
+  if (idx >= 0) {
+    solutions.value[idx] = {
+      ...solutions.value[idx],
+      name: activeSolution.value.name,
+      defaultCrowdName: activeSolution.value.defaultCrowdName,
+      nodes: serializeNodesForSolution(nodeList.value),
+      customFields: structuredClone(toRaw(customFields.value)),
+    }
+  }
+}
+
+watch([() => activeSolution.value?.name, () => activeSolution.value?.defaultCrowdName], () => {
+  syncActiveToSolutionsList()
+})
+
 watch(statusFilter, () => {
   loadSolutions()
 })
 
+let normalizingFieldIds = false
+
 watch(
   workbenchFieldIds,
   (nextIds) => {
+    if (normalizingFieldIds) return
     const cleaned = normalizeWorkbenchFieldIds(nextIds, nodeList.value)
     if (!arrayEquals(cleaned, nextIds)) {
+      normalizingFieldIds = true
       workbenchFieldIds.value = cleaned
+      normalizingFieldIds = false
     }
   },
   { deep: true },
@@ -1221,6 +1252,7 @@ watch(
 watch(
   nodeList,
   () => {
+    if (normalizingFieldIds) return
     syncWorkbenchSelections(workbenchFieldIds.value)
   },
   { deep: true },

@@ -126,6 +126,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { formatCfDisplayValue } from '../utils/display.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -133,9 +134,10 @@ const props = defineProps({
   boundNodes: { type: Array, default: () => [] },
   currentValue: { type: [String, Number, Array, Object], default: null },
   nodeList: { type: Array, default: () => [] },
+  onWriteBack: { type: Function, default: null },
 })
 
-const emit = defineEmits(['update:modelValue', 'save', 'writeBack'])
+const emit = defineEmits(['update:modelValue', 'save'])
 
 const editValue = ref(null)
 const editMode = ref('recent')
@@ -180,29 +182,21 @@ function formatBoundValue(binding) {
   if (!node) return ''
   const value = node.formData?.[binding.fieldKey]
   const mode = node.modeData?.[binding.fieldKey]
-  if (value === undefined || value === null) return '(未设置)'
-  if (Array.isArray(value)) return value.join('、') || '(空)'
-  if (typeof value === 'object') {
-    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
-    if (mode === 'range' && value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return `${value.dateRange[0]} ~ ${value.dateRange[1]}`
-    if (value.min !== undefined) {
-      if (mode === 'unlimited') return '不限'
-      if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
-      return `≥ ${value.min ?? '?'}`
-    }
-    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
-    return ''
-  }
-  return String(value)
+  return formatCfDisplayValue(value, mode, props.customField?.type)
 }
 
-function writeBack() {
+async function writeBack() {
+  if (!props.onWriteBack) return
   let payload = editValue.value
   if (isDateType.value || isNumberType.value) {
     payload = { ...editValue.value, mode: editMode.value }
   }
   writingBack.value = true
-  emit('writeBack', { customFieldId: props.customField?.customFieldId, value: payload })
+  try {
+    await props.onWriteBack({ customFieldId: props.customField?.customFieldId, value: payload })
+  } finally {
+    writingBack.value = false
+  }
 }
 
 function save() {

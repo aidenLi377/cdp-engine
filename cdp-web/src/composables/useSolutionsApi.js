@@ -22,12 +22,14 @@ async function parseResponseBody(response) {
 }
 
 async function request(path, options = {}) {
+  const { signal, ...fetchOptions } = options
   const response = await fetch(path, {
     headers: {
       'Content-Type': 'application/json',
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
     },
-    ...options,
+    ...fetchOptions,
+    signal,
   })
 
   if (response.status === 204) return null
@@ -46,50 +48,57 @@ async function request(path, options = {}) {
 
 export function useSolutionsApi() {
   return {
-    listSolutions(status) {
-      return request(buildUrl('/api/solutions', { status }))
+    listSolutions(status, { signal } = {}) {
+      return request(buildUrl('/api/solutions', { status }), { signal })
     },
-    getSolution(id) {
-      return request(`/api/solutions/${id}`)
+    getSolution(id, { signal } = {}) {
+      return request(`/api/solutions/${id}`, { signal })
     },
-    createDraft(body) {
+    createDraft(body, { signal } = {}) {
       return request('/api/solutions/drafts', {
         method: 'POST',
         body: JSON.stringify(body),
+        signal,
       })
     },
-    updateDraft(id, body) {
+    updateDraft(id, body, { signal } = {}) {
       return request(`/api/solutions/${id}`, {
         method: 'PUT',
         body: JSON.stringify(body),
+        signal,
       })
     },
-    publishSolution(id) {
+    publishSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}/publish`, {
         method: 'POST',
+        signal,
       })
     },
-    createEditDraft(id) {
+    createEditDraft(id, { signal } = {}) {
       return request(`/api/solutions/${id}/edit-draft`, {
         method: 'POST',
+        signal,
       })
     },
-    duplicateSolution(id) {
+    duplicateSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}/duplicate`, {
         method: 'POST',
+        signal,
       })
     },
-    deleteSolution(id) {
+    deleteSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}`, {
         method: 'DELETE',
+        signal,
       })
     },
-    updateCustomFields(id, customFields, nodes) {
+    updateCustomFields(id, customFields, nodes, { signal } = {}) {
       const body = { customFields }
       if (nodes !== undefined) body.nodes = nodes
       return request(`/api/solutions/${id}/custom-fields`, {
         method: 'PUT',
         body: JSON.stringify(body),
+        signal,
       })
     },
   }

@@ -235,7 +235,7 @@
             @dragend="onCfDragEnd"
             @click="onHighlightCf(section.customFieldId)"
           >
-            <span class="cf-type-indicator" :class="getCfUseTypeClass(section.type)"></span>
+            <span class="cf-type-indicator" :class="getCfTypeClass(section.type)"></span>
             <div class="cf-use-card-info">
               <span class="display-body strong">{{ section.name }}</span>
               <span class="display-body-light cf-use-card-value">{{ getCfValueSummary(section) }}</span>
@@ -281,16 +281,20 @@
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
-              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed }">
+              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed, 'node-hydration-error': node._hydrationError }">
                 <div class="card-header-inner">
                   <span class="card-title-flex" @click="collapsedCfId ? null : (node.collapsed = !node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
                     <span class="collapse-arrow">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
                     <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
                     <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                    <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
                   </span>
                 </div>
+                <div v-if="node._hydrationError" v-show="!(collapsedCfId || node.collapsed)" class="hydration-error-body">
+                  <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新加载方案。</p>
+                </div>
                 <!-- Collapse mode: show only bound fields -->
-                <div v-if="collapsedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
+                <div v-else-if="collapsedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
                   <div
                     v-for="binding in getNodeFocusBindings(node.id)"
                     :key="binding.fieldKey"
@@ -323,8 +327,8 @@
         :bound-nodes="editingCfSection?.bindings || []"
         :current-value="editingCfCurrentValue"
         :node-list="nodeList"
+        :on-write-back="onCfWriteBack"
         @save="onCfDialogSave"
-        @write-back="onCfWriteBack"
       />
     </template>
 
@@ -355,7 +359,7 @@
               <div class="connector-line"></div>
             </div>
 
-            <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed }">
+            <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
               <div class="card-header-inner" :class="{ 'drag-over': dragOverIndex === index }">
                 <span
                   class="drag-handle"
@@ -370,6 +374,7 @@
                   <span class="collapse-arrow">{{ node.collapsed ? '▶' : '▼' }}</span>
                   <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
                   <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                  <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
                 </span>
                 <div style="display:flex; gap:6px">
                   <el-button class="intercom-btn-outlined btn-small" @click="duplicateNode(index)">复制</el-button>
@@ -385,7 +390,10 @@
                   </el-popconfirm>
                 </div>
               </div>
-              <DynamicForm v-show="!node.collapsed" :node="node" />
+              <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
+                <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
+              </div>
+              <DynamicForm v-else v-show="!node.collapsed" :node="node" />
             </div>
           </div>
         </div>
@@ -500,8 +508,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, provide } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch, provide } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import FolderTree from './FolderTree.vue'
@@ -517,10 +525,11 @@ import {
   buildCustomFieldSections,
   syncCustomFieldValue,
 } from '../utils/solutionState.js'
+import { formatTime, getCfTypeClass, formatCfDisplayValue } from '../utils/display.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
-const MAX_HISTORY = 50
+const MAX_HISTORY = 20
 const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
 const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
@@ -743,20 +752,8 @@ function getFocusFieldDisplay(fieldKey, node) {
   const field = schema.find(f => f.key === fieldKey)
   const label = field?.Label || field?.label || fieldKey
   const value = node.formData?.[fieldKey]
-  if (Array.isArray(value)) return { label, value: value.join('、') || '(空)' }
-  if (value && typeof value === 'object') {
-    const mode = node.modeData?.[fieldKey]
-    if (value.days !== undefined && mode !== 'range') return { label, value: `过去 ${value.days} 天` }
-    if (mode === 'range' && value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return { label, value: `${value.dateRange[0]} ~ ${value.dateRange[1]}` }
-    if (value.min !== undefined) {
-      if (mode === 'unlimited') return { label, value: '不限' }
-      if (mode === 'range') return { label, value: `${value.min ?? '?'} — ${value.max ?? '?'}` }
-      return { label, value: `≥ ${value.min ?? '?'}` }
-    }
-    if (value.days !== undefined && mode !== 'range') return { label, value: `过去 ${value.days} 天` }
-    return { label, value: JSON.stringify(value) }
-  }
-  return { label, value: value || '(空)' }
+  const mode = node.modeData?.[fieldKey]
+  return { label, value: formatCfDisplayValue(value, mode, field?.Widget_Type) }
 }
 
 function getCfValueSummary(section) {
@@ -764,32 +761,16 @@ function getCfValueSummary(section) {
   if (!firstBinding) return ''
   const node = nodeList.value.find(n => n.id === firstBinding.nodeId)
   const value = node?.formData?.[firstBinding.fieldKey]
-  if (value === undefined || value === null) return '(未设置)'
-  if (Array.isArray(value)) return value.length > 0 ? value.slice(0, 3).join('、') + (value.length > 3 ? '…' : '') : '(空)'
-  if (typeof value === 'object') {
-    const mode = node?.modeData?.[firstBinding.fieldKey]
-    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
-    if (value.dateRange && Array.isArray(value.dateRange) && value.dateRange.length === 2) return `${value.dateRange[0]} ~ ${value.dateRange[1]}`
-    if (value.min !== undefined) {
-      if (mode === 'unlimited') return '不限'
-      if (mode === 'range') return `${value.min ?? '?'}—${value.max ?? '?'}`
-      return `≥ ${value.min ?? '?'}`
-    }
-    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
-    return ''
-  }
-  return String(value).slice(0, 20)
-}
-
-function getCfUseTypeClass(type) {
-  if (!type) return 'text'
-  if (type.includes('日期')) return 'date'
-  if (type.includes('数值')) return 'number'
-  if (type.includes('搜索') || type.includes('下拉')) return 'select'
-  return 'text'
+  const mode = node?.modeData?.[firstBinding.fieldKey]
+  if (Array.isArray(value) && value.length > 0) return value.slice(0, 3).join('、') + (value.length > 3 ? '…' : '')
+  const formatted = formatCfDisplayValue(value, mode, section.type)
+  if (typeof value === 'object' && !Array.isArray(value)) return formatted
+  if (typeof value === 'string' && formatted.length > 20) return formatted.slice(0, 20) + '…'
+  return formatted
 }
 
 function openCfEditDialog(section) {
+
   editingCfSection.value = section
   // Read current value from the first bound node
   const firstBinding = section.bindings?.[0]
@@ -878,13 +859,6 @@ function isSummaryRowHighlighted(nodeId, fieldKey) {
   const cf = cfs.find(c => c.id === collapsedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
-}
-
-function formatTime(value) {
-  if (!value) return '刚刚更新'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleString('zh-CN', { hour12: false })
 }
 
 function toggleLeftPanelMode() {
@@ -990,11 +964,11 @@ function scrollToNode(index) {
 }
 
 function takeSnapshot() {
-  const snapshot = JSON.parse(JSON.stringify({
-    nodeList: nodeList.value,
+  const snapshot = structuredClone({
+    nodeList: toRaw(nodeList.value),
     crowdNameInput: crowdNameInput.value,
     nameAuto: nameAuto.value,
-  }))
+  })
 
   historyStack.value = historyStack.value.slice(0, historyPos.value + 1)
   historyStack.value.push(snapshot)
@@ -1063,8 +1037,8 @@ async function loadPublishedFolders() {
       publishedSolutions.value.map(s => s.folderId).filter(Boolean)
     )
     publishedFolderTree.value = filterFoldersByPublished(allFolders, publishedIds)
-  } catch {
-    // silently ignore folder load failures in workbench
+  } catch (error) {
+    console.error('加载已发布方案文件夹失败:', error)
   }
 }
 
@@ -1135,7 +1109,32 @@ function duplicateNode(index) {
   nodeList.value.forEach((node, nodeIndex) => {
     if (nodeIndex === 0) node.operator = null
   })
-  ElMessage.success('节点已复制')
+
+  const cfs = currentSolution.value?.customFields || []
+  const relatedCfs = cfs.filter(cf =>
+    (cf.bindings || []).some(b => b.nodeId === source.id)
+  )
+  if (relatedCfs.length > 0) {
+    const names = relatedCfs.map(cf => cf.name).join('、')
+    ElMessageBox.confirm(
+      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（节点 ${index + 2}）的对应字段绑定到这些自定义字段？`,
+      '复制节点',
+      { confirmButtonText: '自动绑定', cancelButtonText: '跳过', type: 'info' }
+    ).then(() => {
+      relatedCfs.forEach(cf => {
+        const sourceBinding = (cf.bindings || []).find(b => b.nodeId === source.id)
+        if (sourceBinding) {
+          cf.bindings.push({ nodeId: duplicated.id, fieldKey: sourceBinding.fieldKey })
+        }
+      })
+      if (loadedSolutionRecord.value) {
+        loadedSolutionRecord.value = { ...loadedSolutionRecord.value, customFields: [...cfs] }
+      }
+      ElMessage.success(`已自动绑定 ${relatedCfs.length} 个自定义字段到新节点`)
+    }).catch(() => {})
+  } else {
+    ElMessage.success('节点已复制')
+  }
 }
 
 function buildDraftWorkbenchFieldIds(nodes) {
@@ -1222,6 +1221,8 @@ async function setWorkbenchFromSolution(record) {
   }
 }
 
+let loadSolutionAbort = null
+
 async function loadPublishedSolution(item) {
   if (!item?.id) return
   if (currentSolution.value?.id === item.id && workbenchMode.value === 'solution-use') return
@@ -1229,13 +1230,21 @@ async function loadPublishedSolution(item) {
   const shouldContinue = await confirmReplaceCanvas()
   if (!shouldContinue) return
 
+  if (loadSolutionAbort) {
+    loadSolutionAbort.abort()
+  }
+  loadSolutionAbort = new AbortController()
+  const { signal } = loadSolutionAbort
+
   loadingSolutionId.value = item.id
   try {
-    const detail = await getSolution(item.id)
+    const detail = await getSolution(item.id, { signal })
     await setWorkbenchFromSolution(detail)
     ElMessage.success('已加载发布方案')
   } catch (error) {
-    ElMessage.error(error.message || '方案加载失败')
+    if (error.name !== 'AbortError') {
+      ElMessage.error(error.message || '方案加载失败')
+    }
   } finally {
     loadingSolutionId.value = null
   }

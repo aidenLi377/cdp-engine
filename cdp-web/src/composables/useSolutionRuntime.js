@@ -1,8 +1,10 @@
+import { toRaw } from 'vue'
 import { useCdpShared } from './useCdpShared.js'
 import { buildUsageSections, cleanWorkbenchFieldIds, buildCustomFieldSections, syncCustomFieldValue, getNodeBindingFieldKeys } from '../utils/solutionState.js'
 
 function cloneValue(value) {
-  return value == null ? value : JSON.parse(JSON.stringify(value))
+  if (value == null) return value
+  return structuredClone(toRaw(value))
 }
 
 export function bindRuntimeUsageSections(baseSections, nodes) {
@@ -30,6 +32,8 @@ export function bindRuntimeUsageSections(baseSections, nodes) {
     }
   })
 }
+
+const pendingMetaFetches = {}
 
 export function useSolutionRuntime() {
   const { schemaCache, logicMatrixCache } = useCdpShared()
@@ -83,19 +87,32 @@ export function useSolutionRuntime() {
       }
     }
 
-    const response = await fetch(`/api/meta/${encodeURIComponent(packageType)}`)
-    if (!response.ok) {
-      throw new Error(`组件元数据加载失败: ${packageType}`)
+    if (pendingMetaFetches[packageType]) {
+      return pendingMetaFetches[packageType]
     }
 
-    const data = await response.json()
-    schemaCache.value[packageType] = data.schema || []
-    logicMatrixCache.value[packageType] = data.matrix || {}
+    const promise = (async () => {
+      try {
+        const response = await fetch(`/api/meta/${encodeURIComponent(packageType)}`)
+        if (!response.ok) {
+          throw new Error(`组件元数据加载失败: ${packageType}`)
+        }
 
-    return {
-      schema: cloneValue(schemaCache.value[packageType]),
-      matrix: cloneValue(logicMatrixCache.value[packageType]),
-    }
+        const data = await response.json()
+        schemaCache.value[packageType] = data.schema || []
+        logicMatrixCache.value[packageType] = data.matrix || {}
+
+        return {
+          schema: cloneValue(schemaCache.value[packageType]),
+          matrix: cloneValue(logicMatrixCache.value[packageType]),
+        }
+      } finally {
+        delete pendingMetaFetches[packageType]
+      }
+    })()
+
+    pendingMetaFetches[packageType] = promise
+    return promise
   }
 
   async function createRuntimeNode(node = {}, index = 0) {
@@ -127,6 +144,17 @@ export function useSolutionRuntime() {
         hydrated.push(result.value)
       } else {
         console.error(`节点 ${sourceNodes[i]?.packageType || i} 加载失败:`, result.reason)
+        hydrated.push({
+          id: sourceNodes[i]?.id || `node_error_${i}`,
+          packageType: sourceNodes[i]?.packageType || '未知组件',
+          operator: i === 0 ? null : (sourceNodes[i]?.operator ?? 'n'),
+          schema: [],
+          logicMatrix: {},
+          formData: sourceNodes[i]?.formData || {},
+          modeData: sourceNodes[i]?.modeData || {},
+          collapsed: false,
+          _hydrationError: true,
+        })
       }
     })
     return hydrated

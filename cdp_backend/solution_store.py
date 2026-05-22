@@ -90,6 +90,7 @@ class SolutionStore:
                 "id": self._new_id(),
                 "source": "manual",
                 "status": "draft",
+                "_version": 1,
                 "createdAt": now,
                 "updatedAt": now,
             }
@@ -110,6 +111,7 @@ class SolutionStore:
                 "id": item["id"],
                 "status": "draft",
                 "source": item.get("source", "manual"),
+                "_version": item.get("_version", 0) + 1,
                 "createdAt": item["createdAt"],
                 "updatedAt": utc_now(),
             }
@@ -134,6 +136,7 @@ class SolutionStore:
                     "id": published_item["id"],
                     "source": published_item.get("source", "manual"),
                     "status": "published",
+                    "_version": published_item.get("_version", 0) + 1,
                     "createdAt": published_item["createdAt"],
                     "updatedAt": now,
                     "publishedAt": now,
@@ -147,6 +150,7 @@ class SolutionStore:
                 **item,
                 "source": item.get("source", "manual"),
                 "status": "published",
+                "_version": item.get("_version", 0) + 1,
                 "updatedAt": now,
                 "publishedAt": now,
             }
@@ -167,6 +171,7 @@ class SolutionStore:
                 "source": "published-edit",
                 "status": "draft",
                 "basePublishedId": solution_id,
+                "_version": 1,
                 "createdAt": now,
                 "updatedAt": now,
             }
@@ -184,6 +189,7 @@ class SolutionStore:
                 "id": self._new_id(),
                 "source": "manual",
                 "status": "draft",
+                "_version": 1,
                 "createdAt": now,
                 "updatedAt": now,
             }
@@ -195,7 +201,12 @@ class SolutionStore:
         with self._lock:
             data = self._load()
             index, item = self._find_solution(data["solutions"], solution_id)
-            updated = {**item, "customFields": custom_fields, "updatedAt": utc_now()}
+            updated = {
+                **item,
+                "customFields": custom_fields,
+                "_version": item.get("_version", 0) + 1,
+                "updatedAt": utc_now(),
+            }
             if nodes is not None:
                 updated["nodes"] = nodes
             data["solutions"][index] = updated
@@ -206,7 +217,12 @@ class SolutionStore:
         with self._lock:
             data = self._load()
             index, item = self._find_solution(data["solutions"], solution_id)
-            updated = {**item, "folderId": folder_id, "updatedAt": utc_now()}
+            updated = {
+                **item,
+                "folderId": folder_id,
+                "_version": item.get("_version", 0) + 1,
+                "updatedAt": utc_now(),
+            }
             data["solutions"][index] = updated
             self._write(data)
             return updated
