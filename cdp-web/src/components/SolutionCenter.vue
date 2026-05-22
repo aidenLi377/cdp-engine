@@ -259,6 +259,7 @@
               </div>
             </Transition>
           </div>
+          </div>
         </TransitionGroup>
         </div>
       </Transition>
