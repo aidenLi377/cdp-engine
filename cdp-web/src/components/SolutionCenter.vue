@@ -331,6 +331,7 @@
             <div v-if="filteredCustomFields.length === 0 && customFieldSearch" class="display-body-light" style="text-align:center;padding:12px 0">
               没有匹配的字段
             </div>
+            <TransitionGroup name="cf-cards">
             <div
               v-for="(cf, cfIndex) in filteredCustomFields"
               :key="cf.id"
@@ -378,7 +379,7 @@
                 <span v-if="cf.group">{{ cf.group }}</span>
               </div>
             </div>
-          </div>
+          </TransitionGroup>
 
           <div v-if="creatingCustomField" class="creating-custom-field-panel">
             <div class="creating-panel-title">
