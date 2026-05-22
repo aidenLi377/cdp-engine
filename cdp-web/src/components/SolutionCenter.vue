@@ -11,25 +11,19 @@
         </el-button>
       </div>
 
-      <FolderTree
-        :folders="folderTree"
-        @select-folder="onFolderSelect"
-        @folders-changed="handleFolderChange"
-      />
-
       <div class="solution-sidebar-controls">
-        <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="draft">草稿</el-radio-button>
-          <el-radio-button label="published">已发布</el-radio-button>
-        </el-radio-group>
-
         <el-input
           v-model="searchKeyword"
           clearable
           placeholder="搜索方案名称..."
           class="intercom-input"
         />
+
+        <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="draft">草稿</el-radio-button>
+          <el-radio-button label="published">已发布</el-radio-button>
+        </el-radio-group>
 
         <div class="solution-sidebar-actions">
           <el-button class="intercom-btn-outlined btn-small" @click="loadSolutions" :loading="loadingList">
@@ -44,6 +38,12 @@
           </el-button>
         </div>
       </div>
+
+      <FolderTree
+        :folders="folderTree"
+        @select-folder="onFolderSelect"
+        @folders-changed="handleFolderChange"
+      />
 
       <div class="solution-list">
         <div
@@ -567,6 +567,14 @@ const filteredSolutions = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
   let list = solutions.value
 
+  if (keyword) {
+    // 全局搜索 — 忽略文件夹筛选，搜全部方案
+    return list.filter((item) => {
+      const name = String(item?.name || '').toLowerCase()
+      return name.includes(keyword)
+    })
+  }
+
   if (selectedFolderId.value) {
     if (selectedFolderId.value === '__uncategorized__') {
       list = list.filter(item => !item.folderId)
@@ -575,11 +583,7 @@ const filteredSolutions = computed(() => {
     }
   }
 
-  if (!keyword) return list
-  return list.filter((item) => {
-    const name = String(item?.name || '').toLowerCase()
-    return name.includes(keyword)
-  })
+  return list
 })
 
 const fieldGroups = computed(() =>
