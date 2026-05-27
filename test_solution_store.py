@@ -23,11 +23,12 @@ class SolutionStoreTests(unittest.TestCase):
                 "name": "测试方案",
                 "source": "manual",
                 "defaultCrowdName": "测试方案",
-                "nodes": [{"id": "node_1", "packageType": "类目公域行为", "operator": None, "formData": {}, "modeData": {}}],
+                "nodes": [{"id": "node_1", "displayName": "主链路", "packageType": "类目公域行为", "operator": None, "formData": {}, "modeData": {}}],
                 "workbenchFieldIds": [],
             }
         )
         self.assertEqual(created["status"], "draft")
+        self.assertEqual(created["nodes"][0]["displayName"], "主链路")
         self.assertTrue(self.file_path.exists())
         listed = self.store.list_solutions(status="draft")
         self.assertEqual([item["id"] for item in listed], [created["id"]])

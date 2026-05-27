@@ -29,7 +29,23 @@
           {{ expandedIds.has(folder.id) ? '▾' : '▸' }}
         </span>
         <span class="folder-icon">📂</span>
-        <span class="folder-name">{{ folder.name }}</span>
+        <template v-if="editingFolderId === folder.id">
+          <el-input
+            v-model="editName"
+            size="small"
+            class="intercom-input"
+            style="flex:1;min-width:0"
+            @keyup.enter="saveEdit(folder.id)"
+            @keyup.esc="cancelEdit"
+            @click.stop
+            ref="editInputRef"
+          />
+          <el-button size="small" text @click.stop="saveEdit(folder.id)" style="font-size:11px">确定</el-button>
+          <el-button size="small" text @click.stop="cancelEdit" style="font-size:11px">取消</el-button>
+        </template>
+        <template v-else>
+          <span class="folder-name">{{ folder.name }}</span>
+        </template>
         <span v-if="dragOverFolderId === folder.id" class="folder-drop-hint">释放到此处</span>
       </div>
 

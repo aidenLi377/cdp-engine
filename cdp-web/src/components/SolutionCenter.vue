@@ -19,23 +19,35 @@
           class="intercom-input"
         />
 
-        <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="draft">草稿</el-radio-button>
-          <el-radio-button label="published">已发布</el-radio-button>
-        </el-radio-group>
+        <div class="solution-sidebar-toolbar">
+          <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
+            <el-radio-button label="all" @click="handleAllFilterClick">全部</el-radio-button>
+            <el-radio-button label="draft">草稿</el-radio-button>
+            <el-radio-button label="published">已发布</el-radio-button>
+          </el-radio-group>
 
-        <div class="solution-sidebar-actions">
-          <el-button class="intercom-btn-outlined btn-small" @click="loadSolutions" :loading="loadingList">
-            刷新列表
-          </el-button>
-          <el-button
-            class="intercom-btn-outlined btn-small"
-            @click="duplicateActiveSolution"
-            :disabled="!activeSolution"
-          >
-            复制方案
-          </el-button>
+          <div class="solution-sidebar-icon-actions">
+            <el-tooltip content="刷新列表" placement="top">
+              <el-button
+                class="solution-sidebar-icon-btn"
+                :icon="RefreshRight"
+                circle
+                @click="loadSolutions"
+                :loading="loadingList"
+                aria-label="刷新列表"
+              />
+            </el-tooltip>
+            <el-tooltip content="复制方案" placement="top">
+              <el-button
+                class="solution-sidebar-icon-btn"
+                :icon="CopyDocument"
+                circle
+                @click="duplicateActiveSolution"
+                :disabled="!activeSolution"
+                aria-label="复制方案"
+              />
+            </el-tooltip>
+          </div>
         </div>
       </div>
 
@@ -61,16 +73,41 @@
           @keydown.space.prevent="openSolution(item.id)"
         >
           <div class="solution-list-item-head">
-            <span class="solution-status-chip" :class="item.status">{{ statusText(item.status) }}</span>
-            <el-button
-              class="solution-list-delete"
-              text
-              size="small"
-              :disabled="deleting"
-              @click.stop="deleteListedSolution(item)"
-            >
-              删除
-            </el-button>
+            <div class="solution-list-badges">
+              <span
+                v-if="item.id === activeSolution?.id"
+                class="solution-active-dot pulse-breath"
+                :class="{ dirty: hasUnsavedChanges && !isPublished }"
+                aria-hidden="true"
+              ></span>
+              <span class="solution-status-chip" :class="item.status">{{ statusText(item.status) }}</span>
+            </div>
+            <div class="solution-list-item-actions">
+              <el-tooltip
+                v-if="item.status === 'published' && item.id === activeSolution?.id"
+                content="生成编辑草稿"
+                placement="top"
+              >
+                <el-button
+                  class="solution-list-icon-btn edit-draft"
+                  :icon="EditPen"
+                  circle
+                  :loading="creatingEditDraft"
+                  aria-label="生成编辑草稿"
+                  @click.stop="createEditDraftFromPublished"
+                />
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button
+                  class="solution-list-icon-btn delete"
+                  :icon="Delete"
+                  circle
+                  :disabled="deleting"
+                  aria-label="删除方案"
+                  @click.stop="deleteListedSolution(item)"
+                />
+              </el-tooltip>
+            </div>
           </div>
           <div class="display-body strong solution-list-name">{{ item.name || '未命名方案' }}</div>
           <div class="solution-list-meta">
@@ -84,32 +121,6 @@
           当前筛选下没有方案
         </div>
       </TransitionGroup>
-
-      <div v-if="activeSolution" class="solution-sidebar-footer">
-        <div class="display-body-light">当前选中</div>
-        <div class="display-body strong">{{ activeSolution.name || '未命名方案' }}</div>
-        <div v-if="hasUnsavedChanges && !isPublished" class="solution-dirty-indicator">
-          <span class="solution-dirty-dot pulse-breath"></span>
-          <span class="display-body-light">有未保存修改</span>
-        </div>
-        <div class="solution-sidebar-actions">
-          <el-button
-            class="intercom-btn-outlined btn-small"
-            @click="deleteActiveSolution"
-            :disabled="deleting"
-          >
-            删除
-          </el-button>
-          <el-button
-            v-if="isPublished"
-            class="intercom-btn-accent btn-small"
-            @click="createEditDraftFromPublished"
-            :loading="creatingEditDraft"
-          >
-            生成编辑草稿
-          </el-button>
-        </div>
-      </div>
     </aside>
 
     <section class="solution-editor">
@@ -214,21 +225,61 @@
           </div>
 
           <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
-            <div class="card-header-inner">
-              <span class="card-title-flex">
+	            <div class="card-header-inner behavior-card-header">
+	              <span class="card-title-flex behavior-card-title-group">
                 <button
                   type="button"
-                  class="solution-collapse-btn"
+	                  class="solution-collapse-btn behavior-card-collapse-btn"
                   @click="node.collapsed = !node.collapsed"
                 >
                   {{ node.collapsed ? '▸' : '▾' }}
                 </button>
                 <span class="display-card-title solution-node-title">{{ node.packageType }}</span>
-                <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
+                <button
+                  v-if="!isPublished && !isEditingNodeName(node.id)"
+                  type="button"
+                  class="solution-node-name-trigger"
+                  :style="getNodeNameInputStyle(node, index)"
+                  :title="getNodeDisplayName(node, index)"
+                  @click.stop="beginNodeNameEdit(node)"
+                >
+                  <span class="solution-node-name-trigger-text">{{ getNodeDisplayName(node, index) }}</span>
+                </button>
+                <el-input
+                  v-else-if="!isPublished"
+                  v-model="node.displayName"
+                  class="intercom-input solution-node-name-editor"
+                  :style="getNodeNameInputStyle(node, index)"
+                  :placeholder="getNodeDisplayName({}, index)"
+                  size="small"
+                  :data-node-name-input="node.id"
+                  @keyup.enter.stop="finishNodeNameEdit(node)"
+                  @keyup.esc.stop="cancelNodeNameEdit(node)"
+                  @blur="finishNodeNameEdit(node)"
+                />
+	                <span v-else class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
                 <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
               </span>
 
-              <div class="solution-node-actions">
+	              <div class="solution-node-actions behavior-card-action-group">
+	                <el-tooltip content="复制节点" placement="top">
+	                  <el-button
+	                    class="behavior-card-icon-btn behavior-card-icon-proxy"
+	                    @click.stop="duplicateNode(index)"
+	                    :disabled="isPublished"
+	                  >
+	                    <el-icon><CopyDocument /></el-icon>
+	                  </el-button>
+	                </el-tooltip>
+	                <el-tooltip content="移除节点" placement="top">
+	                  <el-button
+	                    class="behavior-card-icon-btn danger behavior-card-icon-proxy"
+	                    @click.stop="removeNode(index)"
+	                    :disabled="isPublished"
+	                  >
+	                    <el-icon><Delete /></el-icon>
+	                  </el-button>
+	                </el-tooltip>
                 <el-button
                   class="intercom-btn-outlined btn-small"
                   @click="duplicateNode(index)"
@@ -470,14 +521,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, provide, reactive, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, onMounted, provide, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Plus, Upload } from '@element-plus/icons-vue'
+import { Check, CopyDocument, Delete, EditPen, Plus, RefreshRight, Upload } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { fieldToken, serializeNodesForSolution } from '../utils/solutionState.js'
+import { fieldToken, getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import FolderTree from './FolderTree.vue'
@@ -532,6 +583,8 @@ const availablePackages = ref([])
 const pendingPackageType = ref('')
 const addingNode = ref(false)
 const lastSavedSnapshot = ref(null)
+const editingNodeId = ref(null)
+const nodeNameOriginalValue = ref('')
 
 const customFields = ref([])
 const filteredCustomFields = computed(() => {
@@ -622,7 +675,7 @@ const currentDraftSnapshot = computed(() => {
     defaultCrowdName,
     nodes: serializeNodesForSolution(nodeList.value),
     workbenchFieldIds: [...workbenchFieldIds.value],
-    customFields: cloneValue(customFields.value),
+    customFields: serializeCustomFieldsForSolution(customFields.value),
   })
 })
 
@@ -653,7 +706,7 @@ function setSavedSnapshotFromRecord(record) {
     defaultCrowdName,
     nodes: record?.nodes || [],
     workbenchFieldIds: [...fieldIds],
-    customFields: Array.isArray(record?.customFields) ? [...record.customFields] : [],
+    customFields: serializeCustomFieldsForSolution(record?.customFields),
   })
 }
 
@@ -693,6 +746,46 @@ function clearWorkbenchFields() {
   workbenchFieldIds.value = []
 }
 
+function handleAllFilterClick() {
+  selectedFolderId.value = null
+  statusFilter.value = 'all'
+}
+
+function getNodeNameInputStyle(node, index) {
+  const baseLabel = String(node?.displayName || '').trim() || getNodeDisplayName({}, index)
+  const width = Math.min(Math.max(baseLabel.length + 2, 8), 24)
+  return { '--node-name-ch': `${width}ch` }
+}
+
+function isEditingNodeName(nodeId) {
+  return editingNodeId.value === nodeId
+}
+
+function beginNodeNameEdit(node) {
+  if (isPublished.value || !node?.id) return
+  editingNodeId.value = node.id
+  nodeNameOriginalValue.value = String(node.displayName || '')
+  nextTick(() => {
+    const input = document.querySelector(`[data-node-name-input="${node.id}"] input`)
+    input?.focus?.()
+    input?.select?.()
+  })
+}
+
+function finishNodeNameEdit(node) {
+  if (!node?.id || editingNodeId.value !== node.id) return
+  node.displayName = String(node.displayName || '').trim()
+  editingNodeId.value = null
+  nodeNameOriginalValue.value = ''
+}
+
+function cancelNodeNameEdit(node) {
+  if (!node?.id || editingNodeId.value !== node.id) return
+  node.displayName = nodeNameOriginalValue.value
+  editingNodeId.value = null
+  nodeNameOriginalValue.value = ''
+}
+
 function buildSolutionPayload() {
   const name = String(activeSolution.value?.name || '').trim() || '未命名方案'
   const defaultCrowdName =
@@ -703,7 +796,7 @@ function buildSolutionPayload() {
     defaultCrowdName,
     nodes: serializeNodesForSolution(nodeList.value),
     workbenchFieldIds: [...workbenchFieldIds.value],
-    customFields: cloneValue(customFields.value),
+    customFields: serializeCustomFieldsForSolution(customFields.value),
   }
 }
 
@@ -842,6 +935,7 @@ function duplicateNode(index) {
   const duplicated = {
     ...cloneValue(source),
     id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    displayName: '',
     operator: index === 0 ? 'n' : source.operator,
     collapsed: false,
     selectedFirstDate: null,
@@ -859,7 +953,7 @@ function duplicateNode(index) {
   if (relatedCfs.length > 0) {
     const names = relatedCfs.map(cf => cf.name).join('、')
     ElMessageBox.confirm(
-      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（节点 ${index + 2}）的对应字段绑定到这些自定义字段？`,
+      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（${getNodeDisplayName(duplicated, index + 1)}）的对应字段绑定到这些自定义字段？`,
       '复制节点',
       { confirmButtonText: '自动绑定', cancelButtonText: '跳过', type: 'info' }
     ).then(() => {
@@ -1022,7 +1116,7 @@ async function deleteActiveSolution() {
 }
 
 function loadCustomFields(record) {
-  customFields.value = Array.isArray(record?.customFields) ? [...record.customFields] : []
+  customFields.value = serializeCustomFieldsForSolution(record?.customFields)
 }
 
 function startCreateCustomField() {
@@ -1220,7 +1314,7 @@ function syncActiveToSolutionsList() {
       name: activeSolution.value.name,
       defaultCrowdName: activeSolution.value.defaultCrowdName,
       nodes: serializeNodesForSolution(nodeList.value),
-      customFields: structuredClone(toRaw(customFields.value)),
+      customFields: serializeCustomFieldsForSolution(customFields.value),
     }
   }
 }

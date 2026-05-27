@@ -1,12 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { reactive } from 'vue'
 
 import {
   fieldToken,
+  getNodeDisplayName,
+  getNodeDisplayNameById,
   serializeNodesForSolution,
   cleanWorkbenchFieldIds,
   buildUsageSections,
   isWorkbenchStructureLocked,
+  serializeCustomFieldsForSolution,
 } from './solutionState.js'
 
 test('serializeNodesForSolution strips runtime-only fields and preserves persisted shape', () => {
@@ -28,12 +32,45 @@ test('serializeNodesForSolution strips runtime-only fields and preserves persist
   assert.deepEqual(serializeNodesForSolution(nodes), [
     {
       id: 'node-1',
+      displayName: '',
       packageType: 'category',
       operator: 'AND',
       formData: { channel: ['tmall'] },
       modeData: { audience: 'vip' },
     },
   ])
+})
+
+test('serializeNodesForSolution preserves node displayName', () => {
+  const nodes = [
+    {
+      id: 'node-1',
+      displayName: 'CPB 主链路',
+      packageType: 'category',
+      operator: null,
+      formData: {},
+      modeData: {},
+    },
+  ]
+
+  assert.deepEqual(serializeNodesForSolution(nodes)[0].displayName, 'CPB 主链路')
+})
+
+test('getNodeDisplayName prefers custom node name and falls back to index label', () => {
+  assert.equal(getNodeDisplayName({ displayName: '资生堂购买' }, 0), '资生堂购买')
+  assert.equal(getNodeDisplayName({ displayName: '   ' }, 1), '节点 2')
+  assert.equal(getNodeDisplayName({}, 2), '节点 3')
+})
+
+test('getNodeDisplayNameById resolves labels from node list', () => {
+  const nodes = [
+    { id: 'node-1', displayName: '' },
+    { id: 'node-2', displayName: '竞品品牌' },
+  ]
+
+  assert.equal(getNodeDisplayNameById(nodes, 'node-1'), '节点 1')
+  assert.equal(getNodeDisplayNameById(nodes, 'node-2'), '竞品品牌')
+  assert.equal(getNodeDisplayNameById(nodes, 'missing'), '')
 })
 
 test('fieldToken uses persisted nodeId:fieldKey format', () => {
@@ -83,6 +120,7 @@ test('buildUsageSections keeps only selected fields and preserves grouped node d
   assert.deepEqual(sections.map((section) => section.node.id), ['node-1', 'node-2'])
   assert.deepEqual(sections[0].node, {
     id: 'node-1',
+    displayName: '',
     packageType: 'category',
     operator: 'AND',
     formData: {
@@ -94,6 +132,7 @@ test('buildUsageSections keeps only selected fields and preserves grouped node d
   })
   assert.deepEqual(sections[1].node, {
     id: 'node-2',
+    displayName: '',
     packageType: 'product',
     operator: 'OR',
     formData: {
@@ -224,6 +263,7 @@ test('buildCustomFieldSections maps custom fields to bound node fields with widg
   assert.equal(sections[0].bindings.length, 2)
   assert.deepEqual(sections[0].bindings[0], {
     nodeId: 'node-1',
+    nodeDisplayName: '节点 1',
     packageType: '商品行为',
     fieldKey: 'date_range',
     fieldLabel: '时间维度',
@@ -234,6 +274,7 @@ test('buildCustomFieldSections maps custom fields to bound node fields with widg
   // Second custom field
   assert.equal(sections[1].customFieldId, 'cf-2')
   assert.equal(sections[1].bindings.length, 1)
+  assert.equal(sections[1].bindings[0].nodeDisplayName, '节点 2')
   assert.equal(sections[1].bindings[0].widgetType, '搜索多选')
   assert.deepEqual(sections[1].bindings[0].options, ['欧莱雅', '雅诗兰黛'])
 })
@@ -364,4 +405,74 @@ test('getNodeBindingFieldKeys returns all bindings for a custom field', () => {
 test('getNodeBindingFieldKeys returns empty array for unknown custom field', () => {
   assert.deepEqual(getNodeBindingFieldKeys('cf-nonexistent', []), [])
   assert.deepEqual(getNodeBindingFieldKeys(null, []), [])
+})
+
+test('serializeCustomFieldsForSolution unwraps nested reactive custom fields without structuredClone errors', () => {
+  const customFields = reactive([
+    reactive({
+      id: 'cf-1',
+      name: '统计时间',
+      type: '日期_切换',
+      group: '',
+      defaultValue: reactive({ days: 30, dateRange: [] }),
+      bindings: reactive([
+        reactive({ nodeId: 'node-1', fieldKey: 'time' }),
+      ]),
+    }),
+  ])
+
+  assert.deepEqual(serializeCustomFieldsForSolution(customFields), [
+    {
+      id: 'cf-1',
+      name: '统计时间',
+      type: '日期_切换',
+      group: '',
+      defaultValue: { days: 30, dateRange: [] },
+      bindings: [{ nodeId: 'node-1', fieldKey: 'time' }],
+    },
+  ])
+})
+
+test('serializeCustomFieldsForSolution strips runtime-only binding metadata and non-serializable values', () => {
+  const customFields = [
+    {
+      id: 'cf-2',
+      name: '类目',
+      type: '搜索多选',
+      group: 'test',
+      defaultValue: {
+        selected: ['防晒'],
+        helper: () => 'drop me',
+      },
+      bindings: [
+        {
+          nodeId: 'node-2',
+          fieldKey: 'leafCates',
+          packageType: '类目公域行为',
+          fieldLabel: '类目',
+          options: ['防晒'],
+          node: { id: 'node-2' },
+        },
+      ],
+      tempUiState: { expanded: true },
+    },
+  ]
+
+  assert.deepEqual(serializeCustomFieldsForSolution(customFields), [
+    {
+      id: 'cf-2',
+      name: '类目',
+      type: '搜索多选',
+      group: 'test',
+      defaultValue: {
+        selected: ['防晒'],
+      },
+      bindings: [
+        {
+          nodeId: 'node-2',
+          fieldKey: 'leafCates',
+        },
+      ],
+    },
+  ])
 })

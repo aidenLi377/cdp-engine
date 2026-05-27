@@ -1,5 +1,31 @@
 const FIELD_TOKEN_SEPARATOR = ':'
 
+function cloneSerializableValue(value) {
+  if (value == null) return value
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cloneSerializableValue(item))
+      .filter((item) => item !== undefined)
+  }
+  if (value instanceof Date) {
+    return value.toISOString()
+  }
+  if (typeof value === 'object') {
+    const result = {}
+    for (const [key, entry] of Object.entries(value)) {
+      const cloned = cloneSerializableValue(entry)
+      if (cloned !== undefined) {
+        result[key] = cloned
+      }
+    }
+    return result
+  }
+  if (['string', 'number', 'boolean'].includes(typeof value)) {
+    return value
+  }
+  return undefined
+}
+
 export function fieldToken(nodeId, fieldKey) {
   return `${String(nodeId)}${FIELD_TOKEN_SEPARATOR}${String(fieldKey)}`
 }
@@ -29,11 +55,25 @@ export function serializeNodesForSolution(nodeList) {
 
   return nodes.map((node) => ({
     id: node?.id ?? null,
+    displayName: typeof node?.displayName === 'string' ? node.displayName : '',
     packageType: node?.packageType ?? null,
     operator: node?.operator ?? null,
     formData: node?.formData ?? {},
     modeData: node?.modeData ?? {},
   }))
+}
+
+export function getNodeDisplayName(node, index = 0) {
+  const displayName = String(node?.displayName || '').trim()
+  if (displayName) return displayName
+  return `节点 ${index + 1}`
+}
+
+export function getNodeDisplayNameById(nodeList, nodeId) {
+  const nodes = Array.isArray(nodeList) ? nodeList : []
+  const index = nodes.findIndex((node) => node?.id === nodeId)
+  if (index < 0) return ''
+  return getNodeDisplayName(nodes[index], index)
 }
 
 export function cleanWorkbenchFieldIds(workbenchFieldIds, nodes) {
@@ -88,6 +128,7 @@ export function buildUsageSections(nodes, workbenchFieldIds) {
       nodeId,
       node: {
         id: node?.id ?? null,
+        displayName: typeof node?.displayName === 'string' ? node.displayName : '',
         packageType: node?.packageType ?? null,
         operator: node?.operator ?? null,
         formData: node?.formData ?? {},
@@ -103,6 +144,24 @@ export function buildUsageSections(nodes, workbenchFieldIds) {
 
 export function isWorkbenchStructureLocked(solutionRecord) {
   return solutionRecord?.status === 'published'
+}
+
+export function serializeCustomFieldsForSolution(customFields) {
+  const fieldList = Array.isArray(customFields) ? customFields : []
+
+  return fieldList.map((cf) => ({
+    id: cf?.id ?? null,
+    name: cf?.name ?? '',
+    type: cf?.type ?? '',
+    group: cf?.group ?? '',
+    defaultValue: cloneSerializableValue(cf?.defaultValue) ?? {},
+    bindings: (Array.isArray(cf?.bindings) ? cf.bindings : [])
+      .map((binding) => ({
+        nodeId: binding?.nodeId ?? null,
+        fieldKey: binding?.fieldKey ?? null,
+      }))
+      .filter((binding) => binding.nodeId && binding.fieldKey),
+  }))
 }
 
 // --- Custom Fields (1:N mapping) ---
@@ -131,6 +190,7 @@ export function buildCustomFieldSections(customFields, nodes) {
       if (!field) return
       boundNodes.push({
         nodeId: node.id,
+        nodeDisplayName: getNodeDisplayNameById(nodes, node.id),
         packageType: node.packageType,
         fieldKey: field.key,
         fieldLabel: field.Label || field.label || field.key,

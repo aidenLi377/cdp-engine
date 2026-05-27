@@ -97,11 +97,12 @@
               <span class="display-mono" style="margin-left:8px">{{ boundNodes.length }} 个组件</span>
             </div>
             <el-button
+              v-if="onWriteBack"
               class="intercom-btn-outlined btn-small"
               :loading="writingBack"
               @click="writeBack"
             >
-              回写进方案
+              同步到当前工作台
             </el-button>
           </div>
           <div class="cf-bound-list">
@@ -127,6 +128,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { formatCfDisplayValue } from '../utils/display.js'
+import { getNodeDisplayNameById } from '../utils/solutionState.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -173,8 +175,7 @@ function initEditState() {
 }
 
 function getNodeLabel(nodeId) {
-  const idx = (props.nodeList || []).findIndex(n => n.id === nodeId)
-  return idx >= 0 ? `节点 ${idx + 1}` : ''
+  return getNodeDisplayNameById(props.nodeList || [], nodeId)
 }
 
 function formatBoundValue(binding) {

@@ -20,6 +20,7 @@ export function bindRuntimeUsageSections(baseSections, nodes) {
       ...section,
       node: {
         id: runtimeNode.id,
+        displayName: runtimeNode.displayName,
         packageType: runtimeNode.packageType,
         operator: runtimeNode.operator,
         formData: runtimeNode.formData,
@@ -122,6 +123,7 @@ export function useSolutionRuntime() {
 
     return {
       id: node?.id || `node_${Date.now()}_${index}`,
+      displayName: typeof node?.displayName === 'string' ? node.displayName : '',
       packageType,
       operator: index === 0 ? null : (node?.operator ?? 'n'),
       schema: meta.schema,
@@ -146,6 +148,7 @@ export function useSolutionRuntime() {
         console.error(`节点 ${sourceNodes[i]?.packageType || i} 加载失败:`, result.reason)
         hydrated.push({
           id: sourceNodes[i]?.id || `node_error_${i}`,
+          displayName: typeof sourceNodes[i]?.displayName === 'string' ? sourceNodes[i].displayName : '',
           packageType: sourceNodes[i]?.packageType || '未知组件',
           operator: i === 0 ? null : (sourceNodes[i]?.operator ?? 'n'),
           schema: [],

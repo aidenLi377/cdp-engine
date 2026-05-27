@@ -23,9 +23,9 @@ test('save draft is a compact secondary toolbar action', () => {
   assert.match(css, /\.workbench-compact-action\.save-draft\.el-button \{[^}]*color: #5f6368 !important;/s)
 })
 
-test('workbench toolbar can shrink without widening the canvas', () => {
+test('workbench toolbar stays on one line without widening the canvas', () => {
   assert.match(css, /\.center-panel \{[^}]*min-width: 0;/s)
-  assert.match(css, /\.panel-toolbar \{[^}]*flex-wrap: wrap;/s)
+  assert.match(css, /\.panel-toolbar \{[^}]*flex-wrap: nowrap;/s)
   assert.match(css, /\.workbench-toolbar-copy \{[^}]*min-width: 0;/s)
   assert.match(css, /\.workbench-toolbar-actions \{[^}]*min-width: 0;/s)
 })
@@ -38,4 +38,19 @@ test('workbench phase status is a compact breathing-light indicator', () => {
   assert.match(css, /\.workbench-phase-status\.is-free-build \.workbench-phase-dot \{[^}]*linear-gradient\(135deg, #67d88f 0%, #1fb56a 100%\);/s)
   assert.match(css, /@keyframes phasePulseGreen/)
   assert.match(css, /@keyframes phasePulseOrange/)
+})
+
+test('derived solution sessions expose draft-save actions instead of the old exit control', () => {
+  assert.match(normalModeVue, /另存为新方案/)
+  assert.doesNotMatch(normalModeVue, /保存到草稿方案/)
+  assert.doesNotMatch(normalModeVue, /退出方案使用/)
+})
+
+test('solution-use toolbar uses icon actions for restore and save-as-new', () => {
+  assert.match(normalModeVue, /RefreshLeft/)
+  assert.match(normalModeVue, /FolderAdd/)
+  assert.match(normalModeVue, /class="workbench-toolbar-icon-btn"/)
+  assert.match(normalModeVue, /content="恢复方案默认值"/)
+  assert.match(normalModeVue, /content="另存为新方案"/)
+  assert.match(css, /\.workbench-toolbar-icon-btn\.el-button \{[^}]*width: 28px !important;[^}]*height: 28px !important;/s)
 })

@@ -39,6 +39,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
             "nodes": [
                 {
                     "id": "node_1",
+                    "displayName": "主链路",
                     "packageType": "类目公域行为",
                     "operator": None,
                     "formData": {"channel": ["tmall"]},
@@ -85,6 +86,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
             "nodes": [
                 {
                     "id": "node_2",
+                    "displayName": "竞品购买",
                     "packageType": "商品行为",
                     "operator": "AND",
                     "formData": {"behavior": ["buy"]},
@@ -100,6 +102,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertEqual(updated_draft["defaultCrowdName"], "Updated Crowd")
         self.assertEqual(updated_draft["nodes"], update_payload["nodes"])
         self.assertEqual(updated_draft["workbenchFieldIds"], update_payload["workbenchFieldIds"])
+        self.assertEqual(updated_draft["nodes"][0]["displayName"], "竞品购买")
 
         publish_edit_response = self.client.post(f"/api/solutions/{edit_draft['id']}/publish")
         self.assertEqual(publish_edit_response.status_code, 200)
@@ -108,11 +111,13 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertEqual(overwritten["status"], "published")
         self.assertEqual(overwritten["name"], "Updated Name")
         self.assertEqual(overwritten["defaultCrowdName"], "Updated Crowd")
+        self.assertEqual(overwritten["nodes"][0]["displayName"], "竞品购买")
 
         fetch_published_response = self.client.get(f"/api/solutions/{created['id']}")
         self.assertEqual(fetch_published_response.status_code, 200)
         fetched = fetch_published_response.get_json()
         self.assertEqual(fetched["name"], "Updated Name")
+        self.assertEqual(fetched["nodes"][0]["displayName"], "竞品购买")
 
         edit_draft_fetch_response = self.client.get(f"/api/solutions/{edit_draft['id']}")
         self.assertEqual(edit_draft_fetch_response.status_code, 404)

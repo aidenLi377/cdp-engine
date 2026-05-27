@@ -29,7 +29,7 @@
           <div class="solution-use-tags">
             <template v-for="(binding, bi) in section.bindings" :key="binding.nodeId + binding.fieldKey">
               <span v-if="bi < 4" class="badge-mono">
-                {{ binding.packageType }} &middot; {{ binding.fieldLabel }}
+                {{ binding.nodeDisplayName || binding.packageType }} &middot; {{ binding.fieldLabel }}
               </span>
             </template>
             <span v-if="section.bindings.length > 4" class="tag-more">+{{ section.bindings.length - 4 }}</span>

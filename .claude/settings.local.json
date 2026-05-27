@@ -30,7 +30,23 @@
       "Bash(taskkill //F //IM node.exe)",
       "Bash(PYTHONPATH=/e/CDP_Project_codex python app.py)",
       "Bash(sed -n '1,472p' \"cdp-web/src/components/SolutionCenter.vue\")",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(codegraph init *)",
+      "mcp__codegraph__codegraph_trace",
+      "Bash(npx vitest *)",
+      "Bash(claude *)",
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "WebSearch",
+      "WebFetch(domain:claudelog.com)",
+      "Bash(gh release *)",
+      "Bash(npm pack *)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(npm info *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('readme','No readme'\\)[:500]\\)\")",
+      "Bash(grep -v \"^--$\\\\|^2\\\\.1\\\\.1\")",
+      "Bash(grep -E \"li$|\\\\/li$|li |^[A-Za-z]\")"
     ]
   }
 }

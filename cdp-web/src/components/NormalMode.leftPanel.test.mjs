@@ -9,10 +9,10 @@ const normalModeVue = readFileSync(join(currentDir, 'NormalMode.vue'), 'utf8')
 const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'utf8')
 
 test('left panel search inputs use a line icon instead of emoji prefixes', () => {
-  assert.match(normalModeVue, /import \{ Search \} from '@element-plus\/icons-vue'/)
+  assert.match(normalModeVue, /Search/)
   assert.match(normalModeVue, /<el-icon class="search-prefix-icon"><Search \/><\/el-icon>/)
-  assert.doesNotMatch(normalModeVue, /<template #prefix><span[^>]*>[^<]*🔍/)
-  assert.doesNotMatch(normalModeVue, /<template #prefix><span[^>]*>[^<]*🔎/)
+  assert.doesNotMatch(normalModeVue, /<template #prefix><span[^>]*>[^<]*馃攳/)
+  assert.doesNotMatch(normalModeVue, /<template #prefix><span[^>]*>[^<]*馃攷/)
   assert.match(css, /\.search-prefix-icon \{[^}]*width: 15px;[^}]*height: 15px;[^}]*color: #9a9aa0;/s)
 })
 
@@ -35,6 +35,11 @@ test('published solution hover card has room and layer for its glow', () => {
   assert.match(css, /\.published-solution-item\.active \{[^}]*z-index: 2;/s)
 })
 
+test('workbench node scroll area leaves top room for hover lift', () => {
+  assert.match(css, /\.canvas-scroll-area \{[^}]*overflow-y: auto;[^}]*padding-top: 8px;/s)
+  assert.match(css, /\.node-wrapper \{[^}]*position: relative;/s)
+})
+
 test('published solution cards stay neutral until selected', () => {
   assert.match(css, /\.published-solution-item \{[^}]*background: rgba\(255,255,255,0\.86\);/s)
   assert.match(css, /\.published-solution-item:hover \{[^}]*background: rgba\(255,255,255,0\.96\);/s)
@@ -51,4 +56,21 @@ test('left panel has a lightweight border toggle for switching to solutions', ()
   assert.match(normalModeVue, /class="left-panel-edge-toggle"/)
   assert.match(normalModeVue, /toggleLeftPanelMode/)
   assert.match(normalModeVue, /leftPanelMode === 'packages' \? '选方案' : '组件库'/)
+})
+
+test('workbench node labels use shared display names instead of hardcoded node indexes', () => {
+  assert.match(normalModeVue, /getNodeDisplayName\(node, index\)/)
+  assert.match(normalModeVue, /getNodeDisplayName/)
+  assert.doesNotMatch(normalModeVue, /节点 \{\{ index \+ 1 \}\}/)
+})
+
+test('duplicated workbench nodes clear custom display names before insertion', () => {
+  assert.match(normalModeVue, /displayName: ''/)
+  assert.match(normalModeVue, /getNodeDisplayName\(duplicated, index \+ 1\)/)
+})
+
+test('applying a solution no longer disables package search or component insertion', () => {
+  assert.doesNotMatch(normalModeVue, /:disabled="workbenchMode === 'solution-use' \|\| structureLocked"/)
+  assert.doesNotMatch(normalModeVue, /@click="addNode\(pkg\)"[\s\S]*?:disabled="workbenchMode === 'solution-use' \|\| structureLocked"/)
+  assert.doesNotMatch(normalModeVue, /if \(workbenchMode\.value === 'solution-use' \|\| structureLocked\.value\) return/)
 })

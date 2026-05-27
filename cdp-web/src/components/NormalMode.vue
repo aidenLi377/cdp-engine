@@ -71,17 +71,14 @@
     <section
       v-else
       class="workbench-section workbench-package-section"
-      :class="{ 'is-readonly': workbenchMode === 'solution-use' || structureLocked }"
     >
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">行为组件库</div>
           <div class="display-body-light">
-            {{ structureLocked
-              ? '已加载发布方案，如需自由搭建请先退出方案使用'
-              : workbenchMode === 'solution-use'
-                ? '当前为方案使用态，结构编辑已关闭'
-                : '自由搭建时可继续增删节点' }}
+            {{ workbenchMode === 'solution-use'
+              ? '已应用方案，仍可继续增删节点和调整逻辑关系'
+              : '自由搭建时可继续增删节点' }}
           </div>
         </div>
       </div>
@@ -92,7 +89,6 @@
         size="small"
         clearable
         class="intercom-input pkg-search"
-        :disabled="workbenchMode === 'solution-use' || structureLocked"
       >
         <template #prefix><el-icon class="search-prefix-icon"><Search /></el-icon></template>
       </el-input>
@@ -105,7 +101,6 @@
           class="intercom-btn-outlined"
           @click="addNode(pkg)"
           :loading="loadingPkg === pkg"
-          :disabled="workbenchMode === 'solution-use' || structureLocked"
         >
           添加 {{ pkg }}
         </el-button>
@@ -126,10 +121,9 @@
         <div class="display-feature-title">
           {{ workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台' }}
         </div>
-        <div class="display-body-light">
-          {{ workbenchMode === 'solution-use'
-            ? '仅展示方案开放到工作台的字段，右侧 JSON 与结果动作保持可用'
-            : '自由搭建当前画布，并可直接存为方案草稿' }}
+        <div v-if="workbenchMode !== 'solution-use'" class="display-body-light">自由搭建当前画布，并可直接存为方案草稿</div>
+        <div v-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
+          当前内容已偏离原方案结构
         </div>
       </div>
 
@@ -148,27 +142,51 @@
           </span>
         </div>
 
-        <el-button
-          v-if="workbenchMode === 'solution-use'"
-          class="intercom-btn-outlined"
-          size="small"
-          @click="restoreSolutionDefaults"
-          :disabled="!loadedSolutionRecord"
-        >
-          恢复方案默认值
-        </el-button>
-
-        <el-button
-          v-if="structureLocked"
-          class="intercom-btn-outlined"
-          size="small"
-          @click="exitSolutionUse"
-        >
-          退出方案使用
-        </el-button>
-
         <div class="workbench-secondary-actions">
-          <template v-if="workbenchMode === 'free-build' && !structureLocked">
+          <template v-if="workbenchMode === 'solution-use'">
+            <el-tooltip content="恢复方案默认值" placement="top">
+              <el-button
+                class="workbench-toolbar-icon-btn"
+                size="small"
+                text
+                @click="restoreSolutionDefaults"
+                :disabled="!loadedSolutionRecord"
+              >
+                <el-icon><RefreshLeft /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip content="另存为新方案" placement="top">
+              <el-button
+                class="workbench-toolbar-icon-btn"
+                size="small"
+                text
+                @click="saveAsNewDerivedDraft"
+                :disabled="nodeList.length === 0"
+                :loading="savingDraft"
+              >
+                <el-icon><FolderAdd /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-button
+              v-if="nodeList.length > 0"
+              class="workbench-compact-action"
+              size="small"
+              text
+              @click="toggleCollapseAll"
+            >
+              {{ allCollapsed ? '展开全部' : '收起全部' }}
+            </el-button>
+            <el-button
+              v-if="nodeList.length > 0"
+              class="workbench-compact-action danger"
+              size="small"
+              text
+              @click="clearCanvas"
+            >
+              清空
+            </el-button>
+          </template>
+          <template v-else>
             <el-button
               class="workbench-compact-action save-draft"
               size="small"
@@ -236,13 +254,26 @@
             @dragend="onCfDragEnd"
             @click="onHighlightCf(section.customFieldId)"
           >
-            <span class="cf-type-indicator" :class="getCfTypeClass(section.type)"></span>
-            <div class="cf-use-card-info">
-              <span class="display-body strong">{{ section.name }}</span>
-              <span class="display-body-light cf-use-card-value">{{ getCfValueSummary(section) }}</span>
-            </div>
-            <span
-              class="display-mono cf-use-card-count"
+	            <span class="cf-type-indicator cf-use-card-dot" :class="getCfTypeClass(section.type)"></span>
+	            <div class="cf-use-card-info">
+	              <span class="cf-use-card-title-row">
+	                <span class="display-body strong cf-use-card-name">{{ section.name }}</span>
+	              </span>
+	              <span class="cf-use-card-value-row">
+	                <span class="display-body-light cf-use-card-value">{{ getCfValueSummaryMeta(section).primaryText }}</span>
+	                <el-tooltip
+	                  v-if="getCfValueSummaryMeta(section).overflowCount > 0"
+	                  :content="getCfValueSummaryMeta(section).overflowText"
+	                  placement="top"
+	                  effect="dark"
+	                  popper-class="cf-value-tooltip"
+	                >
+	                  <span class="display-mono cf-use-card-more">+{{ getCfValueSummaryMeta(section).overflowCount }}</span>
+	                </el-tooltip>
+	              </span>
+	            </div>
+	            <span
+	              class="display-mono cf-use-card-count"
               title="点击编辑"
               @click.stop="openCfEditDialog(section)"
             >{{ section.bindings.length }}</span>
@@ -273,24 +304,57 @@
               class="node-wrapper"
               :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
               :ref="(el) => { if (el) nodeRefs[index] = el }"
+              @dragover.prevent="onDragOver(index)"
+              @drop="onDrop(index)"
+              @dragleave="onDragLeave"
             >
               <div v-if="index > 0" class="logic-connector">
                 <div class="connector-line"></div>
-                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" disabled>
+                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
                   <el-radio-button label="n">交集</el-radio-button>
                   <el-radio-button label="u">并集</el-radio-button>
                   <el-radio-button label="d">差集</el-radio-button>
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
-              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed, 'node-hydration-error': node._hydrationError }">
-                <div class="card-header-inner">
-                  <span class="card-title-flex" @click="collapsedCfId ? null : (node.collapsed = !node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
-                    <span class="collapse-arrow">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
-                    <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
-                    <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
-                    <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
+	              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed, 'node-hydration-error': node._hydrationError }">
+	                <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === index }">
+	                  <span
+	                    class="drag-handle"
+	                    draggable="true"
+                    @dragstart="onDragStart($event, index)"
+                    @dragend="onDragEnd"
+                    title="拖拽排序"
+                  >
+                    ⋮⋮
                   </span>
+	                  <span class="card-title-flex behavior-card-title-group" @click="collapsedCfId ? null : (node.collapsed = !node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
+	                    <span class="collapse-arrow behavior-card-collapse">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
+	                    <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
+	                    <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
+	                    <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
+	                  </span>
+	                  <div class="behavior-card-action-group">
+	                    <el-tooltip content="复制节点" placement="top">
+	                      <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(index)">
+	                        <el-icon><CopyDocument /></el-icon>
+	                      </el-button>
+	                    </el-tooltip>
+	                    <el-popconfirm
+	                      title="确定移除这个节点？"
+	                      confirm-button-text="移除"
+	                      cancel-button-text="取消"
+	                      @confirm="removeNode(index)"
+	                    >
+	                      <template #reference>
+	                        <el-tooltip content="移除节点" placement="top">
+	                          <el-button class="behavior-card-icon-btn danger" @click.stop>
+	                            <el-icon><Delete /></el-icon>
+	                          </el-button>
+	                        </el-tooltip>
+	                      </template>
+	                    </el-popconfirm>
+	                  </div>
                 </div>
                 <div v-if="node._hydrationError" v-show="!(collapsedCfId || node.collapsed)" class="hydration-error-body">
                   <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新加载方案。</p>
@@ -311,9 +375,7 @@
                   <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
                 </div>
                 <!-- Normal mode: full DynamicForm -->
-                <div v-else class="solution-readonly-surface">
-                  <DynamicForm v-show="!node.collapsed" :node="node" />
-                </div>
+                <DynamicForm v-else v-show="!node.collapsed" :node="node" />
               </div>
             </div>
           </div>
@@ -329,7 +391,6 @@
         :bound-nodes="editingCfSection?.bindings || []"
         :current-value="editingCfCurrentValue"
         :node-list="nodeList"
-        :on-write-back="onCfWriteBack"
         @save="onCfDialogSave"
       />
     </div>
@@ -361,36 +422,44 @@
               <div class="connector-line"></div>
             </div>
 
-            <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
-              <div class="card-header-inner" :class="{ 'drag-over': dragOverIndex === index }">
-                <span
-                  class="drag-handle"
-                  draggable="true"
+	            <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
+	              <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === index }">
+	                <span
+	                  class="drag-handle"
+	                  draggable="true"
                   @dragstart="onDragStart($event, index)"
                   @dragend="onDragEnd"
                   title="拖拽排序"
                 >
                   ⠿
                 </span>
-                <span class="card-title-flex" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
-                  <span class="collapse-arrow">{{ node.collapsed ? '▶' : '▼' }}</span>
-                  <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
-                  <span class="display-mono badge-mono">节点 {{ index + 1 }}</span>
-                  <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
-                </span>
-                <div style="display:flex; gap:6px">
-                  <el-button class="intercom-btn-outlined btn-small" @click="duplicateNode(index)">复制</el-button>
-                  <el-popconfirm
-                    title="确定移除这个节点？"
-                    confirm-button-text="移除"
-                    cancel-button-text="取消"
-                    @confirm="removeNode(index)"
-                  >
-                    <template #reference>
-                      <el-button class="intercom-btn-outlined btn-small">移除</el-button>
-                    </template>
-                  </el-popconfirm>
-                </div>
+	                <span class="card-title-flex behavior-card-title-group" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
+	                  <span class="collapse-arrow behavior-card-collapse">{{ node.collapsed ? '▶' : '▼' }}</span>
+	                  <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
+	                  <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
+	                  <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
+	                </span>
+	                <div class="behavior-card-action-group">
+	                  <el-tooltip content="复制节点" placement="top">
+	                    <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(index)">
+	                      <el-icon><CopyDocument /></el-icon>
+	                    </el-button>
+	                  </el-tooltip>
+	                  <el-popconfirm
+	                    title="确定移除这个节点？"
+	                    confirm-button-text="移除"
+	                    cancel-button-text="取消"
+	                    @confirm="removeNode(index)"
+	                  >
+	                    <template #reference>
+	                      <el-tooltip content="移除节点" placement="top">
+	                        <el-button class="behavior-card-icon-btn danger" @click.stop>
+	                          <el-icon><Delete /></el-icon>
+	                        </el-button>
+	                      </el-tooltip>
+	                    </template>
+	                  </el-popconfirm>
+	                </div>
               </div>
               <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
                 <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
@@ -407,7 +476,7 @@
             class="minimap-dot"
             :class="{ active: activeNodeIndex === index }"
             @click="scrollToNode(index)"
-            :title="node.packageType"
+            :title="getNodeDisplayName(node, index)"
           >
             <span class="minimap-num">{{ index + 1 }}</span>
           </div>
@@ -439,7 +508,7 @@
       </div>
 
       <div v-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
-        来源方案：{{ currentSolution.name || '未命名方案' }}，可手动修改当前会话名称
+        来源方案：{{ currentSolution.name || '未命名方案' }}，当前改动仅保留在工作台
       </div>
     </div>
 
@@ -476,7 +545,7 @@
         <div v-for="(node, index) in nodeList" :key="'s-' + node.id" class="summary-node">
           <div class="summary-node-head">
             <span class="summary-idx">{{ index + 1 }}</span>
-            <span class="display-body strong">{{ node.packageType }}</span>
+            <span class="display-body strong">{{ getNodeDisplayName(node, index) }}</span>
             <span v-if="index > 0" class="summary-op">
               {{ node.operator === 'n' ? '交集' : node.operator === 'u' ? '并集' : '差集' }}
             </span>
@@ -511,9 +580,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch, provide } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch, provide } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, FolderAdd, RefreshLeft, Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import FolderTree from './FolderTree.vue'
 import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
@@ -523,12 +592,13 @@ import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import {
   fieldToken,
-  isWorkbenchStructureLocked,
+  getNodeDisplayName,
   serializeNodesForSolution,
+  serializeCustomFieldsForSolution,
   buildCustomFieldSections,
   syncCustomFieldValue,
 } from '../utils/solutionState.js'
-import { formatTime, getCfTypeClass, formatCfDisplayValue } from '../utils/display.js'
+import { formatTime, getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
@@ -546,7 +616,7 @@ const {
   normalizeWorkbenchFieldIds,
   buildRuntimeUsageSections,
 } = useSolutionRuntime()
-const { listSolutions, getSolution, createDraft, updateCustomFields } = useSolutionsApi()
+const { listSolutions, getSolution, createDraft } = useSolutionsApi()
 const { listFolders } = useFoldersApi()
 
 const jsonViewMode = ref('summary')
@@ -588,6 +658,13 @@ const cfShowAll = ref(false)
 const cfVisibleCount = ref(10)
 const dragCfIndex = ref(-1)
 const dragOverCfIndex = ref(-1)
+const derivedSolutionMeta = reactive({
+  sourceSolutionId: null,
+  sourceSolutionVersion: null,
+  sourceSolutionName: '',
+  hasStructureChanges: false,
+  hasParamChanges: false,
+})
 let cfResizeObserver = null
 
 let dragSrcIndex = null
@@ -634,42 +711,82 @@ const filteredPublishedSolutions = computed(() => {
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
 const canUndo = computed(() => historyPos.value > 0)
 const canRedo = computed(() => historyPos.value < historyStack.value.length - 1)
-const structureLocked = computed(() => isWorkbenchStructureLocked(currentSolution.value))
 const customFieldSections = computed(() =>
   buildCustomFieldSections(
     currentSolution.value?.customFields || [],
     nodeList.value,
   ),
 )
+const isDerivedSolutionSession = computed(() => Boolean(derivedSolutionMeta.sourceSolutionId))
 
 const cfVisibleSections = computed(() => {
   const sections = customFieldSections.value
-  if (cfShowAll.value) return sections
-  return sections.slice(0, cfVisibleCount.value)
+  return sections
 })
 
 const cfHiddenCount = computed(() => {
-  const total = customFieldSections.value.length
-  const visible = cfVisibleSections.value.length
-  return total - visible
+  return 0
 })
 
-function updateCfOverflow() {
-  const el = cfCardsBarRef.value
-  if (!el || cfShowAll.value) return
-  // Measure: count how many cards fit in the container
-  const children = el.children
-  let totalWidth = 0
-  const containerWidth = el.clientWidth - 40 // reserve space for overflow btn
-  let count = 0
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i]
-    if (child.classList.contains('cf-overflow-btn') || child.classList.contains('cf-expand-all-btn')) continue
-    totalWidth += child.offsetWidth + 6 // 6 = gap
-    if (totalWidth > containerWidth) break
-    count++
+function resetDerivedSolutionMeta() {
+  derivedSolutionMeta.sourceSolutionId = null
+  derivedSolutionMeta.sourceSolutionVersion = null
+  derivedSolutionMeta.sourceSolutionName = ''
+  derivedSolutionMeta.hasStructureChanges = false
+  derivedSolutionMeta.hasParamChanges = false
+}
+
+function markDerivedStructureChange() {
+  if (!isDerivedSolutionSession.value) return
+  derivedSolutionMeta.hasStructureChanges = true
+  derivedSolutionMeta.hasParamChanges = true
+}
+
+function markDerivedParamChange() {
+  if (!isDerivedSolutionSession.value) return
+  derivedSolutionMeta.hasParamChanges = true
+}
+
+function setCurrentCustomFields(customFields) {
+  if (!currentSolution.value) return
+  currentSolution.value = {
+    ...currentSolution.value,
+    customFields,
   }
-  cfVisibleCount.value = Math.max(1, count)
+  markDerivedParamChange()
+}
+
+function removeBindingsForNode(nodeId) {
+  if (!currentSolution.value?.customFields?.length) return
+  const nextFields = currentSolution.value.customFields
+    .map((cf) => ({
+      ...cf,
+      bindings: (cf.bindings || []).filter((binding) => binding.nodeId !== nodeId),
+    }))
+    .filter((cf) => (cf.bindings || []).length > 0)
+  setCurrentCustomFields(nextFields)
+}
+
+function buildDraftPayload(nameOverride) {
+  const trimmedCrowdName = String(crowdNameInput.value || '').trim()
+  const trimmedName = String(nameOverride || '').trim()
+  const baseName = trimmedName || trimmedCrowdName || DEFAULT_DRAFT_NAME
+
+  return {
+    name: baseName,
+    defaultCrowdName: trimmedCrowdName || baseName,
+    source: isDerivedSolutionSession.value ? 'workbench-derived' : 'workbench',
+    nodes: serializeNodesForSolution(nodeList.value),
+    workbenchFieldIds: buildDraftWorkbenchFieldIds(nodeList.value),
+    customFields: serializeCustomFieldsForSolution(currentSolution.value?.customFields || []),
+    folderId: currentSolution.value?.folderId || null,
+    derivedFromSolutionId: derivedSolutionMeta.sourceSolutionId,
+    derivedFromSolutionVersion: derivedSolutionMeta.sourceSolutionVersion,
+  }
+}
+
+function updateCfOverflow() {
+  cfVisibleCount.value = customFieldSections.value.length
 }
 
 function onCfDragStart(event, index) {
@@ -704,10 +821,7 @@ function onCfDrop(_event, targetIndex) {
 
   const [moved] = cfs.splice(srcIdx, 1)
   cfs.splice(targetIdx, 0, moved)
-  currentSolution.value = { ...currentSolution.value, customFields: cfs }
-  if (loadedSolutionRecord.value) {
-    loadedSolutionRecord.value = { ...loadedSolutionRecord.value, customFields: cfs }
-  }
+  setCurrentCustomFields(cfs)
 }
 
 function onCfDragEnd() {
@@ -761,16 +875,71 @@ function getFocusFieldDisplay(fieldKey, node) {
 }
 
 function getCfValueSummary(section) {
-  const firstBinding = section.bindings?.[0]
-  if (!firstBinding) return ''
-  const node = nodeList.value.find(n => n.id === firstBinding.nodeId)
-  const value = node?.formData?.[firstBinding.fieldKey]
-  const mode = node?.modeData?.[firstBinding.fieldKey]
+  const bindings = Array.isArray(section.bindings) ? section.bindings : []
+  if (bindings.length === 0) return ''
+  const values = bindings
+    .map((binding) => {
+      const node = nodeList.value.find(n => n.id === binding.nodeId)
+      const value = node?.formData?.[binding.fieldKey]
+      const mode = node?.modeData?.[binding.fieldKey]
+      return {
+        key: JSON.stringify({ value, mode }),
+        value,
+        mode,
+      }
+    })
+    .filter((item) => item.value !== undefined)
+  if (values.length > 1 && new Set(values.map((item) => item.key)).size > 1) {
+    return '已分化'
+  }
+  const { value, mode } = values[0] || {}
   if (Array.isArray(value) && value.length > 0) return value.slice(0, 3).join('、') + (value.length > 3 ? '…' : '')
   const formatted = formatCfDisplayValue(value, mode, section.type)
   if (typeof value === 'object' && !Array.isArray(value)) return formatted
   if (typeof value === 'string' && formatted.length > 20) return formatted.slice(0, 20) + '…'
   return formatted
+}
+
+function getCfValueSummaryMeta(section) {
+  const bindings = Array.isArray(section.bindings) ? section.bindings : []
+  if (bindings.length === 0) {
+    return {
+      primaryText: '',
+      overflowCount: 0,
+      overflowText: '',
+    }
+  }
+
+  const values = bindings
+    .map((binding) => {
+      const node = nodeList.value.find(n => n.id === binding.nodeId)
+      const value = node?.formData?.[binding.fieldKey]
+      const mode = node?.modeData?.[binding.fieldKey]
+      return {
+        key: JSON.stringify({ value, mode }),
+        value,
+        mode,
+      }
+    })
+    .filter((item) => item.value !== undefined)
+
+  if (values.length > 1 && new Set(values.map((item) => item.key)).size > 1) {
+    return {
+      primaryText: '已分歧',
+      overflowCount: 0,
+      overflowText: '',
+    }
+  }
+
+  const { value, mode } = values[0] || {}
+  const summary = summarizeCfDisplayValue(value, mode, section.type)
+  if (summary.overflowCount > 0) return summary
+
+  return {
+    primaryText: getCfValueSummary(section),
+    overflowCount: 0,
+    overflowText: '',
+  }
 }
 
 function openCfEditDialog(section) {
@@ -801,51 +970,16 @@ function onCfDialogSave({ customFieldId, value }) {
   const cfs = currentSolution.value?.customFields || []
   const cf = cfs.find(c => c.id === customFieldId)
   if (cf) {
+    const nextFields = cfs.map((item) => (
+      item.id === customFieldId
+        ? { ...item, defaultValue: cloneValue(value) }
+        : item
+    ))
+    setCurrentCustomFields(nextFields)
     const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
     if (uniqueNodes.size > 0) {
       ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
     }
-  }
-}
-
-async function onCfWriteBack({ customFieldId, value }) {
-  const solution = loadedSolutionRecord.value
-  if (!solution?.id) {
-    ElMessage.error('未找到方案记录')
-    return
-  }
-  const cfs = [...(solution.customFields || [])]
-  const cf = cfs.find(c => c.id === customFieldId)
-  if (!cf) {
-    ElMessage.error('未找到自定义字段')
-    return
-  }
-  cf.defaultValue = value
-
-  // Also sync node formData back
-  const nodes = (solution.nodes || []).map(n => {
-    const runtimeNode = nodeList.value.find(rn => rn.id === n.id)
-    if (!runtimeNode) return n
-    const updatedFormData = { ...n.formData }
-    for (const b of (cf.bindings || [])) {
-      if (b.nodeId === n.id) {
-        updatedFormData[b.fieldKey] = value
-      }
-    }
-    return { ...n, formData: updatedFormData }
-  })
-
-  try {
-    await updateCustomFields(solution.id, cfs, nodes)
-    loadedSolutionRecord.value = { ...solution, customFields: cfs, nodes }
-    if (currentSolution.value?.id === solution.id) {
-      currentSolution.value = { ...currentSolution.value, customFields: cfs, nodes }
-    }
-    console.log('[writeBack] Updated solution', solution.id, 'cf', customFieldId, 'value', value)
-    ElMessage.success(`「${cf.name}」已回写到方案: ${JSON.stringify(value)}`)
-  } catch (error) {
-    console.error('[writeBack] Failed', error)
-    ElMessage.error(error.message || '回写失败')
   }
 }
 
@@ -871,6 +1005,7 @@ function toggleLeftPanelMode() {
 
 function onNameManualEdit() {
   nameAuto.value = false
+  markDerivedParamChange()
 }
 
 function onDragStart(event, index) {
@@ -889,7 +1024,7 @@ function onDragLeave() {
 
 function onDrop(targetIndex) {
   dragOverIndex.value = -1
-  if (dragSrcIndex === null || dragSrcIndex === targetIndex || structureLocked.value) return
+  if (dragSrcIndex === null || dragSrcIndex === targetIndex) return
 
   takeSnapshot()
   const [moved] = nodeList.value.splice(dragSrcIndex, 1)
@@ -898,6 +1033,7 @@ function onDrop(targetIndex) {
     if (index === 0) node.operator = null
   })
   dragSrcIndex = null
+  markDerivedStructureChange()
 }
 
 function onDragEnd() {
@@ -909,6 +1045,7 @@ function resetWorkbenchContext() {
   loadedSolutionRecord.value = null
   loadedSolutionFieldIds.value = []
   workbenchMode.value = 'free-build'
+  resetDerivedSolutionMeta()
 }
 
 function resetHistory() {
@@ -919,7 +1056,6 @@ function resetHistory() {
 }
 
 function clearCanvas() {
-  if (structureLocked.value) return
   if (nodeList.value.length === 0 && !currentSolution.value) return
 
   takeSnapshot()
@@ -1070,8 +1206,6 @@ function getPublishedSolutionsInFolder() {
 }
 
 async function addNode(packageType) {
-  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
-
   loadingPkg.value = packageType
   try {
     const node = await createRuntimeNode({ packageType }, nodeList.value.length)
@@ -1080,6 +1214,7 @@ async function addNode(packageType) {
     if (!currentSolution.value) {
       nameAuto.value = true
     }
+    markDerivedStructureChange()
   } catch (error) {
     ElMessage.error(error.message || '组件加载失败，请检查后端连接')
   } finally {
@@ -1088,16 +1223,18 @@ async function addNode(packageType) {
 }
 
 function removeNode(index) {
-  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
   takeSnapshot()
-  nodeList.value.splice(index, 1)
+  const [removedNode] = nodeList.value.splice(index, 1)
   nodeList.value.forEach((node, nodeIndex) => {
     if (nodeIndex === 0) node.operator = null
   })
+  if (removedNode) {
+    removeBindingsForNode(removedNode.id)
+  }
+  markDerivedStructureChange()
 }
 
 function duplicateNode(index) {
-  if (workbenchMode.value === 'solution-use' || structureLocked.value) return
   const source = nodeList.value[index]
   if (!source) return
 
@@ -1105,6 +1242,7 @@ function duplicateNode(index) {
   const duplicated = {
     ...cloneValue(source),
     id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    displayName: '',
     operator: index === 0 ? 'n' : source.operator,
     selectedFirstDate: null,
     collapsed: false,
@@ -1113,6 +1251,7 @@ function duplicateNode(index) {
   nodeList.value.forEach((node, nodeIndex) => {
     if (nodeIndex === 0) node.operator = null
   })
+  markDerivedStructureChange()
 
   const cfs = currentSolution.value?.customFields || []
   const relatedCfs = cfs.filter(cf =>
@@ -1121,19 +1260,22 @@ function duplicateNode(index) {
   if (relatedCfs.length > 0) {
     const names = relatedCfs.map(cf => cf.name).join('、')
     ElMessageBox.confirm(
-      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（节点 ${index + 2}）的对应字段绑定到这些自定义字段？`,
+      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（${getNodeDisplayName(duplicated, index + 1)}）的对应字段绑定到这些自定义字段？`,
       '复制节点',
       { confirmButtonText: '自动绑定', cancelButtonText: '跳过', type: 'info' }
     ).then(() => {
-      relatedCfs.forEach(cf => {
+      const nextFields = cfs.map((cf) => {
         const sourceBinding = (cf.bindings || []).find(b => b.nodeId === source.id)
-        if (sourceBinding) {
-          cf.bindings.push({ nodeId: duplicated.id, fieldKey: sourceBinding.fieldKey })
+        if (!sourceBinding) return cf
+        return {
+          ...cf,
+          bindings: [
+            ...(cf.bindings || []),
+            { nodeId: duplicated.id, fieldKey: sourceBinding.fieldKey },
+          ],
         }
       })
-      if (loadedSolutionRecord.value) {
-        loadedSolutionRecord.value = { ...loadedSolutionRecord.value, customFields: [...cfs] }
-      }
+      setCurrentCustomFields(nextFields)
       ElMessage.success(`已自动绑定 ${relatedCfs.length} 个自定义字段到新节点`)
     }).catch(() => {})
   } else {
@@ -1154,23 +1296,42 @@ function buildDraftWorkbenchFieldIds(nodes) {
 }
 
 async function saveWorkbenchDraft() {
-  if (workbenchMode.value !== 'free-build' || nodeList.value.length === 0 || structureLocked.value) return
+  if (workbenchMode.value !== 'free-build' || nodeList.value.length === 0) return
 
   savingDraft.value = true
   try {
-    const trimmedCrowdName = String(crowdNameInput.value || '').trim()
-    const baseName = trimmedCrowdName || DEFAULT_DRAFT_NAME
-
-    await createDraft({
-      name: baseName,
-      defaultCrowdName: trimmedCrowdName || baseName,
-      source: 'workbench',
-      nodes: serializeNodesForSolution(nodeList.value),
-      workbenchFieldIds: buildDraftWorkbenchFieldIds(nodeList.value),
-    })
+    await createDraft(buildDraftPayload())
     ElMessage.success('当前画布已存为方案草稿')
   } catch (error) {
     ElMessage.error(error.message || '方案草稿保存失败')
+  } finally {
+    savingDraft.value = false
+  }
+}
+
+async function saveAsNewDerivedDraft() {
+  if (!isDerivedSolutionSession.value || nodeList.value.length === 0) return
+
+  try {
+    const { value } = await ElMessageBox.prompt(
+      '请输入新方案名称',
+      '另存为新方案',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputValue: String(crowdNameInput.value || currentSolution.value?.name || DEFAULT_DRAFT_NAME).trim(),
+        inputPattern: /\S+/,
+        inputErrorMessage: '方案名称不能为空',
+      },
+    )
+
+    savingDraft.value = true
+    await createDraft(buildDraftPayload(value))
+    ElMessage.success('当前工作台已另存为新方案草稿')
+  } catch (error) {
+    if (error !== 'cancel' && error?.message !== 'cancel') {
+      ElMessage.error(error.message || '另存为新方案失败')
+    }
   } finally {
     savingDraft.value = false
   }
@@ -1199,19 +1360,14 @@ async function setWorkbenchFromSolution(record) {
   snapshotPaused.value = true
   try {
     const hydratedNodes = await hydrateNodes(record?.nodes || [])
-    const cfs = record?.customFields || []
-    for (const cf of cfs) {
-      const dv = cf.defaultValue
-      const hasValue = dv != null
-        && !(typeof dv === 'object' && Object.keys(dv).length === 0 && !Array.isArray(dv))
-        && !(Array.isArray(dv) && dv.length === 0)
-      if (hasValue) {
-        syncCustomFieldValue(hydratedNodes, cf.id, cfs, dv)
-      }
-    }
     currentSolution.value = cloneValue(record)
     loadedSolutionRecord.value = cloneValue(record)
     loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(record?.workbenchFieldIds || [], hydratedNodes)
+    derivedSolutionMeta.sourceSolutionId = record?.id || null
+    derivedSolutionMeta.sourceSolutionVersion = record?._version ?? null
+    derivedSolutionMeta.sourceSolutionName = record?.name || ''
+    derivedSolutionMeta.hasStructureChanges = false
+    derivedSolutionMeta.hasParamChanges = false
     nodeList.value = hydratedNodes
     nodeRefs.value = {}
     activeNodeIndex.value = 0
@@ -1258,19 +1414,6 @@ async function restoreSolutionDefaults() {
   if (!loadedSolutionRecord.value) return
   await setWorkbenchFromSolution(loadedSolutionRecord.value)
   ElMessage.success('已恢复到方案默认值')
-}
-
-function exitSolutionUse() {
-  resetWorkbenchContext()
-  nodeList.value = []
-  nodeRefs.value = {}
-  activeNodeIndex.value = 0
-  crowdNameInput.value = DEFAULT_CROWD_NAME
-  nameAuto.value = true
-  highlightedCfId.value = null
-  collapsedCfId.value = null
-  resetHistory()
-  ElMessage.success('已退出方案使用，可重新自由搭建')
 }
 
 async function buildFinalJson() {
@@ -1600,6 +1743,7 @@ watch(
     }, 300)
 
     if (!snapshotPaused.value) {
+      markDerivedParamChange()
       debouncedSnapshot()
     }
   },
