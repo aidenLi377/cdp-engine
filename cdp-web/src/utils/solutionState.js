@@ -281,3 +281,31 @@ export function getNodeBindingFieldKeys(customFieldId, customFields) {
 
   return (Array.isArray(cf.bindings) ? cf.bindings : []).map((b) => b)
 }
+
+// ---- 节点拆分（超限自动分裂） ----
+export function chunkArray(arr, maxSize) {
+  const chunks = []
+  for (let i = 0; i < arr.length; i += maxSize) {
+    chunks.push(arr.slice(i, i + maxSize))
+  }
+  return chunks
+}
+
+export function buildNodeSplits(sourceNode, fieldKey, allValues, limit) {
+  const chunks = chunkArray(allValues, limit)
+  if (chunks.length <= 1) return []
+
+  const splits = []
+  for (let i = 1; i < chunks.length; i++) {
+    const cloned = JSON.parse(JSON.stringify(sourceNode))
+    cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${i}`
+    cloned.displayName = ''
+    cloned.operator = 'u'
+    cloned.selectedFirstDate = null
+    cloned.collapsed = false
+    cloned.formData[fieldKey] = chunks[i]
+    splits.push(cloned)
+  }
+
+  return splits
+}

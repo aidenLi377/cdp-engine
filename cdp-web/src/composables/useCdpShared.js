@@ -172,6 +172,58 @@ function handleMultiSelectChange(key, node) {
   node.formData[key] = newVals
 }
 
+// ---- 粘贴炸开 + 校验 ----
+function parsePastedText(text) {
+  if (typeof text !== 'string') return []
+  return text
+    .split(/[\n,;\t]+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+}
+
+function validatePastedMultiSelectItems(items, field, node) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { valid: [], invalid: [] }
+  }
+
+  const uniqueItems = [...new Set(items)]
+
+  const options = field.options || []
+  const validSet = new Set()
+  options.forEach(opt => {
+    if (typeof opt === 'object' && opt !== null) {
+      if (opt.value !== undefined) validSet.add(String(opt.value))
+      if (opt.label !== undefined) validSet.add(String(opt.label))
+    } else {
+      validSet.add(String(opt))
+    }
+  })
+
+  const alreadySelected = new Set(
+    getArray(node.formData?.[field.key]).map(v => String(v))
+  )
+
+  const valid = []
+  const invalid = []
+
+  for (const item of uniqueItems) {
+    if (alreadySelected.has(String(item))) continue
+    if (validSet.has(String(item))) {
+      valid.push(item)
+    } else {
+      invalid.push(item)
+    }
+  }
+
+  return { valid, invalid }
+}
+
+function isMultiSelectPasteEnabled(field) {
+  if (field.Widget_Type !== '搜索多选') return false
+  if (!Array.isArray(field.options) || field.options.length === 0) return false
+  return true
+}
+
 // ---- 动态选项 ----
 function getDynamicOptions(field, node) {
   if (node.packageType !== '商品行为') return field.options || []
@@ -248,6 +300,7 @@ export function useCdpShared() {
     isVisible, isCheckboxDisabled, handleCheckboxChange,
     getSelectionCountHint, getListLimit, handleListInput, handleMultiSelectChange,
     getDynamicOptions,
-    getExactDateRangeHint, handleCalendarChange, disabledDate
+    getExactDateRangeHint, handleCalendarChange, disabledDate,
+    parsePastedText, validatePastedMultiSelectItems, isMultiSelectPasteEnabled,
   }
 }

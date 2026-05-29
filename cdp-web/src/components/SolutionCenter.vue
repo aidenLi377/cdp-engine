@@ -304,7 +304,7 @@
             </Transition>
             <Transition name="node-collapse">
               <div v-if="!node._hydrationError && !node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
-                <DynamicForm :node="node" />
+                <DynamicForm :node="node" @overflow-split="handleOverflowSplit" />
               </div>
             </Transition>
           </div>
@@ -528,7 +528,7 @@ import DynamicForm from './DynamicForm.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition } from '../utils/solutionState.js'
+import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
@@ -941,6 +941,20 @@ function removeNode(index) {
       ElMessage.warning(`已自动清理 ${cleanedCount} 个失效的自定义字段绑定`)
     }
   }
+}
+
+function handleOverflowSplit({ nodeId, fieldKey, allValues, limit }) {
+  if (isPublished.value) return
+  const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
+  if (srcIndex < 0) return
+  const sourceNode = nodeList.value[srcIndex]
+  const splits = buildNodeSplits(sourceNode, fieldKey, allValues, limit)
+  if (splits.length === 0) return
+  sourceNode.formData[fieldKey] = allValues.slice(0, limit)
+  nodeList.value.splice(srcIndex + 1, 0, ...splits)
+  nodeList.value.forEach((node, idx) => {
+    if (idx === 0) node.operator = null
+  })
 }
 
 async function saveDraft() {

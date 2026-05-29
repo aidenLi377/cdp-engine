@@ -375,7 +375,7 @@
                   <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
                 </div>
                 <!-- Normal mode: full DynamicForm -->
-                <DynamicForm v-else v-show="!node.collapsed" :node="node" />
+                <DynamicForm v-else v-show="!node.collapsed" :node="node" @overflow-split="handleOverflowSplit" />
               </div>
             </div>
           </div>
@@ -464,7 +464,7 @@
               <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
                 <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
               </div>
-              <DynamicForm v-else v-show="!node.collapsed" :node="node" />
+              <DynamicForm v-else v-show="!node.collapsed" :node="node" @overflow-split="handleOverflowSplit" />
             </div>
           </div>
         </div>
@@ -600,6 +600,7 @@ import {
   syncCustomFieldValue,
   cloneNodeForDuplicate,
   insertNodeAtPosition,
+  buildNodeSplits,
 } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 
@@ -1272,6 +1273,21 @@ function duplicateNode(index) {
   } else {
     ElMessage.success('节点已复制')
   }
+}
+
+function handleOverflowSplit({ nodeId, fieldKey, allValues, limit }) {
+  const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
+  if (srcIndex < 0) return
+  const sourceNode = nodeList.value[srcIndex]
+  const splits = buildNodeSplits(sourceNode, fieldKey, allValues, limit)
+  if (splits.length === 0) return
+  takeSnapshot()
+  sourceNode.formData[fieldKey] = allValues.slice(0, limit)
+  nodeList.value.splice(srcIndex + 1, 0, ...splits)
+  nodeList.value.forEach((node, idx) => {
+    if (idx === 0) node.operator = null
+  })
+  markDerivedStructureChange()
 }
 
 function buildDraftWorkbenchFieldIds(nodes) {
