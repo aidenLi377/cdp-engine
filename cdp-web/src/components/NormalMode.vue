@@ -348,7 +348,7 @@
 	                    >
 	                      <template #reference>
 	                        <el-tooltip content="移除节点" placement="top">
-	                          <el-button class="behavior-card-icon-btn danger" @click.stop>
+	                          <el-button class="behavior-card-icon-btn danger" @click.stop="removeNode(index)">
 	                            <el-icon><Delete /></el-icon>
 	                          </el-button>
 	                        </el-tooltip>
@@ -453,7 +453,7 @@
 	                  >
 	                    <template #reference>
 	                      <el-tooltip content="移除节点" placement="top">
-	                        <el-button class="behavior-card-icon-btn danger" @click.stop>
+	                        <el-button class="behavior-card-icon-btn danger" @click.stop="removeNode(index)">
 	                          <el-icon><Delete /></el-icon>
 	                        </el-button>
 	                      </el-tooltip>
@@ -590,6 +590,7 @@ import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useFoldersApi } from '../composables/useFoldersApi'
+import { usePackagesApi } from '../composables/usePackagesApi'
 import {
   fieldToken,
   getNodeDisplayName,
@@ -597,6 +598,8 @@ import {
   serializeCustomFieldsForSolution,
   buildCustomFieldSections,
   syncCustomFieldValue,
+  cloneNodeForDuplicate,
+  insertNodeAtPosition,
 } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 
@@ -614,10 +617,10 @@ const {
   createRuntimeNode,
   hydrateNodes,
   normalizeWorkbenchFieldIds,
-  buildRuntimeUsageSections,
 } = useSolutionRuntime()
 const { listSolutions, getSolution, createDraft } = useSolutionsApi()
 const { listFolders } = useFoldersApi()
+const { listPackages } = usePackagesApi()
 
 const jsonViewMode = ref('summary')
 const workbenchMode = ref('free-build')
@@ -1150,9 +1153,7 @@ function debouncedSnapshot() {
 
 async function loadPackages() {
   try {
-    const response = await fetch('/api/packages')
-    if (!response.ok) throw new Error('组件列表加载失败')
-    availablePackages.value = await response.json()
+    availablePackages.value = await listPackages()
   } catch (error) {
     ElMessage.error(error.message || '组件列表加载失败')
   }
@@ -1239,18 +1240,8 @@ function duplicateNode(index) {
   if (!source) return
 
   takeSnapshot()
-  const duplicated = {
-    ...cloneValue(source),
-    id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-    displayName: '',
-    operator: index === 0 ? 'n' : source.operator,
-    selectedFirstDate: null,
-    collapsed: false,
-  }
-  nodeList.value.splice(index + 1, 0, duplicated)
-  nodeList.value.forEach((node, nodeIndex) => {
-    if (nodeIndex === 0) node.operator = null
-  })
+  const duplicated = cloneNodeForDuplicate(source, index)
+  insertNodeAtPosition(nodeList.value, duplicated, index)
   markDerivedStructureChange()
 
   const cfs = currentSolution.value?.customFields || []

@@ -23,10 +23,10 @@ export function formatCfDisplayValue(value, mode, widgetType) {
 
   if (typeof value === 'object') {
     if (widgetType?.includes('日期')) {
-      if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
       if (mode === 'range' && Array.isArray(value.dateRange) && value.dateRange.length === 2) {
         return `${value.dateRange[0]} ~ ${value.dateRange[1]}`
       }
+      if (value.days !== undefined) return `过去 ${value.days} 天`
     }
 
     if (widgetType?.includes('数值')) {
@@ -35,7 +35,6 @@ export function formatCfDisplayValue(value, mode, widgetType) {
       if (mode === 'min') return `≥ ${value.min ?? '?'}`
     }
 
-    if (value.days !== undefined && mode !== 'range') return `过去 ${value.days} 天`
     return JSON.stringify(value)
   }
 

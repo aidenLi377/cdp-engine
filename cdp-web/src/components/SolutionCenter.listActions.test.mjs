@@ -53,7 +53,7 @@ test('solution center nodes support editable display names in drafts', () => {
   assert.match(solutionCenterVue, /finishNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /cancelNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /getNodeNameInputStyle\(node, index\)/)
-  assert.match(solutionCenterVue, /import \{ fieldToken, getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution \} from '\.\.\/utils\/solutionState\.js'/)
+  assert.match(solutionCenterVue, /import \{ getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition \} from '\.\.\/utils\/solutionState\.js'/)
   assert.match(css, /\.solution-node-name-trigger,[\s\S]*?\.solution-node-name-editor \{[^}]*max-width: 240px;/s)
   assert.match(css, /\.solution-node-name-trigger \{[^}]*border-radius: 999px;[^}]*cursor: text;/s)
   assert.match(css, /\.solution-node-name-editor \.el-input__wrapper \{[^}]*border-radius: 999px !important;[^}]*font-size: 12px !important;/s)
@@ -99,7 +99,7 @@ test('solution list items expose inline icon actions without opening the item', 
 })
 
 test('duplicated solution center nodes clear custom display names and use shared label helper in prompts', () => {
-  assert.match(solutionCenterVue, /displayName: ''/)
+  assert.match(solutionCenterVue, /cloneNodeForDuplicate/)
   assert.match(solutionCenterVue, /getNodeDisplayName\(duplicated, index \+ 1\)/)
 })
 

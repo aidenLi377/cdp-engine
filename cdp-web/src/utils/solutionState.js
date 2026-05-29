@@ -50,6 +50,24 @@ function getSchemaKeys(node) {
   )
 }
 
+export function cloneNodeForDuplicate(source, index) {
+  return {
+    ...JSON.parse(JSON.stringify(source)),
+    id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    displayName: '',
+    operator: index === 0 ? 'n' : (source?.operator ?? 'n'),
+    selectedFirstDate: null,
+    collapsed: false,
+  }
+}
+
+export function insertNodeAtPosition(nodeList, newNode, index) {
+  nodeList.splice(index + 1, 0, newNode)
+  nodeList.forEach((node, nodeIndex) => {
+    if (nodeIndex === 0) node.operator = null
+  })
+}
+
 export function serializeNodesForSolution(nodeList) {
   const nodes = Array.isArray(nodeList) ? nodeList : []
 

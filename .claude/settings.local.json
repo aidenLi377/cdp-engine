@@ -46,7 +46,16 @@
       "Bash(npm info *)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('readme','No readme'\\)[:500]\\)\")",
       "Bash(grep -v \"^--$\\\\|^2\\\\.1\\\\.1\")",
-      "Bash(grep -E \"li$|\\\\/li$|li |^[A-Za-z]\")"
+      "Bash(grep -E \"li$|\\\\/li$|li |^[A-Za-z]\")",
+      "mcp__codegraph__codegraph_files",
+      "mcp__codegraph__codegraph_explore",
+      "mcp__utools__utools_notes_markdown_render",
+      "mcp__utools__utools_notes_markdown_notes_create",
+      "Bash(npm test *)",
+      "Bash(npm run *)",
+      "Bash(grep -E \",$|,\\\\r$\" \"属性值维表.csv\")",
+      "Bash(xxd)",
+      "Bash(taskkill *)"
     ]
   }
 }

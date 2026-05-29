@@ -65,7 +65,7 @@ test('workbench node labels use shared display names instead of hardcoded node i
 })
 
 test('duplicated workbench nodes clear custom display names before insertion', () => {
-  assert.match(normalModeVue, /displayName: ''/)
+  assert.match(normalModeVue, /cloneNodeForDuplicate/)
   assert.match(normalModeVue, /getNodeDisplayName\(duplicated, index \+ 1\)/)
 })
 
@@ -73,4 +73,8 @@ test('applying a solution no longer disables package search or component inserti
   assert.doesNotMatch(normalModeVue, /:disabled="workbenchMode === 'solution-use' \|\| structureLocked"/)
   assert.doesNotMatch(normalModeVue, /@click="addNode\(pkg\)"[\s\S]*?:disabled="workbenchMode === 'solution-use' \|\| structureLocked"/)
   assert.doesNotMatch(normalModeVue, /if \(workbenchMode\.value === 'solution-use' \|\| structureLocked\.value\) return/)
+})
+
+test('workbench delete icon is directly clickable instead of hiding behind a popconfirm wrapper', () => {
+  assert.match(normalModeVue, /class="behavior-card-icon-btn danger"[\s\S]*?@click\.stop="removeNode\(index\)"/)
 })

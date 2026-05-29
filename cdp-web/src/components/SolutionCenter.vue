@@ -528,9 +528,10 @@ import DynamicForm from './DynamicForm.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { fieldToken, getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution } from '../utils/solutionState.js'
+import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition } from '../utils/solutionState.js'
 import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
+import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
 
 const {
@@ -552,13 +553,14 @@ const {
   moveFolder,
 } = useFoldersApi()
 
+const { listPackages } = usePackagesApi()
+
 const { isVisible } = useCdpShared()
 const {
   cloneValue,
   createRuntimeNode,
   hydrateNodes,
   normalizeWorkbenchFieldIds,
-  buildRuntimeUsageSections,
 } = useSolutionRuntime()
 
 const solutions = ref([])
@@ -640,30 +642,6 @@ const filteredSolutions = computed(() => {
   return list
 })
 
-const fieldGroups = computed(() =>
-  nodeList.value
-    .map((node, index) => {
-      const fields = (Array.isArray(node.schema) ? node.schema : [])
-        .filter((field) => isVisible(field, node))
-        .map((field) => ({
-          token: fieldToken(node.id, field.key),
-          label: field.Label || field.label || field.key,
-        }))
-
-      return {
-        nodeId: node.id,
-        index,
-        packageType: node.packageType,
-        fields,
-      }
-    })
-    .filter((group) => group.fields.length > 0),
-)
-
-const availableWorkbenchFieldTokens = computed(() =>
-  fieldGroups.value.flatMap((group) => group.fields.map((field) => field.token)),
-)
-
 const currentDraftSnapshot = computed(() => {
   if (!activeSolution.value || isPublished.value) return null
   const name = String(activeSolution.value?.name || '').trim() || '未命名方案'
@@ -734,16 +712,6 @@ function syncWorkbenchSelections(nextIds) {
   if (!arrayEquals(cleaned, workbenchFieldIds.value)) {
     workbenchFieldIds.value = cleaned
   }
-}
-
-function selectAllWorkbenchFields() {
-  if (isPublished.value) return
-  syncWorkbenchSelections(availableWorkbenchFieldTokens.value)
-}
-
-function clearWorkbenchFields() {
-  if (isPublished.value) return
-  workbenchFieldIds.value = []
 }
 
 function handleAllFilterClick() {
@@ -848,9 +816,7 @@ async function loadSolutions() {
 
 async function loadAvailablePackages() {
   try {
-    const response = await fetch('/api/packages')
-    if (!response.ok) throw new Error('组件列表加载失败')
-    availablePackages.value = await response.json()
+    availablePackages.value = await listPackages()
   } catch (error) {
     ElMessage.error(error.message || '组件列表加载失败')
   }
@@ -932,19 +898,8 @@ function duplicateNode(index) {
   const source = nodeList.value[index]
   if (!source) return
 
-  const duplicated = {
-    ...cloneValue(source),
-    id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
-    displayName: '',
-    operator: index === 0 ? 'n' : source.operator,
-    collapsed: false,
-    selectedFirstDate: null,
-  }
-
-  nodeList.value.splice(index + 1, 0, duplicated)
-  nodeList.value.forEach((node, nodeIndex) => {
-    if (nodeIndex === 0) node.operator = null
-  })
+  const duplicated = cloneNodeForDuplicate(source, index)
+  insertNodeAtPosition(nodeList.value, duplicated, index)
 
   // Check custom fields that bind to source node
   const relatedCfs = customFields.value.filter(cf =>
@@ -1108,11 +1063,6 @@ async function deleteListedSolution(item) {
   } finally {
     deleting.value = false
   }
-}
-
-async function deleteActiveSolution() {
-  if (!activeSolution.value) return
-  await deleteListedSolution(activeSolution.value)
 }
 
 function loadCustomFields(record) {

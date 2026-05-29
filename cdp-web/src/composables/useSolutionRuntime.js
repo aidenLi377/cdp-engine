@@ -1,6 +1,6 @@
 import { toRaw } from 'vue'
 import { useCdpShared } from './useCdpShared.js'
-import { buildUsageSections, cleanWorkbenchFieldIds, buildCustomFieldSections, syncCustomFieldValue, getNodeBindingFieldKeys } from '../utils/solutionState.js'
+import { cleanWorkbenchFieldIds } from '../utils/solutionState.js'
 
 function cloneValue(value) {
   if (value == null) return value
@@ -167,33 +167,10 @@ export function useSolutionRuntime() {
     return cleanWorkbenchFieldIds(workbenchFieldIds, nodes)
   }
 
-  function buildRuntimeUsageSections(nodes, workbenchFieldIds) {
-    const baseSections = buildUsageSections(nodes, workbenchFieldIds)
-    return bindRuntimeUsageSections(baseSections, nodes)
-  }
-
-  function buildCustomFieldUsageSections(customFields, nodes) {
-    return buildCustomFieldSections(customFields, nodes)
-  }
-
-  function applyCustomFieldValue(nodes, customFieldId, customFields, newValue) {
-    return syncCustomFieldValue(nodes, customFieldId, customFields, newValue)
-  }
-
-  function getCustomFieldBoundFieldKeys(customFieldId, customFields) {
-    return getNodeBindingFieldKeys(customFieldId, customFields)
-  }
-
   return {
     cloneValue,
-    buildInitialNodeState,
-    fetchPackageMeta,
     createRuntimeNode,
     hydrateNodes,
     normalizeWorkbenchFieldIds,
-    buildRuntimeUsageSections,
-    buildCustomFieldUsageSections,
-    applyCustomFieldValue,
-    getCustomFieldBoundFieldKeys,
   }
 }
