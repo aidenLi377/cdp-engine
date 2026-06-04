@@ -56,3 +56,10 @@ DIMENSION_NAME_COLUMNS = {
     ATTRIBUTE_DIM_FILE: "属性值名称",
 }
 
+RPA_TASKS_DIRNAME = "rpa_tasks"
+RPA_RESULTS_DIRNAME = "rpa_results"
+RPA_TAGS_FILENAME = "dmp_tags_dictionary.json"
+
+DATABANK_URL = "https://databank.tmall.com/#/userDefinedAnalyses"
+DMP_URL = "https://dmp.taobao.com"
+
