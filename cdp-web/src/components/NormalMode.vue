@@ -531,6 +531,9 @@
                 <el-dropdown-item command="auto" :disabled="databankAutomating">
                   {{ databankAutomating ? '自动化执行中...' : '自动化圈人' }}
                 </el-dropdown-item>
+                <el-dropdown-item command="portrait">
+                  智能画像分析
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -576,6 +579,15 @@
 
       <pre v-else class="json-code display-mono">{{ JSON.stringify(generatedJson, null, 2) }}</pre>
     </div>
+
+    <PortraitAnalysisDialog
+      v-model="portraitDialogVisible"
+      @submit="onPortraitSubmit"
+    />
+
+    <div v-if="showTaskPanel" class="task-panel-wrapper">
+      <TaskProgressPanel />
+    </div>
   </div>
 </template>
 
@@ -586,6 +598,8 @@ import { CopyDocument, Delete, FolderAdd, RefreshLeft, Search } from '@element-p
 import DynamicForm from './DynamicForm.vue'
 import FolderTree from './FolderTree.vue'
 import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
+import PortraitAnalysisDialog from './PortraitAnalysisDialog.vue'
+import TaskProgressPanel from './TaskProgressPanel.vue'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
@@ -649,6 +663,8 @@ const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
+const portraitDialogVisible = ref(false)
+const showTaskPanel = ref(false)
 const highlightedCfId = ref(null)
 const collapsedCfId = ref(null)
 const publishedFolderTree = ref([])
@@ -1700,6 +1716,15 @@ function handleDataBankCommand(command) {
   if (command === 'auto') {
     void startAutoDataBankFlow()
   }
+  if (command === 'portrait') {
+    portraitDialogVisible.value = true
+    showTaskPanel.value = true
+  }
+}
+
+function onPortraitSubmit(taskId) {
+  showTaskPanel.value = true
+  ElMessage.success('智能画像分析任务已启动')
 }
 
 async function startAutoDataBankFlow() {
