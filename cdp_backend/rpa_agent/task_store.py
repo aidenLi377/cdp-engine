@@ -7,6 +7,13 @@ from pathlib import Path
 from uuid import uuid4
 
 
+class TaskStatus:
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 def _utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
