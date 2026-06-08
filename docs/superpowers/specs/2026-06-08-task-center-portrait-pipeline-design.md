@@ -71,15 +71,17 @@ RPA Worker
   - 数据引擎搜索
   - 精准匹配
   - 打开应用确认弹窗
+  - 真实执行时等待 dataHub 推送状态
 
   DmpCrowdLocator
   - 达摩盘搜索
   - 精准匹配
   - 读取 crowdId
+  - hover 人群名称等待画像透视入口
   - 拼接透视 URL
 
   DmpInsightEngine
-  - 迁移 DMP-Plugin 取数思路
+  - 直接迁移 DMP-Plugin 取数思路
   - 捕获画像请求
   - 替换 tagId 批量取数
   - 解析 chartDataFull
@@ -110,10 +112,12 @@ RPA Worker
 
 1. 用户输入一个人群包名称。
 2. 系统在数据引擎中找到该人群包并推送到达摩盘。
-3. 系统在达摩盘中定位同名人群包，读取 `crowdId`。
-4. 系统打开：
+3. 系统打开数据引擎 `dataHub` 页面等待推送状态成功。
+4. 系统在达摩盘中定位同名人群包，读取 `crowdId`。
+5. 系统 hover 人群名称，等待“画像透视”入口出现。
+6. 系统打开：
    `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
-5. 系统拦截画像请求并批量透视标签。
+7. 系统按 DMP-Plugin 思路拦截画像请求并批量透视标签。
 
 ## 数据引擎段
 
@@ -155,6 +159,25 @@ RPA Worker
 - 后端环境变量 `RPA_ALLOW_REAL_PUSH=true`
 - 前端任务参数 `executePush=true`
 
+真实点击最终应用按钮后，需要进入数据引擎 `dataHub` 页面等待推送状态。
+
+状态页地址：
+
+`https://databank.tmall.com/#/dataHub`
+
+第一行状态 XPath：
+
+`/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div[2]/div/div[2]/div[1]/section/div[1]/div/div/div/div/div/table/tbody/tr[1]/td[5]/div`
+
+状态等待规则：
+
+1. 打开 `dataHub` 页面。
+2. 在列表中定位对应人群包，不能默认第一行。
+3. 读取匹配行的状态列。
+4. 状态显示成功、完成或可推送到达摩盘后，进入达摩盘段。
+5. 状态显示处理中时轮询等待。
+6. 状态显示失败或超时，任务失败并记录状态文本。
+
 ## 达摩盘人群定位段
 
 这部分是我们的系统要补齐的能力，插件本身没有提供完整的人群列表搜索和 `crowdId` 定位。
@@ -184,9 +207,22 @@ RPA Worker
 5. 对每一行读取人群包名称。
 6. 与用户输入名称做精准匹配。
 7. 命中唯一行后读取同一行 `crowdId`。
-8. 拼接透视地址：
+8. 将鼠标光标悬浮到匹配行的人群包名称上。
+9. 等待该行出现“画像透视”入口。
+10. 拼接透视地址：
    `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
-9. 打开透视页。
+11. 打开透视页。
+
+画像透视入口 XPath 示例：
+
+`/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[2]/div[2]/div[1]/div[2]/table/tbody/tr[2]/td/div/span[3]/a/span`
+
+注意：
+
+- 该 XPath 来自搜索结果中的某一行，不一定是固定第二行。
+- 实现时要在精准匹配的人群行上 hover，然后在该行的展开/操作区域内查找“画像透视”。
+- 画像透视入口出现是达摩盘人群可透视的验证信号。入口未出现时继续等待或轮询搜索结果。
+- 如果入口出现，可优先使用 `crowdId` 拼接 URL 进入透视页；如果拼接 URL 失败，再点击该入口兜底。
 
 ## 精准匹配规则
 
@@ -238,7 +274,7 @@ DMP-Plugin 的关键链路是：
 
 我们的系统不要求用户进入 DMP 页面或使用插件面板。用户只在我们的系统上选标签。
 
-后端迁移成 `DmpInsightEngine`：
+后端直接迁移成 `DmpInsightEngine`，达摩盘透视取数按插件思路实现：
 
 1. 打开透视 URL：
    `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
@@ -399,10 +435,13 @@ DMP-Plugin 的关键链路是：
 - `databank_match_crowd`
 - `databank_click_apply_crowd`
 - `databank_confirm_ready`
+- `databank_datahub_open`
+- `databank_wait_push_status`
 - `dmp_open`
 - `dmp_search`
 - `dmp_match_crowd`
 - `dmp_extract_crowd_id`
+- `dmp_wait_portrait_entry`
 - `dmp_open_perspective`
 - `dmp_capture_payload`
 - `dmp_query_tags`
@@ -417,7 +456,10 @@ DMP-Plugin 的关键链路是：
 - 精准匹配 0 条：任务失败。
 - 精准匹配多条：任务暂停，等待用户选择。
 - 数据引擎最终应用按钮即将被点击：开发模式阻断。
+- 数据引擎 `dataHub` 状态长时间处理中：任务失败或暂停，提示用户稍后重试。
+- 数据引擎 `dataHub` 状态失败：任务失败并展示状态文本。
 - 达摩盘 `crowdId` 为空：任务失败。
+- 达摩盘精准匹配后没有出现“画像透视”入口：继续等待或轮询，超时后任务失败。
 - 透视页未触发画像请求：尝试 XHR hook 兜底，仍失败则任务失败。
 - 单个标签请求失败：记录该标签失败，继续其他标签。
 - 所有标签失败：任务失败。
@@ -436,12 +478,16 @@ DMP-Plugin 的关键链路是：
 - `chartDataFull` 解析。
 - Rebase 计算。
 - 最终应用按钮保护。
+- `dataHub` 状态文本解析。
+- 达摩盘 hover 后画像透视入口检测。
 
 手工联调：
 
 - 数据引擎段停在最终应用按钮前。
+- 真实执行时点击应用后能进入 `dataHub` 并读取状态。
 - 达摩盘搜索结果目标不在第一行时仍能匹配。
 - 成功读取 `crowdId` 并打开透视页。
+- hover 匹配行人群名称后能检测到“画像透视”入口。
 - 成功捕获一次画像请求。
 - 成功查询至少 3 个标签。
 - 前端看到进度、结果预览和下载入口。
@@ -451,7 +497,9 @@ DMP-Plugin 的关键链路是：
 - 用户能在我们的系统上输入人群包名称并选择标签。
 - 开发模式下有两个输入框，方便分段测试。
 - 数据引擎最终应用按钮不会被误点。
+- 真实执行模式下点击应用后能在 `dataHub` 等待推送状态。
 - 达摩盘不依赖第一行，必须精准匹配。
+- 达摩盘精准匹配后能通过 hover 检测画像透视入口。
 - 能从匹配行读取 `crowdId` 并拼接透视 URL。
 - 能按 DMP-Plugin 思路捕获画像 payload 并批量替换标签取数。
 - 能解析 `chartDataFull` 并计算 Rebase。
