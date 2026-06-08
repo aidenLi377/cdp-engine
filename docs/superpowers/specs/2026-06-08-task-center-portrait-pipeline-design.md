@@ -2,9 +2,11 @@
 
 ## 核心判断
 
-任务中台不应该只是“后台模拟官方页面点击”，而应该把 DMP-Plugin 的透视提效思路产品化到我们的系统里：
+任务中台不应该只是“后台模拟官方页面点击”，而应该把 DMP-Plugin 的透视提效思路产品化到我们的系统里。
 
-用户只在我们的前端输入人群包名称、选择标签并点击开始。后台负责定位人群包、拿到 `crowdId`、进入达摩盘画像透视页，随后复用 DMP-Plugin 的核心机制：拦截一次真实画像请求，复制请求 URL 和 payload，循环替换标签 ID，批量获取画像结果并计算 Rebase。
+由于必须复用用户本地电脑上的数据引擎和达摩盘登录态，官方页面自动化不能主要放在服务器后台执行。第一版应把现有 Chrome 插件升级为“本地任务执行器”：用户只在我们的前端输入人群包名称、选择标签并点击开始，前端把任务发送给本地插件；插件在用户本机 Chrome 中访问官方页面、定位人群包、拿到 `crowdId`、进入达摩盘画像透视页，并直接复用 DMP-Plugin 的核心机制完成透视取数。
+
+服务器后端负责记录任务、保存结果、提供标签字典和下载能力；本地插件负责使用用户本地登录态执行官方页面操作和 DMP 透视请求。
 
 已验证的插件源码位置：
 
@@ -26,9 +28,11 @@
 1. 输入人群包名称。
 2. 选择需要透视的标签。
 3. 点击「开始透视」。
-4. 系统后台静默推进：
+4. 前端创建任务并唤起本地 Chrome 插件。
+5. 本地插件使用用户当前 Chrome 登录态静默推进：
    `定位人群包 -> 获取 crowdId -> 打开达摩盘透视页 -> 拦截画像请求 -> 批量替换标签取数 -> 生成结果`
-5. 前端显示任务进度、失败原因、结果预览和 Excel 下载。
+6. 插件持续回传任务进度、失败原因和结果数据。
+7. 后端保存结果并提供 Excel 下载。
 
 开发阶段仍然保留两个输入框：
 
@@ -56,6 +60,7 @@ CDP Web
   任务中台页面
   - 输入人群包名称
   - 选择标签
+  - 发送任务到本地插件
   - 查看任务进度
   - 查看结果预览/下载
 
@@ -65,32 +70,72 @@ CDP Backend
   - 查询任务
   - 下载结果
   - 返回标签字典
+  - 接收插件回传的进度和结果
 
-RPA Worker
-  DatabankBot
+Chrome Extension Local Executor
+  background.js
+  - 接收 CDP Web 任务
+  - 打开/聚焦官方页面 tab
+  - 注入对应 content script
+  - 汇总进度并回传前端/后端
+
+  DatabankContent
   - 数据引擎搜索
   - 精准匹配
   - 打开应用确认弹窗
   - 真实执行时等待 dataHub 推送状态
 
-  DmpCrowdLocator
+  DmpContent
   - 达摩盘搜索
   - 精准匹配
   - 读取 crowdId
   - hover 人群名称等待画像透视入口
   - 拼接透视 URL
 
-  DmpInsightEngine
+  DmpInsightContent
   - 直接迁移 DMP-Plugin 取数思路
   - 捕获画像请求
   - 替换 tagId 批量取数
   - 解析 chartDataFull
   - 计算 Rebase
 
-  ResultBuilder
+  ResultBuilder / Backend
   - 结果预览
   - Excel 输出
 ```
+
+## 本地登录态实现方式
+
+必须使用本地 Chrome 插件执行官方页面自动化，原因是数据引擎和达摩盘登录态存在于用户本地浏览器中，服务器无法稳定、合规地读取用户浏览器 Cookie。
+
+现有插件目录：
+
+`chrome-extension/databank-automation`
+
+现有能力：
+
+- `manifest.json` 已使用 Manifest V3。
+- `bridge.js` 已能接收 CDP Web 页面的 `postMessage`。
+- `background.js` 已能校验来源、打开官方页面 tab、注入 `content.js` 并执行自动化。
+- 当前 `externally_connectable` 和 `ALLOWED_ORIGINS` 只允许 `http://127.0.0.1:5173`，部署后必须加入正式域名。
+
+升级方向：
+
+1. 将插件从“参数辅助助手”升级为“任务中台本地执行器”。
+2. 扩展任务消息类型，例如：
+   - `CDP_RPA_START_TASK`
+   - `CDP_RPA_TASK_PROGRESS`
+   - `CDP_RPA_TASK_RESULT`
+   - `CDP_RPA_TASK_ERROR`
+3. 插件 background 作为编排层，按步骤打开数据引擎和达摩盘 tab。
+4. 官方页面 content script 负责 DOM 搜索、点击、hover、状态读取。
+5. 达摩盘透视 content script 直接融合 DMP-Plugin 的 `hook.js` 和 `content.js` 核心逻辑。
+6. 插件将进度实时回传给前端；必要时由前端转发到后端保存。
+
+官方机制依据：
+
+- Chrome 的 `externally_connectable` manifest 配置允许指定网页通过 `runtime.connect()` 或 `runtime.sendMessage()` 与扩展通信。
+- 我们已有的 `bridge.js` + `background.js` 方案可以继续沿用，但部署时要把正式域名加入 `externally_connectable.matches`、`host_permissions` 和插件内部 `ALLOWED_ORIGINS`。
 
 ## 用户流程
 
@@ -102,26 +147,30 @@ RPA Worker
    - 达摩盘测试人群包名称
    - 画像标签
 3. 点击「开始透视」。
-4. 任务先执行数据引擎段，只跑到最终应用按钮之前。
-5. 任务继续执行达摩盘段，使用第二个人群包名称定位 DMP 人群。
-6. 系统读取 `crowdId`，打开透视页。
-7. 系统按插件思路批量取标签数据。
-8. 前端展示进度和结果。
+4. 前端创建后端任务记录。
+5. 前端把任务参数发送给本地插件。
+6. 插件先执行数据引擎段，只跑到最终应用按钮之前。
+7. 插件继续执行达摩盘段，使用第二个人群包名称定位 DMP 人群。
+8. 插件读取 `crowdId`，打开透视页。
+9. 插件按 DMP-Plugin 思路批量取标签数据。
+10. 前端展示进度和结果，并把结果写回后端。
 
 ### 正式目标流程
 
 1. 用户输入一个人群包名称。
-2. 系统在数据引擎中找到该人群包并推送到达摩盘。
-3. 系统打开数据引擎 `dataHub` 页面等待推送状态成功。
-4. 系统在达摩盘中定位同名人群包，读取 `crowdId`。
-5. 系统 hover 人群名称，等待“画像透视”入口出现。
-6. 系统打开：
+2. 前端把任务发送给本地插件。
+3. 插件在用户本地 Chrome 中找到数据引擎人群包并推送到达摩盘。
+4. 插件打开数据引擎 `dataHub` 页面等待推送状态成功。
+5. 插件在达摩盘中定位同名人群包，读取 `crowdId`。
+6. 插件 hover 人群名称，等待“画像透视”入口出现。
+7. 插件打开：
    `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
-7. 系统按 DMP-Plugin 思路拦截画像请求并批量透视标签。
+8. 插件按 DMP-Plugin 思路拦截画像请求并批量透视标签。
+9. 插件把结果回传到我们的前端和后端。
 
 ## 数据引擎段
 
-开发阶段只验证到“最终应用”按钮之前，避免误触真实应用。
+数据引擎段由本地插件在用户 Chrome 中执行。开发阶段只验证到“最终应用”按钮之前，避免误触真实应用。
 
 打开地址：
 
@@ -180,7 +229,7 @@ RPA Worker
 
 ## 达摩盘人群定位段
 
-这部分是我们的系统要补齐的能力，插件本身没有提供完整的人群列表搜索和 `crowdId` 定位。
+这部分由我们的本地插件补齐。DMP-Plugin 本身没有提供完整的人群列表搜索和 `crowdId` 定位。
 
 打开地址：
 
@@ -272,20 +321,19 @@ DMP-Plugin 的关键链路是：
 
 ### 我们的迁移方式
 
-我们的系统不要求用户进入 DMP 页面或使用插件面板。用户只在我们的系统上选标签。
+我们的系统不要求用户进入 DMP 页面或使用 DMP-Plugin 面板。用户只在我们的系统上选标签。
 
-后端直接迁移成 `DmpInsightEngine`，达摩盘透视取数按插件思路实现：
+插件内直接迁移成 `DmpInsightContent`，达摩盘透视取数按 DMP-Plugin 思路实现：
 
 1. 打开透视 URL：
    `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
 2. 等待页面触发画像请求。
-3. 优先通过 Playwright 网络监听捕获画像请求。
-4. 捕获不到时，注入等价于 `hook.js` 的 XHR hook 作为兜底。
-5. 保存原始 `url`、`payload`、必要 headers 和 `crowdId`。
-6. 使用我们前端传来的 `tagIds`，按插件 `content.js` 的方式批量替换标签查询。
-7. 将插件的 `chartDataFull` 解析逻辑搬到后端。
-8. 将插件的 Rebase 逻辑搬到后端。
-9. 输出结构化结果和 Excel。
+3. 注入或内置等价于 DMP-Plugin `hook.js` 的 XHR hook。
+4. 捕获并保存原始 `url`、`payload` 和 `crowdId`。
+5. 使用我们前端传来的 `tagIds`，按插件 `content.js` 的方式批量替换标签查询。
+6. 将插件的 `chartDataFull` 解析逻辑迁移到插件侧。
+7. 将插件的 Rebase 逻辑迁移到插件侧。
+8. 输出结构化结果给前端；Excel 可以由后端生成，也可以由前端/插件先生成 CSV 作为兜底。
 
 ### 请求复用规则
 
@@ -368,7 +416,7 @@ DMP-Plugin 的关键链路是：
 
 ### POST /api/rpa/tasks
 
-创建任务。
+创建任务记录。后端不直接执行官方页面自动化，只保存任务并返回 `taskId`。前端拿到 `taskId` 后把任务参数发送给本地插件。
 
 开发阶段请求：
 
@@ -409,13 +457,117 @@ DMP-Plugin 的关键链路是：
 
 返回任务详情、步骤、百分比、日志和错误。
 
+### PATCH /api/rpa/tasks/{taskId}/progress
+
+插件或前端转发插件事件时调用，写入任务进度。
+
+请求：
+
+```json
+{
+  "status": "running",
+  "step": "dmp_capture_payload",
+  "percent": 72,
+  "message": "已捕获画像请求，开始批量查询标签"
+}
+```
+
 ### GET /api/rpa/tasks/{taskId}/result
 
 返回结果预览、总行数和下载地址。
 
+### POST /api/rpa/tasks/{taskId}/result
+
+插件完成透视后提交结构化结果。后端保存结果并生成 Excel。
+
+请求：
+
+```json
+{
+  "rows": [
+    {
+      "所属大类": "用户特征",
+      "标签类型": "基础特征",
+      "标签名称": "用户年龄",
+      "特征明细": "25-29",
+      "人群占比": "12.34%",
+      "Rebase": "18.90%",
+      "点击TGI": 1.2,
+      "转化TGI": 1.1
+    }
+  ]
+}
+```
+
 ### GET /api/rpa/tags
 
 返回标签字典。MVP 默认过滤或标记 `needCondition=true` 标签。
+
+## 插件通信协议
+
+前端页面通过现有 `bridge.js` 与 Chrome 插件通信。消息从 CDP Web 发给 bridge，再转给 background。background 负责任务编排，并把阶段性事件回传给页面。
+
+任务启动消息：
+
+```json
+{
+  "source": "cdp-web",
+  "type": "CDP_RPA_START_TASK",
+  "requestId": "req_xxx",
+  "taskId": "rpa_xxx",
+  "mode": "development",
+  "databankCrowdName": "数据引擎测试人群包",
+  "dmpCrowdName": "达摩盘测试人群包",
+  "tagIds": ["160571", "114555", "114554"],
+  "executePush": false
+}
+```
+
+进度事件：
+
+```json
+{
+  "source": "cdp-rpa-extension",
+  "requestId": "req_xxx",
+  "taskId": "rpa_xxx",
+  "type": "CDP_RPA_TASK_PROGRESS",
+  "step": "dmp_match_crowd",
+  "percent": 55,
+  "message": "已精准匹配达摩盘人群并读取 crowdId"
+}
+```
+
+结果事件：
+
+```json
+{
+  "source": "cdp-rpa-extension",
+  "requestId": "req_xxx",
+  "taskId": "rpa_xxx",
+  "type": "CDP_RPA_TASK_RESULT",
+  "rows": []
+}
+```
+
+错误事件：
+
+```json
+{
+  "source": "cdp-rpa-extension",
+  "requestId": "req_xxx",
+  "taskId": "rpa_xxx",
+  "type": "CDP_RPA_TASK_ERROR",
+  "step": "dmp_capture_payload",
+  "message": "未捕获到画像请求"
+}
+```
+
+生产域名部署要求：
+
+- `manifest.json` 的 `externally_connectable.matches` 加入正式前端域名。
+- `manifest.json` 的 `host_permissions` 加入正式前端域名、`https://databank.tmall.com/*`、`https://dmp.taobao.com/*`。
+- `background.js` 的 `ALLOWED_ORIGINS` 加入正式前端 origin。
+- 前端需要检测插件是否安装；未安装时提示安装本地执行器。
 
 ## 任务状态机
 
@@ -451,7 +603,9 @@ DMP-Plugin 的关键链路是：
 
 ## 错误处理
 
-- 官方平台未登录：提示用户登录自动化浏览器。
+- 官方平台未登录：插件返回错误，提示用户在当前 Chrome 登录数据引擎或达摩盘。
+- 插件未安装或版本过低：前端提示安装/升级本地执行器。
+- 页面 origin 未授权：插件拒绝任务，提示检查插件域名白名单。
 - 搜索框未找到：记录 URL 和 XPath。
 - 精准匹配 0 条：任务失败。
 - 精准匹配多条：任务暂停，等待用户选择。
@@ -468,6 +622,7 @@ DMP-Plugin 的关键链路是：
 
 后端单元测试：
 
+- 任务创建、进度写入、结果写入和 Excel 生成。
 - 名称标准化。
 - 多行精准匹配。
 - XPath 行号泛化。
@@ -481,8 +636,18 @@ DMP-Plugin 的关键链路是：
 - `dataHub` 状态文本解析。
 - 达摩盘 hover 后画像透视入口检测。
 
+插件单元测试：
+
+- background 校验允许来源。
+- bridge 收发 `CDP_RPA_START_TASK`。
+- content script 对 XPath 行号泛化。
+- DMP-Plugin 迁移逻辑的 URL/payload 标签替换。
+- 进度、结果、错误事件格式。
+
 手工联调：
 
+- 前端能检测插件安装状态。
+- 前端能把任务发送给本地插件。
 - 数据引擎段停在最终应用按钮前。
 - 真实执行时点击应用后能进入 `dataHub` 并读取状态。
 - 达摩盘搜索结果目标不在第一行时仍能匹配。
@@ -495,6 +660,8 @@ DMP-Plugin 的关键链路是：
 ## 验收标准
 
 - 用户能在我们的系统上输入人群包名称并选择标签。
+- 任务由用户本地 Chrome 插件执行，能复用用户本地登录态。
+- 前端能显示插件未安装/未授权/执行失败状态。
 - 开发模式下有两个输入框，方便分段测试。
 - 数据引擎最终应用按钮不会被误点。
 - 真实执行模式下点击应用后能在 `dataHub` 等待推送状态。
