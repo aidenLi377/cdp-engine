@@ -1,67 +1,131 @@
 # 任务中台画像透视链路设计
 
-## 背景
+## 核心判断
 
-当前项目已经具备圈人参数生成、方案管理、批量装配和浏览器插件自动导入参数的基础能力。下一阶段要把官方平台中分散的人工链路产品化为任务中台：用户在我们的系统中输入人群包名称、选择标签，后台自动推进数据引擎和达摩盘操作，前端持续展示任务进度、失败原因和结果数据。
+任务中台不应该只是“后台模拟官方页面点击”，而应该把 DMP-Plugin 的透视提效思路产品化到我们的系统里：
 
-第一版以开发联调模式为主，分段验证数据引擎前半段和达摩盘后半段，避免开发过程中误触最终应用动作。
+用户只在我们的前端输入人群包名称、选择标签并点击开始。后台负责定位人群包、拿到 `crowdId`、进入达摩盘画像透视页，随后复用 DMP-Plugin 的核心机制：拦截一次真实画像请求，复制请求 URL 和 payload，循环替换标签 ID，批量获取画像结果并计算 Rebase。
 
-## 目标
+已验证的插件源码位置：
 
-- 用户在「任务中台」中输入两个测试人群包名称：
-  - 数据引擎测试人群包名称：用于验证数据引擎搜索、精准匹配和打开应用确认弹窗。
-  - 达摩盘测试人群包名称：用于验证达摩盘搜索、精准匹配、读取人群 ID、进入画像透视页和获取标签数据。
-- 用户选择 3-5 个画像标签，MVP 默认使用：
-  - 居住城市
-  - 用户年龄
-  - 用户性别
-  - 城市等级
-  - 消费能力等级
-- 后台任务按步骤推进，前端展示当前步骤、百分比、日志和结果。
-- 开发模式下严禁点击数据引擎最终「应用」按钮，只能停在确认弹窗前。
+- GitHub: `https://github.com/aidenLi377/DMP-Plugin`
+- 本地临时副本: `.runtime/DMP-Plugin`
+- GitHub 访问约定: 默认使用代理 `127.0.0.1:7897`
 
-## 不做
+源码核对结论：
 
-- 不做真实完整推送闭环，除非后续显式开启真实执行开关。
-- 不做多人群并发任务。
-- 不做 `needCondition=true` 标签的下钻条件配置。
-- 不做历史趋势、人群对比和自动洞察报告。
-- 不在前端处理画像接口核心逻辑；画像接口、标签解析和 Excel 生成放在后端。
+- `hook.js` 负责拦截画像接口请求，保存 `{ url, payload }`。
+- `content.js` 负责读取标签字典、循环替换 `tagId`、请求 `chartDataFull`、计算 Rebase。
+- `dmp_tags_dictionary.json` 包含标签 ID、大类、类型、名称和 `needCondition`。
+- 插件没有完整的“按人群包名称搜索达摩盘列表并拼接 crowdId 透视 URL”的代码。这个部分由我们的任务中台实现。
+
+## 产品目标
+
+第一版目标是让用户在我们的系统里完成完整入口：
+
+1. 输入人群包名称。
+2. 选择需要透视的标签。
+3. 点击「开始透视」。
+4. 系统后台静默推进：
+   `定位人群包 -> 获取 crowdId -> 打开达摩盘透视页 -> 拦截画像请求 -> 批量替换标签取数 -> 生成结果`
+5. 前端显示任务进度、失败原因、结果预览和 Excel 下载。
+
+开发阶段仍然保留两个输入框：
+
+- 数据引擎测试人群包名称：只测试到数据引擎最终应用按钮之前。
+- 达摩盘测试人群包名称：测试达摩盘搜索、精准匹配、读取 `crowdId`、进入透视页和批量取数。
+
+正式形态再收敛为一个人群包名称输入框。
+
+## MVP 标签范围
+
+MVP 先测 3-5 个 `needCondition=false` 标签，默认使用：
+
+- 居住城市: `160571`
+- 用户年龄: `114555`
+- 用户性别: `114554`
+- 城市等级: `213510`
+- 消费能力等级: `163535`
+
+`needCondition=true` 标签第一版不自动下钻，返回“未配置下钻条件”或在标签选择器中禁用。
+
+## 总体架构
+
+```text
+CDP Web
+  任务中台页面
+  - 输入人群包名称
+  - 选择标签
+  - 查看任务进度
+  - 查看结果预览/下载
+
+CDP Backend
+  RPA Task API
+  - 创建任务
+  - 查询任务
+  - 下载结果
+  - 返回标签字典
+
+RPA Worker
+  DatabankBot
+  - 数据引擎搜索
+  - 精准匹配
+  - 打开应用确认弹窗
+
+  DmpCrowdLocator
+  - 达摩盘搜索
+  - 精准匹配
+  - 读取 crowdId
+  - 拼接透视 URL
+
+  DmpInsightEngine
+  - 迁移 DMP-Plugin 取数思路
+  - 捕获画像请求
+  - 替换 tagId 批量取数
+  - 解析 chartDataFull
+  - 计算 Rebase
+
+  ResultBuilder
+  - 结果预览
+  - Excel 输出
+```
 
 ## 用户流程
 
-1. 用户点击主导航「任务中台」。
-2. 用户填写：
+### 开发联调流程
+
+1. 用户进入「任务中台」。
+2. 填写：
    - 数据引擎测试人群包名称
    - 达摩盘测试人群包名称
-   - 需要获取的画像标签
-3. 用户点击「开始透视」。
-4. 系统提示链路：
-   `数据引擎策略包 -> 推送达摩盘 -> 达摩盘画像透视 -> 获取数据`
-5. 后端创建任务并返回任务 ID。
-6. 前端进入任务详情/进度视图并轮询任务状态。
-7. 任务在开发模式下分两段执行：
-   - 数据引擎段：停在最终应用按钮之前。
-   - 达摩盘段：从已存在于达摩盘的人群包开始，完成画像透视和标签数据获取。
+   - 画像标签
+3. 点击「开始透视」。
+4. 任务先执行数据引擎段，只跑到最终应用按钮之前。
+5. 任务继续执行达摩盘段，使用第二个人群包名称定位 DMP 人群。
+6. 系统读取 `crowdId`，打开透视页。
+7. 系统按插件思路批量取标签数据。
+8. 前端展示进度和结果。
 
-## 开发模式链路
+### 正式目标流程
 
-### A. 数据引擎前半段
+1. 用户输入一个人群包名称。
+2. 系统在数据引擎中找到该人群包并推送到达摩盘。
+3. 系统在达摩盘中定位同名人群包，读取 `crowdId`。
+4. 系统打开：
+   `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
+5. 系统拦截画像请求并批量透视标签。
 
-输入字段：数据引擎测试人群包名称。
+## 数据引擎段
 
-执行步骤：
+开发阶段只验证到“最终应用”按钮之前，避免误触真实应用。
 
-1. 打开数据引擎人群列表：
-   `https://databank.tmall.com/#/customAnalysis`
-2. 定位搜索框：
-   `/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[1]/div[2]/span/input`
-3. 清空输入框，输入人群包名称，按 Enter。
-4. 等待搜索结果刷新。
-5. 遍历表格结果行，按人群包名称做精准匹配。
-6. 命中唯一行后，定位该行「应用人群」按钮并点击。
-7. 等待确认弹窗出现。
-8. 停止，不点击最终「应用」按钮。
+打开地址：
+
+`https://databank.tmall.com/#/customAnalysis`
+
+搜索框 XPath：
+
+`/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[1]/div[2]/span/input`
 
 第一行人群包名称 XPath：
 
@@ -71,39 +135,37 @@
 
 `/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[2]/div[1]/div/div/div[2]/div[2]/table/tbody/tr[1]/td[7]/div/div/a[1]`
 
-最终应用按钮 XPath：
+最终应用按钮 XPath，开发阶段禁止点击：
 
 `/html/body/div[6]/div/div[2]/div/div/div[3]/div/button[1]`
 
-保护规则：
+执行规则：
 
-- 开发模式永远不点击最终应用按钮。
-- 真实执行必须同时满足后端环境变量和前端任务参数：
-  - `RPA_ALLOW_REAL_PUSH=true`
-  - `executePush=true`
-- 如果任一条件不满足，任务在 `databank_confirm_ready` 步骤暂停并标记为开发模式完成。
+1. 清空搜索框。
+2. 输入数据引擎测试人群包名称。
+3. 按 Enter。
+4. 遍历结果表格，不默认第一行。
+5. 精准匹配人群包名称。
+6. 命中唯一行后点击该行“应用人群”。
+7. 等待确认弹窗。
+8. 停止在最终应用按钮前。
 
-### B. 达摩盘后半段
+真实点击最终应用按钮必须同时满足：
 
-输入字段：达摩盘测试人群包名称。
+- 后端环境变量 `RPA_ALLOW_REAL_PUSH=true`
+- 前端任务参数 `executePush=true`
 
-执行步骤：
+## 达摩盘人群定位段
 
-1. 打开达摩盘人群列表：
-   `https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=`
-2. 定位搜索框：
-   `/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div[1]/div[4]/div/input`
-3. 清空输入框，输入人群包名称，按 Enter。
-4. 等待搜索结果刷新。
-5. 遍历表格结果行，按人群包名称做精准匹配。
-6. 命中唯一行后，读取同一行人群 ID。
-7. 拼接画像透视 URL：
-   `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
-8. 打开画像透视页。
-9. 等待画像相关接口出现，拦截或复用请求凭证。
-10. 批量获取用户选择的 3-5 个标签数据。
-11. 归一化数据，生成预览和 Excel。
-12. 保存结果，任务完成。
+这部分是我们的系统要补齐的能力，插件本身没有提供完整的人群列表搜索和 `crowdId` 定位。
+
+打开地址：
+
+`https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=`
+
+搜索框 XPath：
+
+`/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div[1]/div[4]/div/input`
 
 第一行人群包名称 XPath：
 
@@ -113,100 +175,166 @@
 
 `/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[2]/div[2]/div[1]/div[2]/table/tbody/tr[1]/td[2]/div[1]`
 
+执行规则：
+
+1. 清空搜索框。
+2. 输入达摩盘测试人群包名称。
+3. 按 Enter。
+4. 遍历搜索结果行。
+5. 对每一行读取人群包名称。
+6. 与用户输入名称做精准匹配。
+7. 命中唯一行后读取同一行 `crowdId`。
+8. 拼接透视地址：
+   `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
+9. 打开透视页。
+
 ## 精准匹配规则
 
-搜索完成后不能默认使用第一行。系统必须遍历所有可见结果行。
+不能默认搜索结果第一行就是目标。
 
-名称标准化规则：
+名称标准化：
 
-- 去除前后空格。
+- 去掉前后空格。
 - 合并连续空白字符。
-- 保留中文、英文、数字和符号原文。
-- 标准化后的文本必须与用户输入完全一致。
+- 保留原始中文、英文、数字、符号。
+- 标准化后的页面名称必须与用户输入名称完全相等。
 
-匹配结果处理：
+匹配结果：
 
-- 0 条命中：任务失败，提示未找到精确匹配人群包。
-- 1 条命中：继续执行。
-- 多条命中：任务暂停，前端展示候选项，等待用户选择具体行或人群 ID 后继续。
+- 0 条：任务失败，提示“未找到精确匹配人群包”。
+- 1 条：继续执行。
+- 多条：任务暂停，前端展示候选人群包和 `crowdId`，由用户选择后继续。
 
-实现时不要硬编码 `tr[1]`。应从第一行 XPath 推导表格结构，遍历 `tbody/tr[n]`，在命中的相对行内读取按钮或 ID。
+XPath 实现要求：
 
-## 后端架构
+- 不硬编码 `tr[1]`。
+- 以第一行 XPath 推导表格结构。
+- 遍历 `tbody/tr[n]`。
+- 在命中的相对行内读取名称、ID、按钮。
 
-新增后端模块围绕任务、自动化和结果三层拆分：
+## 插件思路融合为透视引擎
 
-- `TaskStore`：保存任务状态、输入参数、进度、日志、结果摘要。
-- `RpaOrchestrator`：编排数据引擎段和达摩盘段。
-- `DatabankBot`：处理数据引擎页面导航、搜索、精准匹配和应用弹窗。
-- `DmpBot`：处理达摩盘搜索、精准匹配、读取人群 ID 和打开透视页。
-- `DmpInsightClient`：参考 DMP-Plugin 的标签字典、接口参数、返回解析和 Rebase 逻辑获取画像数据。
-- `ExcelBuilder`：将画像结果输出为 Excel。
+### 插件原理
 
-参考插件项目：
+DMP-Plugin 的关键链路是：
 
-- `https://github.com/aidenLi377/DMP-Plugin`
-
-实现 `DmpInsightClient` 时需要优先读取该插件中的标签字典、请求拦截逻辑、画像接口参数、返回数据解析和 Rebase 计算逻辑。GitHub 访问约定：读取 DMP-Plugin 时默认使用代理 `127.0.0.1:7897`。
-
-## DMP-Plugin 透视思路迁移
-
-DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像透视页拦截一次真实画像接口请求，再复用这次请求的 URL 和 payload 批量替换标签 ID。我们的后端自动化应沿用这个思路，但把执行位置从 Chrome 插件迁移到 Playwright 后端任务。
-
-插件侧关键文件：
-
-- `hook.js`：在页面主世界改写 `XMLHttpRequest.prototype.open/send`，拦截包含 `/api_2/` 且 URL 中有 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}` 的请求。只有请求体中包含 `crowdId` 时，才认为这是画像查询请求，并保存 `{ url, payload }`。
-- `content.js`：读取 `dmp_tags_dictionary.json`，循环用户选择的 `tagId`，复制被拦截的 payload，删除或按需设置 `multiGroupOptions`，把 URL 和 body 中的标签 ID 替换为目标标签 ID，再发起 POST 请求。
-- `dmp_tags_dictionary.json`：提供标签大类、标签类型、标签名称、标签 ID 和 `needCondition` 标记。
-
-后端迁移方案：
-
-1. `DmpBot` 打开 `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`。
-2. 页面加载后，`DmpInsightClient` 通过 Playwright 监听网络请求，捕获满足以下条件的请求：
-   - URL 包含 `/api_2/`。
-   - URL 包含 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}`。
-   - POST body 是 JSON。
-   - JSON body 中包含当前 `crowdId`。
-3. 捕获后保存：
-   - 原始 URL。
-   - 原始请求 body。
-   - 请求 headers 中必要的鉴权信息，例如 cookie、csrf、referer、content-type。
-4. 对用户选择的每个 `tagId`：
-   - 深拷贝原始 body。
+1. 用户已经进入 DMP 画像透视页。
+2. 页面发起一次真实画像接口请求。
+3. `hook.js` 劫持 XHR。
+4. 如果 URL 包含 `/api_2/` 且匹配 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}`，并且 body 中包含 `crowdId`，则保存：
+   - `url`
+   - `payload`
+5. `content.js` 读取用户勾选的标签 ID。
+6. 对每个标签：
+   - 深拷贝原始 payload。
    - 删除原始 `multiGroupOptions`。
-   - 如果标签 `needCondition=false`，直接查询。
-   - 如果标签 `needCondition=true`，MVP 阶段跳过并记录“未配置下钻条件”。
-   - 替换 URL 中的 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}`。
-   - 如果 body 中存在 `tagId` 字段，同步替换为当前标签 ID。
-   - 使用 `httpx` 或 Playwright `page.evaluate(fetch)` 发起 POST 请求。
-5. 解析响应中的 `data.chartDataFull`，生成行数据：
-   - 所属大类：来自标签字典 `mainCategory`。
-   - 标签类型：来自标签字典 `category`。
-   - 标签名称：优先使用响应 `tagName`，没有则使用标签字典 `tagName`。
-   - 特征明细：响应 `optionName`。
-   - 人群占比：`rate * 100`，保留两位小数并追加 `%`。
-   - 点击TGI：响应 `ctrIndex`。
-   - 转化TGI：响应 `ppcIndex`。
-6. 对同一标签名称下的所有明细计算 Rebase：
-   - 先按标签名称汇总所有有效“人群占比”。
-   - 如果汇总值 `> 100.1`，认为是多选或重叠标签，Rebase 保持原始人群占比。
-   - 如果汇总值 `<= 100.1`，使用 `当前占比 / 汇总占比 * 100` 归一化。
-   - 占比缺失或错误提示行的 Rebase 记为 `-`。
-7. 将归一化后的数据写入任务结果和 Excel。
+   - 替换 URL 中的标签 ID。
+   - 替换 body 中的 `tagId`。
+   - 发起 POST 请求。
+7. 解析 `json.data.chartDataFull`。
+8. 按标签名称汇总占比并计算 Rebase。
 
-实现约束：
+### 我们的迁移方式
 
-- 不把 DMP-Plugin 的 UI、PostHog 埋点、模型口令分享迁移进任务中台。
-- 不在页面里长期注入插件代码；优先使用 Playwright 网络监听。如果 Playwright 监听不到请求，再考虑注入等价的 XHR hook 作为兜底。
-- MVP 只查询 3-5 个 `needCondition=false` 标签，避免下钻条件影响链路验证。
+我们的系统不要求用户进入 DMP 页面或使用插件面板。用户只在我们的系统上选标签。
+
+后端迁移成 `DmpInsightEngine`：
+
+1. 打开透视 URL：
+   `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
+2. 等待页面触发画像请求。
+3. 优先通过 Playwright 网络监听捕获画像请求。
+4. 捕获不到时，注入等价于 `hook.js` 的 XHR hook 作为兜底。
+5. 保存原始 `url`、`payload`、必要 headers 和 `crowdId`。
+6. 使用我们前端传来的 `tagIds`，按插件 `content.js` 的方式批量替换标签查询。
+7. 将插件的 `chartDataFull` 解析逻辑搬到后端。
+8. 将插件的 Rebase 逻辑搬到后端。
+9. 输出结构化结果和 Excel。
+
+### 请求复用规则
+
+捕获请求必须满足：
+
+- URL 包含 `/api_2/`。
+- URL 匹配以下任一模式：
+  - `/tag/{id}`
+  - `tagId={id}`
+  - `/analysis/{id}`
+- 请求体是 JSON。
+- 请求体包含 `crowdId`。
+
+替换标签时：
+
+- URL 中 `/tag/{old}` 替换为 `/tag/{new}`。
+- URL 中 `tagId={old}` 替换为 `tagId={new}`。
+- URL 中 `/analysis/{old}` 替换为 `/analysis/{new}`。
+- body 中如果有 `tagId`，替换为数字类型的新标签 ID。
+- body 中保留 `crowdId`。
+- 默认删除 `multiGroupOptions`。
+- `needCondition=true` 标签第一版跳过。
+
+### 返回解析
+
+对每个接口响应读取：
+
+`data.chartDataFull`
+
+每个明细行转成：
+
+- 所属大类：标签字典 `mainCategory`
+- 标签类型：标签字典 `category`
+- 标签名称：响应 `tagName`，没有则用字典 `tagName`
+- 特征明细：响应 `optionName`
+- 人群占比：`rate * 100`，保留两位小数
+- 点击TGI：`ctrIndex`
+- 转化TGI：`ppcIndex`
+
+### Rebase 计算
+
+沿用插件算法：
+
+1. 按标签名称汇总有效“人群占比”。
+2. 如果汇总值 `> 100.1`，认为该标签是多选或重叠统计，Rebase 保持原始人群占比。
+3. 如果汇总值 `<= 100.1`，Rebase 等于：
+   `当前占比 / 汇总占比 * 100`
+4. 错误行或占比缺失时，Rebase 为 `-`。
+
+## 前端设计
+
+新增「任务中台」入口。
+
+开发阶段表单字段：
+
+- 数据引擎测试人群包名称
+- 达摩盘测试人群包名称
+- 标签选择器
+- 开始透视按钮
+
+正式阶段表单字段：
+
+- 人群包名称
+- 标签选择器
+- 开始透视按钮
+
+标签选择器使用 `dmp_tags_dictionary.json`。默认勾选 3-5 个 MVP 标签。
+
+任务进度面板展示：
+
+- 当前步骤
+- 百分比
+- 当前日志
+- 安全暂停提示
+- 失败原因
+- 结果预览
+- Excel 下载
 
 ## API 设计
 
 ### POST /api/rpa/tasks
 
-创建开发联调任务。
+创建任务。
 
-请求：
+开发阶段请求：
 
 ```json
 {
@@ -215,6 +343,17 @@ DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像
   "dmpCrowdName": "达摩盘测试人群包",
   "tagIds": ["160571", "114555", "114554", "213510", "163535"],
   "executePush": false
+}
+```
+
+正式阶段请求：
+
+```json
+{
+  "mode": "production",
+  "crowdName": "人群包名称",
+  "tagIds": ["160571", "114555", "114554"],
+  "executePush": true
 }
 ```
 
@@ -228,23 +367,23 @@ DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像
 
 ### GET /api/rpa/tasks
 
-返回任务列表，按创建时间倒序。
+返回任务列表。
 
 ### GET /api/rpa/tasks/{taskId}
 
-返回任务详情、当前步骤、百分比、日志和结果摘要。
+返回任务详情、步骤、百分比、日志和错误。
 
 ### GET /api/rpa/tasks/{taskId}/result
 
-任务完成后返回结果预览、总行数和下载地址。
+返回结果预览、总行数和下载地址。
 
 ### GET /api/rpa/tags
 
-返回可选择标签列表。MVP 默认只返回 `needCondition=false` 标签，并在前端默认勾选 3-5 个测试标签。
+返回标签字典。MVP 默认过滤或标记 `needCondition=true` 标签。
 
 ## 任务状态机
 
-任务状态：
+状态：
 
 - `pending`
 - `running`
@@ -252,7 +391,7 @@ DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像
 - `completed`
 - `failed`
 
-任务步骤：
+步骤：
 
 - `created`
 - `databank_open`
@@ -265,79 +404,55 @@ DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像
 - `dmp_match_crowd`
 - `dmp_extract_crowd_id`
 - `dmp_open_perspective`
-- `dmp_wait_api`
+- `dmp_capture_payload`
 - `dmp_query_tags`
+- `dmp_normalize_rebase`
 - `build_result`
 - `completed`
 
-开发模式中，数据引擎段到 `databank_confirm_ready` 后进入安全暂停，但任务继续执行达摩盘后半段，因为达摩盘使用第二个人群包独立测试。
-
-## 前端设计
-
-新增任务中台页面或主导航入口，包含：
-
-- 创建任务表单：
-  - 数据引擎测试人群包名称
-  - 达摩盘测试人群包名称
-  - 标签选择器
-  - 开发模式说明
-  - 开始透视按钮
-- 任务进度面板：
-  - 当前步骤
-  - 百分比
-  - 步骤日志
-  - 安全暂停提示
-  - 失败原因
-- 任务结果：
-  - 标签数据预览
-  - Excel 下载
-
-界面文案需要明确提示开发模式：
-
-`开发模式不会点击数据引擎最终应用按钮；达摩盘阶段使用另一个已存在的人群包继续测试。`
-
 ## 错误处理
 
-- 未登录官方平台：任务失败，提示用户用自动化浏览器登录数据引擎或达摩盘。
-- 搜索框未找到：任务失败，记录页面 URL 和目标 XPath。
-- 搜索无结果：任务失败，提示未找到人群包。
-- 多个精确匹配：任务暂停，等待用户选择。
-- 应用确认弹窗未出现：任务失败，提示已点击应用人群但未检测到确认弹窗。
-- 达摩盘人群 ID 为空：任务失败，提示无法读取 crowdId。
-- 画像接口未出现：任务失败，提示未拦截到画像接口请求。
-- 单个标签查询失败：记录该标签失败，继续查询其他标签；全部失败则任务失败。
+- 官方平台未登录：提示用户登录自动化浏览器。
+- 搜索框未找到：记录 URL 和 XPath。
+- 精准匹配 0 条：任务失败。
+- 精准匹配多条：任务暂停，等待用户选择。
+- 数据引擎最终应用按钮即将被点击：开发模式阻断。
+- 达摩盘 `crowdId` 为空：任务失败。
+- 透视页未触发画像请求：尝试 XHR hook 兜底，仍失败则任务失败。
+- 单个标签请求失败：记录该标签失败，继续其他标签。
+- 所有标签失败：任务失败。
 
 ## 测试策略
 
 后端单元测试：
 
-- 名称标准化和精准匹配。
+- 名称标准化。
+- 多行精准匹配。
 - XPath 行号泛化。
-- 任务状态流转。
-- 真实推送保护开关。
-- 标签默认选择。
-- 结果构建和 Excel 输出。
-
-前端测试：
-
-- 任务表单校验。
-- 标签默认选择 3-5 个。
-- 进度状态展示。
-- 安全暂停提示展示。
+- `crowdId` 提取。
+- URL 标签 ID 替换。
+- payload 标签 ID 替换。
+- `multiGroupOptions` 删除和 `needCondition=true` 跳过。
+- `chartDataFull` 解析。
+- Rebase 计算。
+- 最终应用按钮保护。
 
 手工联调：
 
-- 数据引擎段跑到最终应用按钮前停止。
-- 达摩盘段能从搜索结果中匹配非第一行人群。
-- 达摩盘段能读取 crowdId 并打开修正后的透视 URL。
-- 能获取至少 3 个标签数据并生成结果。
+- 数据引擎段停在最终应用按钮前。
+- 达摩盘搜索结果目标不在第一行时仍能匹配。
+- 成功读取 `crowdId` 并打开透视页。
+- 成功捕获一次画像请求。
+- 成功查询至少 3 个标签。
+- 前端看到进度、结果预览和下载入口。
 
 ## 验收标准
 
-- 用户可以在任务中台输入两个测试人群包名称并启动任务。
-- 数据引擎段不会点击最终应用按钮。
-- 数据引擎和达摩盘都使用精准匹配，不依赖第一行。
-- 达摩盘能读取匹配行的 crowdId，并打开：
-  `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`
-- 任务中台能显示每一步进度和失败原因。
-- 至少 3 个标签能被查询并生成预览结果。
+- 用户能在我们的系统上输入人群包名称并选择标签。
+- 开发模式下有两个输入框，方便分段测试。
+- 数据引擎最终应用按钮不会被误点。
+- 达摩盘不依赖第一行，必须精准匹配。
+- 能从匹配行读取 `crowdId` 并拼接透视 URL。
+- 能按 DMP-Plugin 思路捕获画像 payload 并批量替换标签取数。
+- 能解析 `chartDataFull` 并计算 Rebase。
+- 至少 3 个标签能生成结果预览。
