@@ -143,7 +143,11 @@
 - `DmpInsightClient`：参考 DMP-Plugin 的标签字典、接口参数、返回解析和 Rebase 逻辑获取画像数据。
 - `ExcelBuilder`：将画像结果输出为 Excel。
 
-GitHub 访问约定：读取 DMP-Plugin 时默认使用代理 `127.0.0.1:7897`。
+参考插件项目：
+
+- `https://github.com/aidenLi377/DMP-Plugin`
+
+实现 `DmpInsightClient` 时需要优先读取该插件中的标签字典、请求拦截逻辑、画像接口参数、返回数据解析和 Rebase 计算逻辑。GitHub 访问约定：读取 DMP-Plugin 时默认使用代理 `127.0.0.1:7897`。
 
 ## API 设计
 
