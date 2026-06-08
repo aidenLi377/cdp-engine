@@ -149,6 +149,57 @@
 
 实现 `DmpInsightClient` 时需要优先读取该插件中的标签字典、请求拦截逻辑、画像接口参数、返回数据解析和 Rebase 计算逻辑。GitHub 访问约定：读取 DMP-Plugin 时默认使用代理 `127.0.0.1:7897`。
 
+## DMP-Plugin 透视思路迁移
+
+DMP-Plugin 的核心思路不是模拟用户逐个点标签，而是先在画像透视页拦截一次真实画像接口请求，再复用这次请求的 URL 和 payload 批量替换标签 ID。我们的后端自动化应沿用这个思路，但把执行位置从 Chrome 插件迁移到 Playwright 后端任务。
+
+插件侧关键文件：
+
+- `hook.js`：在页面主世界改写 `XMLHttpRequest.prototype.open/send`，拦截包含 `/api_2/` 且 URL 中有 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}` 的请求。只有请求体中包含 `crowdId` 时，才认为这是画像查询请求，并保存 `{ url, payload }`。
+- `content.js`：读取 `dmp_tags_dictionary.json`，循环用户选择的 `tagId`，复制被拦截的 payload，删除或按需设置 `multiGroupOptions`，把 URL 和 body 中的标签 ID 替换为目标标签 ID，再发起 POST 请求。
+- `dmp_tags_dictionary.json`：提供标签大类、标签类型、标签名称、标签 ID 和 `needCondition` 标记。
+
+后端迁移方案：
+
+1. `DmpBot` 打开 `https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId={crowdId}`。
+2. 页面加载后，`DmpInsightClient` 通过 Playwright 监听网络请求，捕获满足以下条件的请求：
+   - URL 包含 `/api_2/`。
+   - URL 包含 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}`。
+   - POST body 是 JSON。
+   - JSON body 中包含当前 `crowdId`。
+3. 捕获后保存：
+   - 原始 URL。
+   - 原始请求 body。
+   - 请求 headers 中必要的鉴权信息，例如 cookie、csrf、referer、content-type。
+4. 对用户选择的每个 `tagId`：
+   - 深拷贝原始 body。
+   - 删除原始 `multiGroupOptions`。
+   - 如果标签 `needCondition=false`，直接查询。
+   - 如果标签 `needCondition=true`，MVP 阶段跳过并记录“未配置下钻条件”。
+   - 替换 URL 中的 `/tag/{id}`、`tagId={id}` 或 `/analysis/{id}`。
+   - 如果 body 中存在 `tagId` 字段，同步替换为当前标签 ID。
+   - 使用 `httpx` 或 Playwright `page.evaluate(fetch)` 发起 POST 请求。
+5. 解析响应中的 `data.chartDataFull`，生成行数据：
+   - 所属大类：来自标签字典 `mainCategory`。
+   - 标签类型：来自标签字典 `category`。
+   - 标签名称：优先使用响应 `tagName`，没有则使用标签字典 `tagName`。
+   - 特征明细：响应 `optionName`。
+   - 人群占比：`rate * 100`，保留两位小数并追加 `%`。
+   - 点击TGI：响应 `ctrIndex`。
+   - 转化TGI：响应 `ppcIndex`。
+6. 对同一标签名称下的所有明细计算 Rebase：
+   - 先按标签名称汇总所有有效“人群占比”。
+   - 如果汇总值 `> 100.1`，认为是多选或重叠标签，Rebase 保持原始人群占比。
+   - 如果汇总值 `<= 100.1`，使用 `当前占比 / 汇总占比 * 100` 归一化。
+   - 占比缺失或错误提示行的 Rebase 记为 `-`。
+7. 将归一化后的数据写入任务结果和 Excel。
+
+实现约束：
+
+- 不把 DMP-Plugin 的 UI、PostHog 埋点、模型口令分享迁移进任务中台。
+- 不在页面里长期注入插件代码；优先使用 Playwright 网络监听。如果 Playwright 监听不到请求，再考虑注入等价的 XHR hook 作为兜底。
+- MVP 只查询 3-5 个 `needCondition=false` 标签，避免下钻条件影响链路验证。
+
 ## API 设计
 
 ### POST /api/rpa/tasks
