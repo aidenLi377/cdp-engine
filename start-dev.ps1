@@ -191,15 +191,76 @@ function Get-TrackedPid {
     return $null
 }
 
+function Get-ProcessDetails {
+    param([int]$ProcessId)
+
+    if ($ProcessId -le 0) {
+        return $null
+    }
+
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return $null
+    }
+
+    $commandLine = $null
+    $executablePath = $null
+    try {
+        $cimProcess = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) -ErrorAction Stop
+        $commandLine = $cimProcess.CommandLine
+        $executablePath = $cimProcess.ExecutablePath
+    }
+    catch {
+    }
+
+    return [pscustomobject]@{
+        ProcessId      = $ProcessId
+        ProcessName    = $process.ProcessName
+        CommandLine    = $commandLine
+        ExecutablePath = $executablePath
+    }
+}
+
 function Test-TrackedProcessAlive {
-    param([string]$PidFile)
+    param(
+        [string]$PidFile,
+        [string]$ExpectedProcessName,
+        [string[]]$RequiredCommandLinePatterns = @()
+    )
 
     $trackedPid = Get-TrackedPid -PidFile $PidFile
     if (-not $trackedPid) {
         return $false
     }
 
-    return [bool](Get-Process -Id $trackedPid -ErrorAction SilentlyContinue)
+    $processDetails = Get-ProcessDetails -ProcessId $trackedPid
+    if (-not $processDetails) {
+        return $false
+    }
+
+    if (-not $ExpectedProcessName -and $RequiredCommandLinePatterns.Count -eq 0) {
+        return $false
+    }
+
+    if ($ExpectedProcessName -and $processDetails.ProcessName -ne $ExpectedProcessName) {
+        return $false
+    }
+
+    foreach ($pattern in $RequiredCommandLinePatterns) {
+        if (-not $pattern) {
+            continue
+        }
+
+        if (-not $processDetails.CommandLine) {
+            return $false
+        }
+
+        if ($processDetails.CommandLine.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Remove-StalePidFile {
@@ -337,8 +398,8 @@ Write-Info ("Backend Python: {0}" -f $pythonExe)
 Write-Info ("Frontend npm: {0}" -f $npmExe)
 Invoke-BackendPreflight -PythonExe $pythonExe -RootDir $rootDir
 
-$backendRunning = (Test-HttpAvailable -Url $backendHealthUrl) -or (Test-TrackedProcessAlive -PidFile $backendPidFile)
-$frontendRunning = (Test-HttpAvailable -Url $frontendUrl) -or (Test-TrackedProcessAlive -PidFile $frontendPidFile)
+$backendRunning = (Test-HttpAvailable -Url $backendHealthUrl) -or (Test-TrackedProcessAlive -PidFile $backendPidFile -ExpectedProcessName 'python' -RequiredCommandLinePatterns @("port=$backendPort", "host='127.0.0.1'"))
+$frontendRunning = (Test-HttpAvailable -Url $frontendUrl) -or (Test-TrackedProcessAlive -PidFile $frontendPidFile -ExpectedProcessName 'cmd' -RequiredCommandLinePatterns @('run dev', "--port $frontendPort"))
 
 if (-not $backendRunning) {
     Remove-StalePidFile -PidFile $backendPidFile

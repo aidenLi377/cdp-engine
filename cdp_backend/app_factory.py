@@ -3,20 +3,18 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import threading
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+import json
+
+from flask import Flask, Response, abort, jsonify, request, send_from_directory, stream_with_context
 from flask_cors import CORS
 
-from .constants import BASE_DIR, FOLDERS_FILENAME, RPA_RESULTS_DIRNAME, RPA_TASKS_DIRNAME, RUNTIME_DIRNAME, SOLUTIONS_FILENAME
-from .rpa_agent.dmp_api import filter_ready_tags, group_tags_by_category, load_tags
-from .rpa_agent.orchestrator import RpaOrchestrator
-from .rpa_agent.task_store import TaskStatus, TaskStore
+from .constants import BASE_DIR, FOLDERS_FILENAME, RUNTIME_DIRNAME, SOLUTIONS_FILENAME, TASKS_FILENAME
 from .engine import ConfigEngine
 from .folder_store import FolderNotFoundError, FolderStore
 from .solution_store import InvalidSolutionStateError, SolutionNotFoundError, SolutionStore
+from .task_store import TaskNotFoundError, TaskStore
 from .validator import ConfigValidationError
 
 
@@ -54,6 +52,8 @@ def create_app() -> tuple[Flask, ConfigEngine]:
     solution_store = SolutionStore(solutions_file)
     folders_file = os.environ.get("FOLDERS_FILE", os.path.join(BASE_DIR, RUNTIME_DIRNAME, FOLDERS_FILENAME))
     folder_store = FolderStore(folders_file)
+    tasks_file = os.environ.get("TASKS_FILE", os.path.join(BASE_DIR, RUNTIME_DIRNAME, TASKS_FILENAME))
+    task_store = TaskStore(tasks_file)
 
     if production:
         allowed_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -69,7 +69,7 @@ def create_app() -> tuple[Flask, ConfigEngine]:
         app.logger.error("Configuration validation failed at startup:\n%s", exc)
         raise
 
-    register_routes(app, engine, production, solution_store, folder_store)
+    register_routes(app, engine, production, solution_store, folder_store, task_store)
     return app, engine
 
 
@@ -79,6 +79,7 @@ def register_routes(
     production: bool,
     solution_store: SolutionStore,
     folder_store: FolderStore,
+    task_store: TaskStore,
 ) -> None:
     @app.route("/api/packages")
     def get_packages():
@@ -305,95 +306,74 @@ def register_routes(
             return jsonify({"error": str(exc)}), 400
         return jsonify(updated)
 
-    # ── RPA routes ────────────────────────────────────────────
+    # -- 任务中台 API --
 
-    rpa_tasks_dir = os.path.join(BASE_DIR, RUNTIME_DIRNAME, RPA_TASKS_DIRNAME)
-    rpa_results_dir = os.path.join(BASE_DIR, RUNTIME_DIRNAME, RPA_RESULTS_DIRNAME)
-    rpa_store = TaskStore(Path(rpa_tasks_dir))
-    rpa_orchestrator = RpaOrchestrator(rpa_store, Path(rpa_results_dir))
+    @app.route("/api/tasks", methods=["POST"])
+    def create_task():
+        payload = request.get_json(silent=True) or {}
+        name = (payload.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "任务名称不能为空"}), 400
+        task = task_store.create_task(payload)
+        return jsonify(task), 201
 
-    @app.route("/api/rpa/tags")
-    def list_rpa_tags():
-        all_tags = rpa_orchestrator.tags
-        ready_tags = filter_ready_tags(all_tags)
-        return jsonify({
-            "allTags": all_tags,
-            "readyTags": ready_tags,
-            "groups": group_tags_by_category(ready_tags),
-        })
+    @app.route("/api/tasks")
+    def list_tasks():
+        return jsonify(task_store.list_tasks())
 
-    @app.route("/api/rpa/execute", methods=["POST"])
-    def execute_rpa_task():
-        data = request.get_json(silent=True) or {}
-        crowd_name = (data.get("crowdName") or "").strip()
-        tag_ids = data.get("tagIds") or []
-
-        if not crowd_name:
-            return jsonify({"error": "crowdName is required"}), 400
-        if not tag_ids or not isinstance(tag_ids, list):
-            return jsonify({"error": "tagIds must be a non-empty array"}), 400
-
-        task = rpa_store.create_task(crowd_name=crowd_name, tag_ids=tag_ids)
-        thread = threading.Thread(
-            target=rpa_orchestrator.run,
-            args=(task["id"], crowd_name, tag_ids),
-            daemon=True,
-        )
-        thread.start()
-
-        return jsonify({"taskId": task["id"]}), 201
-
-    @app.route("/api/rpa/tasks")
-    def list_rpa_tasks():
-        limit = request.args.get("limit", 50, type=int)
-        tasks = rpa_store.list_tasks(limit=limit)
-        summaries = []
-        for t in tasks:
-            summary = {
-                "taskId": t["id"],
-                "crowdName": t["crowdName"],
-                "status": t["status"],
-                "progress": t.get("progress"),
-                "error": t.get("error"),
-                "createdAt": t["createdAt"],
-                "updatedAt": t["updatedAt"],
-            }
-            if t.get("result"):
-                summary["totalRows"] = t["result"].get("totalRows")
-                summary["excelFilename"] = t["result"].get("excelFilename")
-            summaries.append(summary)
-        return jsonify({"tasks": summaries})
-
-    @app.route("/api/rpa/tasks/<task_id>")
-    def get_rpa_task(task_id: str):
-        task = rpa_store.get_task(task_id)
+    @app.route("/api/tasks/<task_id>")
+    def get_task(task_id: str):
+        task = task_store.get_task(task_id)
         if task is None:
-            return jsonify({"error": "task not found"}), 404
+            return jsonify({"error": "任务不存在"}), 404
         return jsonify(task)
 
-    @app.route("/api/rpa/tasks/<task_id>/result")
-    def get_rpa_task_result(task_id: str):
-        task = rpa_store.get_task(task_id)
-        if task is None:
-            return jsonify({"error": "task not found"}), 404
-        if task["status"] != TaskStatus.COMPLETED or task.get("result") is None:
-            return jsonify({"error": "task not yet completed"}), 404
-        return jsonify({
-            "taskId": task["id"],
-            "excelUrl": f"/api/rpa/download/{task['result']['excelFilename']}",
-            "previewRows": task["result"]["previewRows"],
-            "totalRows": task["result"]["totalRows"],
-            "generatedAt": task["result"]["generatedAt"],
-        })
+    @app.route("/api/tasks/<task_id>", methods=["DELETE"])
+    def delete_task(task_id: str):
+        deleted = task_store.delete_task(task_id)
+        if not deleted:
+            return jsonify({"error": "任务不存在"}), 404
+        return "", 204
 
-    @app.route("/api/rpa/download/<filename>")
-    def download_rpa_result(filename: str):
-        if "/" in filename or "\\" in filename:
-            abort(404)
-        file_path = os.path.join(rpa_results_dir, filename)
-        if not os.path.isfile(file_path):
-            return jsonify({"error": "file not found"}), 404
-        return send_from_directory(rpa_results_dir, filename, as_attachment=True)
+    @app.route("/api/tasks/<task_id>/progress", methods=["PUT"])
+    def update_task_progress(task_id: str):
+        payload = request.get_json(silent=True) or {}
+        try:
+            updated = task_store.update_progress(task_id, payload)
+        except TaskNotFoundError:
+            return jsonify({"error": "任务不存在"}), 404
+        return jsonify(updated)
+
+    @app.route("/api/tasks/<task_id>/events")
+    def task_events(task_id: str):
+        task = task_store.get_task(task_id)
+        if task is None:
+            return jsonify({"error": "任务不存在"}), 404
+
+        q = task_store.subscribe(task_id)
+
+        def generate():
+            try:
+                # Send current state first
+                current = task_store.get_task(task_id)
+                if current:
+                    yield f"data: {json.dumps(current, ensure_ascii=False)}\n\n"
+                while True:
+                    try:
+                        update = q.get(timeout=15)
+                        yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+                        if update.get("status") in ("completed", "failed"):
+                            break
+                    except Exception:
+                        yield ": keepalive\n\n"
+            finally:
+                task_store.unsubscribe(task_id, q)
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.errorhandler(404)
     def not_found(_error):

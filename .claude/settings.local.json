@@ -55,7 +55,24 @@
       "Bash(npm run *)",
       "Bash(grep -E \",$|,\\\\r$\" \"属性值维表.csv\")",
       "Bash(xxd)",
-      "Bash(taskkill *)"
+      "Bash(taskkill *)",
+      "Bash(grep -E '\\\\.\\(log|pyc\\)$|__pycache__|\\\\.runtime|\\\\.venv\\\\.bak|\\\\.idea|\\\\.worktrees')",
+      "Bash(grep -E '\\\\.log$|__pycache__|\\\\.idea/')",
+      "Bash(pip install *)",
+      "Bash(playwright install *)",
+      "Bash(python3 -m pytest cdp_backend/rpa_agent/test_task_store.py -v)",
+      "Bash(set HTTPS_PROXY=http://127.0.0.1:7897)",
+      "Bash(set HTTP_PROXY=http://127.0.0.1:7897)",
+      "Bash(export HTTPS_PROXY=http://127.0.0.1:7897)",
+      "Bash(export HTTP_PROXY=http://127.0.0.1:7897)",
+      "WebFetch(domain:github.com)",
+      "Bash(python3 *)",
+      "Bash(fuser -k 5000/tcp)",
+      "Bash(pkill -f \"app.run\")",
+      "Bash(kill %1)",
+      "Bash(fuser -k 5001/tcp)",
+      "Bash(ls cdp_backend/app_factory.py cdp_backend/requirements.txt)",
+      "Bash(ls cdp-web/package.json)"
     ]
   }
 }

@@ -6,6 +6,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNTIME_DIRNAME = ".runtime"
 SOLUTIONS_FILENAME = "solutions.json"
 FOLDERS_FILENAME = "folders.json"
+TASKS_FILENAME = "tasks.json"
 PARAMS_FILE = "1.参数表.csv"
 TEMPLATE_DIRNAME = "批量圈人模板"
 
@@ -56,10 +57,4 @@ DIMENSION_NAME_COLUMNS = {
     ATTRIBUTE_DIM_FILE: "属性值名称",
 }
 
-RPA_TASKS_DIRNAME = "rpa_tasks"
-RPA_RESULTS_DIRNAME = "rpa_results"
-RPA_TAGS_FILENAME = "dmp_tags_dictionary.json"
-
-DATABANK_URL = "https://databank.tmall.com/#/userDefinedAnalyses"
-DMP_URL = "https://dmp.taobao.com"
 

@@ -31,6 +31,91 @@ function Get-ListeningPids {
         Select-Object -ExpandProperty OwningProcess -Unique)
 }
 
+function Get-TrackedPid {
+    param([string]$PidFile)
+
+    if (-not (Test-Path $PidFile)) {
+        return $null
+    }
+
+    $pidText = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if (-not $pidText) {
+        return $null
+    }
+
+    $trackedPid = 0
+    if ([int]::TryParse($pidText.Trim(), [ref]$trackedPid)) {
+        return $trackedPid
+    }
+
+    return $null
+}
+
+function Get-ProcessDetails {
+    param([int]$ProcessId)
+
+    if ($ProcessId -le 0) {
+        return $null
+    }
+
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if (-not $process) {
+        return $null
+    }
+
+    $commandLine = $null
+    try {
+        $cimProcess = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) -ErrorAction Stop
+        $commandLine = $cimProcess.CommandLine
+    }
+    catch {
+    }
+
+    return [pscustomobject]@{
+        ProcessId   = $ProcessId
+        ProcessName = $process.ProcessName
+        CommandLine = $commandLine
+    }
+}
+
+function Test-TrackedProcessMatch {
+    param(
+        [string]$PidFile,
+        [string]$ExpectedProcessName,
+        [string[]]$RequiredCommandLinePatterns = @()
+    )
+
+    $trackedPid = Get-TrackedPid -PidFile $PidFile
+    if (-not $trackedPid) {
+        return $false
+    }
+
+    $processDetails = Get-ProcessDetails -ProcessId $trackedPid
+    if (-not $processDetails) {
+        return $false
+    }
+
+    if ($ExpectedProcessName -and $processDetails.ProcessName -ne $ExpectedProcessName) {
+        return $false
+    }
+
+    foreach ($pattern in $RequiredCommandLinePatterns) {
+        if (-not $pattern) {
+            continue
+        }
+
+        if (-not $processDetails.CommandLine) {
+            return $false
+        }
+
+        if ($processDetails.CommandLine.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Stop-ProcessTree {
     param([int]$TargetPid)
 
@@ -75,16 +160,15 @@ $frontendPort = 5173
 $stoppedLabels = @()
 
 foreach ($entry in @(
-    @{ Label = 'backend'; PidFile = $backendPidFile },
-    @{ Label = 'frontend'; PidFile = $frontendPidFile }
+    @{ Label = 'backend'; PidFile = $backendPidFile; ProcessName = 'python'; Patterns = @("port=$backendPort", "host='127.0.0.1'") },
+    @{ Label = 'frontend'; PidFile = $frontendPidFile; ProcessName = 'cmd'; Patterns = @('run dev', "--port $frontendPort") }
 )) {
     if (-not (Test-Path $entry.PidFile)) {
         continue
     }
 
-    $pidText = (Get-Content $entry.PidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
-    $targetPidValue = 0
-    if ([int]::TryParse($pidText, [ref]$targetPidValue)) {
+    $targetPidValue = Get-TrackedPid -PidFile $entry.PidFile
+    if ($targetPidValue -and (Test-TrackedProcessMatch -PidFile $entry.PidFile -ExpectedProcessName $entry.ProcessName -RequiredCommandLinePatterns $entry.Patterns)) {
         if (Stop-ProcessTree -TargetPid $targetPidValue) {
             $stoppedLabels += $entry.Label
         }

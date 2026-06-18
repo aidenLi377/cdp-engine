@@ -14,12 +14,14 @@ flask.log
 
 # Node / frontend
 cdp-web/node_modules/
+chrome-extension/databank-automation/node_modules/
 cdp-web/dist/
 .worktrees/
 
 # IDE
 .vscode/
 .idea/
+.obsidian/
 
 # OS
 .DS_Store
