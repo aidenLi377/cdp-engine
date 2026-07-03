@@ -291,6 +291,27 @@ export function chunkArray(arr, maxSize) {
   return chunks
 }
 
+function getSecondaryCategory(item) {
+  const parts = String(item).split('>')
+  if (parts.length <= 2) return String(item)
+  return parts.slice(0, 2).join('>')
+}
+
+export function chunkBySecondaryCategory(allValues, limit) {
+  const groups = new Map()
+  for (const v of allValues) {
+    const sec = getSecondaryCategory(v)
+    if (!groups.has(sec)) groups.set(sec, [])
+    groups.get(sec).push(v)
+  }
+  const groupList = [...groups.values()]
+  const chunks = []
+  for (let i = 0; i < groupList.length; i += limit) {
+    chunks.push(groupList.slice(i, i + limit).flat())
+  }
+  return chunks
+}
+
 export function buildNodeSplits(sourceNode, fieldKey, allValues, limit) {
   const chunks = chunkArray(allValues, limit)
   if (chunks.length <= 1) return []
@@ -304,6 +325,49 @@ export function buildNodeSplits(sourceNode, fieldKey, allValues, limit) {
     cloned.selectedFirstDate = null
     cloned.collapsed = false
     cloned.formData[fieldKey] = chunks[i]
+    splits.push(cloned)
+  }
+
+  return splits
+}
+
+export function buildMultiFieldNodeSplits(sourceNode, overflows) {
+  const fieldChunks = {}
+  const fieldKeys = []
+  for (const { fieldKey, allValues, limit } of overflows) {
+    const chunks = fieldKey === 'leafCates'
+      ? chunkBySecondaryCategory(allValues, limit)
+      : chunkArray(allValues, limit)
+    fieldChunks[fieldKey] = chunks
+    fieldKeys.push(fieldKey)
+  }
+  if (fieldKeys.length === 0) return []
+
+  // Cartesian product: total = ∏ chunks[i].length
+  const ranges = fieldKeys.map(k => fieldChunks[k].length)
+  const totalNodes = ranges.reduce((a, b) => a * b, 1)
+  if (totalNodes <= 1) return []
+
+  // Source node = combination [0,0,...,0]; clones = [1..totalNodes-1]
+  const splits = []
+  for (let ci = 1; ci < totalNodes; ci++) {
+    let remaining = ci
+    const combo = {}
+    for (let fi = fieldKeys.length - 1; fi >= 0; fi--) {
+      const size = ranges[fi]
+      combo[fieldKeys[fi]] = remaining % size
+      remaining = Math.floor(remaining / size)
+    }
+
+    const cloned = JSON.parse(JSON.stringify(sourceNode))
+    cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${ci}`
+    cloned.displayName = ''
+    cloned.operator = 'u'
+    cloned.selectedFirstDate = null
+    cloned.collapsed = false
+    for (const { fieldKey } of overflows) {
+      cloned.formData[fieldKey] = fieldChunks[fieldKey][combo[fieldKey]]
+    }
     splits.push(cloned)
   }
 

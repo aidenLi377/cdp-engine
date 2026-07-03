@@ -113,7 +113,6 @@
           <div class="solution-list-meta">
             <span>{{ item.nodes?.length || 0 }} 个节点</span>
             <span>{{ getFolderName(item.folderId) }}</span>
-            <span>{{ formatTime(item.updatedAt) }}</span>
           </div>
         </div>
 
@@ -125,14 +124,19 @@
 
     <section class="solution-editor">
       <div v-if="activeSolution" class="panel-toolbar solution-editor-toolbar">
-        <div>
-          <div class="display-feature-title">{{ activeSolution.name || '未命名方案' }}</div>
-          <div class="display-body-light">
+        <div class="solution-toolbar-copy">
+          <div class="solution-toolbar-title-row">
+            <div class="display-feature-title">{{ activeSolution.name || '未命名方案' }}</div>
+            <span class="solution-toolbar-status" :class="{ published: isPublished, draft: !isPublished }">
+              {{ isPublished ? '已发布' : '草稿' }}
+            </span>
+          </div>
+          <div class="display-body-light solution-toolbar-hint">
             {{ isPublished ? '正式方案只读中，点击“生成编辑草稿”后再修改。' : '当前为草稿，可直接调整节点结构与字段。' }}
           </div>
         </div>
 
-        <div class="solution-toolbar-actions">
+        <div v-if="!isPublished" class="solution-toolbar-actions">
           <div class="solution-add-node-control">
             <el-select
               v-model="pendingPackageType"
@@ -140,7 +144,6 @@
               clearable
               placeholder="添加组件..."
               class="intercom-input solution-package-select"
-              :disabled="isPublished"
             >
               <el-option v-for="pkg in availablePackages" :key="pkg" :label="pkg" :value="pkg" />
             </el-select>
@@ -148,7 +151,7 @@
               <el-button
                 class="solution-toolbar-icon-btn"
                 @click="addNodeFromSelector"
-                :disabled="!pendingPackageType || isPublished"
+                :disabled="!pendingPackageType"
                 :loading="addingNode"
                 aria-label="添加节点"
               >
@@ -157,7 +160,7 @@
             </el-tooltip>
           </div>
           <div class="solution-toolbar-icon-actions">
-            <el-tooltip v-if="!isPublished" content="保存草稿" placement="bottom">
+            <el-tooltip content="保存草稿" placement="bottom">
               <el-button
                 ref="saveBtnRef"
                 class="solution-toolbar-icon-btn"
@@ -168,7 +171,7 @@
                 <el-icon><Check /></el-icon>
               </el-button>
             </el-tooltip>
-            <el-tooltip v-if="!isPublished" content="发布正式方案" placement="bottom">
+            <el-tooltip content="发布正式方案" placement="bottom">
               <el-button
                 ref="publishBtnRef"
                 class="solution-toolbar-icon-btn publish"
@@ -528,8 +531,8 @@ import DynamicForm from './DynamicForm.vue'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
-import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits } from '../utils/solutionState.js'
-import { formatTime, getCfTypeClass, statusText } from '../utils/display.js'
+import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits, buildMultiFieldNodeSplits, chunkBySecondaryCategory } from '../utils/solutionState.js'
+import { getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
@@ -943,14 +946,28 @@ function removeNode(index) {
   }
 }
 
-function handleOverflowSplit({ nodeId, fieldKey, allValues, limit }) {
+function handleOverflowSplit(payload) {
   if (isPublished.value) return
+  const { nodeId, overflows } = payload
   const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
   if (srcIndex < 0) return
   const sourceNode = nodeList.value[srcIndex]
-  const splits = buildNodeSplits(sourceNode, fieldKey, allValues, limit)
+
+  let allOverflows = overflows
+  if (!allOverflows) {
+    allOverflows = [{ fieldKey: payload.fieldKey, allValues: payload.allValues, limit: payload.limit }]
+  }
+
+  const splits = buildMultiFieldNodeSplits(sourceNode, allOverflows)
   if (splits.length === 0) return
-  sourceNode.formData[fieldKey] = allValues.slice(0, limit)
+  for (const ov of allOverflows) {
+    if (ov.fieldKey === 'leafCates') {
+      const chunks = chunkBySecondaryCategory(ov.allValues, ov.limit)
+      sourceNode.formData[ov.fieldKey] = chunks[0] || []
+    } else {
+      sourceNode.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
+    }
+  }
   nodeList.value.splice(srcIndex + 1, 0, ...splits)
   nodeList.value.forEach((node, idx) => {
     if (idx === 0) node.operator = null

@@ -53,7 +53,6 @@
             <span class="display-mono">{{ item.nodes?.length || 0 }} 节点</span>
           </div>
           <div class="display-body strong published-solution-name">{{ item.name || '未命名方案' }}</div>
-          <div class="display-body-light published-solution-meta">{{ formatTime(item.updatedAt) }}</div>
           <div v-if="loadingSolutionId === item.id" class="display-body-light published-solution-loading">
             正在加载...
           </div>
@@ -601,8 +600,10 @@ import {
   cloneNodeForDuplicate,
   insertNodeAtPosition,
   buildNodeSplits,
+  buildMultiFieldNodeSplits,
+  chunkBySecondaryCategory,
 } from '../utils/solutionState.js'
-import { formatTime, getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
+import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
@@ -1275,14 +1276,28 @@ function duplicateNode(index) {
   }
 }
 
-function handleOverflowSplit({ nodeId, fieldKey, allValues, limit }) {
+function handleOverflowSplit(payload) {
+  const { nodeId, overflows } = payload
   const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
   if (srcIndex < 0) return
   const sourceNode = nodeList.value[srcIndex]
-  const splits = buildNodeSplits(sourceNode, fieldKey, allValues, limit)
+
+  let allOverflows = overflows
+  if (!allOverflows) {
+    allOverflows = [{ fieldKey: payload.fieldKey, allValues: payload.allValues, limit: payload.limit }]
+  }
+
+  const splits = buildMultiFieldNodeSplits(sourceNode, allOverflows)
   if (splits.length === 0) return
   takeSnapshot()
-  sourceNode.formData[fieldKey] = allValues.slice(0, limit)
+  for (const ov of allOverflows) {
+    if (ov.fieldKey === 'leafCates') {
+      const chunks = chunkBySecondaryCategory(ov.allValues, ov.limit)
+      sourceNode.formData[ov.fieldKey] = chunks[0] || []
+    } else {
+      sourceNode.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
+    }
+  }
   nodeList.value.splice(srcIndex + 1, 0, ...splits)
   nodeList.value.forEach((node, idx) => {
     if (idx === 0) node.operator = null

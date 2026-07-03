@@ -31,33 +31,12 @@
         </template>
 
         <template v-else-if="field.Widget_Type === '列表输入'">
-          <div class="form-row">
-            <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :multiple-limit="getListLimit(field, node)" :placeholder="`输入并回车创建${field.Label}`" @change="handleListInput(field.key, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
-            <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
-          </div>
-        </template>
-
-        <template v-else-if="field.Widget_Type === '单选组'">
-          <el-radio-group v-model="node.formData[field.key]" @change="field.key === 'title_type' && $event === '任意商品标题关键字' ? node.formData.title = [] : null" class="intercom-radio-group">
-            <el-radio-button label="任意商品标题关键字">任意商品标题关键字</el-radio-button>
-            <el-radio-button label="指定商品标题关键字">指定商品标题关键字</el-radio-button>
-          </el-radio-group>
-        </template>
-
-        <template v-else-if="field.Widget_Type === '搜索多选'">
-          <div class="form-row">
-            <el-select-v2 v-model="node.formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable :reserve-keyword="false" :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input select-auto-height" @change="handleMultiSelectChange(field.key, node)"></el-select-v2>
+          <div class="form-row" @paste.capture="onFieldPaste(node, field, $event)">
+            <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :placeholder="`输入并回车创建${field.Label}`" @change="handleListInputWithOverflow(field.key, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
             <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
           <div v-if="isMultiSelectPasteEnabled(field)" class="paste-root">
-            <button type="button" class="paste-trigger" @click="togglePaste(node.id, field.key)" :class="{ open: pasteOpenMap[psKey(node.id, field.key)] }">
-              <span class="paste-trigger-icon">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              </span>
-              <span>{{ pasteOpenMap[psKey(node.id, field.key)] ? '收起' : '批量导入' }}</span>
-            </button>
             <Transition name="paste-panel">
               <div v-if="pasteOpenMap[psKey(node.id, field.key)]" class="paste-panel">
                 <div class="paste-panel-body">
@@ -81,13 +60,76 @@
                     </div>
                     <div class="paste-chip-cloud">
                       <span
-                        v-for="(item, i) in pasteResultMap[psKey(node.id, field.key)].valid"
+                        v-for="(item, i) in formatLeafCateChips(pasteResultMap[psKey(node.id, field.key)].valid)"
                         :key="'v-'+item"
                         class="paste-chip ok"
                         :style="{ animationDelay: `${Math.min(i * 20, 300)}ms` }"
                       >{{ item }}</span>
                       <span
-                        v-for="(item, i) in pasteResultMap[psKey(node.id, field.key)].invalid"
+                        v-for="(item, i) in formatLeafCateChips(pasteResultMap[psKey(node.id, field.key)].invalid)"
+                        :key="'i-'+item"
+                        class="paste-chip err"
+                        :style="{ animationDelay: `${Math.min(i * 25 + 80, 400)}ms` }"
+                        :title="`「${item}」不在可选列表中`"
+                      >{{ item }}<span class="paste-chip-err-hint">未收录</span></span>
+                    </div>
+                  </div>
+                  <div class="paste-panel-foot">
+                    <button type="button" class="paste-btn cancel" @click="clearPaste(node.id, field.key)">取消</button>
+                    <button type="button" class="paste-btn confirm" @click="applyPaste(node, field)" :disabled="!pasteResultMap[psKey(node.id, field.key)]?.valid.length">
+                      添加 {{ pasteResultMap[psKey(node.id, field.key)]?.valid.length || 0 }} 项
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </template>
+
+        <template v-else-if="field.Widget_Type === '单选组'">
+          <el-radio-group v-model="node.formData[field.key]" @change="field.key === 'title_type' && $event === '任意商品标题关键字' ? node.formData.title = [] : null" class="intercom-radio-group">
+            <el-radio-button label="任意商品标题关键字">任意商品标题关键字</el-radio-button>
+            <el-radio-button label="指定商品标题关键字">指定商品标题关键字</el-radio-button>
+          </el-radio-group>
+        </template>
+
+        <template v-else-if="field.Widget_Type === '搜索多选'">
+          <div class="form-row" @paste.capture="onFieldPaste(node, field, $event)">
+            <el-select-v2 v-model="node.formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable :reserve-keyword="false" :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input select-auto-height" @change="handleMultiSelectChangeWithOverflow(field.key, node)"></el-select-v2>
+            <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
+            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
+          </div>
+          <div v-if="isMultiSelectPasteEnabled(field)" class="paste-root">
+            <Transition name="paste-panel">
+              <div v-if="pasteOpenMap[psKey(node.id, field.key)]" class="paste-panel">
+                <div class="paste-panel-body">
+                  <textarea
+                    v-model="pasteTextMap[psKey(node.id, field.key)]"
+                    @input="onPasteInput(node, field)"
+                    placeholder="从 Excel 复制一列数据粘贴到这里&#10;自动按换行 / 逗号 / Tab 拆分"
+                    rows="2"
+                    class="paste-textarea"
+                  ></textarea>
+                  <div v-if="pasteResultMap[psKey(node.id, field.key)]" class="paste-result">
+                    <div class="paste-result-head">
+                      <span class="paste-stat ok">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>
+                        匹配 {{ pasteResultMap[psKey(node.id, field.key)].valid.length }}
+                      </span>
+                      <span v-if="pasteResultMap[psKey(node.id, field.key)].invalid.length" class="paste-stat err">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        未收录 {{ pasteResultMap[psKey(node.id, field.key)].invalid.length }}
+                      </span>
+                    </div>
+                    <div class="paste-chip-cloud">
+                      <span
+                        v-for="(item, i) in formatLeafCateChips(pasteResultMap[psKey(node.id, field.key)].valid)"
+                        :key="'v-'+item"
+                        class="paste-chip ok"
+                        :style="{ animationDelay: `${Math.min(i * 20, 300)}ms` }"
+                      >{{ item }}</span>
+                      <span
+                        v-for="(item, i) in formatLeafCateChips(pasteResultMap[psKey(node.id, field.key)].invalid)"
                         :key="'i-'+item"
                         class="paste-chip err"
                         :style="{ animationDelay: `${Math.min(i * 25 + 80, 400)}ms` }"
@@ -162,6 +204,7 @@
 import { inject, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
+import { chunkBySecondaryCategory } from '../utils/solutionState.js'
 
 const props = defineProps({ node: { type: Object, required: true } })
 
@@ -176,7 +219,107 @@ const {
   isCheckboxDisabled, handleCheckboxChange, getArray,
   getExactDateRangeHint, handleCalendarChange, disabledDate,
   parsePastedText, validatePastedMultiSelectItems, isMultiSelectPasteEnabled,
+  collectNodeOverflows,
+  countUniqueSecondaryCategories,
 } = useCdpShared()
+
+function onFieldPaste(node, field, event) {
+  const pastedText = event.clipboardData?.getData('text') || ''
+  if (!pastedText.trim()) return
+  const items = parsePastedText(pastedText)
+  if (items.length <= 1) return
+  event.preventDefault()
+  event.stopPropagation()
+  const key = psKey(node.id, field.key)
+  pasteOpenMap[key] = true
+  pasteTextMap[key] = pastedText
+  onPasteInput(node, field)
+}
+
+function handleListInputWithOverflow(key, node) {
+  handleListInput(key, node, ({ field, uniqueArr, limit }) => {
+    node.formData[field.key] = uniqueArr
+    const allOverflows = collectNodeOverflows(node)
+    if (allOverflows.length === 0) return
+
+    const totalNodes = allOverflows.reduce((prod, o) => {
+    const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
+    return prod * Math.ceil(effLen / o.limit)
+  }, 1)
+    const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+
+    ElMessageBox.confirm(
+      `以下字段超限：${fieldList}。将自动拆分为 ${totalNodes} 个节点（关系：并集），是否继续？`,
+      '超限拆分节点',
+      { confirmButtonText: '确认拆分', cancelButtonText: '取消', type: 'warning' }
+    ).then(() => {
+      for (const ov of allOverflows) {
+        if (ov.fieldKey === 'leafCates') {
+          const chunks = chunkBySecondaryCategory(ov.allValues, ov.limit)
+          node.formData[ov.fieldKey] = chunks[0] || []
+        } else {
+          node.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
+        }
+      }
+      emit('overflow-split', { nodeId: node.id, overflows: allOverflows })
+      ElMessage.success(`已拆分为 ${totalNodes} 个节点，有效值已分布到各节点`)
+    }).catch(() => {
+      ElMessage.info('已取消拆分，溢出数据保留，可稍后统一处理')
+    })
+  })
+}
+
+function handleMultiSelectChangeWithOverflow(key, node) {
+  handleMultiSelectChange(key, node, ({ field, uniqueArr, limit }) => {
+    node.formData[field.key] = uniqueArr
+    const allOverflows = collectNodeOverflows(node)
+    if (allOverflows.length === 0) return
+
+    const totalNodes = allOverflows.reduce((prod, o) => {
+    const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
+    return prod * Math.ceil(effLen / o.limit)
+  }, 1)
+    const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+
+    ElMessageBox.confirm(
+      `以下字段超限：${fieldList}。将自动拆分为 ${totalNodes} 个节点（关系：并集），是否继续？`,
+      '超限拆分节点',
+      { confirmButtonText: '确认拆分', cancelButtonText: '取消', type: 'warning' }
+    ).then(() => {
+      for (const ov of allOverflows) {
+        if (ov.fieldKey === 'leafCates') {
+          const chunks = chunkBySecondaryCategory(ov.allValues, ov.limit)
+          node.formData[ov.fieldKey] = chunks[0] || []
+        } else {
+          node.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
+        }
+      }
+      emit('overflow-split', { nodeId: node.id, overflows: allOverflows })
+      ElMessage.success(`已拆分为 ${totalNodes} 个节点，有效值已分布到各节点`)
+    }).catch(() => {
+      ElMessage.info('已取消拆分，溢出数据保留，可稍后统一处理')
+    })
+  })
+}
+
+function formatLeafCateChips(items) {
+  if (!Array.isArray(items) || items.length === 0) return []
+  const groups = new Map()
+  const singles = []
+  for (const item of items) {
+    const parts = String(item).split('>')
+    if (parts.length <= 2) { singles.push(item); continue }
+    const sec = parts.slice(0, 2).join('>')
+    const third = parts[2]
+    if (!groups.has(sec)) groups.set(sec, [])
+    groups.get(sec).push(third)
+  }
+  const result = singles.slice()
+  for (const [sec, thirds] of groups) {
+    result.push(thirds.length > 0 ? `${sec}：${thirds.join('，')}` : sec)
+  }
+  return result
+}
 
 // ---- 粘贴状态 ----
 const pasteOpenMap = reactive({})
@@ -214,43 +357,51 @@ function clearPaste(nodeId, fieldKey) {
 }
 
 function applyPaste(node, field) {
-  const key = psKey(node.id, field.key)
-  const results = pasteResultMap[key]
-  if (!results || results.valid.length === 0) return
-
-  const currentVals = getArray(node.formData[field.key])
-  const allVals = [...currentVals, ...results.valid]
-  const limit = getListLimit(field, node)
-
-  if (limit > 0 && allVals.length > limit) {
-    ElMessageBox.confirm(
-      `「${field.Label}」已选 ${allVals.length} 个，超过上限 ${limit} 个。将自动拆分为 ${Math.ceil(allVals.length / limit)} 个节点（关系：并集），是否继续？`,
-      '超限拆分节点',
-      { confirmButtonText: '确认拆分', cancelButtonText: '取消', type: 'warning' }
-    ).then(() => {
-      node.formData[field.key] = allVals.slice(0, limit)
-      emit('overflow-split', {
-        nodeId: node.id,
-        fieldKey: field.key,
-        allValues: allVals,
-        limit,
-      })
-      clearPaste(node.id, field.key)
-      ElMessage.success(`已拆分为 ${Math.ceil(allVals.length / limit)} 个节点，有效值已分布到各节点`)
-    }).catch(() => {
-      node.formData[field.key] = allVals.slice(0, limit)
-      clearPaste(node.id, field.key)
-      ElMessage.warning(`已保留前 ${limit} 个选项，其余已丢弃`)
-    })
-  } else {
-    node.formData[field.key] = allVals
-    clearPaste(node.id, field.key)
-    const addedCount = results.valid.length
-    const invalidCount = results.invalid.length
-    let msg = `已添加 ${addedCount} 个选项`
-    if (invalidCount > 0) msg += `，${invalidCount} 个无效选项已忽略`
-    ElMessage.success(msg)
+  const nodePastes = []
+  for (const [pasteKey, pasteResults] of Object.entries(pasteResultMap)) {
+    if (!pasteResults || pasteResults.valid.length === 0) continue
+    const colonIdx = pasteKey.indexOf(':')
+    if (colonIdx < 0) continue
+    const nid = pasteKey.slice(0, colonIdx)
+    if (String(nid) !== String(node.id)) continue
+    const fkey = pasteKey.slice(colonIdx + 1)
+    nodePastes.push({ fieldKey: fkey, results: pasteResults, pasteKey })
   }
+
+  if (nodePastes.length === 0) return
+
+  const totalAdded = nodePastes.reduce((sum, p) => sum + p.results.valid.length, 0)
+  for (const { fieldKey, results, pasteKey } of nodePastes) {
+    const currentVals = getArray(node.formData[fieldKey])
+    node.formData[fieldKey] = [...currentVals, ...results.valid]
+    clearPaste(node.id, fieldKey)
+  }
+
+  const allOverflows = collectNodeOverflows(node)
+  if (allOverflows.length === 0) {
+    ElMessage.success(`已添加 ${totalAdded} 个选项`)
+    return
+  }
+
+  const totalNodes = allOverflows.reduce((prod, o) => {
+    const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
+    return prod * Math.ceil(effLen / o.limit)
+  }, 1)
+  const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+
+  ElMessageBox.confirm(
+    `以下字段超限：${fieldList}。将自动拆分为 ${totalNodes} 个节点（关系：并集），是否继续？`,
+    '超限拆分节点',
+    { confirmButtonText: '确认拆分', cancelButtonText: '取消', type: 'warning' }
+  ).then(() => {
+    for (const ov of allOverflows) {
+      node.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
+    }
+    emit('overflow-split', { nodeId: node.id, overflows: allOverflows })
+    ElMessage.success(`已拆分为 ${totalNodes} 个节点，有效值已分布到各节点`)
+  }).catch(() => {
+    ElMessage.info('已取消拆分，溢出数据保留，可稍后统一处理')
+  })
 }
 </script>
 

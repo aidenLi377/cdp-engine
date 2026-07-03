@@ -9,6 +9,43 @@ const logicMatrixCache = ref({})
 // ---- 纯工具函数 ----
 function getArray(val) { return Array.isArray(val) ? val : (val ? [val] : []) }
 
+// ---- 二级类目工具 ----
+function getSecondaryCategory(item) {
+  const parts = String(item).split('>')
+  if (parts.length <= 2) return String(item)
+  return parts.slice(0, 2).join('>')
+}
+
+function countUniqueSecondaryCategories(vals) {
+  const secSet = new Set()
+  for (const v of vals) secSet.add(getSecondaryCategory(v))
+  return secSet.size
+}
+
+function groupBySecondaryCategory(vals) {
+  const groups = new Map()
+  for (const v of vals) {
+    const sec = getSecondaryCategory(v)
+    if (!groups.has(sec)) groups.set(sec, [])
+    groups.get(sec).push(v)
+  }
+  return [...groups.values()]
+}
+
+function chunkBySecondaryCategory(allValues, limit) {
+  const groups = groupBySecondaryCategory(allValues)
+  const chunks = []
+  for (let i = 0; i < groups.length; i += limit) {
+    chunks.push(groups.slice(i, i + limit).flat())
+  }
+  return chunks
+}
+
+function getEffectiveCount(fieldKey, vals) {
+  if (fieldKey === 'leafCates') return countUniqueSecondaryCategories(vals)
+  return Array.isArray(vals) ? vals.length : 0
+}
+
 function formatOptions(options) {
   if (!options) return []
   if (options.length > 0 && typeof options[0] === 'object') return options
@@ -110,7 +147,14 @@ function getSelectionCountHint(field, node) {
         return `已输入 ${vals.length} 个`
       }
       const isLimited = ['leafCates', 'stdBrand', 'cate'].includes(field.key) || field.Label.includes('类目') || field.Label.includes('品牌')
-      return isLimited ? `已选 ${vals.length}/10` : `已选 ${vals.length}`
+      if (isLimited) {
+        if (field.key === 'leafCates') {
+          const secCount = countUniqueSecondaryCategories(vals)
+          return `二级类目 ${secCount}/10（共${vals.length}项）`
+        }
+        return `已选 ${vals.length}/10`
+      }
+      return `已选 ${vals.length}`
     }
   }
   return null
@@ -133,7 +177,7 @@ function getListLimit(field, node) {
   return 0
 }
 
-function handleListInput(key, node) {
+function handleListInput(key, node, onOverflow) {
   const currentVal = node.formData[key]
   if (!Array.isArray(currentVal)) return
   const finalArr = []
@@ -146,6 +190,10 @@ function handleListInput(key, node) {
   if (field) {
     const limit = getListLimit(field, node)
     if (limit > 0 && uniqueArr.length > limit) {
+      if (onOverflow) {
+        onOverflow({ field, uniqueArr, limit })
+        return
+      }
       uniqueArr = uniqueArr.slice(0, limit)
       ElMessage.warning(`最多只能输入 ${limit} 个！`)
     }
@@ -153,7 +201,7 @@ function handleListInput(key, node) {
   node.formData[key] = uniqueArr
 }
 
-function handleMultiSelectChange(key, node) {
+function handleMultiSelectChange(key, node, onOverflow) {
   const vals = node.formData[key]
   if (!Array.isArray(vals)) return
   let newVals = [...vals]
@@ -165,6 +213,10 @@ function handleMultiSelectChange(key, node) {
   if (field) {
     const limit = getListLimit(field, node)
     if (limit > 0 && newVals.length > limit) {
+      if (onOverflow) {
+        onOverflow({ field, uniqueArr: newVals, limit })
+        return
+      }
       newVals = newVals.slice(0, limit)
       ElMessage.warning(`最多只能选择 ${limit} 个！`)
     }
@@ -189,15 +241,18 @@ function validatePastedMultiSelectItems(items, field, node) {
   const uniqueItems = [...new Set(items)]
 
   const options = field.options || []
+  const hasOptions = options.length > 0
   const validSet = new Set()
-  options.forEach(opt => {
-    if (typeof opt === 'object' && opt !== null) {
-      if (opt.value !== undefined) validSet.add(String(opt.value))
-      if (opt.label !== undefined) validSet.add(String(opt.label))
-    } else {
-      validSet.add(String(opt))
-    }
-  })
+  if (hasOptions) {
+    options.forEach(opt => {
+      if (typeof opt === 'object' && opt !== null) {
+        if (opt.value !== undefined) validSet.add(String(opt.value))
+        if (opt.label !== undefined) validSet.add(String(opt.label))
+      } else {
+        validSet.add(String(opt))
+      }
+    })
+  }
 
   const alreadySelected = new Set(
     getArray(node.formData?.[field.key]).map(v => String(v))
@@ -208,7 +263,7 @@ function validatePastedMultiSelectItems(items, field, node) {
 
   for (const item of uniqueItems) {
     if (alreadySelected.has(String(item))) continue
-    if (validSet.has(String(item))) {
+    if (!hasOptions || validSet.has(String(item))) {
       valid.push(item)
     } else {
       invalid.push(item)
@@ -219,9 +274,9 @@ function validatePastedMultiSelectItems(items, field, node) {
 }
 
 function isMultiSelectPasteEnabled(field) {
-  if (field.Widget_Type !== '搜索多选') return false
-  if (!Array.isArray(field.options) || field.options.length === 0) return false
-  return true
+  if (field.Widget_Type === '列表输入') return true
+  if (field.Widget_Type === '搜索多选' && Array.isArray(field.options) && field.options.length > 0) return true
+  return false
 }
 
 // ---- 动态选项 ----
@@ -291,6 +346,25 @@ function disabledDate(time, node) {
   return false
 }
 
+function collectNodeOverflows(node) {
+  const overflows = []
+  const schema = Array.isArray(node.schema) ? node.schema : []
+  for (const field of schema) {
+    const limit = getListLimit(field, node)
+    if (limit <= 0) continue
+    const vals = getArray(node.formData[field.key])
+    if (getEffectiveCount(field.key, vals) > limit) {
+      overflows.push({
+        fieldKey: field.key,
+        fieldLabel: field.Label,
+        allValues: vals,
+        limit,
+      })
+    }
+  }
+  return overflows
+}
+
 // ---- 导出 ----
 export function useCdpShared() {
   return {
@@ -302,5 +376,7 @@ export function useCdpShared() {
     getDynamicOptions,
     getExactDateRangeHint, handleCalendarChange, disabledDate,
     parsePastedText, validatePastedMultiSelectItems, isMultiSelectPasteEnabled,
+    collectNodeOverflows,
+    countUniqueSecondaryCategories,
   }
 }
