@@ -72,7 +72,12 @@
       "Bash(kill %1)",
       "Bash(fuser -k 5001/tcp)",
       "Bash(ls cdp_backend/app_factory.py cdp_backend/requirements.txt)",
-      "Bash(ls cdp-web/package.json)"
+      "Bash(ls cdp-web/package.json)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 claude plugins *)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 git ls-remote --tags https://github.com/anthropics/ui-ux-pro-max-skill.git)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 gh release list --repo anthropics/ui-ux-pro-max-skill)",
+      "Bash(gh search *)",
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 curl -s https://api.github.com/repos/anthropics/ui-ux-pro-max-skill/releases/latest)"
     ]
   }
 }

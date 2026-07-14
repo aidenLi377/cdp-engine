@@ -11,41 +11,21 @@
       <header class="app-shell-header">
         <div class="app-shell-title">
           <div class="display-feature-title">CDP 圈选工作台</div>
-          <div class="display-body-light">
-            <template v-if="appMode === 'task-center'">任务编排、进度追踪与结果回看</template>
-            <template v-else>可视化搭建、方案管理与矩阵装配</template>
-          </div>
+          <div class="display-body-light">可视化搭建、方案管理与任务调度</div>
         </div>
 
-        <div class="app-shell-visual-nav">
-          <nav class="app-shell-nav" aria-label="主功能导航">
-            <el-radio-group v-model="appMode" size="small" class="intercom-radio-group">
-              <el-radio-button label="visual">可视化点选</el-radio-button>
-              <el-radio-button label="batch">矩阵装配车间</el-radio-button>
-              <el-radio-button label="task-center">任务中台</el-radio-button>
-            </el-radio-group>
-          </nav>
-
-          <nav
-            v-if="appMode === 'visual'"
-            class="app-shell-subnav"
-            aria-label="可视化点选子导航"
-          >
-            <span class="app-shell-subnav-label">子页面</span>
-            <el-radio-group v-model="visualSection" size="small" class="intercom-radio-group">
-              <el-radio-button label="workbench">工作台</el-radio-button>
-              <el-radio-button label="solutions">方案中心</el-radio-button>
-            </el-radio-group>
-          </nav>
-        </div>
+        <nav class="app-shell-nav" aria-label="主导航">
+          <el-radio-group v-model="appMode" size="small" class="intercom-radio-group">
+            <el-radio-button label="workbench">工作台</el-radio-button>
+            <el-radio-button label="solutions">方案中心</el-radio-button>
+            <el-radio-button label="task-center">任务中台</el-radio-button>
+          </el-radio-group>
+        </nav>
       </header>
 
       <main class="app-shell-main">
-        <template v-if="appMode === 'visual'">
-          <NormalMode v-if="visualSection === 'workbench'" />
-          <SolutionCenter v-else-if="visualSection === 'solutions'" />
-        </template>
-        <BatchMode v-else-if="appMode === 'batch'" />
+        <NormalMode v-if="appMode === 'workbench'" />
+        <SolutionCenter v-else-if="appMode === 'solutions'" />
         <TaskCenter v-else-if="appMode === 'task-center'" />
       </main>
     </div>
@@ -56,12 +36,10 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import NormalMode from './components/NormalMode.vue'
-import BatchMode from './components/BatchMode.vue'
 import SolutionCenter from './components/SolutionCenter.vue'
 import TaskCenter from './components/TaskCenter.vue'
 
-const appMode = ref('visual')
-const visualSection = ref('workbench')
+const appMode = ref('workbench')
 const backendOnline = ref(true)
 let healthTimer = null
 

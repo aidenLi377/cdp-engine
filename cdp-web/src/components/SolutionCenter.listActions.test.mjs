@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path'
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const solutionCenterVue = readFileSync(join(currentDir, 'SolutionCenter.vue'), 'utf8')
 const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'utf8')
+const solutionAddNodeControl = solutionCenterVue.match(/<div class="solution-add-node-control">[\s\S]*?<div class="solution-toolbar-icon-actions">/)?.[0] || ''
 
 test('solution sidebar controls are compact and visually secondary', () => {
   assert.match(solutionCenterVue, /class="solution-sidebar-toolbar"/)
@@ -45,6 +46,23 @@ test('solution editor toolbar uses compact icon actions in one row', () => {
   assert.match(css, /\.solution-package-select \{[^}]*width: 176px;/s)
 })
 
+test('solution editor toolbar separates copy from draft-only editing controls', () => {
+  assert.match(solutionCenterVue, /class="solution-toolbar-copy"/)
+  assert.match(solutionCenterVue, /class="solution-toolbar-title-row"/)
+  assert.match(solutionCenterVue, /class="solution-toolbar-status"/)
+  assert.match(solutionCenterVue, /:class="\{ published: isPublished, draft: !isPublished \}"/)
+  assert.match(solutionCenterVue, /<div v-if="!isPublished" class="solution-toolbar-actions">[\s\S]*class="solution-add-node-control"/)
+  assert.match(solutionAddNodeControl, /class="solution-add-node-control"/)
+  assert.doesNotMatch(solutionAddNodeControl, /isPublished/)
+  assert.doesNotMatch(solutionCenterVue, /:disabled="!pendingPackageType \|\| isPublished"/)
+  assert.match(css, /\.solution-editor-toolbar \{[^}]*align-items: flex-start;/s)
+  assert.match(css, /\.solution-editor-toolbar \{[^}]*padding: 14px 16px;/s)
+  assert.match(css, /\.solution-editor-toolbar \{[^}]*border-radius: var\(--apple-clean-radius-panel\) !important;/s)
+  assert.match(css, /\.solution-toolbar-copy \{[^}]*display: flex;[^}]*flex-direction: column;[^}]*gap: 5px;/s)
+  assert.match(css, /\.solution-toolbar-title-row \{[^}]*display: flex;[^}]*align-items: center;[^}]*gap: 8px;/s)
+  assert.match(css, /\.solution-toolbar-status \{[^}]*border-radius: 999px;[^}]*background: var\(--apple-clean-accent-soft\) !important;/s)
+})
+
 test('solution center nodes support editable display names in drafts', () => {
   assert.match(solutionCenterVue, /class="solution-node-name-trigger"/)
   assert.match(solutionCenterVue, /class="intercom-input solution-node-name-editor"/)
@@ -53,7 +71,7 @@ test('solution center nodes support editable display names in drafts', () => {
   assert.match(solutionCenterVue, /finishNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /cancelNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /getNodeNameInputStyle\(node, index\)/)
-  assert.match(solutionCenterVue, /import \{ getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition \} from '\.\.\/utils\/solutionState\.js'/)
+  assert.match(solutionCenterVue, /import \{ getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits \} from '\.\.\/utils\/solutionState\.js'/)
   assert.match(css, /\.solution-node-name-trigger,[\s\S]*?\.solution-node-name-editor \{[^}]*max-width: 240px;/s)
   assert.match(css, /\.solution-node-name-trigger \{[^}]*border-radius: 999px;[^}]*cursor: text;/s)
   assert.match(css, /\.solution-node-name-editor \.el-input__wrapper \{[^}]*border-radius: 999px !important;[^}]*font-size: 12px !important;/s)
@@ -130,4 +148,15 @@ test('solution center does not expose internal source metadata in the UI', () =>
   assert.doesNotMatch(solutionCenterVue, /const source = String\(item\?\.source/)
   assert.doesNotMatch(solutionCenterVue, />状态信息</)
   assert.doesNotMatch(solutionCenterVue, />来源</)
+})
+test('solution cards omit timestamps so metadata stays horizontal', () => {
+  const solutionListMetaBlock = solutionCenterVue.match(/<div class="solution-list-meta">[\s\S]*?<\/div>/)?.[0] || ''
+
+  assert.match(solutionListMetaBlock, /item\.nodes\?\.length/)
+  assert.match(solutionListMetaBlock, /getFolderName\(item\.folderId\)/)
+  assert.doesNotMatch(solutionListMetaBlock, /formatTime|updatedAt/)
+  assert.doesNotMatch(solutionCenterVue, /formatTime\(item\.updatedAt\)/)
+  assert.doesNotMatch(solutionCenterVue, /import \{ formatTime,/)
+  assert.match(css, /\.solution-list-meta \{[^}]*display: flex;[^}]*flex-wrap: nowrap;[^}]*overflow: hidden;/s)
+  assert.match(css, /\.solution-list-meta span \{[^}]*min-width: 0;[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/s)
 })

@@ -123,7 +123,7 @@ class ConfigEngine:
         loaders = [
             (CHANNEL_DIM_FILE, "渠道名称", lambda r: f"{r.get('parentId', '')}#|#{r.get('BizID', '')}"),
             (CATEGORY_DIM_FILE, "类目名称", lambda r: f"{r.get('cateId', '')}#|#{r.get('cateId', '')}"),
-            (BRAND_DIM_FILE, "品牌名称", lambda r: str(r.get("品牌名称", "")).strip()),
+            (BRAND_DIM_FILE, "品牌名称", lambda r: str(r.get("Value", "")).strip()),
             (STATUS_DIM_FILE, "状态名称", lambda r: f"{r.get('ID', '')}#|#{r.get('Value', '')}"),
             (GOODS_TYPE_DIM_FILE, "类型名称", lambda r: str(r.get("ID", "")).strip()),
             (ACCOUNT_DIM_FILE, "账号名称", lambda r: str(r.get("ID", "")).strip()),
@@ -141,9 +141,7 @@ class ConfigEngine:
                         continue
                     translated = id_func(row)
                     package_name = str(row.get("适用的包", "")).strip() if has_package else ""
-                    if filename == BRAND_DIM_FILE:
-                        self.id_translator[name] = name
-                    elif translated and translated != "#|#":
+                    if translated and translated != "#|#":
                         self.id_translator[name] = translated
                         if package_name:
                             self.dim_translator[(package_name, name)] = translated

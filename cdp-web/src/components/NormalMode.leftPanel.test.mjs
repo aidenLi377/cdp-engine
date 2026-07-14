@@ -8,6 +8,16 @@ const currentDir = dirname(fileURLToPath(import.meta.url))
 const normalModeVue = readFileSync(join(currentDir, 'NormalMode.vue'), 'utf8')
 const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'utf8')
 
+test('published solution cards omit timestamps and keep compact metadata', () => {
+  const publishedSolutionCard = normalModeVue.match(/<button[\s\S]*?class="published-solution-item"[\s\S]*?<\/button>/)?.[0] || ''
+
+  assert.match(publishedSolutionCard, /item\.nodes\?\.length/)
+  assert.doesNotMatch(publishedSolutionCard, /formatTime|updatedAt|published-solution-meta/)
+  assert.doesNotMatch(normalModeVue, /formatTime\(item\.updatedAt\)/)
+  assert.doesNotMatch(normalModeVue, /import \{ formatTime,/)
+  assert.match(css, /\.published-solution-top \{[^}]*display: flex;[^}]*align-items: center;[^}]*justify-content: space-between;/s)
+})
+
 test('left panel search inputs use a line icon instead of emoji prefixes', () => {
   assert.match(normalModeVue, /Search/)
   assert.match(normalModeVue, /<el-icon class="search-prefix-icon"><Search \/><\/el-icon>/)
