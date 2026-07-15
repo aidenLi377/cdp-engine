@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import threading
-import time
 import unittest
 
 from cdp_backend.solution_store import SolutionStore
@@ -10,12 +9,12 @@ from cdp_backend.solution_store import SolutionStore
 
 class SolutionStoreTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = TemporaryDirectory()
-        self.file_path = Path(self.temp_dir.name) / "solutions.json"
-        self.store = SolutionStore(self.file_path)
+        self.temporary_directory = TemporaryDirectory(prefix="cdp-store-tests-")
+        self.store = SolutionStore(str(Path(self.temporary_directory.name) / "test.db"))
+        self.user_id = "user_store_test"
 
     def tearDown(self):
-        self.temp_dir.cleanup()
+        self.temporary_directory.cleanup()
 
     def test_create_and_list_draft(self):
         created = self.store.create_draft(
@@ -25,36 +24,18 @@ class SolutionStoreTests(unittest.TestCase):
                 "defaultCrowdName": "测试方案",
                 "nodes": [{"id": "node_1", "displayName": "主链路", "packageType": "类目公域行为", "operator": None, "formData": {}, "modeData": {}}],
                 "workbenchFieldIds": [],
-            }
+            },
+            self.user_id,
         )
         self.assertEqual(created["status"], "draft")
         self.assertEqual(created["nodes"][0]["displayName"], "主链路")
-        self.assertTrue(self.file_path.exists())
-        listed = self.store.list_solutions(status="draft")
-        self.assertEqual([item["id"] for item in listed], [created["id"]])
 
-    def test_create_draft_preserves_both_concurrent_writes(self):
-        original_load = self.store._load
-        original_write = self.store._write
-        start_barrier = threading.Barrier(3)
-        read_barrier = threading.Barrier(2)
-        write_lock = threading.Lock()
+        listed = self.store.list_solutions(status="draft", scope="mine", user_id=self.user_id)
+        self.assertIn(created["id"], [item["id"] for item in listed])
 
-        def delayed_load():
-            data = original_load()
-            try:
-                read_barrier.wait(timeout=0.2)
-            except threading.BrokenBarrierError:
-                pass
-            time.sleep(0.05)
-            return data
-
-        def serialized_write(data):
-            with write_lock:
-                original_write(data)
-
-        self.store._load = delayed_load
-        self.store._write = serialized_write
+    def test_create_draft_concurrent_writes_both_persisted(self):
+        """Two concurrent creates via separate connections — both survive (SQLite WAL serialises writes)."""
+        start_barrier = threading.Barrier(2)
 
         def create_draft(name: str):
             start_barrier.wait(timeout=1)
@@ -65,7 +46,8 @@ class SolutionStoreTests(unittest.TestCase):
                     "defaultCrowdName": name,
                     "nodes": [],
                     "workbenchFieldIds": [],
-                }
+                },
+                self.user_id,
             )
 
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -73,12 +55,15 @@ class SolutionStoreTests(unittest.TestCase):
                 executor.submit(create_draft, "方案A"),
                 executor.submit(create_draft, "方案B"),
             ]
-            start_barrier.wait(timeout=1)
-            created = [future.result(timeout=1) for future in futures]
+            created = [future.result(timeout=2) for future in futures]
 
-        listed = self.store.list_solutions(status="draft")
         self.assertEqual(len(created), 2)
-        self.assertEqual(len(listed), 2)
+        self.assertTrue(all(item["status"] == "draft" for item in created))
+
+        listed = self.store.list_solutions(status="draft", scope="mine", user_id=self.user_id)
+        created_ids = {item["id"] for item in created}
+        listed_ids = {item["id"] for item in listed}
+        self.assertTrue(created_ids.issubset(listed_ids))
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DATAHUB_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[1]/span/span/span[1]/input';
   const DATAHUB_STATUS_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[2]/div[1]/section/div[1]/div/div/div/div/div/table/tbody/tr[1]/td[5]/div/span';
   const DIALOG_ROOT_SELECTORS = '[role="dialog"], .el-dialog, .el-overlay-dialog, .next-dialog, .ant-modal, .ui-dialog';
+  let pendingManualApplyControl = null;
 
   function getNodeByXpath(xpath) {
     return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
@@ -382,24 +383,58 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return { step: 'selected_dmp' };
   }
 
-  async function databankConfirmApply() {
-    // Detect the final "应用" dialog — STOP, do NOT click. Per requirement.
+  function findVisibleManualApplyControls() {
     const finalBtn = getNodeByXpath(CROWD_FINAL_APPLY_XPATH);
-    const dialogVisible = isNodeVisible(finalBtn);
     const applyBtns = Array.from(document.querySelectorAll('button')).filter(
       (b) => isNodeVisible(b) && (b.textContent || '').trim() === '应用'
     );
     const confirmBtns = Array.from(document.querySelectorAll('button')).filter(
       (b) => isNodeVisible(b) && (b.textContent || '').trim() === '确定'
     );
+    return Array.from(new Set([
+      ...(isNodeVisible(finalBtn) ? [finalBtn] : []),
+      ...applyBtns,
+      ...confirmBtns,
+    ]));
+  }
 
-    if (dialogVisible || applyBtns.length > 0) {
-      return { step: 'confirm_dialog_found', stopped: true, message: '已到达应用确认弹窗，开发阶段停止，请手动点击应用' };
-    }
-    if (confirmBtns.length > 0) {
-      return { step: 'confirm_dialog_found', stopped: true, message: '已到达确认弹窗，开发阶段停止，请手动点击应用' };
+  async function databankConfirmApply() {
+    // Detect the final dialog and stop. The human remains the only actor that
+    // can click its 应用/确定 control.
+    const controls = findVisibleManualApplyControls();
+
+    if (controls.length > 0) {
+      pendingManualApplyControl = controls[0];
+      return { step: 'confirm_dialog_found', stopped: true, message: '已到达应用确认弹窗，请手动点击应用' };
     }
     return { step: 'no_dialog', message: '未检测到确认弹窗' };
+  }
+
+  async function waitForManualApplyConfirmation() {
+    let controls = findVisibleManualApplyControls();
+    if (pendingManualApplyControl && isNodeVisible(pendingManualApplyControl)) {
+      controls = Array.from(new Set([pendingManualApplyControl, ...controls]));
+    }
+    if (controls.length === 0) {
+      throw new Error('未检测到应用确认弹窗，请返回 DataBank 页面重试');
+    }
+
+    const deadline = Date.now() + 1800000;
+    let absentSince = null;
+    while (Date.now() < deadline) {
+      controls = findVisibleManualApplyControls();
+      if (controls.length > 0) {
+        pendingManualApplyControl = controls[0];
+        absentSince = null;
+      } else if (absentSince === null) {
+        absentSince = Date.now();
+      } else if (Date.now() - absentSince >= 1500) {
+        pendingManualApplyControl = null;
+        return { step: 'manual_apply_confirmed', message: '已检测到人工确认完成' };
+      }
+      await sleep(500);
+    }
+    throw new Error('等待人工确认超时，请确认是否已在 DataBank 页面点击应用');
   }
 
   async function runDatabankDataHubSearch(crowdName) {
@@ -576,6 +611,22 @@ if (!window.__databankAutomationContentScriptLoaded) {
         .catch((error) => {
           console.error('[Databank Automation] crowd flow failed:', error);
           sendResponse({ ok: false, error: error?.message || '数据引擎自动化执行失败' });
+        })
+        .finally(() => { window.__databankAutomationRunning = false; });
+      return true;
+    }
+
+    if (message?.type === 'AUTOMATE_DATABANK_WAIT_APPLY') {
+      if (window.__databankAutomationRunning) {
+        sendResponse({ ok: false, error: '已有自动化流程正在执行' });
+        return false;
+      }
+      window.__databankAutomationRunning = true;
+      waitForManualApplyConfirmation()
+        .then((result) => sendResponse({ ok: true, ...result }))
+        .catch((error) => {
+          console.error('[Databank Automation] manual apply wait failed:', error);
+          sendResponse({ ok: false, error: error?.message || '等待人工确认失败' });
         })
         .finally(() => { window.__databankAutomationRunning = false; });
       return true;

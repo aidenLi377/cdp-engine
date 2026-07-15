@@ -2,8 +2,8 @@ import { buildUrl, request } from '../utils/apiClient.js'
 
 export function useSolutionsApi() {
   return {
-    listSolutions(status, { signal } = {}) {
-      return request(buildUrl('/api/solutions', { status }), { signal })
+    listSolutions(status, scope = 'mine', { signal } = {}) {
+      return request(buildUrl('/api/solutions', { status, scope }), { signal })
     },
     getSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}`, { signal })

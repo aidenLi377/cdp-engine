@@ -29,6 +29,49 @@
         </div>
       </div>
 
+      <div class="tc-dmp-tools">
+        <span class="tc-dmp-tools-label">DMP 设置</span>
+        <el-popover placement="bottom-start" :width="230" trigger="click" popper-class="tc-settings-popper">
+          <template #reference>
+            <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">显示字段</button>
+          </template>
+          <div class="tc-settings-panel">
+            <div class="tc-settings-title">结果显示字段</div>
+            <label v-for="column in DMP_RESULT_COLUMNS" :key="column" class="tc-settings-option">
+              <input
+                type="checkbox"
+                :checked="dmpSettings.columnVisibility[column] !== false"
+                @change="toggleResultColumn(column, $event.target.checked)"
+              />
+              <span>{{ column }}</span>
+            </label>
+          </div>
+        </el-popover>
+        <el-popover placement="bottom-start" :width="280" trigger="click" popper-class="tc-settings-popper">
+          <template #reference>
+            <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">Rebase</button>
+          </template>
+          <div class="tc-settings-panel tc-rebase-panel">
+            <div class="tc-settings-title-row">
+              <span class="tc-settings-title">参与 Rebase 的标签</span>
+              <button type="button" class="tc-settings-all" @click="toggleAllRebase">
+                {{ allRebaseEnabled ? '全部停用' : '全部启用' }}
+              </button>
+            </div>
+            <label v-for="tag in allDmpTags" :key="tag.tagId" class="tc-settings-option">
+              <input
+                type="checkbox"
+                :checked="isRebaseEnabled(tag.tagId)"
+                @change="toggleRebaseTag(tag.tagId, $event.target.checked)"
+              />
+              <span>{{ tag.tagName }}</span>
+              <small>{{ tag.mainCategory }}</small>
+            </label>
+          </div>
+        </el-popover>
+        <span class="tc-settings-state" v-if="dmpSettingsSyncing">同步中…</span>
+      </div>
+
       <!-- 标签选择 -->
       <section class="tc-tags-card">
         <div class="tc-tags-head">
@@ -46,12 +89,14 @@
                 <label
                   v-for="tag in group.tags" :key="tag.tagId"
                   class="tc-tag-item"
-                  :class="{ checked: selectedTags.includes(tag.tagId), disabled: tag.needCondition, needCond: tag.needCondition }"
+                  :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
                 >
-                  <input type="checkbox" :value="tag.tagId" :disabled="tag.needCondition" v-model="selectedTags" />
+                  <input type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
                   <span class="tc-tag-check"></span>
                   <span class="tc-tag-name">{{ tag.tagName }}</span>
-                  <span class="tc-tag-need-cond" v-if="tag.needCondition" title="需要多条件配置，暂不可用">多条件</span>
+                  <span class="tc-tag-need-cond" v-if="tag.needCondition">多条件</span>
+                  <span class="tc-tag-ready" v-if="tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds)">已就绪</span>
+                  <span class="tc-tag-pending" v-else-if="tag.needCondition" title="请先在 DMP 页面配置该标签的下钻条件">待配置</span>
                 </label>
               </div>
             </div>
@@ -112,17 +157,18 @@
         </div>
         <div class="tc-results-table-wrap">
           <table class="tc-results-table">
-            <thead><tr><th v-for="key in resultColumns" :key="key">{{ key === '所属大类' ? '分类' : key === '标签类型' ? '' : key }}</th></tr></thead>
+            <thead><tr><th v-for="key in resultColumns" :key="key">{{ key }}</th></tr></thead>
             <tbody>
-              <tr v-for="(row, ri) in taskResults" :key="ri" :style="{ animationDelay: ri * 20 + 'ms' }" class="tc-row-enter" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
+              <tr v-for="(row, ri) in normalizedTaskResults" :key="ri" :style="{ animationDelay: ri * 20 + 'ms' }" class="tc-row-enter" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
                 <td v-for="key in resultColumns" :key="key">
-                  <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}<span class="tc-subcat-inline"> · {{ row['标签类型'] }}</span></span>
-                  <span v-else-if="key === '标签类型'"></span>
+                  <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}</span>
+                  <span v-else-if="key === '标签类型'" class="tc-subcat-tag" :style="subcatStyle(row)">{{ row[key] }}</span>
                   <div v-else-if="(key === '人群占比' || key === 'Rebase') && row[key] !== '-' && String(row[key]).includes('%')" class="tc-heat-bar" :class="{ pink: key === '人群占比', blue: key === 'Rebase' }">
                     <div class="tc-heat-fill" :style="{ width: Math.min(parseFloat(row[key]) || 0, 100) + '%' }"></div>
-                    <span class="tc-heat-val">{{ row[key] }}</span>
+                    <span class="tc-heat-val">{{ formatPercentageForDisplay(row[key]) }}</span>
                   </div>
                   <span v-else-if="key === '标签名称'" :class="['tc-tag-name-cell', tagNameClass(row)]">{{ row[key] }}</span>
+                  <span v-else-if="(key === '覆盖人数' || key === 'Rebase后人数') && row[key] !== '-'" class="tc-count-cell">{{ Number(row[key]).toLocaleString('zh-CN') }}</span>
                   <span v-else :class="{ 'tc-warn': String(row[key]).includes('⚠️') || String(row[key]).includes('❌') }">{{ row[key] }}</span>
                 </td>
               </tr>
@@ -171,17 +217,18 @@
                 </div>
                 <div class="tc-history-table-wrap">
                   <table class="tc-results-table">
-                    <thead><tr><th v-for="key in historyColumns(task.results[0])" :key="key">{{ key === '所属大类' ? '分类' : key }}</th></tr></thead>
+                    <thead><tr><th v-for="key in historyColumns(task.results)" :key="key">{{ key }}</th></tr></thead>
                     <tbody>
-                      <tr v-for="(row, ri) in task.results" :key="ri" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
-                        <td v-for="key in historyColumns(task.results[0])" :key="key">
-                          <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}<span class="tc-subcat-inline"> · {{ row['标签类型'] }}</span></span>
-                          <span v-else-if="key === '标签类型'"></span>
+                      <tr v-for="(row, ri) in normalizeResultRows(task.results)" :key="ri" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
+                        <td v-for="key in historyColumns(task.results)" :key="key">
+                          <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}</span>
+                          <span v-else-if="key === '标签类型'" class="tc-subcat-tag" :style="subcatStyle(row)">{{ row[key] }}</span>
                           <div v-else-if="(key === '人群占比' || key === 'Rebase') && row[key] !== '-' && String(row[key]).includes('%')" class="tc-heat-bar" :class="{ pink: key === '人群占比', blue: key === 'Rebase' }">
                             <div class="tc-heat-fill" :style="{ width: Math.min(parseFloat(row[key]) || 0, 100) + '%' }"></div>
-                            <span class="tc-heat-val">{{ row[key] }}</span>
+                            <span class="tc-heat-val">{{ formatPercentageForDisplay(row[key]) }}</span>
                           </div>
                           <span v-else-if="key === '标签名称'" :class="['tc-tag-name-cell', tagNameClass(row, task.results)]">{{ row[key] }}</span>
+                          <span v-else-if="(key === '覆盖人数' || key === 'Rebase后人数') && row[key] !== '-'" class="tc-count-cell">{{ Number(row[key]).toLocaleString('zh-CN') }}</span>
                           <span v-else :class="{ 'tc-warn': String(row[key]).includes('⚠️') || String(row[key]).includes('❌') }">{{ row[key] }}</span>
                         </td>
                       </tr>
@@ -200,7 +247,16 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import tagDictionary from '../data/dmp_tags_dictionary.json'
+import {
+  DMP_RESULT_COLUMNS,
+  formatPercentageForDisplay,
+  isConditionalTagReady,
+  normalizeDmpSettings,
+  normalizeResultRow,
+  visibleResultColumns,
+} from '../utils/dmpResults.js'
 
 const API = '/api/tasks'
 
@@ -225,8 +281,11 @@ const taskResults = ref(null)
 const crowdCount = ref(null)
 const taskHistory = ref([])
 const expandedHistory = ref(-1)
+const dmpSettings = ref(normalizeDmpSettings())
+const dmpSettingsSyncing = ref(false)
+const dmpSettingsLoaded = ref(false)
 
-const databankPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在选择渠道', '正在选择平台', '已到达推送确认', '正在等待推送完成', '推送已完成']
+const databankPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在选择渠道', '正在选择平台', '等待人工确认', '自动流程已完成']
 const dmpPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在判断人群数据是否同步好', '正在等待入口', '已进入透视', '正在获取数据', '已完成']
 const phases = ref(dmpPhases)
 
@@ -245,8 +304,20 @@ const filteredTagGroups = computed(() => {
   }))
 })
 
-const canRunDatabank = computed(() => databankCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
-const canRunDmp = computed(() => dmpCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
+const allDmpTags = computed(() => {
+  const seen = new Set()
+  return tagDictionary.filter((tag) => {
+    const tagId = String(tag.tagId)
+    if (seen.has(tagId)) return false
+    seen.add(tagId)
+    return true
+  })
+})
+
+const allRebaseEnabled = computed(() => allDmpTags.value.every((tag) => isRebaseEnabled(tag.tagId)))
+
+const canRunDatabank = computed(() => extConnected.value && databankCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunDmp = computed(() => extConnected.value && dmpCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
 
 function phaseLabel(s) { return { running: '执行中', completed: '已完成', failed: '执行失败' }[s] || s }
 function statusLabel(s) { return { completed: '已完成', failed: '失败', cancelled: '已取消', running: '进行中' }[s] || s }
@@ -264,19 +335,93 @@ function userError(msg) {
   return msg
 }
 
-// Fixed column order (matching DMP Plugin)
-const RESULT_COLUMN_ORDER = ['所属大类', '标签名称', '特征明细', '人群占比', 'Rebase', '点击TGI', '转化TGI']
+const normalizedTaskResults = computed(() => normalizeResultRows(taskResults.value))
+const resultColumns = computed(() => visibleResultColumns(normalizedTaskResults.value, dmpSettings.value.columnVisibility))
 
-const resultColumns = computed(() => {
-  if (!taskResults.value?.length) return []
-  const available = new Set(Object.keys(taskResults.value[0]))
-  return RESULT_COLUMN_ORDER.filter(k => available.has(k))
-})
+function normalizeResultRows(results) {
+  return Array.isArray(results) ? results.map(normalizeResultRow) : []
+}
 
-function historyColumns(row) {
-  if (!row) return []
-  const available = new Set(Object.keys(row))
-  return RESULT_COLUMN_ORDER.filter(k => available.has(k))
+function historyColumns(results) {
+  return visibleResultColumns(normalizeResultRows(results), dmpSettings.value.columnVisibility)
+}
+
+function isTagSelectable(tag) {
+  return isConditionalTagReady(tag, dmpSettings.value.readyTagIds)
+}
+
+function isRebaseEnabled(tagId) {
+  return !dmpSettings.value.rebaseExcludedTagIds.includes(String(tagId))
+}
+
+function applyDmpSettings(settings, notifyRemoved = false) {
+  dmpSettings.value = normalizeDmpSettings(settings)
+  dmpSettingsLoaded.value = true
+  const readyIds = dmpSettings.value.readyTagIds
+  const blockedIds = new Set(
+    tagDictionary
+      .filter((tag) => tag.needCondition && !isConditionalTagReady(tag, readyIds))
+      .map((tag) => String(tag.tagId)),
+  )
+  const removed = selectedTags.value.filter((tagId) => blockedIds.has(String(tagId)))
+  if (removed.length > 0) {
+    selectedTags.value = selectedTags.value.filter((tagId) => !blockedIds.has(String(tagId)))
+    if (notifyRemoved) ElMessage.warning('部分多条件标签尚未就绪，已从本次选择中移除')
+  }
+}
+
+async function loadDmpSettings(silent = false) {
+  if (!extConnected.value) return false
+  try {
+    const response = await sendToExtension('CDP_DMP_GET_SETTINGS', {})
+    if (!response.settings) throw new Error('当前扩展版本不支持共享 DMP 设置')
+    applyDmpSettings(response.settings, !silent)
+    return true
+  } catch (error) {
+    dmpSettingsLoaded.value = false
+    if (!silent) ElMessage.error(userError(error.message || '插件设置同步失败，请刷新后重试'))
+    return false
+  }
+}
+
+async function saveDmpSettings(patch, previousSettings) {
+  dmpSettingsSyncing.value = true
+  try {
+    const response = await sendToExtension('CDP_DMP_UPDATE_SETTINGS', patch)
+    if (!response.settings) throw new Error('插件未返回最新设置')
+    applyDmpSettings(response.settings)
+    return true
+  } catch (error) {
+    dmpSettings.value = previousSettings
+    ElMessage.error(userError(error.message || '设置保存失败，请重试'))
+    return false
+  } finally {
+    dmpSettingsSyncing.value = false
+  }
+}
+
+function toggleResultColumn(column, checked) {
+  const previous = normalizeDmpSettings(dmpSettings.value)
+  const columnVisibility = { ...dmpSettings.value.columnVisibility, [column]: checked }
+  dmpSettings.value = { ...dmpSettings.value, columnVisibility }
+  saveDmpSettings({ columnVisibility }, previous)
+}
+
+function toggleRebaseTag(tagId, enabled) {
+  const previous = normalizeDmpSettings(dmpSettings.value)
+  const excluded = new Set(dmpSettings.value.rebaseExcludedTagIds)
+  if (enabled) excluded.delete(String(tagId))
+  else excluded.add(String(tagId))
+  const rebaseExcludedTagIds = [...excluded]
+  dmpSettings.value = { ...dmpSettings.value, rebaseExcludedTagIds }
+  saveDmpSettings({ rebaseExcludedTagIds }, previous)
+}
+
+function toggleAllRebase() {
+  const previous = normalizeDmpSettings(dmpSettings.value)
+  const rebaseExcludedTagIds = allRebaseEnabled.value ? allDmpTags.value.map((tag) => String(tag.tagId)) : []
+  dmpSettings.value = { ...dmpSettings.value, rebaseExcludedTagIds }
+  saveDmpSettings({ rebaseExcludedTagIds }, previous)
 }
 
 function catClass(cat) {
@@ -316,19 +461,19 @@ function subcatStyle(row) {
 function copyResults() { copyResultsFrom(taskResults.value) }
 function copyResultsFrom(results) {
   if (!results?.length) return
-  const available = new Set(Object.keys(results[0]))
-  const keys = RESULT_COLUMN_ORDER.filter(k => available.has(k))
-  const tsv = keys.join('\t') + '\n' + results.map(r => keys.map(k => k === '所属大类' ? r[k] + ' · ' + r['标签类型'] : r[k]).join('\t')).join('\n')
+  const rows = normalizeResultRows(results)
+  const keys = visibleResultColumns(rows, dmpSettings.value.columnVisibility)
+  const tsv = keys.join('\t') + '\n' + rows.map(r => keys.map(k => r[k] ?? '-').join('\t')).join('\n')
   navigator.clipboard.writeText(tsv).catch(() => {})
 }
 
 function exportCsv() { exportCsvFrom(taskResults.value) }
 function exportCsvFrom(results) {
   if (!results?.length) return
-  const available = new Set(Object.keys(results[0]))
-  const keys = RESULT_COLUMN_ORDER.filter(k => available.has(k))
-  const csv = keys.join(',') + '\n' + results.map(r => keys.map(k => {
-    const val = k === '所属大类' ? r[k] + ' · ' + r['标签类型'] : r[k]
+  const rows = normalizeResultRows(results)
+  const keys = DMP_RESULT_COLUMNS
+  const csv = keys.join(',') + '\n' + rows.map(r => keys.map(k => {
+    const val = r[k] ?? '-'
     return '"' + String(val).replace(/"/g, '""') + '"'
   }).join(',')).join('\n')
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
@@ -382,7 +527,9 @@ let extRequestId = 0
 function sendToExtension(msgType, payload) {
   return new Promise((resolve, reject) => {
     const requestId = ++extRequestId
-    const timeout = setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('插件响应超时，请刷新页面后重试')) }, msgType === 'CDP_AUTOMATE_DATABANK_DATAHUB' ? 420000 : msgType === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' ? 2100000 : msgType === 'CDP_AUTOMATE_DMP' ? 300000 : 300000)
+    const settingsMessage = msgType === 'CDP_DMP_GET_SETTINGS' || msgType === 'CDP_DMP_UPDATE_SETTINGS'
+    const timeoutMs = settingsMessage ? 10000 : msgType === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' ? 2100000 : msgType === 'CDP_AUTOMATE_DATABANK_DATAHUB' ? 420000 : msgType === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' ? 2100000 : 300000
+    const timeout = setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('插件响应超时，请刷新页面后重试')) }, timeoutMs)
     const handler = (e) => {
       if (e.data?.source === 'databank-extension-bridge' && e.data?.requestId === requestId) {
         clearTimeout(timeout); window.removeEventListener('message', handler)
@@ -417,22 +564,22 @@ function advancePhasesFromTrail(trail, trailToPhase) {
 }
 
 async function executeDatabank(crowdName) {
-  // Phase 1: search → match → apply → select channel → select platform → detect confirm dialog → STOP
+  // Phase 1: search → match → apply → select channel → select platform → show confirm dialog
   const phase1 = await sendToExtension('CDP_AUTOMATE_DATABANK_CROWD', { crowdName })
   if (!phase1.ok) throw new Error(phase1.error || '数据引擎执行失败')
   advancePhasesFromTrail(phase1.trail, { 'searched': 2, 'matched': 3, 'clicked_apply': 4, 'selected_alimama': 5, 'selected_dmp': 6, 'confirm_dialog_found': 7 })
+  if (!phase1.trail?.some((item) => item.step === 'confirm_dialog_found')) {
+    throw new Error('未检测到应用确认弹窗，请返回 DataBank 页面重试')
+  }
 
-  // Simulate: user clicked "应用" → now monitor dataHub for "已应用" status
-  updateProgress(8, '推送已发起，正在监控推送状态…')
-
-  const phase2 = await sendToExtension('CDP_AUTOMATE_DATABANK_DATAHUB', { crowdName })
-  if (!phase2.ok) throw new Error(phase2.error || 'DataHub状态检查失败')
-  updateProgress(8, '推送状态已确认：已应用')
-
-  return phase2
+  return phase1
 }
 
 async function executeDmp(crowdName) {
+  const settingsReady = await loadDmpSettings(true)
+  if (!settingsReady) throw new Error('无法同步 DMP 设置，请重新加载新版合并插件')
+  if (selectedTags.value.length === 0) throw new Error('请选择至少一个已就绪的标签')
+
   // Phase 1: search → match on crowd list page
   const phase1 = await sendToExtension('CDP_AUTOMATE_DMP', { crowdName })
   if (!phase1.ok) throw new Error(phase1.error || '搜索匹配失败')
@@ -442,7 +589,7 @@ async function executeDmp(crowdName) {
   // Phase 2: wait for portrait entry to appear (up to 30 min, updates progress)
   updateProgress(5, '正在判断人群数据是否同步好…')
 
-  const phase2 = await sendToExtension('CDP_AUTOMATE_DMP_WAIT_PORTRAIT', {})
+  const phase2 = await sendToExtension('CDP_AUTOMATE_DMP_WAIT_PORTRAIT', { phase1Result: JSON.parse(JSON.stringify(phase1)) })
   if (!phase2.ok) throw new Error(phase2.error || '等待画像透视入口超时')
   updateProgress(6, phases.value[6]); await new Promise(r => setTimeout(r, 500))
 
@@ -470,11 +617,16 @@ async function executeViaExtension(crowdName, type) {
     if (type === 'databank') { result = await executeDatabank(crowdName) }
     else { result = await executeDmp(crowdName) }
 
-    const finalPhase = phases.value.length - 1; updateProgress(finalPhase, '任务执行完成')
+    const finalPhase = phases.value.length - 1
+    const completionLabel = type === 'databank' ? '自动流程已完成' : '任务执行完成'
+    const completionMessage = type === 'databank'
+      ? '确认弹窗已打开，请前往 DataBank 页面人工点击“应用”'
+      : '任务执行完成'
+    updateProgress(finalPhase, completionMessage)
     const hasResults = result?.results && result.results.length > 0
     activeTask.value = { ...activeTask.value, status: 'completed', hasResults }
     if (hasResults) { taskResults.value = result.results; crowdCount.value = result.crowdCount || null }
-    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: '任务执行完成', progress: 100, message: '任务执行完成', result: hasResults ? result.results : result, crowdCount: crowdCount.value }).catch(() => {}) }
+    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? result.results : result, crowdCount: crowdCount.value }).catch(() => {}) }
   } catch (err) {
     if (taskCancelled.value) { taskRunning.value = null; return }
     if (activeTask.value) {
@@ -493,25 +645,6 @@ async function executeViaExtension(crowdName, type) {
   taskRunning.value = null
 }
 
-async function simulateTask(type, crowdName) {
-  const base = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagCount: selectedTags.value.length, status: 'running', phaseIndex: 0, progress: 0, message: '任务已发起（模拟模式）', hasResults: false }
-  activeTask.value = { ...base }
-  let backendTask = null; try { backendTask = await apiPost(API, base); if (backendTask?.id) activeTask.value.id = backendTask.id } catch { /* */ }
-  phases.value = type === 'databank' ? databankPhases : dmpPhases
-
-  for (let i = 0; i < phases.value.length; i++) {
-    await new Promise(r => setTimeout(r, 500 + Math.random() * 700))
-    const pct = Math.round(((i + 1) / phases.value.length) * 100)
-    activeTask.value = { ...activeTask.value, phaseIndex: i, progress: pct, message: phases.value[i], status: 'running' }
-    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'running', phase: i, phaseLabel: phases.value[i], progress: pct, message: phases.value[i] }).catch(() => {}) }
-  }
-  const ok = Math.random() > 0.2
-  activeTask.value = { ...activeTask.value, phaseIndex: phases.value.length - 1, progress: ok ? 100 : 67, message: ok ? '任务执行完成（模拟）' : '执行失败（模拟）', status: ok ? 'completed' : 'failed' }
-  if (backendTask?.id) { const t = activeTask.value; apiPut(`${API}/${backendTask.id}/progress`, { status: t.status, phase: t.phaseIndex, phaseLabel: t.message, progress: t.progress, message: t.message }).catch(() => {}) }
-  taskHistory.value.unshift({ name: base.name, type: base.type, crowdName: base.crowdName, tagCount: base.tagCount, status: activeTask.value.status, message: activeTask.value.message, time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: null, crowdCount: null })
-  taskRunning.value = null
-}
-
 function cancelTask() {
   taskCancelled.value = true
   window.postMessage({ source: 'cdp-web', type: 'CDP_AUTOMATE_DATABANK_CROWD', requestId: 'cancel_' + Date.now(), crowdName: '__CANCEL__' }, window.location.origin)
@@ -520,8 +653,21 @@ function cancelTask() {
   activeTask.value = null; taskRunning.value = null; taskResults.value = null; crowdCount.value = null; expandedHistory.value = -1
 }
 
-async function runDatabank() { if (!canRunDatabank.value) return; const n = databankCrowd.value.trim(); taskRunning.value = 'databank'; taskCancelled.value = false; extConnected.value ? await executeViaExtension(n, 'databank') : await simulateTask('databank', n) }
-async function runDmp() { if (!canRunDmp.value) return; const n = dmpCrowd.value.trim(); taskRunning.value = 'dmp'; taskCancelled.value = false; extConnected.value ? await executeViaExtension(n, 'dmp') : await simulateTask('dmp', n) }
+async function runDatabank() {
+  if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
+  if (!canRunDatabank.value) return
+  const n = databankCrowd.value.trim()
+  taskRunning.value = 'databank'; taskCancelled.value = false
+  await executeViaExtension(n, 'databank')
+}
+
+async function runDmp() {
+  if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
+  if (!canRunDmp.value) return
+  const n = dmpCrowd.value.trim()
+  taskRunning.value = 'dmp'; taskCancelled.value = false
+  await executeViaExtension(n, 'dmp')
+}
 
 function retryTask() {
   const task = activeTask.value; if (!task) return
@@ -531,6 +677,7 @@ function retryTask() {
 
 async function checkExtension() {
   try {
+    const wasConnected = extConnected.value
     const ok = await new Promise((resolve) => {
       const t = setTimeout(() => resolve(false), 1200)
       const h = (e) => { if (e.data?.source === 'databank-extension-bridge' && e.data?.ok) { clearTimeout(t); resolve(true) } }
@@ -539,10 +686,11 @@ async function checkExtension() {
       setTimeout(() => { window.removeEventListener('message', h); clearTimeout(t); resolve(false) }, 1300)
     })
     extConnected.value = ok
+    if (ok && (!wasConnected || !dmpSettingsLoaded.value)) await loadDmpSettings(true)
   } catch { extConnected.value = false }
 }
 
-onMounted(() => { loadHistory(); checkExtension(); setInterval(checkExtension, 15000) })
+onMounted(async () => { loadHistory(); await checkExtension(); setInterval(checkExtension, 15000) })
 </script>
 
 <style scoped>
@@ -602,6 +750,22 @@ onMounted(() => { loadHistory(); checkExtension(); setInterval(checkExtension, 1
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 
+.tc-dmp-tools { display: flex; align-items: center; gap: 5px; padding: 2px 1px; flex-shrink: 0; }
+.tc-dmp-tools-label { margin-right: auto; font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
+.tc-settings-btn { height: 26px; padding: 0 9px; border: 1px solid rgba(0,0,0,0.06); border-radius: 7px; background: rgba(255,255,255,0.72); color: #4b4b4f; font-size: 10px; cursor: pointer; transition: all 0.18s ease; }
+.tc-settings-btn:hover:not(:disabled) { color: #ff6b4a; border-color: rgba(255,107,74,0.28); background: #fff; }
+.tc-settings-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.tc-settings-state { font-size: 9px; color: #a1a1a6; }
+.tc-settings-panel { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; padding: 2px; }
+.tc-settings-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 1; padding-bottom: 5px; background: #fff; }
+.tc-settings-title { padding: 3px 6px 6px; color: #171717; font-size: 11px; font-weight: 600; }
+.tc-settings-all { border: 0; background: transparent; color: #ff6b4a; font-size: 10px; cursor: pointer; }
+.tc-settings-option { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 26px; padding: 3px 7px; border-radius: 7px; color: #444; font-size: 11px; cursor: pointer; }
+.tc-settings-option:hover { background: rgba(255,107,74,0.05); }
+.tc-settings-option input { accent-color: #ff6b4a; }
+.tc-settings-option small { color: #a1a1a6; font-size: 9px; }
+.tc-rebase-panel { max-height: 390px; }
+
 /* 标签 */
 .tc-tags-card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(255,255,255,0.74); border: 1px solid rgba(0,0,0,0.05); border-radius: 14px; overflow: hidden; }
 .tc-tags-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid rgba(0,0,0,0.03); background: linear-gradient(180deg, rgba(255,255,255,0.88), transparent); flex-shrink: 0; }
@@ -621,12 +785,17 @@ onMounted(() => { loadHistory(); checkExtension(); setInterval(checkExtension, 1
 .tc-tag-item.checked { border-color: #ff6b4a; background: rgba(255,107,74,0.07); }
 .tc-tag-item.disabled { opacity: 0.35; cursor: not-allowed; }
 .tc-tag-item.needCond { border-style: dashed; }
-.tc-tag-item.needCond:hover { border-color: rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); transform: none; }
+.tc-tag-item.needCond:not(.ready):hover { border-color: rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); transform: none; }
+.tc-tag-item.needCond.ready { border-color: rgba(52,199,89,0.24); background: rgba(52,199,89,0.04); }
+.tc-tag-item.needCond.ready.checked { border-color: #ff6b4a; background: rgba(255,107,74,0.07); }
 .tc-tag-item input { display: none; }
 .tc-tag-check { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,0.10); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7px; color: transparent; transition: all 0.18s ease; }
 .tc-tag-item.checked .tc-tag-check { background: #ff6b4a; border-color: #ff6b4a; color: #fff; }
 .tc-tag-name { font-weight: 450; color: #171717; }
 .tc-tag-need-cond { font-size: 8px; font-weight: 600; color: #fa8c16; background: rgba(250,140,22,0.08); padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+.tc-tag-ready, .tc-tag-pending { font-size: 8px; font-weight: 600; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+.tc-tag-ready { color: #208a43; background: rgba(52,199,89,0.08); }
+.tc-tag-pending { color: #c87800; background: rgba(255,149,0,0.08); }
 .tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */
@@ -743,6 +912,7 @@ onMounted(() => { loadHistory(); checkExtension(); setInterval(checkExtension, 1
 .tc-heat-bar.blue .tc-heat-fill { background: rgba(54, 193, 250, 0.22); border-right: 2px solid rgba(54, 193, 250, 0.7); }
 .tc-heat-val { position: relative; z-index: 2; font-weight: 600; font-size: 9px; color: #444; }
 .tc-warn { color: #FF4D6D; font-weight: bold; }
+.tc-count-cell { color: #444; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tc-btn-copy, .tc-btn-csv { height: 26px !important; font-size: 10px !important; border-radius: 6px !important; padding: 0 10px !important; }
 .tc-btn-copy { background: rgba(0,0,0,0.03) !important; color: #555 !important; border: 1px solid rgba(0,0,0,0.06) !important; }
 .tc-btn-csv { background: rgba(255,107,74,0.05) !important; color: #ff6b4a !important; border: 1px solid rgba(255,107,74,0.10) !important; }

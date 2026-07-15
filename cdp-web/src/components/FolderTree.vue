@@ -2,7 +2,7 @@
   <div class="folder-tree">
     <div class="folder-tree-head">
       <span class="display-body-light" style="font-size:11px">方案文件夹</span>
-      <el-button class="folder-tree-add" text size="small" @click.stop="startCreate(null)">
+      <el-button v-if="!readOnly" class="folder-tree-add" text size="small" @click.stop="startCreate(null)">
         + 新建
       </el-button>
     </div>
@@ -60,6 +60,7 @@
           :drag-over-folder-id="dragOverFolderId"
           :editing-folder-id="editingFolderId"
           :edit-name="editName"
+          :read-only="readOnly"
           @toggle-expand="toggleExpand"
           @select-folder="selectFolder"
           @context-menu="onContextMenu"
@@ -85,7 +86,7 @@
       <span class="folder-name" style="color:#999">未分类</span>
     </div>
 
-    <div v-if="creatingParentId !== undefined" class="folder-create-row">
+    <div v-if="!readOnly && creatingParentId !== undefined" class="folder-create-row">
       <el-input
         v-model="createName"
         size="small"
@@ -102,7 +103,7 @@
     <Teleport to="body">
       <Transition name="scale-in">
         <div
-          v-if="contextMenu.visible"
+          v-if="!readOnly && contextMenu.visible"
           class="folder-context-menu"
           :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
           @click.stop
@@ -124,6 +125,7 @@ import FolderTreeNode from './FolderTreeNode.vue'
 
 const props = defineProps({
   folders: { type: Array, default: () => [] },
+  readOnly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['select-folder', 'folders-changed'])
@@ -157,6 +159,7 @@ function selectFolder(id) {
 }
 
 function startCreate(parentId) {
+  if (props.readOnly) return
   creatingParentId.value = parentId
   createName.value = ''
   nextTick(() => {
@@ -170,6 +173,7 @@ function cancelCreate() {
 }
 
 function finishCreate() {
+  if (props.readOnly) return
   const name = createName.value.trim()
   if (!name) return
   contextMenu.value.visible = false
@@ -178,6 +182,7 @@ function finishCreate() {
 }
 
 function startEdit(id, currentName) {
+  if (props.readOnly) return
   editingFolderId.value = id
   editName.value = currentName
 }
@@ -188,6 +193,7 @@ function cancelEdit() {
 }
 
 function saveEdit(id) {
+  if (props.readOnly) return
   const name = editName.value.trim()
   if (!name) return
   editingFolderId.value = null
@@ -197,6 +203,7 @@ function saveEdit(id) {
 }
 
 function onDragOverFolder(event, folderId) {
+  if (props.readOnly) return
   dragOverFolderId.value = folderId
 }
 
@@ -205,6 +212,7 @@ function onDragLeaveFolder() {
 }
 
 function onDropOnFolder(event, folderId) {
+  if (props.readOnly) return
   dragOverFolderId.value = null
   const srcFolderId = event.dataTransfer?.getData('text/folder-id')
   const srcSolutionId = event.dataTransfer?.getData('text/solution-id')
@@ -218,6 +226,7 @@ function onDropOnFolder(event, folderId) {
 }
 
 function onContextMenu(event, folder) {
+  if (props.readOnly) return
   contextMenu.value = { visible: true, x: event.clientX, y: event.clientY, folder }
   setTimeout(() => {
     document.addEventListener('click', closeContextMenu, { once: true })

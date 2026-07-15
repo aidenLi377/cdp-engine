@@ -6,12 +6,22 @@
           <div class="display-feature-title">方案中心</div>
           <div class="display-body-light">草稿编辑、发布与工作台预览</div>
         </div>
-        <el-button class="intercom-btn-primary btn-small" @click="createBlankDraft" :loading="creatingDraft">
+        <el-button v-if="libraryScope === 'mine'" class="intercom-btn-primary btn-small" @click="createBlankDraft" :loading="creatingDraft">
           新建草稿
         </el-button>
       </div>
 
       <div class="solution-sidebar-controls">
+        <el-radio-group
+          :model-value="libraryScope"
+          size="small"
+          class="intercom-radio-group solution-library-switch"
+          @change="switchLibraryScope"
+        >
+          <el-radio-button label="mine">我的方案</el-radio-button>
+          <el-radio-button label="public">公共方案</el-radio-button>
+        </el-radio-group>
+
         <el-input
           v-model="searchKeyword"
           clearable
@@ -37,7 +47,7 @@
                 aria-label="刷新列表"
               />
             </el-tooltip>
-            <el-tooltip content="复制方案" placement="top">
+            <el-tooltip :content="libraryScope === 'public' ? '复制到我的方案' : '复制方案'" placement="top">
               <el-button
                 class="solution-sidebar-icon-btn"
                 :icon="CopyDocument"
@@ -53,6 +63,7 @@
 
       <FolderTree
         :folders="folderTree"
+        :read-only="libraryScope === 'public'"
         @select-folder="onFolderSelect"
         @folders-changed="handleFolderChange"
       />
@@ -66,7 +77,7 @@
           tabindex="0"
           class="solution-list-item"
           :class="{ active: item.id === activeSolution?.id }"
-          draggable="true"
+          :draggable="libraryScope === 'mine'"
           @dragstart="onSolutionDragStart($event, item)"
           @click="openSolution(item.id)"
           @keydown.enter.prevent="openSolution(item.id)"
@@ -84,7 +95,7 @@
             </div>
             <div class="solution-list-item-actions">
               <el-tooltip
-                v-if="item.status === 'published' && item.id === activeSolution?.id"
+                v-if="libraryScope === 'mine' && item.status === 'published' && item.id === activeSolution?.id"
                 content="生成编辑草稿"
                 placement="top"
               >
@@ -97,7 +108,7 @@
                   @click.stop="createEditDraftFromPublished"
                 />
               </el-tooltip>
-              <el-tooltip content="删除" placement="top">
+              <el-tooltip v-if="libraryScope === 'mine'" content="删除" placement="top">
                 <el-button
                   class="solution-list-icon-btn delete"
                   :icon="Delete"
@@ -105,6 +116,15 @@
                   :disabled="deleting"
                   aria-label="删除方案"
                   @click.stop="deleteListedSolution(item)"
+                />
+              </el-tooltip>
+              <el-tooltip v-else content="复制到我的方案" placement="top">
+                <el-button
+                  class="solution-list-icon-btn edit-draft"
+                  :icon="CopyDocument"
+                  circle
+                  aria-label="复制到我的方案"
+                  @click.stop="copyPublicSolution(item)"
                 />
               </el-tooltip>
             </div>
@@ -132,11 +152,11 @@
             </span>
           </div>
           <div class="display-body-light solution-toolbar-hint">
-            {{ isPublished ? '正式方案只读中，点击“生成编辑草稿”后再修改。' : '当前为草稿，可直接调整节点结构与字段。' }}
+            {{ libraryScope === 'public' ? '公共方案只读，可复制到“我的方案”后继续编辑。' : isPublished ? '正式方案只读中，点击“生成编辑草稿”后再修改。' : '当前为草稿，可直接调整节点结构与字段。' }}
           </div>
         </div>
 
-        <div v-if="!isPublished" class="solution-toolbar-actions">
+        <div v-if="!isReadOnly" class="solution-toolbar-actions">
           <div class="solution-add-node-control">
             <el-select
               v-model="pendingPackageType"
@@ -218,7 +238,7 @@
               v-model="node.operator"
               size="small"
               class="intercom-radio-group"
-              :disabled="isPublished"
+              :disabled="isReadOnly"
             >
               <el-radio-button label="n">交集 (n)</el-radio-button>
               <el-radio-button label="u">并集 (u)</el-radio-button>
@@ -239,7 +259,7 @@
                 </button>
                 <span class="display-card-title solution-node-title">{{ node.packageType }}</span>
                 <button
-                  v-if="!isPublished && !isEditingNodeName(node.id)"
+                  v-if="!isReadOnly && !isEditingNodeName(node.id)"
                   type="button"
                   class="solution-node-name-trigger"
                   :style="getNodeNameInputStyle(node, index)"
@@ -249,7 +269,7 @@
                   <span class="solution-node-name-trigger-text">{{ getNodeDisplayName(node, index) }}</span>
                 </button>
                 <el-input
-                  v-else-if="!isPublished"
+                  v-else-if="!isReadOnly"
                   v-model="node.displayName"
                   class="intercom-input solution-node-name-editor"
                   :style="getNodeNameInputStyle(node, index)"
@@ -269,7 +289,7 @@
 	                  <el-button
 	                    class="behavior-card-icon-btn behavior-card-icon-proxy"
 	                    @click.stop="duplicateNode(index)"
-	                    :disabled="isPublished"
+	                    :disabled="isReadOnly"
 	                  >
 	                    <el-icon><CopyDocument /></el-icon>
 	                  </el-button>
@@ -278,7 +298,7 @@
 	                  <el-button
 	                    class="behavior-card-icon-btn danger behavior-card-icon-proxy"
 	                    @click.stop="removeNode(index)"
-	                    :disabled="isPublished"
+	                    :disabled="isReadOnly"
 	                  >
 	                    <el-icon><Delete /></el-icon>
 	                  </el-button>
@@ -286,14 +306,14 @@
                 <el-button
                   class="intercom-btn-outlined btn-small"
                   @click="duplicateNode(index)"
-                  :disabled="isPublished"
+                  :disabled="isReadOnly"
                 >
                   复制
                 </el-button>
                 <el-button
                   class="intercom-btn-outlined btn-small"
                   @click="removeNode(index)"
-                  :disabled="isPublished"
+                  :disabled="isReadOnly"
                 >
                   移除
                 </el-button>
@@ -306,7 +326,7 @@
               </div>
             </Transition>
             <Transition name="node-collapse">
-              <div v-if="!node._hydrationError && !node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isPublished }">
+              <div v-if="!node._hydrationError && !node.collapsed" class="solution-node-form" :class="{ 'solution-readonly-surface': isReadOnly }">
                 <DynamicForm :node="node" @overflow-split="handleOverflowSplit" />
               </div>
             </Transition>
@@ -324,7 +344,7 @@
             v-model="activeSolution.name"
             class="intercom-input"
             placeholder="请输入方案名称"
-            :disabled="isPublished"
+            :disabled="isReadOnly"
           />
         </div>
 
@@ -334,7 +354,7 @@
             v-model="activeSolution.defaultCrowdName"
             class="intercom-input"
             placeholder="工作台加载方案时的默认名称"
-            :disabled="isPublished"
+            :disabled="isReadOnly"
           />
         </div>
 
@@ -349,7 +369,7 @@
               <el-button
                 class="solution-field-action"
                 text
-                :disabled="isPublished || customFields.length === 0"
+                :disabled="isReadOnly || customFields.length === 0"
                 @click="clearAllCustomFields"
               >
                 清空
@@ -381,7 +401,7 @@
               class="custom-field-item cf-card-enter"
               :style="{ animationDelay: (cfIndex * 0.04) + 's' }"
               :class="{ active: highlightedCustomFieldId === cf.id, 'drag-over': dragCustomFieldIndex >= 0 && dragCustomFieldIndex === cfIndex }"
-              draggable="true"
+              :draggable="!isReadOnly"
               @dragstart="onDragCustomFieldStart(cfIndex)"
               @dragover.prevent="onDragCustomFieldOver(cfIndex)"
               @dragend="onDragCustomFieldEnd"
@@ -398,7 +418,7 @@
                     class="solution-field-action"
                     text
                     size="small"
-                    :disabled="isPublished"
+                    :disabled="isReadOnly"
                     @click.stop="editCustomField(cf)"
                   >
                     编辑
@@ -407,7 +427,7 @@
                     class="solution-field-action"
                     text
                     size="small"
-                    :disabled="isPublished"
+                    :disabled="isReadOnly"
                     @click.stop="removeCustomField(cf.id)"
                   >
                     &times;
@@ -498,14 +518,14 @@
           </div>
 
           <el-tooltip
-            :content="isPublished ? '已发布方案无法编辑，请先生成编辑草稿' : nodeList.length === 0 ? '请先从上方添加组件节点' : '创建一个自定义字段来关联多个组件的同类型字段'"
+            :content="isReadOnly ? '当前方案为只读状态' : nodeList.length === 0 ? '请先从上方添加组件节点' : '创建一个自定义字段来关联多个组件的同类型字段'"
             placement="top"
           >
             <el-button
               v-if="!creatingCustomField"
               class="intercom-btn-primary btn-small"
               style="width:100%;margin-top:8px"
-              :disabled="isPublished"
+              :disabled="isReadOnly"
               @click="startCreateCustomField"
             >
               + 新增自定义字段（一对多）
@@ -572,6 +592,7 @@ const nodeList = ref([])
 const workbenchFieldIds = ref([])
 const searchKeyword = ref('')
 const statusFilter = ref('all')
+const libraryScope = ref('mine')
 const loadingList = ref(false)
 const loadingDetail = ref(false)
 const creatingDraft = ref(false)
@@ -621,6 +642,7 @@ provide('solutionCenterContext', reactive({
 }))
 
 const isPublished = computed(() => activeSolution.value?.status === 'published')
+const isReadOnly = computed(() => libraryScope.value === 'public' || isPublished.value)
 
 const filteredSolutions = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -646,7 +668,7 @@ const filteredSolutions = computed(() => {
 })
 
 const currentDraftSnapshot = computed(() => {
-  if (!activeSolution.value || isPublished.value) return null
+  if (!activeSolution.value || isReadOnly.value) return null
   const name = String(activeSolution.value?.name || '').trim() || '未命名方案'
   const defaultCrowdName =
     String(activeSolution.value?.defaultCrowdName || '').trim() || name
@@ -733,7 +755,7 @@ function isEditingNodeName(nodeId) {
 }
 
 function beginNodeNameEdit(node) {
-  if (isPublished.value || !node?.id) return
+  if (isReadOnly.value || !node?.id) return
   editingNodeId.value = node.id
   nodeNameOriginalValue.value = String(node.displayName || '')
   nextTick(() => {
@@ -809,12 +831,31 @@ async function replaceActiveSolutionState(loader) {
 async function loadSolutions() {
   loadingList.value = true
   try {
-    solutions.value = await listSolutions(statusFilter.value)
+    solutions.value = await listSolutions(statusFilter.value, libraryScope.value)
   } catch (error) {
     ElMessage.error(error.message || '方案列表加载失败')
   } finally {
     loadingList.value = false
   }
+}
+
+function resetActiveSolution() {
+  activeSolution.value = null
+  nodeList.value = []
+  workbenchFieldIds.value = []
+  customFields.value = []
+  lastSavedSnapshot.value = null
+}
+
+async function switchLibraryScope(nextScope) {
+  if (nextScope === libraryScope.value) return
+  const shouldContinue = await confirmDiscardDraftChanges()
+  if (!shouldContinue) return
+
+  libraryScope.value = nextScope
+  selectedFolderId.value = null
+  resetActiveSolution()
+  await Promise.all([loadSolutions(), loadFolders()])
 }
 
 async function loadAvailablePackages() {
@@ -852,6 +893,7 @@ async function openSolution(solutionId) {
 }
 
 async function createBlankDraft() {
+  if (libraryScope.value !== 'mine') return
   const proceeded = await replaceActiveSolutionState(async () => {
     creatingDraft.value = true
     try {
@@ -891,13 +933,13 @@ async function addNode(packageType) {
 }
 
 async function addNodeFromSelector() {
-  if (!pendingPackageType.value || isPublished.value) return
+  if (!pendingPackageType.value || isReadOnly.value) return
   await addNode(pendingPackageType.value)
   pendingPackageType.value = ''
 }
 
 function duplicateNode(index) {
-  if (isPublished.value) return
+  if (isReadOnly.value) return
   const source = nodeList.value[index]
   if (!source) return
 
@@ -927,7 +969,7 @@ function duplicateNode(index) {
 }
 
 function removeNode(index) {
-  if (isPublished.value) return
+  if (isReadOnly.value) return
   const removedId = nodeList.value[index]?.id
   nodeList.value.splice(index, 1)
   nodeList.value.forEach((node, nodeIndex) => {
@@ -947,7 +989,7 @@ function removeNode(index) {
 }
 
 function handleOverflowSplit(payload) {
-  if (isPublished.value) return
+  if (isReadOnly.value) return
   const { nodeId, overflows } = payload
   const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
   if (srcIndex < 0) return
@@ -975,7 +1017,7 @@ function handleOverflowSplit(payload) {
 }
 
 async function saveDraft() {
-  if (!activeSolution.value || isPublished.value) return
+  if (!activeSolution.value || isReadOnly.value) return
   saving.value = true
   try {
     const updated = await updateDraft(activeSolution.value.id, buildSolutionPayload())
@@ -994,7 +1036,7 @@ async function saveDraft() {
 }
 
 async function publishDraft() {
-  if (!activeSolution.value || isPublished.value) return
+  if (!activeSolution.value || isReadOnly.value) return
   publishing.value = true
   try {
     const saved = await updateDraft(activeSolution.value.id, buildSolutionPayload())
@@ -1018,7 +1060,7 @@ async function publishDraft() {
 }
 
 async function createEditDraftFromPublished() {
-  if (!activeSolution.value || !isPublished.value) return
+  if (!activeSolution.value || libraryScope.value !== 'mine' || !isPublished.value) return
 
   const proceeded = await replaceActiveSolutionState(async () => {
     creatingEditDraft.value = true
@@ -1046,18 +1088,39 @@ async function duplicateActiveSolution() {
   const proceeded = await replaceActiveSolutionState(async () => {
     try {
       const duplicated = await duplicateSolution(activeSolution.value.id)
+      const copiedFromPublic = libraryScope.value === 'public'
+      if (copiedFromPublic) {
+        libraryScope.value = 'mine'
+        selectedFolderId.value = null
+        await loadFolders()
+      }
       if (statusFilter.value === 'published') {
         statusFilter.value = 'all'
       }
       await loadSolutions()
       await applySolutionRecord(duplicated)
-      ElMessage.success('已复制为新草稿')
+      ElMessage.success(copiedFromPublic ? '已复制到我的方案' : '已复制为新草稿')
     } catch (error) {
       ElMessage.error(error.message || '方案复制失败')
     }
   })
 
   if (!proceeded) return
+}
+
+async function copyPublicSolution(item) {
+  if (!item?.id || libraryScope.value !== 'public') return
+  try {
+    const duplicated = await duplicateSolution(item.id)
+    libraryScope.value = 'mine'
+    selectedFolderId.value = null
+    if (statusFilter.value === 'published') statusFilter.value = 'all'
+    await Promise.all([loadSolutions(), loadFolders()])
+    await applySolutionRecord(duplicated)
+    ElMessage.success('已复制到我的方案')
+  } catch (error) {
+    ElMessage.error(error.message || '方案复制失败')
+  }
 }
 
 async function deleteListedSolution(item) {
@@ -1101,7 +1164,7 @@ function loadCustomFields(record) {
 }
 
 function startCreateCustomField() {
-  if (isPublished.value) return
+  if (isReadOnly.value) return
   if (nodeList.value.length === 0) {
     ElMessage.warning('请先从上方添加组件节点，节点中的字段将作为自定义字段的绑定源')
     return
@@ -1197,7 +1260,7 @@ function finishCreateCustomField() {
 }
 
 function editCustomField(cf) {
-  if (isPublished.value) return
+  if (isReadOnly.value) return
   editingCustomFieldId.value = cf.id
   creatingCustomField.value = true
   creatingCustomFieldStep.value = 2
@@ -1235,7 +1298,7 @@ function onDragCustomFieldEnd() {
     const currentOrder = customFields.value.map(cf => cf.id)
     const reordered = JSON.stringify(currentOrder) !== JSON.stringify(dragCfOriginalOrder)
     dragCfOriginalOrder = null
-    if (reordered && !isPublished.value) {
+    if (reordered && !isReadOnly.value) {
       saveDraft()
     }
   }
@@ -1336,7 +1399,7 @@ watch(
 async function loadFolders() {
   loadingFolders.value = true
   try {
-    folderTree.value = await listFolders()
+    folderTree.value = await listFolders(libraryScope.value)
   } catch (error) {
     ElMessage.error(error.message || '文件夹列表加载失败')
   } finally {
@@ -1345,6 +1408,7 @@ async function loadFolders() {
 }
 
 async function handleFolderChange(event) {
+  if (libraryScope.value === 'public') return
   try {
     if (event.action === 'create') {
       await createFolder(event.name, event.parentId)
@@ -1394,6 +1458,7 @@ function getFolderName(folderId) {
 }
 
 function onSolutionDragStart(event, item) {
+  if (libraryScope.value === 'public') return
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('text/solution-id', item.id)
 }

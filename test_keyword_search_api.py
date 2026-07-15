@@ -5,13 +5,18 @@ import unittest
 
 os.environ["FLASK_ENV"] = "development"
 
-from app import app  # noqa: E402
+from test_support import create_authenticated_test_app  # noqa: E402
 
 
 class KeywordSearchApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = app.test_client()
+        cls.test_app = create_authenticated_test_app("keyword-test-user")
+        cls.client = cls.test_app.client
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.test_app.close()
 
     def test_keyword_search_package_present(self):
         response = self.client.get("/api/packages")

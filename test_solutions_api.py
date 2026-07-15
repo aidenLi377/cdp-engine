@@ -1,36 +1,44 @@
 from __future__ import annotations
 
-import importlib
 import os
-import sys
 import time
 import unittest
-from pathlib import Path
-from tempfile import TemporaryDirectory
+
+os.environ["FLASK_ENV"] = "development"
+
+# Remove old env vars that no longer apply (stores use SQLite)
+for _key in ("SOLUTIONS_FILE", "FOLDERS_FILE", "TASKS_FILE"):
+    os.environ.pop(_key, None)
+
+from test_support import create_authenticated_test_app  # noqa: E402
 
 
 class SolutionLifecycleApiTests(unittest.TestCase):
+    """API-level tests that exercise the full solution lifecycle.
+
+    Each test tracks the IDs it creates and deletes them in tearDown
+    so the shared SQLite database stays clean across runs.
+    """
+
     @classmethod
     def setUpClass(cls):
-        cls.temp_dir = TemporaryDirectory()
-        cls.solutions_file = str(Path(cls.temp_dir.name) / "solutions.json")
-        os.environ["FLASK_ENV"] = "development"
-        os.environ["SOLUTIONS_FILE"] = cls.solutions_file
-
-        sys.modules.pop("app", None)
-        app_module = importlib.import_module("app")
-        cls.app_module = importlib.reload(app_module)
-        cls.client = cls.app_module.app.test_client()
+        cls.test_app = create_authenticated_test_app("solution-api-user")
+        cls.client = cls.test_app.client
 
     @classmethod
     def tearDownClass(cls):
-        cls.temp_dir.cleanup()
-        os.environ.pop("SOLUTIONS_FILE", None)
+        cls.test_app.close()
 
     def setUp(self):
-        solutions_path = Path(self.solutions_file)
-        if solutions_path.exists():
-            solutions_path.unlink()
+        self._created_ids: list[str] = []
+
+    def tearDown(self):
+        for sid in self._created_ids:
+            self.client.delete(f"/api/solutions/{sid}")
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
 
     def make_payload(self, name: str) -> dict:
         return {
@@ -54,7 +62,13 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         payload.update(overrides)
         response = self.client.post("/api/solutions/drafts", json=payload)
         self.assertEqual(response.status_code, 201)
-        return response.get_json()
+        result = response.get_json()
+        self._created_ids.append(result["id"])
+        return result
+
+    # ------------------------------------------------------------------
+    # tests
+    # ------------------------------------------------------------------
 
     def test_solution_lifecycle_routes(self):
         created = self.create_draft("Original")
@@ -68,14 +82,16 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertEqual(published["status"], "published")
         self.assertIn("publishedAt", published)
 
+        # The published solution should appear in the published list
         list_published_response = self.client.get("/api/solutions?status=published")
         self.assertEqual(list_published_response.status_code, 200)
-        published_list = list_published_response.get_json()
-        self.assertEqual([item["id"] for item in published_list], [created["id"]])
+        published_ids = [item["id"] for item in list_published_response.get_json()]
+        self.assertIn(created["id"], published_ids)
 
         edit_draft_response = self.client.post(f"/api/solutions/{created['id']}/edit-draft")
         self.assertEqual(edit_draft_response.status_code, 201)
         edit_draft = edit_draft_response.get_json()
+        self._created_ids.append(edit_draft["id"])
         self.assertEqual(edit_draft["status"], "draft")
         self.assertEqual(edit_draft["source"], "published-edit")
         self.assertEqual(edit_draft["basePublishedId"], created["id"])
@@ -119,26 +135,32 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertEqual(fetched["name"], "Updated Name")
         self.assertEqual(fetched["nodes"][0]["displayName"], "竞品购买")
 
+        # The edit-draft row should be gone after publish
         edit_draft_fetch_response = self.client.get(f"/api/solutions/{edit_draft['id']}")
         self.assertEqual(edit_draft_fetch_response.status_code, 404)
+        # Remove from cleanup list since it was deleted by publish
+        self._created_ids.remove(edit_draft["id"])
 
         duplicate_response = self.client.post(f"/api/solutions/{created['id']}/duplicate")
         self.assertEqual(duplicate_response.status_code, 201)
         duplicate = duplicate_response.get_json()
+        self._created_ids.append(duplicate["id"])
         self.assertNotEqual(duplicate["id"], created["id"])
         self.assertEqual(duplicate["status"], "draft")
         self.assertEqual(duplicate["name"], "Updated Name")
 
         delete_response = self.client.delete(f"/api/solutions/{duplicate['id']}")
         self.assertEqual(delete_response.status_code, 204)
+        self._created_ids.remove(duplicate["id"])
 
         deleted_fetch_response = self.client.get(f"/api/solutions/{duplicate['id']}")
         self.assertEqual(deleted_fetch_response.status_code, 404)
 
+        # The original published solution still exists
         list_all_response = self.client.get("/api/solutions?status=all")
         self.assertEqual(list_all_response.status_code, 200)
-        remaining = list_all_response.get_json()
-        self.assertEqual([item["id"] for item in remaining], [created["id"]])
+        remaining_ids = [item["id"] for item in list_all_response.get_json()]
+        self.assertIn(created["id"], remaining_ids)
 
     def test_update_published_solution_returns_409(self):
         created = self.create_draft("Published")
@@ -150,7 +172,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
             json={"name": "Should Not Update"},
         )
         self.assertEqual(update_response.status_code, 409)
-        self.assertIn("error", update_response.get_json())
+        self.assertIn("message", update_response.get_json())
 
         fetch_response = self.client.get(f"/api/solutions/{created['id']}")
         self.assertEqual(fetch_response.status_code, 200)
@@ -161,7 +183,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
 
         edit_draft_response = self.client.post(f"/api/solutions/{created['id']}/edit-draft")
         self.assertEqual(edit_draft_response.status_code, 409)
-        self.assertIn("error", edit_draft_response.get_json())
+        self.assertIn("message", edit_draft_response.get_json())
 
     def test_publish_published_solution_returns_409(self):
         created = self.create_draft("Already Published")
@@ -170,7 +192,7 @@ class SolutionLifecycleApiTests(unittest.TestCase):
 
         second_publish_response = self.client.post(f"/api/solutions/{created['id']}/publish")
         self.assertEqual(second_publish_response.status_code, 409)
-        self.assertIn("error", second_publish_response.get_json())
+        self.assertIn("message", second_publish_response.get_json())
 
     def test_create_draft_ignores_forged_lifecycle_fields(self):
         created = self.create_draft(
@@ -187,6 +209,8 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         self.assertNotEqual(created["id"], "solution_fake")
         self.assertEqual(created["status"], "draft")
         self.assertEqual(created["source"], "manual")
+        # `basePublishedId` and `publishedAt` are filtered — they MUST be
+        # absent for drafts (the old sparse-dict behaviour is preserved)
         self.assertNotIn("basePublishedId", created)
         self.assertNotIn("publishedAt", created)
         self.assertNotEqual(created["createdAt"], "2000-01-01T00:00:00Z")
@@ -207,7 +231,10 @@ class SolutionLifecycleApiTests(unittest.TestCase):
         list_response = self.client.get("/api/solutions?status=all")
         self.assertEqual(list_response.status_code, 200)
         listed = list_response.get_json()
-        self.assertEqual([item["id"] for item in listed], [newer["id"], older["id"]])
+        # Newer must appear before older in the sorted list
+        newer_idx = next(i for i, item in enumerate(listed) if item["id"] == newer["id"])
+        older_idx = next(i for i, item in enumerate(listed) if item["id"] == older["id"])
+        self.assertLess(newer_idx, older_idx)
 
 
 if __name__ == "__main__":

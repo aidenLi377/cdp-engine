@@ -3,6 +3,25 @@ if (!window.__dmpAutomationContentScriptLoaded) {
   window.__dmpAutomationRunning = false;
   console.info('[DMP Automation][content] script initialized');
 
+  const dmpResultCore = globalThis.DmpResultCore;
+  let activeCrowdName = '';
+  let expandedCrowdRow = null;
+
+  window.addEventListener('DMP_PAYLOAD_INTERCEPTED', async (event) => {
+    const options = event?.detail?.payload?.multiGroupOptions;
+    if (!Array.isArray(options) || options.length === 0) return;
+    const tagId = options[0]?.tagId;
+    if (tagId === undefined || tagId === null) return;
+    try {
+      const stored = await chrome.storage.local.get(['dmpConditionCache']);
+      const conditionCache = { ...(stored.dmpConditionCache || {}) };
+      conditionCache[String(tagId)] = JSON.parse(JSON.stringify(options));
+      await chrome.storage.local.set({ dmpConditionCache: conditionCache });
+    } catch (error) {
+      console.warn('[DMP Automation] failed to persist condition cache:', error?.message || error);
+    }
+  });
+
   const DMP_SEARCH_XPATH = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div[1]/div[4]/div/input';
   const DMP_FIRST_NAME_XPATH = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[2]/div[2]/div[1]/div[2]/table/tbody/tr[1]/td[2]/span';
 
@@ -143,6 +162,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     const nameCell = rows[rowIndex].querySelector('td');
     if (nameCell) {
       clickNode(nameCell);
+      expandedCrowdRow = rows[rowIndex];
       return true;
     }
     return false;
@@ -175,6 +195,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   async function phase1SearchAndMatch(crowdName) {
     const trail = [];
+    activeCrowdName = crowdName;
 
     // Wait for page DOM
     await waitForLocator(() => isPageDomReady(), '页面DOM就绪', 60000, 500);
@@ -234,20 +255,32 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     trail.push({ step: 'row_expanded' });
 
     console.info('[DMP Automation] phase 1 complete, crowdId:', crowdId);
-    return { ok: true, phase: 1, trail, crowdId, rowIndex: rowMatch };
+    return { ok: true, phase: 1, trail, crowdId, crowdName, rowIndex: rowMatch };
   }
 
   // ============= Phase 2: Wait for Portrait Entry =============
 
-  async function phase2WaitPortrait() {
+  async function phase2WaitPortrait(phase1Result = {}) {
     console.info('[DMP Automation] Phase 2: waiting for 画像透视 entry...');
+    const targetName = String(phase1Result.crowdName || activeCrowdName || '').trim();
+    const initialRowIndex = Number.isInteger(Number(phase1Result.rowIndex))
+      ? Number(phase1Result.rowIndex)
+      : -1;
     await waitForLocator(
       () => {
         // Search by text content — the button always has "画像透视" text, works regardless of row position
         const spans = Array.from(document.querySelectorAll('span, a')).filter(
           (n) => isVisible(n) && (n.textContent || '').trim() === '画像透视'
         );
-        return spans.length > 0 ? true : null;
+        if (spans.length > 0) return true;
+
+        const rowIndex = targetName ? findCrowdRowByName(targetName) : initialRowIndex;
+        if (rowIndex < 0) return null;
+        const table = document.querySelector('table tbody');
+        const currentRow = table?.querySelectorAll('tr')?.[rowIndex] || null;
+        if (currentRow && currentRow !== expandedCrowdRow) clickRowToExpand(rowIndex);
+        const portraitLink = findPortraitLinkInRow(rowIndex);
+        return isVisible(portraitLink) ? true : null;
       },
       '画像透视入口', 1800000, 10000
     );
@@ -299,54 +332,72 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     // Load tags dictionary for category info
     await loadTagsDict();
     const tagIds = (selectedTags && selectedTags.length > 0) ? selectedTags : ['160571', '114555', '114554'];
+    if (!dmpResultCore) throw new Error('DMP计算核心未加载，请重新加载扩展后重试');
+
+    const stored = await chrome.storage.local.get(['dmpConditionCache', 'rebaseExcludedTagIds']);
+    const conditionCache = stored.dmpConditionCache || {};
+    const rebaseExcludedTagIds = Array.isArray(stored.rebaseExcludedTagIds)
+      ? stored.rebaseExcludedTagIds.map(String)
+      : [];
+
+    // The original plugin calculates row coverage from this number, so it must
+    // be captured before the tag requests and result normalization.
+    const crowdCount = await readCoverageCount();
+    if (crowdCount) trail.push({ step: 'crowd_count', count: crowdCount });
 
     // Extract data for each tag using intercepted credentials (same approach as DMP Plugin)
     console.info('[DMP Automation] extracting data for', tagIds.length, 'tags');
     const rawResults = [];
     for (const tagId of tagIds) {
+      const tagInfo = tagsDict.find((tag) => String(tag.tagId) === String(tagId)) || {};
+      const request = dmpResultCore.buildRequest(payload, tagId, tagInfo, conditionCache);
+      if (!request.ok) {
+        rawResults.push(buildWarningRow(tagInfo, tagId, '⚠️ 未配置下钻条件'));
+        continue;
+      }
       try {
-        const tagData = await fetchTagDataFull(payload, tagId);
+        const tagData = await fetchTagDataFull(request, tagInfo, tagId);
         if (tagData) rawResults.push(...tagData);
       } catch (e) {
-        const tagInfo = tagsDict.find((t) => String(t.tagId) === String(tagId)) || {};
-        rawResults.push({
-          '所属大类': tagInfo.mainCategory || '未知',
-          '标签类型': tagInfo.category || '未知',
-          '标签名称': (tagInfo.tagName || tagId) + ' ❌',
-          '特征明细': '⚠️ 提取失败: ' + e.message,
-          '人群占比': '-', 'Rebase': '-', '点击TGI': '-', '转化TGI': '-',
-        });
+        rawResults.push(buildWarningRow(tagInfo, tagId, '⚠️ 提取失败: ' + e.message));
       }
     }
 
-    // Apply Rebase normalization (same logic as DMP Plugin)
-    const finalResults = applyRebase(rawResults);
+    const finalResults = dmpResultCore.finalizeRows(rawResults, crowdCount, rebaseExcludedTagIds);
     trail.push({ step: 'data_extracted', tagCount: tagIds.length, resultCount: finalResults.length });
 
-    // Extract crowd count after data is done — page has fully settled by now
-    let crowdCount = null;
-    try {
-      const COUNT_XPATH = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div/div[1]/div[3]/div[2]/strong';
-      const countNode = await waitForLocator(() => {
-        const n = document.evaluate(COUNT_XPATH, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-        if (n && n.textContent && n.textContent.trim()) return n;
-        const all = document.querySelectorAll('strong');
-        for (const s of all) {
-          const num = parseInt((s.textContent || '').replace(/,/g, '').replace(/\s/g, ''), 10);
-          if (!isNaN(num) && num > 100) return s;
-        }
-        return null;
-      }, '覆盖人数元素', 20000, 500);
-      if (countNode) {
-        crowdCount = parseInt((countNode.textContent || '').replace(/,/g, '').replace(/\s/g, ''), 10) || null;
-        console.log('[DMP Automation] crowdCount:', crowdCount);
-        if (crowdCount) trail.push({ step: 'crowd_count', count: crowdCount });
-      }
-    } catch (e) {
-      console.warn('[DMP Automation] crowdCount not found:', e.message);
-    }
-
     return { ok: true, phase: 2, trail, crowdId, crowdCount: crowdCount || null, extracted: true, results: finalResults };
+  }
+
+  function buildWarningRow(tagInfo, tagId, detail) {
+    return {
+      '所属大类': tagInfo.mainCategory || '未知大类',
+      '标签类型': tagInfo.category || '未知类型',
+      '标签名称': (tagInfo.tagName || tagId) + ' ❌',
+      '特征明细': detail,
+      '人群占比': '-',
+      'CTR': '-',
+      'PPC': '-',
+      '_dictTagId': String(tagId),
+    };
+  }
+
+  async function readCoverageCount() {
+    try {
+      const countXpath = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div/div[1]/div[3]/div[2]/strong';
+      const countNode = await waitForLocator(() => {
+        const node = document.evaluate(countXpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        return node?.textContent?.trim() ? node : null;
+      }, '覆盖人数元素', 20000, 500);
+      const count = Number.parseInt(String(countNode.textContent || '').replace(/[^\d.]/g, ''), 10);
+      if (Number.isFinite(count) && count > 0) {
+        console.info('[DMP Automation] crowdCount:', count);
+        return count;
+      }
+    } catch (error) {
+      console.warn('[DMP Automation] crowdCount not found:', error?.message || error);
+    }
+    return null;
   }
 
   async function waitForInterceptedPayload(timeoutMs) {
@@ -362,24 +413,14 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     });
   }
 
-  async function fetchTagDataFull(payload, tagId) {
-    const tagInfo = tagsDict.find((t) => String(t.tagId) === String(tagId)) || {};
+  async function fetchTagDataFull(request, tagInfo, tagId) {
     const mainCat = tagInfo.mainCategory || '未知大类';
     const subCat = tagInfo.category || '未知类型';
 
-    const reqBody = JSON.parse(JSON.stringify(payload.payload));
-    delete reqBody.multiGroupOptions;
-
-    let url = payload.url;
-    if (/\/tag\/\d+/.test(url)) url = url.replace(/\/tag\/\d+/, `/tag/${tagId}`);
-    if (/tagId=\d+/.test(url)) url = url.replace(/tagId=\d+/, `tagId=${tagId}`);
-    if (/\/analysis\/\d+/.test(url)) url = url.replace(/\/analysis\/\d+/, `/analysis/${tagId}`);
-    if (reqBody.tagId !== undefined) reqBody.tagId = parseInt(tagId);
-
-    const resp = await fetch(url, {
+    const resp = await fetch(request.url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json;charset=UTF-8' },
-      body: JSON.stringify(reqBody),
+      body: JSON.stringify(request.body),
     });
     const json = await resp.json();
     if (json?.data?.chartDataFull) {
@@ -388,54 +429,13 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         '标签类型': subCat,
         '标签名称': it.tagName || '-',
         '特征明细': it.optionName || '-',
-        '人群占比': it.rate ? (parseFloat(it.rate) * 100).toFixed(2) + '%' : '-',
-        '点击TGI': it.ctrIndex || '-',
-        '转化TGI': it.ppcIndex || '-',
+        '人群占比': `${Number.parseFloat(it.rate || 0) * 100}%`,
+        'CTR': it.ctrIndex || '-',
+        'PPC': it.ppcIndex || '-',
+        '_dictTagId': String(tagId),
       }));
     }
     return null;
-  }
-
-  // Rebase normalization — identical to DMP Plugin logic
-  function applyRebase(rawResults) {
-    const sumMap = {};
-    rawResults.forEach((item) => {
-      const tagName = item['标签名称'];
-      if (!sumMap[tagName]) sumMap[tagName] = 0;
-      if (item['人群占比'] !== '-' && !item['特征明细'].includes('⚠️') && !item['特征明细'].includes('❌')) {
-        sumMap[tagName] += parseFloat(item['人群占比'].replace('%', ''));
-      }
-    });
-
-    return rawResults.map((item) => {
-      const tagName = item['标签名称'];
-      const totalSum = sumMap[tagName] || 0;
-      let rebaseVal = '-';
-
-      if (item['人群占比'] !== '-' && !item['特征明细'].includes('⚠️') && !item['特征明细'].includes('❌')) {
-        const currentVal = parseFloat(item['人群占比'].replace('%', ''));
-        if (totalSum > 100.1) {
-          rebaseVal = item['人群占比']; // multi-select: keep original
-        } else {
-          if (totalSum > 0) {
-            rebaseVal = ((currentVal / totalSum) * 100).toFixed(2) + '%';
-          } else {
-            rebaseVal = '0.00%';
-          }
-        }
-      }
-
-      return {
-        '所属大类': item['所属大类'],
-        '标签类型': item['标签类型'],
-        '标签名称': item['标签名称'],
-        '特征明细': item['特征明细'],
-        '人群占比': item['人群占比'],
-        'Rebase': rebaseVal,
-        '点击TGI': item['点击TGI'],
-        '转化TGI': item['转化TGI'],
-      };
-    });
   }
 
   // ============= Main automation entry points =============
@@ -445,9 +445,9 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     return await phase1SearchAndMatch(crowdName);
   }
 
-  async function runDmpPhase2WaitPortrait() {
+  async function runDmpPhase2WaitPortrait(phase1Result) {
     console.info('[DMP Automation] Phase 2: wait for portrait entry');
-    return await phase2WaitPortrait();
+    return await phase2WaitPortrait(phase1Result);
   }
 
   async function runDmpPhase3Extract(phase1Result, selectedTags) {
@@ -497,7 +497,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
       }
       window.__dmpAutomationRunning = true;
 
-      runDmpPhase2WaitPortrait()
+      runDmpPhase2WaitPortrait(message.phase1Result || {})
         .then((result) => sendResponse(result))
         .catch((error) => {
           console.error('[DMP Automation] phase 2 wait failed:', error);

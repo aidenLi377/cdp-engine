@@ -44,7 +44,7 @@
     },
     {
       "matches": ["https://dmp.taobao.com/*"],
-      "js": ["dmp-content.js"],
+      "js": ["dmp-result-core.js", "dmp-content.js"],
       "run_at": "document_idle"
     }
   ]

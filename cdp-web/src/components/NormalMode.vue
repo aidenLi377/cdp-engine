@@ -24,8 +24,20 @@
         </el-button>
       </div>
 
+      <el-radio-group
+        :model-value="publishedLibraryScope"
+        size="small"
+        class="intercom-radio-group solution-library-switch workbench-library-switch"
+        aria-label="选择方案库"
+        @change="switchPublishedLibrary"
+      >
+        <el-radio-button label="mine">我的方案</el-radio-button>
+        <el-radio-button label="public">公共方案</el-radio-button>
+      </el-radio-group>
+
       <FolderTree
         :folders="publishedFolderTree"
+        read-only
         @select-folder="onPublishedFolderSelect"
       />
 
@@ -62,7 +74,7 @@
           v-if="!loadingPublishedSolutions && filteredPublishedSolutions.length === 0"
           class="display-body-light workbench-empty-sm"
         >
-          当前没有可用的已发布方案
+          {{ publishedLibraryScope === 'public' ? '公共方案库暂无可用的已发布方案' : '我的方案库暂无可用的已发布方案' }}
         </div>
       </div>
     </section>
@@ -628,6 +640,7 @@ const jsonViewMode = ref('summary')
 const workbenchMode = ref('free-build')
 const availablePackages = ref([])
 const publishedSolutions = ref([])
+const publishedLibraryScope = ref('mine')
 const loadingPublishedSolutions = ref(false)
 const loadingSolutionId = ref(null)
 const loadingPkg = ref(null)
@@ -1164,7 +1177,10 @@ async function loadPackages() {
 async function loadPublishedSolutions() {
   loadingPublishedSolutions.value = true
   try {
-    publishedSolutions.value = await listSolutions('published')
+    publishedSolutions.value = await listSolutions(
+      'published',
+      publishedLibraryScope.value,
+    )
     await loadPublishedFolders()
   } catch (error) {
     ElMessage.error(error.message || '已发布方案列表加载失败')
@@ -1175,7 +1191,7 @@ async function loadPublishedSolutions() {
 
 async function loadPublishedFolders() {
   try {
-    const allFolders = await listFolders()
+    const allFolders = await listFolders(publishedLibraryScope.value)
     const publishedIds = new Set(
       publishedSolutions.value.map(s => s.folderId).filter(Boolean)
     )
@@ -1183,6 +1199,15 @@ async function loadPublishedFolders() {
   } catch (error) {
     console.error('加载已发布方案文件夹失败:', error)
   }
+}
+
+async function switchPublishedLibrary(nextScope) {
+  if (nextScope === publishedLibraryScope.value) return
+  publishedLibraryScope.value = nextScope
+  selectedPublishedFolderId.value = null
+  publishedSolutions.value = []
+  publishedFolderTree.value = []
+  await loadPublishedSolutions()
 }
 
 function filterFoldersByPublished(folders, publishedIds) {

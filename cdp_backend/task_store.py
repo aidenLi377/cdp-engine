@@ -1,15 +1,36 @@
+"""Task store backed by SQLite."""
+
 from __future__ import annotations
 
 import json
-import queue
-import threading
 from datetime import datetime, timezone
-from pathlib import Path
-from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
+from .database import get_db, init_db
 
-def utc_now() -> str:
+_TASK_KEY_MAP = {
+    "id": "id",
+    "name": "name",
+    "type": "type",
+    "crowd_name": "crowdName",
+    "tag_ids": "tagIds",
+    "status": "status",
+    "phase": "phase",
+    "phase_label": "phaseLabel",
+    "progress": "progress",
+    "message": "message",
+    "result": "result",
+    "crowd_count": "crowdCount",
+    "created_at": "createdAt",
+    "updated_at": "updatedAt",
+}
+_TASK_COL_MAP = {v: k for k, v in _TASK_KEY_MAP.items()}
+
+_JSON_FIELDS = {"tagIds", "result"}
+_JSON_COLUMNS = {_TASK_COL_MAP[field] for field in _JSON_FIELDS}
+
+
+def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
@@ -18,112 +39,141 @@ class TaskNotFoundError(Exception):
 
 
 class TaskStore:
-    def __init__(self, file_path: str):
-        self.file_path = Path(file_path)
-        self._lock = threading.RLock()
-        self._subscribers: dict[str, list[queue.Queue]] = {}
+    def __init__(self, db_path: str | None = None) -> None:
+        self.db_path = db_path
+        init_db(self.db_path)
 
-    def _empty(self) -> dict:
-        return {"tasks": []}
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
 
-    def _load(self) -> dict:
-        if not self.file_path.exists():
-            return self._empty()
-        with self.file_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+    @staticmethod
+    def _row_factory(cursor, row) -> dict:
+        return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
-    def _write(self, data: dict) -> None:
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        with NamedTemporaryFile("w", encoding="utf-8", dir=self.file_path.parent, delete=False, suffix=".tmp") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            temp_path = Path(handle.name)
-        temp_path.replace(self.file_path)
+    @staticmethod
+    def _row_to_dict(row: dict) -> dict:
+        result = {}
+        for col, val in row.items():
+            if col == "owner_id":
+                continue
+            key = _TASK_KEY_MAP.get(col, col)
+            result[key] = val
+        for field in _JSON_FIELDS:
+            raw = result.get(field)
+            result[field] = json.loads(raw) if isinstance(raw, str) else raw
+        return result
 
-    def _notify(self, task: dict) -> None:
-        subs = self._subscribers.get(task["id"], [])
-        for q in subs:
-            try:
-                q.put_nowait(task)
-            except queue.Full:
-                pass
+    @staticmethod
+    def _to_db(payload: dict) -> dict:
+        result = {}
+        for key, val in payload.items():
+            col = _TASK_COL_MAP.get(key, key)
+            result[col] = val
+        for column in _JSON_COLUMNS:
+            if column in result and not isinstance(result[column], str):
+                result[column] = json.dumps(result[column], ensure_ascii=False)
+        return result
 
-    def subscribe(self, task_id: str) -> queue.Queue:
-        q: queue.Queue = queue.Queue(maxsize=64)
-        self._subscribers.setdefault(task_id, []).append(q)
-        return q
+    # ------------------------------------------------------------------
+    # public API
+    # ------------------------------------------------------------------
 
-    def unsubscribe(self, task_id: str, q: queue.Queue) -> None:
-        subs = self._subscribers.get(task_id, [])
-        if q in subs:
-            subs.remove(q)
-        if not subs:
-            self._subscribers.pop(task_id, None)
+    def list_tasks(self, user_id: str) -> list[dict]:
+        with get_db(self.db_path) as conn:
+            conn.row_factory = self._row_factory
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE owner_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        return [self._row_to_dict(r) for r in rows]
 
-    def list_tasks(self) -> list[dict]:
-        tasks = self._load()["tasks"]
-        tasks.sort(key=lambda t: t.get("createdAt", ""), reverse=True)
-        return tasks
+    def get_task(self, task_id: str, user_id: str) -> dict | None:
+        with get_db(self.db_path) as conn:
+            conn.row_factory = self._row_factory
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ? AND owner_id = ?",
+                (task_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(row)
 
-    def get_task(self, task_id: str) -> dict | None:
-        for t in self._load()["tasks"]:
-            if t["id"] == task_id:
-                return t
-        return None
+    def create_task(self, payload: dict, user_id: str) -> dict:
+        now = _utc_now()
+        task = {
+            "id": f"task_{uuid4().hex}",
+            "name": (payload.get("name") or "").strip(),
+            "type": payload.get("type", ""),
+            "crowdName": (payload.get("crowdName") or "").strip(),
+            "tagIds": payload.get("tagIds", []),
+            "status": "pending",
+            "phase": 0,
+            "phaseLabel": "已发起任务",
+            "progress": 0,
+            "message": "任务已创建，等待执行",
+            "result": None,
+            "crowdCount": None,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        db_row = self._to_db(task)
+        db_row["owner_id"] = user_id
+        with get_db(self.db_path) as conn:
+            conn.execute(
+                """INSERT INTO tasks (
+                    id, owner_id, name, type, crowd_name, tag_ids,
+                    status, phase, phase_label, progress, message,
+                    result, crowd_count, created_at, updated_at
+                ) VALUES (
+                    :id, :owner_id, :name, :type, :crowd_name, :tag_ids,
+                    :status, :phase, :phase_label, :progress, :message,
+                    :result, :crowd_count, :created_at, :updated_at
+                )""",
+                db_row,
+            )
+        return task
 
-    def create_task(self, payload: dict) -> dict:
-        with self._lock:
-            now = utc_now()
-            task = {
-                "id": f"task_{uuid4().hex}",
-                "name": (payload.get("name") or "").strip(),
-                "type": payload.get("type", ""),
-                "crowdName": (payload.get("crowdName") or "").strip(),
-                "tagIds": payload.get("tagIds", []),
-                "status": "pending",
-                "phase": 0,
-                "phaseLabel": "已发起任务",
-                "progress": 0,
-                "message": "任务已创建，等待执行",
-                "result": None,
-                "createdAt": now,
-                "updatedAt": now,
+    def update_progress(self, task_id: str, payload: dict, user_id: str) -> dict:
+        with get_db(self.db_path) as conn:
+            conn.row_factory = self._row_factory
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE id = ? AND owner_id = ?",
+                (task_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise TaskNotFoundError(task_id)
+            item = self._row_to_dict(row)
+            updated = {
+                **item,
+                "status": payload.get("status", item["status"]),
+                "phase": payload.get("phase", item["phase"]),
+                "phaseLabel": payload.get("phaseLabel", item["phaseLabel"]),
+                "progress": payload.get("progress", item["progress"]),
+                "message": payload.get("message", item["message"]),
+                "result": payload["result"] if "result" in payload else item.get("result"),
+                "crowdCount": payload["crowdCount"] if "crowdCount" in payload else item.get("crowdCount"),
+                "updatedAt": _utc_now(),
             }
-            data = self._load()
-            data["tasks"].append(task)
-            self._write(data)
-            self._notify(task)
-            return task
+            db_row = self._to_db(updated)
+            db_row["owner_id"] = user_id
+            conn.execute(
+                """UPDATE tasks SET
+                    name = :name, type = :type, crowd_name = :crowd_name,
+                    tag_ids = :tag_ids, status = :status, phase = :phase,
+                    phase_label = :phase_label, progress = :progress,
+                    message = :message, result = :result,
+                    crowd_count = :crowd_count, created_at = :created_at,
+                    updated_at = :updated_at
+                WHERE id = :id AND owner_id = :owner_id""",
+                db_row,
+            )
+        return updated
 
-    def update_progress(self, task_id: str, payload: dict) -> dict:
-        with self._lock:
-            data = self._load()
-            for i, t in enumerate(data["tasks"]):
-                if t["id"] == task_id:
-                    updated = {
-                        **t,
-                        "status": payload.get("status", t["status"]),
-                        "phase": payload.get("phase", t["phase"]),
-                        "phaseLabel": payload.get("phaseLabel", t["phaseLabel"]),
-                        "progress": payload.get("progress", t["progress"]),
-                        "message": payload.get("message", t["message"]),
-                        "result": payload.get("result") if "result" in payload else t.get("result"),
-                        "crowdCount": payload.get("crowdCount") if "crowdCount" in payload else t.get("crowdCount"),
-                        "updatedAt": utc_now(),
-                    }
-                    data["tasks"][i] = updated
-                    self._write(data)
-                    self._notify(updated)
-                    return updated
-            raise TaskNotFoundError(task_id)
-
-    def delete_task(self, task_id: str) -> bool:
-        with self._lock:
-            data = self._load()
-            filtered = [t for t in data["tasks"] if t["id"] != task_id]
-            if len(filtered) == len(data["tasks"]):
-                return False
-            data["tasks"] = filtered
-            self._write(data)
-            self._subscribers.pop(task_id, None)
-            return True
+    def delete_task(self, task_id: str, user_id: str) -> bool:
+        with get_db(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM tasks WHERE id = ? AND owner_id = ?",
+                (task_id, user_id),
+            )
+        return cur.rowcount > 0

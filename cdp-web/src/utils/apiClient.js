@@ -36,8 +36,11 @@ async function request(path, options = {}) {
 
   const data = await parseResponseBody(response)
   if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent('cdp:auth-required'))
+    }
     const message =
-      (data && typeof data === 'object' && data.error) ||
+      (data && typeof data === 'object' && (data.message || data.error)) ||
       (typeof data === 'string' && data.trim()) ||
       `Request failed with status ${response.status}`
     throw new Error(message)

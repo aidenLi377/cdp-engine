@@ -2,8 +2,8 @@ import { buildUrl, request } from '../utils/apiClient.js'
 
 export function useFoldersApi() {
   return {
-    listFolders() {
-      return request('/api/folders')
+    listFolders(scope = 'mine') {
+      return request(buildUrl('/api/folders', { scope }))
     },
     createFolder(name, parentId) {
       return request('/api/folders', {

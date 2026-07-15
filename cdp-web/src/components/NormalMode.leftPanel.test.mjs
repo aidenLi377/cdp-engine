@@ -15,7 +15,7 @@ test('published solution cards omit timestamps and keep compact metadata', () =>
   assert.doesNotMatch(publishedSolutionCard, /formatTime|updatedAt|published-solution-meta/)
   assert.doesNotMatch(normalModeVue, /formatTime\(item\.updatedAt\)/)
   assert.doesNotMatch(normalModeVue, /import \{ formatTime,/)
-  assert.match(css, /\.published-solution-top \{[^}]*display: flex;[^}]*align-items: center;[^}]*justify-content: space-between;/s)
+  assert.match(css, /\.published-solution-top,[\s\S]*?\{[^}]*display: flex;[^}]*align-items: flex-start;[^}]*justify-content: space-between;/s)
 })
 
 test('left panel search inputs use a line icon instead of emoji prefixes', () => {
@@ -54,6 +54,18 @@ test('published solution cards stay neutral until selected', () => {
   assert.match(css, /\.published-solution-item \{[^}]*background: rgba\(255,255,255,0\.86\);/s)
   assert.match(css, /\.published-solution-item:hover \{[^}]*background: rgba\(255,255,255,0\.96\);/s)
   assert.match(css, /\.published-solution-item\.active \{[^}]*border-color: rgba\(255,107,74,0\.34\);[^}]*linear-gradient\(180deg, rgba\(255,255,255,0\.96\) 0%, rgba\(255,244,239,0\.96\) 100%\);/s)
+})
+
+test('workbench solution picker switches between personal and public libraries', () => {
+  assert.match(normalModeVue, /const publishedLibraryScope = ref\('mine'\)/)
+  assert.match(normalModeVue, /class="intercom-radio-group solution-library-switch workbench-library-switch"/)
+  assert.match(normalModeVue, /<el-radio-button label="mine">我的方案<\/el-radio-button>/)
+  assert.match(normalModeVue, /<el-radio-button label="public">公共方案<\/el-radio-button>/)
+  assert.match(normalModeVue, /@change="switchPublishedLibrary"/)
+  assert.match(normalModeVue, /listSolutions\([\s\S]*?'published',[\s\S]*?publishedLibraryScope\.value,[\s\S]*?\)/)
+  assert.match(normalModeVue, /listFolders\(publishedLibraryScope\.value\)/)
+  assert.match(normalModeVue, /function switchPublishedLibrary\(nextScope\)/)
+  assert.match(normalModeVue, /selectedPublishedFolderId\.value = null/)
 })
 
 test('left panel defaults to package library and uses one active panel at a time', () => {

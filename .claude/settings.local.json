@@ -77,7 +77,12 @@
       "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 git ls-remote --tags https://github.com/anthropics/ui-ux-pro-max-skill.git)",
       "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 gh release list --repo anthropics/ui-ux-pro-max-skill)",
       "Bash(gh search *)",
-      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 curl -s https://api.github.com/repos/anthropics/ui-ux-pro-max-skill/releases/latest)"
+      "Bash(HTTPS_PROXY=http://127.0.0.1:7897 HTTP_PROXY=http://127.0.0.1:7897 curl -s https://api.github.com/repos/anthropics/ui-ux-pro-max-skill/releases/latest)",
+      "Bash(.venv/Scripts/python migrate_json_to_sqlite.py)",
+      "Bash(.venv/Scripts/python test_api.py)",
+      "Bash(.venv/Scripts/python test_solution_store.py)",
+      "Bash(.venv/Scripts/python -m pytest test_api.py test_solution_store.py test_solutions_api.py test_keyword_search_api.py -v)",
+      "Bash(.venv/Scripts/python -m unittest test_api test_solution_store test_solutions_api test_keyword_search_api -v)"
     ]
   }
 }

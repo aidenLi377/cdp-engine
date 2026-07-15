@@ -5,10 +5,13 @@
   var VALID_TYPES = [
     'CDP_AUTOMATE_DATABANK',
     'CDP_AUTOMATE_DATABANK_CROWD',
+    'CDP_AUTOMATE_DATABANK_WAIT_APPLY',
     'CDP_AUTOMATE_DATABANK_DATAHUB',
     'CDP_AUTOMATE_DMP',
     'CDP_AUTOMATE_DMP_WAIT_PORTRAIT',
     'CDP_AUTOMATE_DMP_EXTRACT',
+    'CDP_DMP_GET_SETTINGS',
+    'CDP_DMP_UPDATE_SETTINGS',
   ];
   var RESPONSE_SOURCE = 'databank-extension-bridge';
 
@@ -19,10 +22,12 @@
         requestId: payload.requestId,
         ok: !!data.ok,
         error: data.error || '',
+        step: data.step || '',
         trail: data.trail || [],
         crowdId: data.crowdId || null,
         crowdCount: data.crowdCount || null,
         results: data.results || null,
+        settings: data.settings || null,
       }));
       window.postMessage(msg, window.location.origin);
     } catch (e) {
@@ -53,11 +58,18 @@
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
       extMsg.crowdName = p.crowdName || '';
       if (!extMsg.crowdName.trim()) { safeRespond(p, { ok: false, error: '人群包名称不能为空' }); return; }
-    } else if (p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT') {
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT') {
       // No payload needed — just forward to background
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {
       extMsg.phase1Result = p.phase1Result || {};
       extMsg.selectedTags = p.selectedTags || [];
+    } else if (p.type === 'CDP_DMP_UPDATE_SETTINGS') {
+      if (p.columnVisibility && typeof p.columnVisibility === 'object') {
+        extMsg.columnVisibility = p.columnVisibility;
+      }
+      if (Array.isArray(p.rebaseExcludedTagIds)) {
+        extMsg.rebaseExcludedTagIds = p.rebaseExcludedTagIds;
+      }
     }
 
     // Check extension API availability
@@ -73,7 +85,9 @@
 
     // Send to background with timeout — SPA flows need generous headroom for tab creation, page load, and DOM waits
     var timeoutMs;
-    if (p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB') {
+    if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY') {
+      timeoutMs = 2100000; // 35min — human confirmation wait (up to 30min polling)
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB') {
       timeoutMs = 420000;  // 7min — dataHub polling
     } else if (p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT') {
       timeoutMs = 2100000; // 35min — portrait entry wait (up to 30min polling)

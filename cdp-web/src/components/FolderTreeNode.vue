@@ -9,10 +9,10 @@
     <div
       class="folder-tree-row"
       :class="{ active: selectedFolderId === folder.id }"
-      draggable="true"
+      :draggable="!readOnly"
       @dragstart="onDragStart($event, folder)"
       @click="$emit('select-folder', folder.id)"
-      @contextmenu.prevent="$emit('context-menu', $event, folder)"
+      @contextmenu.prevent="!readOnly && $emit('context-menu', $event, folder)"
     >
       <span
         class="folder-expand-toggle"
@@ -57,6 +57,7 @@
         :drag-over-folder-id="dragOverFolderId"
         :editing-folder-id="editingFolderId"
         :edit-name="editName"
+        :read-only="readOnly"
         @toggle-expand="(id) => $emit('toggle-expand', id)"
         @select-folder="(id) => $emit('select-folder', id)"
         @context-menu="(ev, f) => $emit('context-menu', ev, f)"
@@ -83,6 +84,7 @@ const props = defineProps({
   dragOverFolderId: { type: String, default: null },
   editingFolderId: { type: String, default: null },
   editName: { type: String, default: '' },
+  readOnly: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -102,6 +104,7 @@ watch(() => props.editingFolderId, (val) => {
 })
 
 function onDragStart(event, folder) {
+  if (props.readOnly) return
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('text/folder-id', folder.id)
 }

@@ -13,17 +13,24 @@ import unittest
 
 os.environ["FLASK_ENV"] = "development"
 
-from app import IS_PRODUCTION, app, engine  # noqa: E402
+from cdp_backend.app_factory import is_production  # noqa: E402
 from cdp_backend.validator import validate_project_config  # noqa: E402
+from test_support import create_authenticated_test_app  # noqa: E402
 
 
 class CdpApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.client = app.test_client()
+        cls.test_app = create_authenticated_test_app("api-test-user")
+        cls.client = cls.test_app.client
+        cls.engine = cls.test_app.engine
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.test_app.close()
 
     def test_environment(self):
-        self.assertFalse(IS_PRODUCTION)
+        self.assertFalse(is_production())
 
     def test_config_validation(self):
         issues = validate_project_config()
@@ -34,8 +41,6 @@ class CdpApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         self.assertEqual(data["status"], "ok")
-        self.assertEqual(data["mode"], "development")
-        self.assertGreaterEqual(data["packages"], 5)
 
     def test_packages(self):
         response = self.client.get("/api/packages")
@@ -50,7 +55,7 @@ class CdpApiTests(unittest.TestCase):
         self.assertIn("schema", meta)
         self.assertIn("matrix", meta)
         self.assertTrue(meta["schema"])
-        self.assertIn("类目公域行为", engine._meta_cache)
+        self.assertIn("类目公域行为", self.engine._meta_cache)
 
         response_alias = self.client.get("/api/package_meta?name=类目公域行为")
         self.assertEqual(response_alias.status_code, 200)

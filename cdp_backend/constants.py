@@ -45,6 +45,11 @@ REQUIRED_DIMENSION_COLUMNS = {
     ATTRIBUTE_DIM_FILE: ["适用的包", "属性值名称", "ID"],
 }
 
+DB_PATH = os.environ.get(
+    "CDP_DB_PATH",
+    os.path.join(BASE_DIR, RUNTIME_DIRNAME, "cdp.db"),
+)
+
 DIMENSION_FILES = list(REQUIRED_DIMENSION_COLUMNS.keys())
 
 DIMENSION_NAME_COLUMNS = {

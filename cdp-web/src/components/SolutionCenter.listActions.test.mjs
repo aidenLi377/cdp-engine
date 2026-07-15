@@ -51,7 +51,8 @@ test('solution editor toolbar separates copy from draft-only editing controls', 
   assert.match(solutionCenterVue, /class="solution-toolbar-title-row"/)
   assert.match(solutionCenterVue, /class="solution-toolbar-status"/)
   assert.match(solutionCenterVue, /:class="\{ published: isPublished, draft: !isPublished \}"/)
-  assert.match(solutionCenterVue, /<div v-if="!isPublished" class="solution-toolbar-actions">[\s\S]*class="solution-add-node-control"/)
+  assert.match(solutionCenterVue, /<div v-if="!isReadOnly" class="solution-toolbar-actions">[\s\S]*class="solution-add-node-control"/)
+  assert.match(solutionCenterVue, /const isReadOnly = computed\(\(\) => libraryScope\.value === 'public' \|\| isPublished\.value\)/)
   assert.match(solutionAddNodeControl, /class="solution-add-node-control"/)
   assert.doesNotMatch(solutionAddNodeControl, /isPublished/)
   assert.doesNotMatch(solutionCenterVue, /:disabled="!pendingPackageType \|\| isPublished"/)
@@ -71,7 +72,10 @@ test('solution center nodes support editable display names in drafts', () => {
   assert.match(solutionCenterVue, /finishNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /cancelNodeNameEdit\(node\)/)
   assert.match(solutionCenterVue, /getNodeNameInputStyle\(node, index\)/)
-  assert.match(solutionCenterVue, /import \{ getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits \} from '\.\.\/utils\/solutionState\.js'/)
+  assert.match(solutionCenterVue, /from '\.\.\/utils\/solutionState\.js'/)
+  for (const helper of ['getNodeDisplayName', 'serializeCustomFieldsForSolution', 'serializeNodesForSolution', 'cloneNodeForDuplicate', 'insertNodeAtPosition', 'buildNodeSplits']) {
+    assert.match(solutionCenterVue, new RegExp(`\\b${helper}\\b`))
+  }
   assert.match(css, /\.solution-node-name-trigger,[\s\S]*?\.solution-node-name-editor \{[^}]*max-width: 240px;/s)
   assert.match(css, /\.solution-node-name-trigger \{[^}]*border-radius: 999px;[^}]*cursor: text;/s)
   assert.match(css, /\.solution-node-name-editor \.el-input__wrapper \{[^}]*border-radius: 999px !important;[^}]*font-size: 12px !important;/s)

@@ -9,10 +9,18 @@ const DMP_CROWD_URL = 'https://dmp.taobao.com/index_new.html#!/crowds-new/list?s
 // Message types from frontend (via bridge)
 const MSG_DATABANK_PARAM = 'CDP_AUTOMATE_DATABANK';
 const MSG_DATABANK_CROWD = 'CDP_AUTOMATE_DATABANK_CROWD';
+const MSG_DATABANK_WAIT_APPLY = 'CDP_AUTOMATE_DATABANK_WAIT_APPLY';
 const MSG_DATABANK_DATAHUB = 'CDP_AUTOMATE_DATABANK_DATAHUB';
 const MSG_DMP = 'CDP_AUTOMATE_DMP';
 const MSG_DMP_WAIT_PORTRAIT = 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT';
 const MSG_DMP_EXTRACT = 'CDP_AUTOMATE_DMP_EXTRACT';
+const MSG_DMP_GET_SETTINGS = 'CDP_DMP_GET_SETTINGS';
+const MSG_DMP_UPDATE_SETTINGS = 'CDP_DMP_UPDATE_SETTINGS';
+
+const DMP_RESULT_COLUMNS = [
+  '所属大类', '标签类型', '标签名称', '特征明细', '人群占比',
+  '覆盖人数', 'Rebase', 'Rebase后人数', 'CTR', 'PPC',
+];
 
 // Message types to content scripts
 const CONTENT_PING = 'PING_AUTOMATION_READY';
@@ -21,6 +29,7 @@ const CONTENT_PING_DATAHUB = 'PING_DATAHUB_READY';
 const CONTENT_PING_DMP = 'PING_DMP_READY';
 const CONTENT_CMD_DATABANK = 'AUTOMATE_DATABANK';
 const CONTENT_CMD_DATABANK_CROWD = 'AUTOMATE_DATABANK_CROWD';
+const CONTENT_CMD_DATABANK_WAIT_APPLY = 'AUTOMATE_DATABANK_WAIT_APPLY';
 const CONTENT_CMD_DATABANK_DATAHUB = 'AUTOMATE_DATABANK_DATAHUB';
 const CONTENT_CMD_DMP = 'AUTOMATE_DMP';
 const CONTENT_CMD_DMP_WAIT_PORTRAIT = 'AUTOMATE_DMP_WAIT_PORTRAIT';
@@ -28,6 +37,48 @@ const CONTENT_CMD_DMP_EXTRACT = 'AUTOMATE_DMP_EXTRACT';
 
 let dmpTabId = null; // Track DMP tab for two-phase flow
 let databankTabId = null; // Track DataBank tab across phases
+
+function normalizeDmpSettings(stored) {
+  const conditionCache = stored?.dmpConditionCache || {};
+  const readyTagIds = Object.entries(conditionCache)
+    .filter(([, options]) => Array.isArray(options) && options.length > 0)
+    .map(([tagId]) => String(tagId));
+  const columnVisibility = Object.fromEntries(
+    DMP_RESULT_COLUMNS.map((column) => [column, stored?.columnVisibility?.[column] !== false]),
+  );
+  const rebaseExcludedTagIds = [...new Set(
+    (Array.isArray(stored?.rebaseExcludedTagIds) ? stored.rebaseExcludedTagIds : []).map(String),
+  )];
+  return { readyTagIds, columnVisibility, rebaseExcludedTagIds };
+}
+
+async function readDmpSettings() {
+  const stored = await chrome.storage.local.get([
+    'dmpConditionCache',
+    'columnVisibility',
+    'rebaseExcludedTagIds',
+  ]);
+  return normalizeDmpSettings(stored);
+}
+
+async function updateDmpSettings(message) {
+  const stored = await chrome.storage.local.get(['columnVisibility']);
+  const patch = {};
+  if (message.columnVisibility && typeof message.columnVisibility === 'object') {
+    const writableVisibility = {};
+    for (const column of DMP_RESULT_COLUMNS) {
+      if (typeof message.columnVisibility[column] === 'boolean') {
+        writableVisibility[column] = message.columnVisibility[column];
+      }
+    }
+    patch.columnVisibility = { ...(stored.columnVisibility || {}), ...writableVisibility };
+  }
+  if (Array.isArray(message.rebaseExcludedTagIds)) {
+    patch.rebaseExcludedTagIds = [...new Set(message.rebaseExcludedTagIds.map(String))];
+  }
+  if (Object.keys(patch).length > 0) await chrome.storage.local.set(patch);
+  return readDmpSettings();
+}
 
 function log(level, msg, extra) {
   const fn = level === 'error' ? console.error : console.info;
@@ -135,9 +186,7 @@ async function runDatabankCrowd(senderTab, crowdName, sendResponse) {
       crowdName: crowdName,
     });
     log('info', 'databank crowd flow done', result);
-    if (senderTab?.id) {
-      try { await focusTab(senderTab); } catch (e) { /* ignore */ }
-    }
+    // Keep this tab in front so the human can see and operate the final dialog.
     sendResponse(result);
   } catch (error) {
     log('error', 'databank crowd flow failed', error.message);
@@ -146,6 +195,23 @@ async function runDatabankCrowd(senderTab, crowdName, sendResponse) {
       try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
     }
     sendResponse({ ok: false, error: error?.message || '数据引擎人群流程执行失败' });
+  }
+}
+
+// Wait on the retained crowd tab until the human closes the final apply dialog.
+async function runDatabankWaitApply(senderTab, sendResponse) {
+  try {
+    if (!databankTabId) throw new Error('没有活跃的数据引擎推送任务');
+    const tab = await chrome.tabs.get(databankTabId);
+    await focusTab(tab);
+    const result = await sendMessageWithRetry(databankTabId, {
+      type: CONTENT_CMD_DATABANK_WAIT_APPLY,
+    });
+    log('info', 'databank manual apply confirmed', result);
+    sendResponse(result);
+  } catch (error) {
+    log('error', 'databank manual apply wait failed', error.message);
+    sendResponse({ ok: false, error: error?.message || '等待人工确认失败' });
   }
 }
 
@@ -181,13 +247,14 @@ async function runDatabankDataHubCheck(senderTab, crowdName, sendResponse) {
 }
 
 // Run DMP portrait entry wait (Phase 2) — same tab, polls for 画像透视
-async function runDmpWaitPortrait(senderTab, sendResponse) {
+async function runDmpWaitPortrait(senderTab, phase1Result, sendResponse) {
   try {
     if (!dmpTabId) throw new Error('没有活跃的 DMP 任务');
     log('info', 'dmp phase 2: waiting for portrait entry on tab', dmpTabId);
     await waitForReady(dmpTabId, CONTENT_PING_DMP, 10);
     const result = await sendMessageWithRetry(dmpTabId, {
       type: CONTENT_CMD_DMP_WAIT_PORTRAIT,
+      phase1Result,
     });
     log('info', 'dmp phase 2 done', result);
     sendResponse(result);
@@ -204,7 +271,7 @@ async function runDmp(senderTab, crowdName, sendResponse) {
     tab = await createTab(DMP_CROWD_URL);
     dmpTabId = tab.id;
     await waitForTabComplete(tab.id);
-    await ensureScriptInjected(tab.id, ['dmp-content.js']);
+    await ensureScriptInjected(tab.id, ['dmp-result-core.js', 'dmp-content.js']);
     await focusTab(tab);
     await waitForReady(tab.id, CONTENT_PING_DMP, 120);
     const result = await sendMessageWithRetry(tab.id, {
@@ -212,9 +279,8 @@ async function runDmp(senderTab, crowdName, sendResponse) {
       crowdName: crowdName,
     });
     log('info', 'dmp phase 1 done', result);
-    if (senderTab?.id) {
-      try { await focusTab(senderTab); } catch (e) { /* ignore */ }
-    }
+    // Keep DMP active while its list refreshes; backgrounding the page can pause
+    // the site's readiness updates before the portrait entry is rendered.
     sendResponse(result);
   } catch (error) {
     log('error', 'dmp phase 1 failed', error.message);
@@ -267,7 +333,7 @@ async function runDmpExtract(senderTab, phase1Result, selectedTags, sendResponse
 // Main message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const msgType = message?.type;
-  if (![MSG_DATABANK_PARAM, MSG_DATABANK_CROWD, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT].includes(msgType)) return;
+  if (![MSG_DATABANK_PARAM, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
 
   const senderUrl = message.pageUrl || sender.tab?.url || '';
   const senderOrigin = (function() {
@@ -281,6 +347,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const senderTab = sender?.tab?.id ? { id: sender.tab.id, windowId: sender.tab.windowId } : null;
+
+  if (msgType === MSG_DMP_GET_SETTINGS || msgType === MSG_DMP_UPDATE_SETTINGS) {
+    const operation = msgType === MSG_DMP_GET_SETTINGS
+      ? readDmpSettings()
+      : updateDmpSettings(message);
+    operation
+      .then((settings) => sendResponse({ ok: true, settings }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message || 'DMP设置同步失败' }));
+    return true;
+  }
 
   if (msgType === MSG_DATABANK_PARAM) {
     const jsonText = String(message.jsonText || '').trim();
@@ -325,6 +401,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (msgType === MSG_DATABANK_WAIT_APPLY) {
+    runDatabankWaitApply(senderTab, sendResponse);
+    return true;
+  }
+
   if (msgType === MSG_DMP) {
     const crowdName = String(message.crowdName || '').trim();
     if (!crowdName) {
@@ -336,7 +417,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (msgType === MSG_DMP_WAIT_PORTRAIT) {
-    runDmpWaitPortrait(senderTab, sendResponse);
+    runDmpWaitPortrait(senderTab, message.phase1Result || {}, sendResponse);
     return true;
   }
 
