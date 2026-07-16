@@ -313,7 +313,6 @@
               :key="node.id"
               v-show="!collapsedCfId || getNodeFocusBindings(node.id).length > 0"
               class="node-wrapper"
-              :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
               :ref="(el) => { if (el) nodeRefs[index] = el }"
               @dragover.prevent="onDragOver(index)"
               @drop="onDrop(index)"
@@ -567,7 +566,7 @@
               v-for="item in getNodeSummary(node)"
               :key="item.key"
               class="summary-row"
-              :class="{ 'summary-row-highlighted': collapsedCfId && isSummaryRowHighlighted(node.id, item.key) }"
+              :class="{ 'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted(node.id, item.key) }"
             >
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
@@ -1010,9 +1009,9 @@ function isNodeHighlightedForCf(nodeId) {
 }
 
 function isSummaryRowHighlighted(nodeId, fieldKey) {
-  if (!collapsedCfId.value) return false
+  if (!highlightedCfId.value) return false
   const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === collapsedCfId.value)
+  const cf = cfs.find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
