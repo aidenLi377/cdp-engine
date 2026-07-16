@@ -407,13 +407,18 @@ function applyPaste(node, field) {
 
 <style scoped>
 .field-highlighted {
-  border: 1px solid #ff6b4a !important;
-  background: rgba(255, 107, 74, 0.06) !important;
-  box-shadow: 0 0 0 2px rgba(255, 107, 74, 0.1);
+  border-width: 1px !important;
+  border-style: solid !important;
   border-radius: 4px;
   padding: 8px;
   margin: 2px 0;
   transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.field-highlighted,
+.field-selected {
+  border-color: var(--ui-accent) !important;
+  background: var(--ui-surface) !important;
+  box-shadow: 0 0 0 3px var(--ui-accent-ring);
 }
 .field-dimmed {
   opacity: 0.35;
@@ -429,13 +434,10 @@ function applyPaste(node, field) {
   transition: all 0.15s ease;
 }
 .field-selectable:hover {
-  border-color: #ff6b4a;
-  background: rgba(255, 107, 74, 0.03);
+  border-color: var(--ui-control-border);
+  background: var(--ui-fill);
 }
 .field-selected {
-  border-color: #ff6b4a !important;
-  background: rgba(255, 107, 74, 0.06);
-  box-shadow: inset 0 0 0 1px rgba(255, 107, 74, 0.2);
   position: relative;
 }
 .check-mark {
@@ -445,7 +447,7 @@ function applyPaste(node, field) {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ff6b4a;
+  background: var(--ui-accent);
   color: #fff;
   font-size: 11px;
   display: flex;
@@ -472,9 +474,11 @@ function applyPaste(node, field) {
   transition: color 0.2s;
   letter-spacing: 0.01em;
 }
-.paste-trigger:hover,
+.paste-trigger:hover {
+  color: var(--ui-ink);
+}
 .paste-trigger.open {
-  color: #ff6b4a;
+  color: var(--ui-accent);
 }
 .paste-trigger-icon {
   display: flex;
@@ -519,15 +523,15 @@ function applyPaste(node, field) {
 }
 .paste-panel-body {
   margin-top: 6px;
-  border: 1px solid #e8e4dc;
+  border: 1px solid var(--ui-control-border);
   border-radius: 8px;
   padding: 12px;
-  background: #fcfcf9;
+  background: var(--ui-surface);
 }
 
 .paste-textarea {
   width: 100%;
-  border: 1px solid #e8e4dc;
+  border: 1px solid var(--ui-control-border);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
@@ -541,8 +545,8 @@ function applyPaste(node, field) {
 }
 .paste-textarea:focus {
   outline: none;
-  border-color: #ff6b4a;
-  box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.08);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-ring);
 }
 .paste-textarea::placeholder {
   color: #c7c7cc;
@@ -569,7 +573,7 @@ function applyPaste(node, field) {
   color: #2e8b57;
 }
 .paste-stat.err {
-  color: #e0554a;
+  color: var(--ui-danger);
 }
 
 .paste-chip-cloud {
@@ -595,9 +599,9 @@ function applyPaste(node, field) {
   border: 1px solid rgba(46, 139, 87, 0.12);
 }
 .paste-chip.err {
-  background: rgba(224, 85, 74, 0.06);
-  color: #e0554a;
-  border: 1px solid rgba(224, 85, 74, 0.1);
+  background: rgba(255, 59, 48, 0.06);
+  color: var(--ui-danger);
+  border: 1px solid rgba(255, 59, 48, 0.1);
   cursor: help;
 }
 .paste-chip-err-hint {
@@ -624,7 +628,7 @@ function applyPaste(node, field) {
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #f0ece4;
+  border-top: 1px solid var(--ui-divider);
 }
 .paste-btn {
   padding: 5px 14px;
@@ -645,13 +649,14 @@ function applyPaste(node, field) {
   background: rgba(0,0,0,0.04);
 }
 .paste-btn.confirm {
-  background: #ff6b4a;
-  color: #fff;
+  background: var(--ui-ink);
+  color: #ffffff;
+  box-shadow: none;
   min-width: 80px;
 }
 .paste-btn.confirm:hover:not(:disabled) {
-  background: #f05a3a;
-  box-shadow: 0 2px 8px rgba(255, 107, 74, 0.25);
+  background: #2c2c2e;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
 }
 .paste-btn.confirm:disabled {
   opacity: 0.35;

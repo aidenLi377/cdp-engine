@@ -30,3 +30,23 @@ test('custom field card bar uses a horizontal float-rail with stronger interacti
   assert.match(css, /\.cf-use-card-more \{[^}]*height: 16px;[^}]*font-size: 9px;/s)
   assert.match(css, /\.cf-value-tooltip \{[^}]*white-space: pre-line;[^}]*border-radius: 14px !important;/s)
 })
+
+test('solution-use parameter highlighting stays field-level and reaches the matching summary row', () => {
+  const solutionUseStart = normalModeVue.indexOf("workbenchMode === 'solution-use'")
+  const freeBuildStart = normalModeVue.indexOf('<div v-else key="free-build"', solutionUseStart)
+  const solutionUseTemplate = normalModeVue.slice(solutionUseStart, freeBuildStart)
+  const summaryFunctionStart = normalModeVue.indexOf('function isSummaryRowHighlighted')
+  const summaryFunctionEnd = normalModeVue.indexOf('\n}', summaryFunctionStart) + 2
+  const summaryFunction = normalModeVue.slice(summaryFunctionStart, summaryFunctionEnd)
+  const fieldHighlightStart = normalModeVue.indexOf('isFieldHighlighted: (nodeId, fieldKey) => {')
+  const fieldHighlightEnd = normalModeVue.indexOf('\n  },', fieldHighlightStart) + 4
+  const fieldHighlightCallback = normalModeVue.slice(fieldHighlightStart, fieldHighlightEnd)
+
+  assert.doesNotMatch(solutionUseTemplate, /node-highlighted/)
+  assert.match(normalModeVue, /'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted\(node\.id, item\.key\)/)
+  assert.match(summaryFunction, /if \(!highlightedCfId\.value\) return false/)
+  assert.match(summaryFunction, /c\.id === highlightedCfId\.value/)
+  assert.doesNotMatch(summaryFunction, /collapsedCfId/)
+  assert.match(normalModeVue, /'cf-use-card-active': highlightedCfId === section\.customFieldId/)
+  assert.match(fieldHighlightCallback, /highlightedCfId\.value/)
+})

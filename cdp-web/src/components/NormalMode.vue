@@ -86,11 +86,6 @@
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">行为组件库</div>
-          <div class="display-body-light">
-            {{ workbenchMode === 'solution-use'
-              ? '已应用方案，仍可继续增删节点和调整逻辑关系'
-              : '自由搭建时可继续增删节点' }}
-          </div>
         </div>
       </div>
 
@@ -132,7 +127,6 @@
         <div class="display-feature-title">
           {{ workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台' }}
         </div>
-        <div v-if="workbenchMode !== 'solution-use'" class="display-body-light">自由搭建当前画布，并可直接存为方案草稿</div>
         <div v-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
           当前内容已偏离原方案结构
         </div>
@@ -313,7 +307,6 @@
               :key="node.id"
               v-show="!collapsedCfId || getNodeFocusBindings(node.id).length > 0"
               class="node-wrapper"
-              :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
               :ref="(el) => { if (el) nodeRefs[index] = el }"
               @dragover.prevent="onDragOver(index)"
               @drop="onDrop(index)"
@@ -506,16 +499,13 @@
       <div style="display:flex;align-items:center;gap:6px">
         <el-input
           v-model="crowdNameInput"
-          placeholder="自动生成或手动输入"
+          placeholder="手动输入人群包名称"
           size="default"
           clearable
           class="intercom-input"
           style="flex:1"
           @input="onNameManualEdit"
         />
-        <el-tooltip v-if="nameAuto" content="名称会随当前自由搭建参数自动生成" placement="top">
-          <span style="font-size:11px;color:#ff6b4a;cursor:default;flex-shrink:0">自动</span>
-        </el-tooltip>
       </div>
 
       <div v-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
@@ -567,7 +557,7 @@
               v-for="item in getNodeSummary(node)"
               :key="item.key"
               class="summary-row"
-              :class="{ 'summary-row-highlighted': collapsedCfId && isSummaryRowHighlighted(node.id, item.key) }"
+              :class="{ 'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted(node.id, item.key) }"
             >
               <span class="summary-label">{{ item.label }}</span>
               <span class="summary-val">{{ item.value }}</span>
@@ -649,8 +639,7 @@ const nodeList = ref([])
 const currentSolution = ref(null)
 const loadedSolutionRecord = ref(null)
 const loadedSolutionFieldIds = ref([])
-const crowdNameInput = ref(DEFAULT_CROWD_NAME)
-const nameAuto = ref(true)
+const crowdNameInput = ref('')
 const pkgSearch = ref('')
 const solutionSearch = ref('')
 const leftPanelMode = ref('packages')
@@ -1010,9 +999,9 @@ function isNodeHighlightedForCf(nodeId) {
 }
 
 function isSummaryRowHighlighted(nodeId, fieldKey) {
-  if (!collapsedCfId.value) return false
+  if (!highlightedCfId.value) return false
   const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === collapsedCfId.value)
+  const cf = cfs.find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
@@ -1022,7 +1011,6 @@ function toggleLeftPanelMode() {
 }
 
 function onNameManualEdit() {
-  nameAuto.value = false
   markDerivedParamChange()
 }
 
@@ -1080,8 +1068,7 @@ function clearCanvas() {
   nodeList.value = []
   nodeRefs.value = {}
   activeNodeIndex.value = 0
-  crowdNameInput.value = DEFAULT_CROWD_NAME
-  nameAuto.value = true
+  crowdNameInput.value = ''
   resetWorkbenchContext()
   ElMessage.success('工作台已清空')
 }
@@ -1125,7 +1112,6 @@ function takeSnapshot() {
   const snapshot = structuredClone({
     nodeList: toRaw(nodeList.value),
     crowdNameInput: crowdNameInput.value,
-    nameAuto: nameAuto.value,
   })
 
   historyStack.value = historyStack.value.slice(0, historyPos.value + 1)
@@ -1141,8 +1127,7 @@ function restoreSnapshot() {
   if (!snapshot) return
 
   nodeList.value = snapshot.nodeList || []
-  crowdNameInput.value = snapshot.crowdNameInput || DEFAULT_CROWD_NAME
-  nameAuto.value = snapshot.nameAuto !== undefined ? snapshot.nameAuto : false
+  crowdNameInput.value = snapshot.crowdNameInput ?? ''
 }
 
 function undo() {
@@ -1239,9 +1224,6 @@ async function addNode(packageType) {
     const node = await createRuntimeNode({ packageType }, nodeList.value.length)
     takeSnapshot()
     nodeList.value.push(node)
-    if (!currentSolution.value) {
-      nameAuto.value = true
-    }
     markDerivedStructureChange()
   } catch (error) {
     ElMessage.error(error.message || '组件加载失败，请检查后端连接')
@@ -1418,9 +1400,7 @@ async function setWorkbenchFromSolution(record) {
     nodeList.value = hydratedNodes
     nodeRefs.value = {}
     activeNodeIndex.value = 0
-    crowdNameInput.value =
-      String(record?.defaultCrowdName || record?.name || DEFAULT_CROWD_NAME).trim() || DEFAULT_CROWD_NAME
-    nameAuto.value = false
+    crowdNameInput.value = String(record?.defaultCrowdName ?? '').trim()
     workbenchMode.value = 'solution-use'
     resetHistory()
   } finally {
@@ -1538,69 +1518,10 @@ async function buildFinalJson() {
   }
 
   generatedJson.value = {
-    crowdName: crowdNameInput.value || DEFAULT_CROWD_NAME,
+    crowdName: String(crowdNameInput.value || '').trim() || DEFAULT_CROWD_NAME,
     list,
     compute,
   }
-}
-
-function generateCrowdName() {
-  if (!nameAuto.value) return
-
-  const node = nodeList.value[0]
-  if (!node) {
-    crowdNameInput.value = DEFAULT_CROWD_NAME
-    return
-  }
-
-  const parts = []
-  const channels = getArray(node.formData?.channel)
-    .filter((item) => item !== '全部销售渠道' && item !== '全部')
-    .slice(0, 2)
-  if (channels.length > 0) parts.push(channels.join('/'))
-
-  const behaviors = getArray(node.formData?.bhv).slice(0, 2)
-  if (behaviors.length > 0) parts.push(behaviors.join('/'))
-
-  const categoryValues = getArray(node.formData?.cate)
-    .concat(getArray(node.formData?.leafCates))
-    .filter((item) => item !== '全部')
-    .slice(0, 2)
-  if (categoryValues.length > 0) parts.push(categoryValues.join('/'))
-
-  const brands = getArray(node.formData?.stdBrand).slice(0, 1)
-  if (brands.length > 0) parts.push(brands.join(''))
-
-  const dateKey = Object.keys(node.modeData || {}).find((key) =>
-    node.schema?.some((field) => field.key === key && field.Widget_Type === '日期_切换'),
-  )
-  if (dateKey) {
-    const mode = node.modeData[dateKey]
-    const dateValue = node.formData?.[dateKey]
-    if (mode === 'recent' && dateValue?.days) {
-      parts.push(`${dateValue.days}天`)
-    } else if (mode === 'range' && Array.isArray(dateValue?.dateRange) && dateValue.dateRange.length === 2) {
-      parts.push(`${dateValue.dateRange[0]}-${dateValue.dateRange[1]}`)
-    }
-  }
-
-  const numberKey = Object.keys(node.modeData || {}).find((key) =>
-    node.schema?.some((field) => field.key === key && field.Widget_Type === '数值_切换'),
-  )
-  if (numberKey) {
-    const mode = node.modeData[numberKey]
-    const numberValue = node.formData?.[numberKey]
-    if (mode === 'min' && numberValue?.min !== null && numberValue?.min !== undefined) {
-      parts.push(`≥${numberValue.min}`)
-    } else if (mode === 'range' && numberValue?.min !== null && numberValue?.min !== undefined) {
-      parts.push(`${numberValue.min}-${numberValue?.max ?? '不限'}`)
-    }
-  }
-
-  const generatedName = parts.join('_')
-  crowdNameInput.value = nodeList.value.length > 1
-    ? `${generatedName || node.packageType}_共${nodeList.value.length}组`
-    : generatedName || node.packageType || DEFAULT_CROWD_NAME
 }
 
 function enforceWorkbenchFieldConstraints(nodes) {
@@ -1782,7 +1703,6 @@ function handleKeydown(event) {
 watch(
   [nodeList, crowdNameInput],
   ([nextNodes]) => {
-    generateCrowdName()
     enforceWorkbenchFieldConstraints(nextNodes)
     clearTimeout(jsonTimer)
     jsonTimer = setTimeout(async () => {

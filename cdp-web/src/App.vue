@@ -16,8 +16,7 @@
 
       <header class="app-shell-header">
         <div class="app-shell-title">
-          <div class="display-feature-title">CDP 圈选工作台</div>
-          <div class="display-body-light">可视化搭建、方案管理与任务调度</div>
+          <div class="display-feature-title">圈选工作台</div>
         </div>
 
         <nav class="app-shell-nav" aria-label="主导航">
@@ -137,7 +136,7 @@ onBeforeUnmount(() => {
   place-items: center;
   width: 100vw;
   height: 100vh;
-  background: #f5f3ee;
+  background: var(--ui-fill);
 }
 
 .auth-checking-mark {
@@ -149,11 +148,11 @@ onBeforeUnmount(() => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #171717;
+  background: var(--ui-ink);
   animation: auth-dot 900ms ease-in-out infinite alternate;
 }
 
-.auth-checking-mark i:nth-child(2) { background: #ff6b4a; animation-delay: 150ms; }
+.auth-checking-mark i:nth-child(2) { background: var(--ui-accent); animation-delay: 150ms; }
 .auth-checking-mark i:nth-child(3) { opacity: 0.25; animation-delay: 300ms; }
 
 .app-shell-account {
@@ -161,7 +160,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   padding-left: 12px;
-  border-left: 1px solid rgba(0, 0, 0, 0.08);
+  border-left: 1px solid;
+  border-left-color: var(--ui-divider);
 }
 
 .app-shell-avatar {
@@ -172,14 +172,14 @@ onBeforeUnmount(() => {
   color: #fff;
   font-size: 11px;
   font-weight: 650;
-  background: #1d1d1f;
+  background: var(--ui-ink);
   border-radius: 50%;
 }
 
 .app-shell-user {
   max-width: 96px;
   overflow: hidden;
-  color: #4a4a4d;
+  color: var(--ui-text-secondary);
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -187,7 +187,7 @@ onBeforeUnmount(() => {
 
 .app-shell-logout {
   padding: 4px 0 4px 4px;
-  color: #9a9aa0;
+  color: var(--ui-text-tertiary);
   font: inherit;
   font-size: 11px;
   background: none;
@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
   transition: color 180ms ease;
 }
 
-.app-shell-logout:hover { color: #ff6b4a; }
+.app-shell-logout:hover { color: var(--ui-accent); }
 
 @keyframes auth-dot {
   from { transform: translateY(2px); opacity: 0.35; }

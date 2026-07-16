@@ -82,8 +82,16 @@ test('solution center nodes support editable display names in drafts', () => {
 })
 
 test('solution center description copy stays concise', () => {
-  assert.match(solutionCenterVue, />草稿编辑、发布与工作台预览</)
+  assert.doesNotMatch(solutionCenterVue, /草稿编辑、发布与工作台预览/)
   assert.doesNotMatch(solutionCenterVue, /勾选后会进入工作台方案使用态与预览抽屉/)
+})
+
+test('custom field relationship is disclosed without persistent explanatory copy', () => {
+  assert.match(solutionCenterVue, /<div class="display-feature-title">自定义字段<\/div>/)
+  assert.match(solutionCenterVue, /<span class="solution-field-card-badge" aria-hidden="true">一对多<\/span>/)
+  assert.match(solutionCenterVue, />\s*\+ 新增自定义字段\s*<\/el-button>/)
+  assert.doesNotMatch(solutionCenterVue, /自定义字段（一对多）/)
+  assert.doesNotMatch(solutionCenterVue, /创建字段，让一个字段控制多个组件/)
 })
 
 test('folder selection still filters in all status and all button clears folder context explicitly', () => {

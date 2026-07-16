@@ -43,3 +43,36 @@ test('derived solution sessions clearly state free editing without mutating the 
 test('solution-use dynamic form is no longer wrapped in a readonly surface', () => {
   assert.doesNotMatch(normalModeVue, /class="solution-readonly-surface"/)
 })
+
+test('crowd naming stays manual while runtime JSON keeps an unnamed fallback', () => {
+  assert.match(normalModeVue, /const crowdNameInput = ref\(''\)/)
+  assert.match(normalModeVue, /crowdNameInput\.value = ''/)
+  assert.match(normalModeVue, /crowdNameInput\.value = snapshot\.crowdNameInput \?\? ''/)
+
+  assert.doesNotMatch(normalModeVue, /\bnameAuto\b/)
+  assert.doesNotMatch(normalModeVue, /function generateCrowdName\(/)
+  assert.doesNotMatch(normalModeVue, /generateCrowdName\(\)/)
+  assert.doesNotMatch(normalModeVue, /名称会随当前自由搭建参数自动生成/)
+
+  const setWorkbenchFromSolution = normalModeVue.match(
+    /async function setWorkbenchFromSolution\(record\) \{[\s\S]*?\n\}/,
+  )?.[0]
+  assert.ok(setWorkbenchFromSolution, 'solution loader should exist')
+  assert.match(
+    setWorkbenchFromSolution,
+    /crowdNameInput\.value = String\(record\?\.defaultCrowdName \?\? ''\)\.trim\(\)/,
+  )
+  const crowdNameRestore = setWorkbenchFromSolution.match(/crowdNameInput\.value = [^\r\n]+/)?.[0]
+  assert.ok(crowdNameRestore, 'solution loader should restore the crowd name')
+  assert.doesNotMatch(crowdNameRestore, /record\?\.name/)
+  assert.doesNotMatch(crowdNameRestore, /DEFAULT_CROWD_NAME/)
+
+  const buildFinalJson = normalModeVue.match(
+    /async function buildFinalJson\(\) \{[\s\S]*?\n\}/,
+  )?.[0]
+  assert.ok(buildFinalJson, 'runtime JSON builder should exist')
+  assert.match(
+    buildFinalJson,
+    /crowdName: String\(crowdNameInput\.value \|\| ''\)\.trim\(\) \|\| DEFAULT_CROWD_NAME/,
+  )
+})

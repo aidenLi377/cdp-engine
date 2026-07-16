@@ -260,7 +260,7 @@ watch(() => props.modelValue, (val) => {
 .cf-bound-value {
   margin-left: auto;
   font-size: 12px;
-  color: #ff6b4a;
+  color: var(--ui-accent);
   font-weight: 500;
 }
 </style>

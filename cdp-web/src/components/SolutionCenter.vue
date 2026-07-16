@@ -4,7 +4,6 @@
       <div class="solution-sidebar-head">
         <div>
           <div class="display-feature-title">方案中心</div>
-          <div class="display-body-light">草稿编辑、发布与工作台预览</div>
         </div>
         <el-button v-if="libraryScope === 'mine'" class="intercom-btn-primary btn-small" @click="createBlankDraft" :loading="creatingDraft">
           新建草稿
@@ -359,10 +358,10 @@
         </div>
 
         <div class="intercom-card solution-settings-card">
+          <span class="solution-field-card-badge" aria-hidden="true">一对多</span>
           <div class="solution-settings-head">
             <div>
-              <div class="display-feature-title">自定义字段（一对多）</div>
-              <div class="display-body-light">创建字段，让一个字段控制多个组件</div>
+              <div class="display-feature-title">自定义字段</div>
             </div>
             <div class="solution-field-actions">
               <span class="display-mono">{{ customFields.length }} 个字段</span>
@@ -528,7 +527,7 @@
               :disabled="isReadOnly"
               @click="startCreateCustomField"
             >
-              + 新增自定义字段（一对多）
+              + 新增自定义字段
             </el-button>
           </el-tooltip>
         </div>
@@ -1477,10 +1476,19 @@ onMounted(async () => {
   transition: all 0.2s;
   margin-bottom: 6px;
 }
-.custom-field-item:hover,
+.custom-field-item:hover {
+  border-color: var(--ui-control-border);
+  background: var(--ui-fill);
+}
 .custom-field-item.active {
-  border-color: #ff6b4a;
-  background: rgba(255, 107, 74, 0.04);
+  border-color: var(--ui-accent);
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+.custom-field-item.drag-over {
+  border-color: var(--ui-accent);
+  background: var(--ui-surface);
+  box-shadow: none;
 }
 .custom-field-item-head {
   display: flex;
@@ -1505,8 +1513,8 @@ onMounted(async () => {
   color: #c7c7cc;
 }
 .creating-custom-field-panel {
-  background: rgba(255, 107, 74, 0.04);
-  border: 1px solid rgba(255, 107, 74, 0.2);
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
   border-radius: 6px;
   padding: 12px;
   margin-top: 8px;
@@ -1520,8 +1528,11 @@ onMounted(async () => {
   font-size: 11px;
   color: #a1a1a6;
 }
+.creating-step.active,
+.creating-panel-title {
+  color: var(--ui-accent);
+}
 .creating-step.active {
-  color: #ff6b4a;
   font-weight: 600;
 }
 .creating-step.done {
@@ -1534,7 +1545,13 @@ onMounted(async () => {
 
 /* ---- 节点加载骨架屏 ---- */
 .node-skeleton {
-  background: rgba(255,255,255,0.60);
+  background: linear-gradient(
+    90deg,
+    var(--ui-fill) 25%,
+    #ececef 50%,
+    var(--ui-fill) 75%
+  );
+  background-size: 200% 100%;
   border: 1px solid rgba(0,0,0,0.05);
   border-radius: 14px;
   padding: 18px;
@@ -1542,7 +1559,12 @@ onMounted(async () => {
 }
 .skeleton-bar {
   height: 14px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--ui-fill) 25%,
+    #ececef 50%,
+    var(--ui-fill) 75%
+  );
   background-size: 200% 100%;
   animation: skeletonPulse 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -1574,13 +1596,9 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 .node-highlighted {
-  border-color: #ff6b4a !important;
-  box-shadow: 0 0 0 3px rgba(255, 107, 74, 0.15) !important;
-}
-.custom-field-item.drag-over {
-  border-color: #ff6b4a;
-  background: rgba(255, 107, 74, 0.08);
-  transform: translateY(2px);
+  border-color: var(--ui-accent) !important;
+  background: var(--ui-surface) !important;
+  box-shadow: 0 0 0 3px var(--ui-accent-ring) !important;
 }
 .drag-handle {
   cursor: grab;
@@ -1600,7 +1618,6 @@ onMounted(async () => {
 .creating-panel-title {
   font-size: 13px;
   font-weight: 600;
-  color: #ff6b4a;
   margin-bottom: 8px;
 }
 .creating-bindings-list {
@@ -1621,7 +1638,7 @@ onMounted(async () => {
   font-size: 12px;
 }
 .creating-binding-remove.el-button {
-  color: #d94e32 !important;
+  color: var(--ui-danger) !important;
   font-size: 14px !important;
   height: 20px !important;
   padding: 0 4px !important;

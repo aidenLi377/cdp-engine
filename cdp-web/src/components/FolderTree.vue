@@ -280,12 +280,13 @@ defineExpose({ selectedFolderId, selectFolder })
 }
 .folder-tree-add.el-button {
   font-size: 11px !important;
-  color: #ff6b4a !important;
+  color: var(--ui-accent) !important;
   height: auto !important;
   padding: 0 !important;
 }
 .folder-tree-node.drag-over {
-  background: rgba(255, 107, 74, 0.08);
+  background: var(--ui-fill);
+  outline: 1px solid var(--ui-accent);
   border-radius: 4px;
 }
 .folder-tree-row {
@@ -297,12 +298,13 @@ defineExpose({ selectedFolderId, selectFolder })
   border-radius: 4px;
   transition: background 0.15s;
 }
-.folder-tree-row:hover {
-  background: rgba(0, 0, 0, 0.04);
+.folder-tree-row:hover:not(.active) {
+  background: var(--ui-fill);
 }
 .folder-tree-row.active {
-  background: rgba(255, 107, 74, 0.08);
-  color: #ff6b4a;
+  background: var(--ui-surface);
+  color: var(--ui-accent);
+  box-shadow: inset 2px 0 0 var(--ui-accent);
 }
 .folder-tree-row.uncategorized {
   margin-top: 4px;
@@ -328,7 +330,7 @@ defineExpose({ selectedFolderId, selectFolder })
 }
 .folder-drop-hint {
   font-size: 10px;
-  color: #ff6b4a;
+  color: var(--ui-accent) !important;
   flex-shrink: 0;
 }
 .folder-children {
@@ -348,7 +350,9 @@ defineExpose({ selectedFolderId, selectFolder })
   position: fixed;
   z-index: 9999;
   background: #fff;
-  border: 1px solid #e0dcd6;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--ui-divider);
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 4px;
@@ -364,10 +368,10 @@ defineExpose({ selectedFolderId, selectFolder })
   background: rgba(0, 0, 0, 0.04);
 }
 .context-menu-item.danger {
-  color: #d94e32;
+  color: var(--ui-danger);
 }
 .context-menu-item.danger:hover {
-  background: rgba(217, 78, 50, 0.06);
+  background: rgba(255, 59, 48, 0.06);
 }
 .context-menu-divider {
   height: 1px;
