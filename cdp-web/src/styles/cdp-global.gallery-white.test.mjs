@@ -25,6 +25,18 @@ function effectiveRule(source, selector) {
   return matches.at(-1)[1]
 }
 
+export function effectiveSelectorListRule(source, selector) {
+  const matches = [...source.matchAll(/(?=(?:^|})\s*([^{}]+?)\s*\{([^{}]*)\})/g)].filter((match) =>
+    match[1]
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split(',')
+      .some((candidate) => candidate.trim() === selector),
+  )
+
+  assert.ok(matches.length > 0, `Expected an explicit selector-list rule for ${selector}`)
+  return matches.at(-1)[2]
+}
+
 test('gallery white exposes the approved neutral, accent, and semantic tokens', () => {
   assert.ok(markerIndex >= 0, 'Gallery White theme marker must exist')
   assert.match(themeCss, /--ui-canvas:\s*#ffffff;/)
@@ -324,15 +336,18 @@ test('task center disabled actions and tag labels remain opaque and readable', (
 })
 
 test('gallery white keeps full-height three-column rails pure white', () => {
-  const match = themeCss.match(
-    /\.left-panel,\s*\.right-panel,\s*\.solution-sidebar,\s*\.solution-settings,\s*#app \.tc-control-panel\s*\{([^{}]*)\}/,
-  )
+  for (const selector of [
+    '.left-panel',
+    '.right-panel',
+    '.solution-sidebar',
+    '.solution-settings',
+    '#app .tc-control-panel',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
 
-  assert.ok(match, 'Expected the shared three-column rail rule in the Gallery White layer')
-  const rule = match[1]
-
-  assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
-  assert.doesNotMatch(rule, /background:\s*var\(--ui-fill\)/)
-  assert.match(rule, /border-color:\s*var\(--ui-divider\)\s*!important/)
-  assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.doesNotMatch(rule, /background:\s*var\(--ui-fill\)/)
+    assert.match(rule, /border-color:\s*var\(--ui-divider\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+  }
 })
