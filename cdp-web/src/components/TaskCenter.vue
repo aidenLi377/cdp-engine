@@ -753,7 +753,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
   border-color: var(--ui-ink) !important;
   box-shadow: none !important;
 }
-.tc-btn-sm:disabled { background: rgba(0,0,0,0.06) !important; color: rgba(0,0,0,0.20) !important; }
+.tc-btn-sm:disabled { background: var(--ui-fill) !important; color: var(--ui-text-secondary) !important; border-color: var(--ui-control-border) !important; opacity: 1; box-shadow: none !important; transform: none !important; }
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 
@@ -761,7 +761,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-dmp-tools-label { margin-right: auto; font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
 .tc-settings-btn { height: 26px; padding: 0 9px; border: 1px solid rgba(0,0,0,0.06); border-radius: 7px; background: rgba(255,255,255,0.72); color: #4b4b4f; font-size: 10px; cursor: pointer; transition: all 0.18s ease; }
 .tc-settings-btn:hover:not(:disabled) { color: var(--ui-accent); border-color: var(--ui-control-border); background: var(--ui-surface); }
-.tc-settings-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+.tc-settings-btn:disabled { background: var(--ui-fill); color: var(--ui-text-tertiary); border-color: var(--ui-control-border); opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
 .tc-settings-state { font-size: 9px; color: #a1a1a6; }
 .tc-settings-panel { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; padding: 2px; }
 .tc-settings-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 1; padding-bottom: 5px; background: #fff; }
@@ -790,11 +790,12 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-tag-item { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 7px; border: 1px solid rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); cursor: pointer; transition: all 0.18s ease; user-select: none; font-size: 11px; }
 .tc-tag-item:hover:not(.disabled) { border-color: var(--ui-control-border); background: var(--ui-fill); transform: translateY(-1px); }
 .tc-tag-item.checked { border-color: var(--ui-accent); background: var(--ui-surface); }
-.tc-tag-item.disabled { opacity: 0.35; cursor: not-allowed; }
+.tc-tag-item.disabled { background: var(--ui-fill); color: var(--ui-text-tertiary); border-color: var(--ui-divider); opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
 .tc-tag-item.needCond { border-style: dashed; }
 .tc-tag-item.needCond:not(.ready):hover { border-color: rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); transform: none; }
 .tc-tag-item.needCond.ready { border-color: rgba(52,199,89,0.24); background: rgba(52,199,89,0.04); }
 .tc-tag-item.needCond.ready.checked { border-color: var(--ui-accent); background: var(--ui-surface); }
+.tc-tag-item.disabled.needCond:hover { background: var(--ui-fill); border-color: var(--ui-divider); transform: none; }
 .tc-tag-item input { display: none; }
 .tc-tag-check { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,0.10); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7px; color: transparent; transition: all 0.18s ease; }
 .tc-tag-item.checked .tc-tag-check { color: #ffffff; background: var(--ui-accent); border-color: var(--ui-accent); }
@@ -803,6 +804,11 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-tag-ready, .tc-tag-pending { font-size: 8px; font-weight: 600; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
 .tc-tag-ready { color: #208a43; background: rgba(52,199,89,0.08); }
 .tc-tag-pending { color: #c87800; background: rgba(255,149,0,0.08); }
+.tc-tag-item.disabled .tc-tag-name { color: var(--ui-text-tertiary); }
+.tc-tag-item.disabled .tc-tag-check { color: var(--ui-text-tertiary); background: var(--ui-surface); border-color: var(--ui-control-border); }
+.tc-tag-item.disabled .tc-tag-need-cond { color: var(--ui-text-tertiary); background: var(--ui-surface); }
+.tc-tag-item.disabled .tc-tag-ready { color: var(--ui-text-tertiary); background: var(--ui-surface); }
+.tc-tag-item.disabled .tc-tag-pending { color: var(--ui-text-tertiary); background: var(--ui-surface); }
 .tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */

@@ -2804,6 +2804,91 @@ body,
   box-shadow: none !important;
 }
 
+.solution-center-page {
+  background: var(--ui-canvas) !important;
+}
+
+.plus-btn {
+  background: var(--ui-ink) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.plus-btn::before {
+  display: none !important;
+  content: none !important;
+  animation: none !important;
+}
+
+.plus-btn:hover {
+  background: var(--ui-ink) !important;
+  box-shadow: none !important;
+}
+
+.final-header {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-divider) !important;
+  box-shadow: none !important;
+}
+
+.final-badge {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+
+.empty-state-illustration.create {
+  color: var(--ui-text-tertiary) !important;
+  background: var(--ui-fill) !important;
+  box-shadow: none !important;
+}
+
+.empty-state-illustration.use {
+  color: var(--ui-text-tertiary) !important;
+  background: var(--ui-fill) !important;
+  box-shadow: none !important;
+}
+
+.use-card-highlighted {
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.workbench-phase-status.is-free-build .workbench-phase-dot {
+  background: var(--ui-success) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.workbench-phase-status.is-solution-use .workbench-phase-dot {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+
+.cf-cards-bar {
+  scrollbar-color: var(--ui-control-border) transparent;
+}
+
+.cf-cards-bar::-webkit-scrollbar-thumb {
+  background: var(--ui-control-border) !important;
+}
+
+.cf-cards-bar::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-text-tertiary) !important;
+}
+
+.cf-value-tooltip {
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-control-border) !important;
+  box-shadow: var(--ui-shadow-float) !important;
+}
+
+.offline-banner {
+  background: var(--ui-danger) !important;
+  box-shadow: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .intercom-card,
   .published-solution-item,
