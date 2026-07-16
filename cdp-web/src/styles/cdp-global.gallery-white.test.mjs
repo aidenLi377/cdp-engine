@@ -88,3 +88,15 @@ test('dynamic form uses neutral tokens and shared danger semantics', () => {
   assert.match(style, /\.paste-stat\.err\s*\{[\s\S]*color:\s*var\(--ui-danger\)/)
   assert.match(style, /\.paste-chip\.err\s*\{[\s\S]*background:\s*rgba\(255,\s*59,\s*48,\s*0\.06\)[\s\S]*color:\s*var\(--ui-danger\)[\s\S]*border:\s*1px solid rgba\(255,\s*59,\s*48,\s*0\.1\)/)
 })
+
+test('solution center keeps active, creating, drag, and highlight states clean', () => {
+  const solutionStyle = vueStyle('components/SolutionCenter.vue')
+  const useStyle = vueStyle('components/SolutionUseForm.vue')
+  const styles = solutionStyle + useStyle
+
+  assert.doesNotMatch(styles, /#ff6b4a|rgba\(255,\s*107,\s*74/i)
+  assert.match(solutionStyle, /\.custom-field-item\.active\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
+  assert.match(solutionStyle, /\.creating-custom-field-panel\s*\{[\s\S]*background:\s*var\(--ui-fill\)/)
+  assert.match(solutionStyle, /\.skeleton-bar\s*\{[\s\S]*background:\s*linear-gradient\([^;]*(#f5f5f7|var\(--ui-fill\))/)
+  assert.match(useStyle, /\.use-card-highlighted\s*\{[\s\S]*var\(--ui-accent-ring\)/)
+})
