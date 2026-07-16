@@ -90,6 +90,16 @@ test('gallery white workbench library is a compact borderless white row list', (
   assert.doesNotMatch(row + hover, /var\(--ui-fill\)|#f5f5f7/i)
 })
 
+test('gallery white component rows expose keyboard focus without a gray fill', () => {
+  const focus = effectiveRule(themeCss, '.workbench-package-section .btn-group .el-button:focus-visible')
+
+  assert.match(focus, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(focus, /box-shadow:\s*inset 2px 0 0 var\(--ui-accent\)\s*!important/)
+  assert.match(focus, /transform:\s*none\s*!important/)
+  assert.match(focus, /outline:\s*none\s*!important/)
+  assert.doesNotMatch(focus, /var\(--ui-fill\)|#f5f5f7/i)
+})
+
 test('gallery white custom-field relationship badge reveals on card hover or keyboard focus', () => {
   const card = effectiveRule(themeCss, '.solution-settings-card.intercom-card')
   const badge = effectiveRule(themeCss, '.solution-field-card-badge')

@@ -3362,3 +3362,10 @@ body,
     transition-duration: 0.01ms;
   }
 }
+
+.workbench-package-section .btn-group .el-button:focus-visible {
+  background: var(--ui-surface) !important;
+  box-shadow: inset 2px 0 0 var(--ui-accent) !important;
+  outline: none !important;
+  transform: none !important;
+}
