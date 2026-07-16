@@ -20,6 +20,7 @@
 
 - 不修改后端、API、认证、权限或数据存储。
 - 不重做工作台、方案中心和任务中台的业务流程。
+- 不修改 `main.js`、任何 Vue 组件的 `<template>`/`<script>`、composables、utils、后端文件或浏览器扩展。
 - 不新增暗色主题或主题切换能力。
 - 不进行与本次视觉统一无关的组件重构。
 - 不引入大体积动画库、外部字体服务或装饰性图片资源。
@@ -100,22 +101,22 @@ font-family: "SF Pro Display", "SF Pro Text", "PingFang SC",
 
 ## CSS 架构
 
-### 独立主题层
+### 单一主题覆盖层
 
-新增 `cdp-web/src/styles/gallery-white.css`，由 `main.js` 在现有 `cdp-global.css` 之后导入。该文件负责：
+保留现有 `main.js` 和样式导入关系不变。直接将 `cdp-web/src/styles/cdp-global.css` 末尾的 “Apple Clean Pro visual refresh” 暖色覆盖块替换为 “Gallery White visual refresh”。该覆盖层负责：
 
 1. 全局主题令牌；
 2. Element Plus 的主题映射；
 3. 应用壳、通用按钮、输入框、分段导航、卡片、表格和浮层规则；
 4. 各主要页面仍需统一的少量跨组件样式。
 
-现有 `cdp-global.css` 中的 “Apple Clean Pro visual refresh” 暖色覆盖块应移除，不能再在新主题后叠加第三层补丁。主题层必须是唯一的最终视觉来源。
+不得在旧暖色主题后继续追加第三层补丁。Gallery White 必须原位替换旧主题块，并成为唯一的最终视觉来源。
 
 ### 组件局部样式
 
 `App.vue`、`LoginView.vue`、`NormalMode.vue`、`BatchMode.vue`、`SolutionCenter.vue`、`TaskCenter.vue`、`DynamicForm.vue`、文件夹树及相关弹窗中的硬编码橙色和暖色应改为语义令牌。
 
-组件可以保留现有结构和 scoped CSS，但不得重新定义全局颜色体系。新增 class 只能用于表达呈现状态，不得改变业务状态或事件流。
+组件必须保留现有 `<template>` 和 `<script>` 原文，只能修改 scoped `<style>` 区块中的视觉声明。不得新增 class、绑定、状态、事件或分支，也不得重新定义全局颜色体系。
 
 ### Element Plus
 
@@ -166,7 +167,9 @@ font-family: "SF Pro Display", "SF Pro Text", "PingFang SC",
 
 本次改造不改变 Vue 响应式状态、组件 props/emits、路由/模式切换、API 请求、认证检查、任务轮询、表单校验或本地持久化。
 
-数据流保持：现有业务状态生成现有 class 或 Element Plus 状态；主题层根据这些状态渲染新的视觉。若某个状态缺少稳定 class，只允许添加纯呈现 class，不创建重复业务状态。
+数据流保持：现有业务状态继续生成现有 class 或 Element Plus 状态，主题层只根据既有状态渲染新的视觉。如果某个视觉无法通过既有选择器实现，本次不新增 template class 或业务状态，而是保留原结构并使用现有稳定选择器完成最小视觉调整。
+
+实施期间必须使用 diff 闸门检查每个 `.vue` 修改：变更行只能位于 `<style>` 区块。任何 `<template>`、`<script>`、JavaScript、Python、composable、utility、API 或扩展变更都视为越界并停止实施。
 
 ## 错误、加载、空状态与禁用状态
 
@@ -221,6 +224,7 @@ font-family: "SF Pro Display", "SF Pro Text", "PingFang SC",
 - 主要行动按钮为黑底白字，危险行动和业务状态使用正确的 P1 语义色。
 - 四个主要页面及其可达子界面具有一致的按钮、输入、卡片、导航、表格、状态和动效规则。
 - 业务流程、API、认证、任务执行、方案编辑和数据持久化行为保持不变。
+- `main.js`、所有 Vue `<template>/<script>`、composables、utils、后端和浏览器扩展与实施前逐字节一致。
 - 现有回归测试、主题测试、类型检查和生产构建全部通过。
 
 ## 风险与控制
