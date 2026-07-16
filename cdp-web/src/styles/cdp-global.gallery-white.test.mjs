@@ -504,6 +504,7 @@ test('gallery white A uses independent white capsules for reviewed control group
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /height:\s*32px\s*!important/)
     assert.match(rule, /border-radius:\s*8px\s*!important/)
+    assert.match(rule, /font-size:\s*12px\s*!important/)
   }
 })
 
@@ -518,6 +519,32 @@ test('gallery white A preserves capsule radii on first and last radio buttons', 
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /border-radius:\s*999px\s*!important/)
+  }
+})
+
+test('gallery white A keeps inactive radio hover white and exposes keyboard focus rings', () => {
+  for (const selector of [
+    '.app-shell-nav .el-radio-button:not(.is-active):hover .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button:not(.is-active):hover .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button:not(.is-active):hover .el-radio-button__inner',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+    assert.match(rule, /color:\s*var\(--ui-ink\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.doesNotMatch(rule, /var\(--ui-fill\)|background:\s*var\(--ui-accent\)/)
+  }
+
+  for (const selector of [
+    '.app-shell-nav .el-radio-button__original:focus-visible + .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button__original:focus-visible + .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button__original:focus-visible + .el-radio-button__inner',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*0 0 0 3px var\(--ui-accent-ring\)\s*!important/)
+    assert.doesNotMatch(rule, /background(?:-color)?\s*:/)
   }
 })
 
@@ -547,8 +574,10 @@ test('gallery white A keeps every menu-style dropdown state white', () => {
     '.el-cascader-node.is-disabled',
     '.el-autocomplete-suggestion',
     '.el-autocomplete-suggestion li',
-    '.el-autocomplete-suggestion li:hover',
-    '.el-autocomplete-suggestion li.highlighted',
+    '.el-autocomplete-suggestion:not(.is-loading) li:hover',
+    '.el-autocomplete-suggestion:not(.is-loading) li.highlighted',
+    '.el-autocomplete-suggestion.is-loading li',
+    '.el-autocomplete-suggestion.is-loading li:hover',
     '.el-tree-select__popper .el-tree-node__content',
     '.el-tree-select__popper .el-tree-node__content:hover',
     '.el-tree-select__popper .el-tree-node.is-current > .el-tree-node__content',
@@ -573,6 +602,18 @@ test('gallery white A keeps every menu-style dropdown state white', () => {
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /color:\s*var\(--ui-text-tertiary\)\s*!important/)
     assert.match(rule, /cursor:\s*not-allowed\s*!important/)
+  }
+
+  for (const selector of [
+    '.el-autocomplete-suggestion.is-loading li',
+    '.el-autocomplete-suggestion.is-loading li:hover',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /color:\s*var\(--ui-text-tertiary\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.match(rule, /cursor:\s*default\s*!important/)
+    assert.doesNotMatch(rule, /var\(--ui-fill\)|var\(--ui-accent\)|inset\s+2px/)
   }
 })
 

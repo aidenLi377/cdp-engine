@@ -38,6 +38,9 @@ test('solution-use parameter highlighting stays field-level and reaches the matc
   const summaryFunctionStart = normalModeVue.indexOf('function isSummaryRowHighlighted')
   const summaryFunctionEnd = normalModeVue.indexOf('\n}', summaryFunctionStart) + 2
   const summaryFunction = normalModeVue.slice(summaryFunctionStart, summaryFunctionEnd)
+  const fieldHighlightStart = normalModeVue.indexOf('isFieldHighlighted: (nodeId, fieldKey) => {')
+  const fieldHighlightEnd = normalModeVue.indexOf('\n  },', fieldHighlightStart) + 4
+  const fieldHighlightCallback = normalModeVue.slice(fieldHighlightStart, fieldHighlightEnd)
 
   assert.doesNotMatch(solutionUseTemplate, /node-highlighted/)
   assert.match(normalModeVue, /'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted\(node\.id, item\.key\)/)
@@ -45,5 +48,5 @@ test('solution-use parameter highlighting stays field-level and reaches the matc
   assert.match(summaryFunction, /c\.id === highlightedCfId\.value/)
   assert.doesNotMatch(summaryFunction, /collapsedCfId/)
   assert.match(normalModeVue, /'cf-use-card-active': highlightedCfId === section\.customFieldId/)
-  assert.match(normalModeVue, /isFieldHighlighted: \(nodeId, fieldKey\) => \{[\s\S]*highlightedCfId\.value/)
+  assert.match(fieldHighlightCallback, /highlightedCfId\.value/)
 })
