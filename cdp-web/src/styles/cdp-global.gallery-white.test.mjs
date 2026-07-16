@@ -561,3 +561,66 @@ test('gallery white A keeps every menu-style dropdown state white', () => {
     assert.match(rule, /cursor:\s*not-allowed\s*!important/)
   }
 })
+
+test('gallery white A keeps trigger and selected-tag interaction states white', () => {
+  const whiteSelectors = [
+    '.el-select__wrapper:hover',
+    '.el-select__wrapper:focus',
+    '.el-select__wrapper.is-focus',
+    '.el-select__wrapper.is-hovering',
+    '.el-select__wrapper.is-focused',
+    '.el-select__wrapper.is-disabled',
+    '.el-select-v2__wrapper:hover',
+    '.el-select-v2__wrapper:focus',
+    '.el-select-v2__wrapper.is-focus',
+    '.el-select-v2__wrapper.is-hovering',
+    '.el-select-v2__wrapper.is-focused',
+    '.el-select-v2__wrapper.is-disabled',
+    '.intercom-input .el-select-v2__wrapper:hover',
+    '.intercom-input .el-select-v2__wrapper.is-focused',
+    '.el-dropdown > .el-button:hover',
+    '.el-dropdown > .el-button:focus',
+    '.el-dropdown > .el-button.is-disabled',
+    '.el-dropdown > .el-button[aria-expanded="true"]',
+    '.el-dropdown.is-disabled > .el-button',
+    '.el-dropdown .el-dropdown__caret-button',
+    '.el-dropdown .el-dropdown__caret-button:hover',
+    '.el-dropdown .el-dropdown__caret-button:focus',
+    '.el-dropdown .el-dropdown__caret-button.is-disabled',
+    '.el-dropdown .el-dropdown__caret-button[aria-expanded="true"]',
+    '.el-dropdown.is-disabled .el-dropdown__caret-button',
+    '.el-select__selection .el-tag:hover',
+    '.el-select__wrapper.is-disabled .el-tag',
+    '.el-select__selection .el-tag .el-tag__close',
+    '.el-select__selection .el-tag .el-tag__close:hover',
+    '.el-select-v2__tag:hover',
+    '.el-select-v2__wrapper.is-disabled .el-select-v2__tag',
+    '.el-select-v2__tag .el-tag__close',
+    '.el-select-v2__tag .el-tag__close:hover',
+  ]
+
+  for (const selector of whiteSelectors) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background(?:-color)?:\s*var\(--ui-surface\)\s*!important/)
+    assert.doesNotMatch(rule, /var\(--ui-fill\)|#f5f5f7|#f2f2f2|#f0f0f0/i)
+  }
+
+  for (const selector of [
+    '.el-select__wrapper:focus',
+    '.el-select__wrapper.is-focus',
+    '.el-select__wrapper.is-focused',
+    '.el-select-v2__wrapper:focus',
+    '.el-select-v2__wrapper.is-focus',
+    '.el-select-v2__wrapper.is-focused',
+    '.intercom-input .el-select-v2__wrapper.is-focused',
+    '.el-dropdown > .el-button:focus',
+    '.el-dropdown > .el-button[aria-expanded="true"]',
+    '.el-dropdown .el-dropdown__caret-button:focus',
+    '.el-dropdown .el-dropdown__caret-button[aria-expanded="true"]',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*0 0 0 3px var\(--ui-accent-ring\)\s*!important/)
+    assert.doesNotMatch(rule, /background(?:-color)?:\s*var\(--ui-accent\)/)
+  }
+})
