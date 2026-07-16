@@ -79,3 +79,12 @@ test('workbench supporting styles use tokens without warm fills or colored shado
   assert.match(vueStyle('components/DynamicForm.vue'), /\.field-selected\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
   assert.match(vueStyle('components/FolderTree.vue'), /\.folder-tree-row\.active\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
 })
+
+test('dynamic form uses neutral tokens and shared danger semantics', () => {
+  const style = vueStyle('components/DynamicForm.vue')
+
+  assert.doesNotMatch(style, /#e8e4dc|#fcfcf9|#f0ece4|#e0554a|rgba\(224,\s*85,\s*74/i)
+  assert.match(style, /\.paste-panel-body\s*\{[\s\S]*border:\s*1px solid var\(--ui-control-border\)[\s\S]*background:\s*var\(--ui-surface\)/)
+  assert.match(style, /\.paste-stat\.err\s*\{[\s\S]*color:\s*var\(--ui-danger\)/)
+  assert.match(style, /\.paste-chip\.err\s*\{[\s\S]*background:\s*rgba\(255,\s*59,\s*48,\s*0\.06\)[\s\S]*color:\s*var\(--ui-danger\)[\s\S]*border:\s*1px solid rgba\(255,\s*59,\s*48,\s*0\.1\)/)
+})

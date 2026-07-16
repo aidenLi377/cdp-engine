@@ -523,15 +523,15 @@ function applyPaste(node, field) {
 }
 .paste-panel-body {
   margin-top: 6px;
-  border: 1px solid #e8e4dc;
+  border: 1px solid var(--ui-control-border);
   border-radius: 8px;
   padding: 12px;
-  background: #fcfcf9;
+  background: var(--ui-surface);
 }
 
 .paste-textarea {
   width: 100%;
-  border: 1px solid #e8e4dc;
+  border: 1px solid var(--ui-control-border);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
@@ -573,7 +573,7 @@ function applyPaste(node, field) {
   color: #2e8b57;
 }
 .paste-stat.err {
-  color: #e0554a;
+  color: var(--ui-danger);
 }
 
 .paste-chip-cloud {
@@ -599,9 +599,9 @@ function applyPaste(node, field) {
   border: 1px solid rgba(46, 139, 87, 0.12);
 }
 .paste-chip.err {
-  background: rgba(224, 85, 74, 0.06);
-  color: #e0554a;
-  border: 1px solid rgba(224, 85, 74, 0.1);
+  background: rgba(255, 59, 48, 0.06);
+  color: var(--ui-danger);
+  border: 1px solid rgba(255, 59, 48, 0.1);
   cursor: help;
 }
 .paste-chip-err-hint {
@@ -628,7 +628,7 @@ function applyPaste(node, field) {
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #f0ece4;
+  border-top: 1px solid var(--ui-divider);
 }
 .paste-btn {
   padding: 5px 14px;
