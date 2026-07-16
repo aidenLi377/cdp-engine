@@ -537,9 +537,9 @@ test('gallery white A keeps inactive radio hover white and exposes keyboard focu
   }
 
   for (const selector of [
-    '.app-shell-nav .el-radio-button__original:focus-visible + .el-radio-button__inner',
-    '.solution-library-switch .el-radio-button__original:focus-visible + .el-radio-button__inner',
-    '.solution-filter-group .el-radio-button__original:focus-visible + .el-radio-button__inner',
+    '.app-shell-nav .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
