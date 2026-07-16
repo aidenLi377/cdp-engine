@@ -507,6 +507,20 @@ test('gallery white A uses independent white capsules for reviewed control group
   }
 })
 
+test('gallery white A preserves capsule radii on first and last radio buttons', () => {
+  for (const selector of [
+    '.app-shell-nav .el-radio-button:first-child .el-radio-button__inner',
+    '.app-shell-nav .el-radio-button:last-child .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button:first-child .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button:last-child .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button:first-child .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button:last-child .el-radio-button__inner',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /border-radius:\s*999px\s*!important/)
+  }
+})
+
 test('gallery white A keeps every menu-style dropdown state white', () => {
   const whiteSelectors = [
     '.el-select__wrapper',
