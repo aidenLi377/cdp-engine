@@ -359,9 +359,9 @@ test('gallery white C keeps persistent interior cards pure white and border-only
     '.json-code',
     '.summary-compute',
     '.creating-custom-field-panel',
-    '.custom-field-item',
-    '#app .tc-test-col',
-    '#app .tc-tag-item:not(.disabled):not(.ready)',
+    '.custom-field-item:not(.active):not(.drag-over)',
+    '#app .tc-test-col:not(:focus-within)',
+    '#app .tc-tag-item:not(.disabled):not(.ready):not(.checked)',
     '#app .tc-history-item',
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
@@ -373,6 +373,21 @@ test('gallery white C keeps persistent interior cards pure white and border-only
   assert.match(
     effectiveSelectorListRule(themeCss, '.final-list-area'),
     /background:\s*var\(--ui-surface\)\s*!important/,
+  )
+
+  const solutionStyle = vueStyle('components/SolutionCenter.vue')
+  for (const selector of ['.custom-field-item.active', '.custom-field-item.drag-over']) {
+    assert.match(effectiveRule(solutionStyle, selector), /border-color:\s*var\(--ui-accent\)/)
+  }
+
+  const taskStyle = vueStyle('components/TaskCenter.vue')
+  assert.match(
+    effectiveRule(taskStyle, '.tc-test-col:focus-within'),
+    /border-color:\s*var\(--ui-accent\)/,
+  )
+  assert.match(
+    effectiveSelectorListRule(themeCss, '#app .tc-tag-item.checked'),
+    /border-color:\s*var\(--ui-accent\)\s*!important/,
   )
 })
 
