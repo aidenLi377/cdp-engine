@@ -351,3 +351,65 @@ test('gallery white keeps full-height three-column rails pure white', () => {
     assert.match(rule, /box-shadow:\s*none\s*!important/)
   }
 })
+
+test('gallery white C keeps persistent interior cards pure white and border-only', () => {
+  for (const selector of [
+    '.workbench-section',
+    '.panel-name-area',
+    '.json-code',
+    '.summary-compute',
+    '.creating-custom-field-panel',
+    '.custom-field-item',
+    '#app .tc-test-col',
+    '#app .tc-tag-item:not(.disabled):not(.ready)',
+    '#app .tc-history-item',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /border-color:\s*var\(--ui-divider\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+  }
+
+  assert.match(
+    effectiveSelectorListRule(themeCss, '.final-list-area'),
+    /background:\s*var\(--ui-surface\)\s*!important/,
+  )
+})
+
+test('gallery white C card hover uses only a stronger neutral border', () => {
+  for (const selector of [
+    '.intercom-card:hover',
+    '.published-solution-item:hover',
+    '.solution-list-item:hover',
+    '.intercom-list-item:hover',
+    '.solution-use-card:hover',
+    '.cf-use-card:hover',
+    '.custom-field-item:hover:not(.active):not(.drag-over)',
+    '#app .tc-history-item:hover',
+    '#app .tc-tag-item:hover:not(.disabled):not(.ready):not(.checked)',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.match(rule, /transform:\s*none\s*!important/)
+  }
+})
+
+test('gallery white C keeps the workbench edge toggle white and shadow-free', () => {
+  const baseRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle')
+  assert.match(baseRule, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(baseRule, /border-color:\s*var\(--ui-divider\)\s*!important/)
+  assert.match(baseRule, /box-shadow:\s*none\s*!important/)
+
+  const hoverRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle:hover')
+  assert.match(hoverRule, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(hoverRule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+  assert.match(hoverRule, /box-shadow:\s*none\s*!important/)
+
+  const activeRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle.is-solutions')
+  assert.match(activeRule, /color:\s*var\(--ui-accent\)\s*!important/)
+  assert.match(activeRule, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(activeRule, /border-color:\s*var\(--ui-accent\)\s*!important/)
+  assert.match(activeRule, /box-shadow:\s*none\s*!important/)
+})

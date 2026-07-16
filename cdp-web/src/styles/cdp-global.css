@@ -2664,17 +2664,38 @@ body,
   box-shadow: none !important;
 }
 
+.workbench-section,
+.panel-name-area,
+.json-code,
+.summary-compute,
+.creating-custom-field-panel,
+.custom-field-item,
+#app .tc-test-col,
+#app .tc-tag-item:not(.disabled):not(.ready),
+#app .tc-history-item
+{
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-divider) !important;
+  box-shadow: none !important;
+}
+
+.final-list-area {
+  background: var(--ui-surface) !important;
+}
+
 .intercom-card:hover,
 .published-solution-item:hover,
 .solution-list-item:hover,
 .intercom-list-item:hover,
 .solution-use-card:hover,
 .cf-use-card:hover,
+.custom-field-item:hover:not(.active):not(.drag-over),
 #app .tc-history-item:hover,
-#app .tc-tag-item:hover:not(.disabled) {
+#app .tc-tag-item:hover:not(.disabled):not(.ready):not(.checked) {
+  background: var(--ui-surface) !important;
   border-color: var(--ui-control-border) !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.06) !important;
-  transform: translateY(-1px);
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .card-header-inner,
@@ -2928,6 +2949,26 @@ body,
   color: var(--ui-ink) !important;
   background: var(--ui-surface) !important;
   border-color: var(--ui-control-border) !important;
+  box-shadow: none !important;
+}
+
+.left-panel-edge-toggle {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-divider) !important;
+  box-shadow: none !important;
+}
+
+.left-panel-edge-toggle:hover {
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-control-border) !important;
+  box-shadow: none !important;
+}
+
+.left-panel-edge-toggle.is-solutions {
+  color: var(--ui-accent) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-accent) !important;
   box-shadow: none !important;
 }
 
