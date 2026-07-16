@@ -3010,6 +3010,123 @@ body,
   box-shadow: none !important;
 }
 
+/* Gallery White A control polish */
+.app-shell-nav .el-radio-group,
+.solution-library-switch,
+.solution-filter-group,
+.json-tabs {
+  gap: 4px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow: visible;
+}
+
+.app-shell-nav .el-radio-button__inner {
+  min-width: 84px;
+  height: 30px;
+  padding: 0 14px !important;
+  color: var(--ui-text-secondary) !important;
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-divider) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.solution-library-switch .el-radio-button__inner,
+.solution-filter-group .el-radio-button__inner {
+  min-height: 28px;
+  color: var(--ui-text-secondary) !important;
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-divider) !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.app-shell-nav .el-radio-button.is-active .el-radio-button__inner,
+.solution-library-switch .el-radio-button.is-active .el-radio-button__inner,
+.solution-filter-group .el-radio-button.is-active .el-radio-button__inner,
+.json-tab.active {
+  color: var(--ui-surface) !important;
+  background: var(--ui-ink) !important;
+  border-color: var(--ui-ink) !important;
+  box-shadow: none !important;
+}
+
+.json-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  color: var(--ui-text-secondary);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+}
+
+.json-tab,
+.json-actions .el-button {
+  box-sizing: border-box;
+  height: 32px !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.el-select__wrapper,
+.el-select-v2__wrapper,
+.el-select__selection .el-tag,
+.el-select-v2__tag,
+.el-dropdown > .el-button,
+.el-select-dropdown,
+.el-select-dropdown__item,
+.el-dropdown-menu,
+.el-dropdown-menu__item,
+.el-cascader__dropdown,
+.el-cascader-menu,
+.el-cascader-node,
+.el-autocomplete-suggestion,
+.el-autocomplete-suggestion__wrap,
+.el-autocomplete-suggestion li,
+.el-tree-select__popper,
+.el-tree-select__popper .el-tree-node__content,
+.el-select-dropdown__empty,
+.el-select-dropdown__loading,
+.el-cascader-menu__empty-text {
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+}
+
+.el-select-dropdown__item:hover,
+.el-select-dropdown__item.is-hovering,
+.el-select-dropdown__item.is-selected,
+.el-dropdown-menu__item:not(.is-disabled):focus,
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-dropdown-menu__item.is-active,
+.el-cascader-node:not(.is-disabled):hover,
+.el-cascader-node.in-active-path,
+.el-cascader-node.is-active,
+.el-autocomplete-suggestion li:hover,
+.el-autocomplete-suggestion li.highlighted,
+.el-tree-select__popper .el-tree-node__content:hover,
+.el-tree-select__popper .el-tree-node.is-current > .el-tree-node__content {
+  color: var(--ui-accent) !important;
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+  box-shadow: inset 2px 0 0 var(--ui-accent) !important;
+}
+
+.el-select-dropdown__item.is-disabled,
+.el-dropdown-menu__item.is-disabled,
+.el-cascader-node.is-disabled,
+.el-tree-select__popper .el-tree-node.is-disabled > .el-tree-node__content {
+  color: var(--ui-text-tertiary) !important;
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+  cursor: not-allowed !important;
+  opacity: 0.58;
+  box-shadow: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .intercom-card,
   .published-solution-item,

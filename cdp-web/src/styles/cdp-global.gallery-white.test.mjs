@@ -480,3 +480,84 @@ test('gallery white C preserves combined selected, drag, ready, and disabled sta
   assert.match(disabledHover, /border-color:\s*var\(--ui-divider\)/)
   assert.match(disabledHover, /transform:\s*none/)
 })
+
+test('gallery white A uses independent white capsules for reviewed control groups', () => {
+  for (const selector of [
+    '.app-shell-nav .el-radio-group',
+    '.solution-library-switch',
+    '.solution-filter-group',
+    '.json-tabs',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*transparent\s*!important/)
+    assert.match(rule, /border:\s*0\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+  }
+
+  const nav = effectiveSelectorListRule(themeCss, '.app-shell-nav .el-radio-button__inner')
+  assert.match(nav, /min-width:\s*84px/)
+  assert.match(nav, /height:\s*30px/)
+  assert.match(nav, /border-radius:\s*999px\s*!important/)
+  assert.match(nav, /background:\s*var\(--ui-surface\)\s*!important/)
+
+  for (const selector of ['.json-tab', '.json-actions .el-button']) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /height:\s*32px\s*!important/)
+    assert.match(rule, /border-radius:\s*8px\s*!important/)
+  }
+})
+
+test('gallery white A keeps every menu-style dropdown state white', () => {
+  const whiteSelectors = [
+    '.el-select__wrapper',
+    '.el-select-v2__wrapper',
+    '.el-select__selection .el-tag',
+    '.el-select-v2__tag',
+    '.el-dropdown > .el-button',
+    '.el-select-dropdown',
+    '.el-select-dropdown__item',
+    '.el-select-dropdown__item:hover',
+    '.el-select-dropdown__item.is-hovering',
+    '.el-select-dropdown__item.is-selected',
+    '.el-select-dropdown__item.is-disabled',
+    '.el-dropdown-menu',
+    '.el-dropdown-menu__item',
+    '.el-dropdown-menu__item:not(.is-disabled):focus',
+    '.el-dropdown-menu__item.is-active',
+    '.el-dropdown-menu__item.is-disabled',
+    '.el-cascader__dropdown',
+    '.el-cascader-node',
+    '.el-cascader-node:not(.is-disabled):hover',
+    '.el-cascader-node.in-active-path',
+    '.el-cascader-node.is-active',
+    '.el-cascader-node.is-disabled',
+    '.el-autocomplete-suggestion',
+    '.el-autocomplete-suggestion li',
+    '.el-autocomplete-suggestion li:hover',
+    '.el-autocomplete-suggestion li.highlighted',
+    '.el-tree-select__popper .el-tree-node__content',
+    '.el-tree-select__popper .el-tree-node__content:hover',
+    '.el-tree-select__popper .el-tree-node.is-current > .el-tree-node__content',
+    '.el-tree-select__popper .el-tree-node.is-disabled > .el-tree-node__content',
+    '.el-select-dropdown__empty',
+    '.el-select-dropdown__loading',
+    '.el-cascader-menu__empty-text',
+  ]
+
+  for (const selector of whiteSelectors) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background(?:-color)?:\s*var\(--ui-surface\)\s*!important/)
+    assert.doesNotMatch(rule, /var\(--ui-fill\)|#f5f5f7|#f2f2f2|#f0f0f0/i)
+  }
+
+  for (const selector of [
+    '.el-select-dropdown__item.is-disabled',
+    '.el-dropdown-menu__item.is-disabled',
+    '.el-cascader-node.is-disabled',
+    '.el-tree-select__popper .el-tree-node.is-disabled > .el-tree-node__content',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /color:\s*var\(--ui-text-tertiary\)\s*!important/)
+    assert.match(rule, /cursor:\s*not-allowed\s*!important/)
+  }
+})
