@@ -44,3 +44,15 @@ test('task center uses run copy for both idle actions without changing handlers'
   assert.match(source, /输入人群包名称并点击运行，任务进度将在此处实时展示。/)
   assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
 })
+
+test('task center centers every native and Element Plus button and keeps disabled surfaces white', () => {
+  assert.match(
+    source,
+    /\.task-center-page button,\s*\.task-center-page \.el-button\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*line-height:\s*1;/s,
+  )
+
+  assert.match(
+    source,
+    /\.task-center-page button:disabled,\s*\.task-center-page \.el-button\.is-disabled\s*\{[^}]*background:\s*var\(--ui-surface\)\s*!important;[^}]*color:\s*var\(--ui-text-secondary\)\s*!important;[^}]*border:\s*1px solid var\(--ui-control-border\)\s*!important;[^}]*opacity:\s*1;/s,
+  )
+})

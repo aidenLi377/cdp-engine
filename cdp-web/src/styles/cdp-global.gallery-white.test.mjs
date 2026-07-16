@@ -349,15 +349,15 @@ test('task center disabled actions and tag labels remain opaque and readable', (
   const settings = effectiveRule(taskStyle, '.tc-settings-btn:disabled')
   const tag = effectiveRule(taskStyle, '.tc-tag-item.disabled')
 
-  assert.match(button, /background:\s*var\(--ui-fill\)\s*!important/)
+  assert.match(button, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(button, /color:\s*var\(--ui-text-secondary\)\s*!important/)
   assert.match(button, /border:\s*1px solid var\(--ui-control-border\)\s*!important/)
   assert.match(button, /opacity:\s*1/)
   assert.match(button, /box-shadow:\s*none\s*!important/)
   assert.match(button, /transform:\s*none\s*!important/)
 
-  assert.match(settings, /background:\s*var\(--ui-fill\)/)
-  assert.match(settings, /color:\s*var\(--ui-text-tertiary\)/)
+  assert.match(settings, /background:\s*var\(--ui-surface\)/)
+  assert.match(settings, /color:\s*var\(--ui-text-secondary\)/)
   assert.match(settings, /border-color:\s*var\(--ui-control-border\)/)
   assert.match(settings, /opacity:\s*1/)
 
@@ -541,6 +541,18 @@ test('gallery white A uses independent white capsules for reviewed control group
   assert.match(nav, /height:\s*30px/)
   assert.match(nav, /border-radius:\s*999px\s*!important/)
   assert.match(nav, /background:\s*var\(--ui-surface\)\s*!important/)
+
+  for (const selector of [
+    '.app-shell-nav .el-radio-button__inner',
+    '.solution-library-switch .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button__inner',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /display:\s*inline-flex/)
+    assert.match(rule, /align-items:\s*center/)
+    assert.match(rule, /justify-content:\s*center/)
+    assert.match(rule, /line-height:\s*1/)
+  }
 
   for (const selector of ['.json-tab', '.json-actions .el-button']) {
     const rule = effectiveSelectorListRule(themeCss, selector)

@@ -3024,8 +3024,12 @@ body,
 }
 
 .app-shell-nav .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 84px;
   height: 30px;
+  line-height: 1;
   padding: 0 14px !important;
   color: var(--ui-text-secondary) !important;
   background: var(--ui-surface) !important;
@@ -3036,7 +3040,11 @@ body,
 
 .solution-library-switch .el-radio-button__inner,
 .solution-filter-group .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 28px;
+  line-height: 1;
   color: var(--ui-text-secondary) !important;
   background: var(--ui-surface) !important;
   border: 1px solid var(--ui-divider) !important;
