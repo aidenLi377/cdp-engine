@@ -49,3 +49,18 @@ test('gallery white keeps surfaces neutral and primary actions black', () => {
 test('gallery white retains accessible reduced-motion behavior', () => {
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/)
 })
+
+test('app shell and login use neutral surfaces with signal orange only', () => {
+  const appStyle = vueStyle('App.vue')
+  const loginStyle = vueStyle('components/LoginView.vue')
+  const forbidden = /#f5f3ee|#f3f0e9|#f8f6f1|#ece8df|#171715|#77736c|#9a968f|#67635d|#8f8b84|#9b978f|#ff6b4a|rgba\(255,\s*107,\s*74/i
+
+  assert.doesNotMatch(appStyle, forbidden)
+  assert.doesNotMatch(loginStyle, forbidden)
+  assert.match(appStyle, /\.auth-checking-screen\s*\{[\s\S]*background:\s*var\(--ui-fill\)/)
+  assert.match(loginStyle, /\.login-shell\s*\{[\s\S]*background:\s*var\(--ui-canvas\)/)
+  assert.match(loginStyle, /\.login-atmosphere\s*\{[\s\S]*display:\s*none/)
+  assert.match(loginStyle, /\.login-entry\s*\{[\s\S]*background:\s*var\(--ui-fill\)/)
+  assert.match(loginStyle, /\.login-field input:focus\s*\{[\s\S]*var\(--ui-accent-ring\)/)
+  assert.match(loginStyle, /\.login-submit\s*\{[\s\S]*background:\s*var\(--ui-ink\)/)
+})

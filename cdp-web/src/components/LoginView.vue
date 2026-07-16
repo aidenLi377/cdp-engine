@@ -130,10 +130,10 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
 
 <style scoped>
 .login-shell {
-  --login-ink: #171715;
-  --login-muted: #8c8982;
-  --login-paper: #f3f0e9;
-  --login-accent: #ff6b4a;
+  --login-ink: var(--ui-ink);
+  --login-muted: var(--ui-text-secondary);
+  --login-paper: var(--ui-fill);
+  --login-accent: var(--ui-accent);
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.18fr) minmax(420px, 0.82fr);
@@ -141,25 +141,14 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   height: 100vh;
   overflow: hidden;
   color: var(--login-ink);
-  background:
-    radial-gradient(circle at 18% 18%, rgba(255, 255, 255, 0.92), transparent 34%),
-    linear-gradient(135deg, #f8f6f1 0%, var(--login-paper) 58%, #ece8df 100%);
-  font-family: "PingFang SC", "Microsoft YaHei", ui-sans-serif, sans-serif;
+  background: var(--ui-canvas);
+  font-family: "SF Pro Display", "SF Pro Text", "PingFang SC",
+    "Segoe UI Variable", "Microsoft YaHei", sans-serif;
 }
 
-.login-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.22;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.08'/%3E%3C/svg%3E");
-}
-
+.login-shell::after,
 .login-atmosphere {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .login-orbit {
@@ -178,7 +167,7 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   height: 8px;
   border-radius: 50%;
   background: var(--login-accent);
-  box-shadow: 0 0 0 7px rgba(255, 107, 74, 0.08);
+  box-shadow: none;
   animation: login-node-pulse 3.6s ease-in-out infinite;
 }
 
@@ -197,7 +186,8 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   flex-direction: column;
   justify-content: space-between;
   padding: clamp(34px, 5vw, 72px);
-  border-right: 1px solid rgba(23, 23, 21, 0.08);
+  border-right: 1px solid;
+  border-right-color: var(--ui-divider);
   animation: login-reveal 760ms var(--ease-out-expo, ease) both;
 }
 
@@ -255,7 +245,7 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
 .login-intro {
   max-width: 460px;
   margin: 30px 0 0;
-  color: #77736c;
+  color: var(--ui-text-secondary);
   font-size: 15px;
   line-height: 1.8;
 }
@@ -264,23 +254,23 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   display: flex;
   align-items: center;
   gap: 14px;
-  color: #9a968f;
+  color: var(--ui-text-tertiary);
   font-size: 9px;
 }
 
 .login-story-line {
   width: 64px;
   height: 1px;
-  background: rgba(23, 23, 21, 0.15);
+  background: var(--ui-divider);
 }
 
 .login-entry {
   display: grid;
   place-items: center;
   padding: clamp(28px, 6vw, 96px);
-  background: rgba(255, 255, 255, 0.48);
-  backdrop-filter: blur(26px) saturate(125%);
-  -webkit-backdrop-filter: blur(26px) saturate(125%);
+  background: var(--ui-fill);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .login-form {
@@ -316,10 +306,15 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   margin-bottom: 28px;
 }
 
+.login-field > span,
+.login-password-toggle,
+.login-assurance {
+  color: var(--ui-text-secondary);
+}
+
 .login-field > span {
   display: block;
   margin-bottom: 10px;
-  color: #67635d;
   font-size: 12px;
   font-weight: 550;
 }
@@ -327,21 +322,23 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
 .login-field input {
   width: 100%;
   height: 48px;
-  padding: 0;
+  padding: 0 12px;
   color: var(--login-ink);
   font: inherit;
   font-size: 15px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(23, 23, 21, 0.18);
-  border-radius: 0;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--ui-radius-control);
   outline: none;
   box-sizing: border-box;
   transition: border-color 220ms ease, box-shadow 220ms ease;
 }
 
-.login-field input::placeholder { color: #b5b1aa; }
-.login-field input:focus { border-color: var(--login-accent); box-shadow: 0 1px 0 var(--login-accent); }
+.login-field input::placeholder { color: var(--ui-text-tertiary); }
+.login-field input:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-ring);
+}
 .login-field input:disabled { opacity: 0.55; }
 
 .login-password-wrap { position: relative; }
@@ -353,7 +350,6 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   top: 0;
   height: 48px;
   padding: 0;
-  color: #8f8b84;
   font: inherit;
   font-size: 11px;
   background: none;
@@ -366,7 +362,7 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   align-items: center;
   gap: 9px;
   margin: -8px 0 20px;
-  color: #c74730;
+  color: var(--ui-danger);
   font-size: 12px;
 }
 
@@ -375,7 +371,8 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   place-items: center;
   width: 18px;
   height: 18px;
-  border: 1px solid rgba(199, 71, 48, 0.35);
+  border: 1px solid;
+  border-color: rgba(255, 59, 48, 0.32);
   border-radius: 50%;
   font: 700 10px/1 "SF Mono", monospace;
 }
@@ -388,34 +385,33 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   height: 58px;
   margin-top: 36px;
   padding: 0 20px 0 24px;
-  color: #fff;
+  color: #ffffff;
   font: inherit;
   font-size: 14px;
   font-weight: 550;
   letter-spacing: 0.04em;
-  background: var(--login-ink);
+  background: var(--ui-ink);
   border: none;
-  border-radius: 4px;
+  border-radius: 999px;
   cursor: pointer;
-  box-shadow: 0 16px 30px rgba(23, 23, 21, 0.14);
+  box-shadow: none;
   transition: transform 240ms ease, background 240ms ease, box-shadow 240ms ease;
 }
 
 .login-submit:hover:not(:disabled) {
-  background: #2c2b28;
+  background: #2c2c2e;
   transform: translateY(-2px);
-  box-shadow: 0 19px 36px rgba(23, 23, 21, 0.19);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
 }
 
 .login-submit:disabled { cursor: wait; opacity: 0.7; }
-.login-submit-arrow { color: var(--login-accent); font-size: 20px; }
+.login-submit-arrow { color: var(--ui-accent); font-size: 20px; }
 
 .login-assurance {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 20px 0 0;
-  color: #9b978f;
   font-size: 10px;
   line-height: 1.6;
 }
@@ -425,8 +421,8 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   height: 5px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #4aa367;
-  box-shadow: 0 0 0 4px rgba(74, 163, 103, 0.09);
+  background: var(--ui-success);
+  box-shadow: none;
 }
 
 .login-error-enter-active,
@@ -456,7 +452,13 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
 
 @media (max-width: 900px) {
   .login-shell { grid-template-columns: 1fr; overflow-y: auto; }
-  .login-story { min-height: 38vh; padding: 30px; border-right: 0; border-bottom: 1px solid rgba(23, 23, 21, 0.08); }
+  .login-story {
+    min-height: 38vh;
+    padding: 30px;
+    border-right: 0;
+    border-bottom: 1px solid;
+    border-bottom-color: var(--ui-divider);
+  }
   .login-story-copy { margin: 44px 0 34px; }
   .login-story h1 { font-size: clamp(36px, 9vw, 56px); }
   .login-intro { display: none; }
