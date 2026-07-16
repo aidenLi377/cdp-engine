@@ -2630,7 +2630,7 @@ body,
 .solution-sidebar,
 .solution-settings,
 #app .tc-control-panel {
-  background: var(--ui-fill) !important;
+  background: var(--ui-surface) !important;
   border-color: var(--ui-divider) !important;
   box-shadow: none !important;
 }

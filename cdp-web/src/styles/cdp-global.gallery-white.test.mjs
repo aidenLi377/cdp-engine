@@ -322,3 +322,17 @@ test('task center disabled actions and tag labels remain opaque and readable', (
     assert.match(effectiveRule(taskStyle, selector), /background:\s*var\(--ui-surface\)/)
   }
 })
+
+test('gallery white keeps full-height three-column rails pure white', () => {
+  const match = themeCss.match(
+    /\.left-panel,\s*\.right-panel,\s*\.solution-sidebar,\s*\.solution-settings,\s*#app \.tc-control-panel\s*\{([^{}]*)\}/,
+  )
+
+  assert.ok(match, 'Expected the shared three-column rail rule in the Gallery White layer')
+  const rule = match[1]
+
+  assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.doesNotMatch(rule, /background:\s*var\(--ui-fill\)/)
+  assert.match(rule, /border-color:\s*var\(--ui-divider\)\s*!important/)
+  assert.match(rule, /box-shadow:\s*none\s*!important/)
+})
