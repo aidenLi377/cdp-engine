@@ -90,6 +90,24 @@ test('gallery white workbench library is a compact borderless white row list', (
   assert.doesNotMatch(row + hover, /var\(--ui-fill\)|#f5f5f7/i)
 })
 
+test('gallery white custom-field relationship badge reveals on card hover or keyboard focus', () => {
+  const card = effectiveRule(themeCss, '.solution-settings-card.intercom-card')
+  const badge = effectiveRule(themeCss, '.solution-field-card-badge')
+  const hover = effectiveSelectorListRule(themeCss, '.solution-settings-card:hover .solution-field-card-badge')
+  const focus = effectiveSelectorListRule(themeCss, '.solution-settings-card:focus-within .solution-field-card-badge')
+
+  assert.match(card, /position:\s*relative/)
+  assert.match(badge, /position:\s*absolute/)
+  assert.match(badge, /top:\s*\d+px/)
+  assert.match(badge, /right:\s*\d+px/)
+  assert.match(badge, /background:\s*var\(--ui-ink\)/)
+  assert.match(badge, /color:\s*var\(--ui-surface\)/)
+  assert.match(badge, /opacity:\s*0/)
+  assert.match(badge, /pointer-events:\s*none/)
+  assert.match(hover, /opacity:\s*1/)
+  assert.match(focus, /opacity:\s*1/)
+})
+
 test('gallery white retains accessible reduced-motion behavior', () => {
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/)
 })

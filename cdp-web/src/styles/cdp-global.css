@@ -3311,3 +3311,46 @@ body,
   transform: none !important;
   z-index: auto;
 }
+
+.solution-settings-card.intercom-card {
+  position: relative;
+}
+
+.solution-settings-card.intercom-card .solution-settings-head {
+  padding-right: 48px;
+}
+
+.solution-field-card-badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 7px;
+  color: var(--ui-surface);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  background: var(--ui-ink);
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.solution-settings-card:hover .solution-field-card-badge,
+.solution-settings-card:focus-within .solution-field-card-badge {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solution-field-card-badge {
+    transition-duration: 0.01ms;
+  }
+}

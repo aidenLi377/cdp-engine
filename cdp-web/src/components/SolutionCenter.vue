@@ -4,7 +4,6 @@
       <div class="solution-sidebar-head">
         <div>
           <div class="display-feature-title">方案中心</div>
-          <div class="display-body-light">草稿编辑、发布与工作台预览</div>
         </div>
         <el-button v-if="libraryScope === 'mine'" class="intercom-btn-primary btn-small" @click="createBlankDraft" :loading="creatingDraft">
           新建草稿
@@ -359,10 +358,10 @@
         </div>
 
         <div class="intercom-card solution-settings-card">
+          <span class="solution-field-card-badge" aria-hidden="true">一对多</span>
           <div class="solution-settings-head">
             <div>
-              <div class="display-feature-title">自定义字段（一对多）</div>
-              <div class="display-body-light">创建字段，让一个字段控制多个组件</div>
+              <div class="display-feature-title">自定义字段</div>
             </div>
             <div class="solution-field-actions">
               <span class="display-mono">{{ customFields.length }} 个字段</span>
@@ -528,7 +527,7 @@
               :disabled="isReadOnly"
               @click="startCreateCustomField"
             >
-              + 新增自定义字段（一对多）
+              + 新增自定义字段
             </el-button>
           </el-tooltip>
         </div>
