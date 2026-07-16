@@ -59,9 +59,30 @@
               class="login-password-toggle"
               type="button"
               :aria-label="showPassword ? '隐藏密码' : '显示密码'"
+              :aria-pressed="showPassword"
+              :title="showPassword ? '隐藏密码' : '显示密码'"
               @click="showPassword = !showPassword"
             >
-              {{ showPassword ? '隐藏' : '显示' }}
+              <svg
+                v-if="showPassword"
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path d="M3 3l18 18" />
+                <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                <path d="M9.9 4.24A9.8 9.8 0 0 1 12 4c6.5 0 10 8 10 8a17.7 17.7 0 0 1-2.1 3.2" />
+                <path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 8 10 8a10 10 0 0 0 4.2-.9" />
+              </svg>
+              <svg
+                v-else
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
             </button>
           </div>
         </label>
@@ -348,13 +369,36 @@ onMounted(() => nextTick(() => usernameInput.value?.focus()))
   position: absolute;
   right: 0;
   top: 0;
+  display: grid;
+  place-items: center;
+  width: 48px;
   height: 48px;
   padding: 0;
-  font: inherit;
-  font-size: 11px;
-  background: none;
+  color: var(--ui-text-secondary);
+  background: transparent;
   border: none;
+  border-radius: var(--ui-radius-control);
+  outline: none;
   cursor: pointer;
+  transition: color 160ms ease, box-shadow 160ms ease;
+}
+
+.login-password-toggle:hover {
+  color: var(--ui-ink);
+}
+
+.login-password-toggle:focus-visible {
+  color: var(--ui-ink);
+  box-shadow: 0 0 0 3px var(--ui-accent-ring);
+}
+
+.login-password-toggle svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .login-error {
