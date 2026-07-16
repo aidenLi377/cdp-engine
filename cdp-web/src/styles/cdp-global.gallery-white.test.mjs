@@ -544,6 +544,7 @@ test('gallery white A keeps inactive radio hover white and exposes keyboard focu
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
     assert.match(rule, /box-shadow:\s*0 0 0 3px var\(--ui-accent-ring\)\s*!important/)
+    assert.match(rule, /outline:\s*none\s*!important/)
     assert.doesNotMatch(rule, /background(?:-color)?\s*:/)
   }
 })
