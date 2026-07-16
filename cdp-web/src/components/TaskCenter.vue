@@ -753,7 +753,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
   border-color: var(--ui-ink) !important;
   box-shadow: none !important;
 }
-.tc-btn-sm:disabled { background: var(--ui-fill) !important; color: var(--ui-text-secondary) !important; border-color: var(--ui-control-border) !important; opacity: 1; box-shadow: none !important; transform: none !important; }
+.tc-btn-sm:disabled { background: var(--ui-fill) !important; color: var(--ui-text-secondary) !important; border: 1px solid var(--ui-control-border) !important; opacity: 1; box-shadow: none !important; transform: none !important; }
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 

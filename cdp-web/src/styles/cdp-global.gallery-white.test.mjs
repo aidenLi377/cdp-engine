@@ -239,6 +239,43 @@ test('gallery white offline banner is locked to the solid danger token', () => {
   assert.doesNotMatch(rule, /(?:linear|radial)-gradient|#ff6b35|255\s*,\s*107\s*,\s*53/i)
 })
 
+test('gallery white solution signals are solid and transient rings stay static', () => {
+  const active = effectiveRule(themeCss, '.solution-active-dot')
+  const dirty = effectiveRule(themeCss, '.solution-active-dot.dirty')
+  const pulse = effectiveRule(themeCss, '.pulse-breath')
+  const publishRing = effectiveRule(themeCss, '.publish-ring')
+
+  for (const rule of [active, dirty]) {
+    assert.match(rule, /background:\s*var\(--ui-accent\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.doesNotMatch(rule, /(?:linear|radial)-gradient|rgba\(255\s*,\s*107\s*,\s*74/i)
+  }
+
+  for (const rule of [pulse, publishRing]) {
+    assert.match(rule, /animation:\s*none\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+  }
+})
+
+test('gallery white warm upload and publish controls keep neutral hover treatment', () => {
+  const warmHover = effectiveRule(themeCss, '.intercom-btn-warm:hover')
+  const publish = effectiveRule(themeCss, '.solution-toolbar-icon-btn.publish.el-button')
+  const publishHover = effectiveRule(themeCss, '.solution-toolbar-icon-btn.publish.el-button:hover')
+
+  assert.match(warmHover, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(warmHover, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+  assert.match(warmHover, /box-shadow:\s*none\s*!important/)
+
+  for (const rule of [publish, publishHover]) {
+    assert.match(rule, /color:\s*var\(--ui-ink\)\s*!important/)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+  }
+
+  assert.doesNotMatch(warmHover + publish + publishHover, /(?:linear|radial)-gradient|#ff6b35|#ff6b4a|255\s*,\s*107\s*,\s*(?:53|74)/i)
+})
+
 test('task center disabled actions and tag labels remain opaque and readable', () => {
   const taskStyle = vueStyle('components/TaskCenter.vue')
   const button = effectiveRule(taskStyle, '.tc-btn-sm:disabled')
@@ -247,7 +284,7 @@ test('task center disabled actions and tag labels remain opaque and readable', (
 
   assert.match(button, /background:\s*var\(--ui-fill\)\s*!important/)
   assert.match(button, /color:\s*var\(--ui-text-secondary\)\s*!important/)
-  assert.match(button, /border-color:\s*var\(--ui-control-border\)\s*!important/)
+  assert.match(button, /border:\s*1px solid var\(--ui-control-border\)\s*!important/)
   assert.match(button, /opacity:\s*1/)
   assert.match(button, /box-shadow:\s*none\s*!important/)
   assert.match(button, /transform:\s*none\s*!important/)

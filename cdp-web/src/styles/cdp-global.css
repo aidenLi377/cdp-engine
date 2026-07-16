@@ -2889,6 +2889,48 @@ body,
   box-shadow: none !important;
 }
 
+.solution-active-dot {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+
+.solution-active-dot.dirty {
+  background: var(--ui-accent) !important;
+  box-shadow: none !important;
+}
+
+.pulse-breath {
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+.publish-ring {
+  animation: none !important;
+  box-shadow: none !important;
+}
+
+.intercom-btn-warm:hover {
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-control-border) !important;
+  border-style: solid !important;
+  box-shadow: none !important;
+}
+
+.solution-toolbar-icon-btn.publish.el-button {
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-control-border) !important;
+  box-shadow: none !important;
+}
+
+.solution-toolbar-icon-btn.publish.el-button:hover {
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-control-border) !important;
+  box-shadow: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .intercom-card,
   .published-solution-item,
