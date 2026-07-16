@@ -100,3 +100,23 @@ test('solution center keeps active, creating, drag, and highlight states clean',
   assert.match(solutionStyle, /\.skeleton-bar\s*\{[\s\S]*background:\s*linear-gradient\([^;]*(#f5f5f7|var\(--ui-fill\))/)
   assert.match(useStyle, /\.use-card-highlighted\s*\{[\s\S]*var\(--ui-accent-ring\)/)
 })
+
+test('task center uses neutral surfaces, signal orange, and P1 status colors', () => {
+  const taskStyle = vueStyle('components/TaskCenter.vue')
+
+  assert.doesNotMatch(taskStyle, /#f8f7f5|#f2f1ee|#ff6b4a|#e55a3e|#ff7b5e|rgba\(255\s*,?\s*107\s*,?\s*74/i)
+  assert.doesNotMatch(taskStyle, /(?:linear|radial)-gradient\([^)]*(#ff6b35|255\s*,\s*107\s*,\s*53)/i)
+  assert.match(taskStyle, /\.task-center-page\s*\{[\s\S]*background:\s*var\(--ui-canvas\)/)
+  assert.match(taskStyle, /\.tc-btn-sm\.is-dmp\s*\{[\s\S]*background:\s*var\(--ui-ink\)/)
+  assert.match(taskStyle, /\.tc-tag-item\.checked\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
+  assert.match(taskStyle, /\.tc-phase-step\.current \.tc-phase-dot\s*\{[\s\S]*border-color:\s*var\(--ui-accent\)/)
+})
+
+test('task center maps progress and history states to P1 semantic colors', () => {
+  const taskStyle = vueStyle('components/TaskCenter.vue')
+
+  assert.match(taskStyle, /\.tc-phase-step\.done \.tc-phase-dot\s*\{[\s\S]*background:\s*var\(--ui-success\)[\s\S]*border-color:\s*var\(--ui-success\)/)
+  assert.match(taskStyle, /\.tc-history-status-dot\.completed\s*\{[\s\S]*background:\s*var\(--ui-success\)/)
+  assert.match(taskStyle, /\.tc-history-status-dot\.running\s*\{[\s\S]*background:\s*var\(--ui-warning\)/)
+  assert.match(taskStyle, /\.tc-history-status-dot\.failed\s*\{[\s\S]*background:\s*var\(--ui-danger\)/)
+})
