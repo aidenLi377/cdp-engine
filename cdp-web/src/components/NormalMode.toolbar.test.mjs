@@ -14,6 +14,7 @@ test('workbench toolbar separates copy, primary action, and secondary actions', 
   assert.match(normalModeVue, /class="workbench-compact-action"/)
   assert.doesNotMatch(normalModeVue, /workbench-primary-action/)
   assert.doesNotMatch(css, /\.workbench-primary-action/)
+  assert.doesNotMatch(normalModeVue, /自由搭建当前画布，并可直接存为方案草稿/)
 })
 
 test('save draft is a compact secondary toolbar action', () => {

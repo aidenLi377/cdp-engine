@@ -86,11 +86,6 @@
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">行为组件库</div>
-          <div class="display-body-light">
-            {{ workbenchMode === 'solution-use'
-              ? '已应用方案，仍可继续增删节点和调整逻辑关系'
-              : '自由搭建时可继续增删节点' }}
-          </div>
         </div>
       </div>
 
@@ -132,7 +127,6 @@
         <div class="display-feature-title">
           {{ workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台' }}
         </div>
-        <div v-if="workbenchMode !== 'solution-use'" class="display-body-light">自由搭建当前画布，并可直接存为方案草稿</div>
         <div v-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
           当前内容已偏离原方案结构
         </div>

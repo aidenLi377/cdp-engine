@@ -37,4 +37,5 @@ test('shell header stays compact and makes room for the signed-in account', () =
 test('shell title is concise without the CDP prefix', () => {
   assert.match(appVue, /class="display-feature-title">圈选工作台<\/div>/)
   assert.doesNotMatch(appVue, />CDP 圈选工作台</)
+  assert.doesNotMatch(appVue, /可视化搭建、方案管理与任务调度/)
 })

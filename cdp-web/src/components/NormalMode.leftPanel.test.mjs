@@ -32,10 +32,9 @@ test('workbench scroll lists reserve room for native scrollbars', () => {
   assert.match(css, /\.published-solution-item,[\s\S]*?\.intercom-list-item,[\s\S]*?box-sizing: border-box;/)
 })
 
-test('package library buttons have room and layer for hover glow', () => {
-  assert.match(css, /\.btn-group \{[^}]*gap: 10px;[^}]*padding-top: 8px;[^}]*padding-bottom: 12px;/s)
-  assert.match(css, /\.btn-group \.el-button \{[^}]*position: relative;/s)
-  assert.match(css, /\.btn-group \.el-button:hover \{[^}]*transform: translateY\(-1px\) !important;[^}]*z-index: 1;/s)
+test('package library omits redundant mode explanations', () => {
+  assert.doesNotMatch(normalModeVue, /自由搭建时可继续增删节点/)
+  assert.doesNotMatch(normalModeVue, /已应用方案，仍可继续增删节点和调整逻辑关系/)
 })
 
 test('published solution hover card has room and layer for its glow', () => {
