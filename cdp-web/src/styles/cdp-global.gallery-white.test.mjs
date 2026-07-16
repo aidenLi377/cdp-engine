@@ -564,6 +564,16 @@ test('gallery white A keeps every menu-style dropdown state white', () => {
 
 test('gallery white A keeps trigger and selected-tag interaction states white', () => {
   const whiteSelectors = [
+    '.el-cascader .el-input__wrapper',
+    '.el-cascader:not(.is-disabled):hover .el-input__wrapper',
+    '.el-cascader .el-input.is-focus .el-input__wrapper',
+    '.el-cascader:has(.el-input__inner[aria-expanded="true"]) .el-input__wrapper',
+    '.el-cascader.is-disabled .el-input__wrapper',
+    '.el-autocomplete .el-input__wrapper',
+    '.el-autocomplete .el-input__wrapper:hover',
+    '.el-autocomplete .el-input__wrapper.is-focus',
+    '.el-autocomplete[aria-expanded="true"] .el-input__wrapper',
+    '.el-autocomplete .el-input.is-disabled .el-input__wrapper',
     '.el-select__wrapper:hover',
     '.el-select__wrapper:focus',
     '.el-select__wrapper.is-focus',
@@ -597,6 +607,14 @@ test('gallery white A keeps trigger and selected-tag interaction states white', 
     '.el-select-v2__wrapper.is-disabled .el-select-v2__tag',
     '.el-select-v2__tag .el-tag__close',
     '.el-select-v2__tag .el-tag__close:hover',
+    '.el-cascader__tags .el-tag',
+    '.el-cascader__tags .el-tag:hover',
+    '.el-cascader__tags .el-tag .el-tag__close',
+    '.el-cascader__tags .el-tag .el-tag__close:hover',
+    '.el-cascader__collapse-tags .el-tag',
+    '.el-cascader__collapse-tags .el-tag:hover',
+    '.el-cascader__collapse-tags .el-tag .el-tag__close',
+    '.el-cascader__collapse-tags .el-tag .el-tag__close:hover',
   ]
 
   for (const selector of whiteSelectors) {
@@ -606,6 +624,10 @@ test('gallery white A keeps trigger and selected-tag interaction states white', 
   }
 
   for (const selector of [
+    '.el-cascader .el-input.is-focus .el-input__wrapper',
+    '.el-cascader:has(.el-input__inner[aria-expanded="true"]) .el-input__wrapper',
+    '.el-autocomplete .el-input__wrapper.is-focus',
+    '.el-autocomplete[aria-expanded="true"] .el-input__wrapper',
     '.el-select__wrapper:focus',
     '.el-select__wrapper.is-focus',
     '.el-select__wrapper.is-focused',

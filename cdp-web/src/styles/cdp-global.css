@@ -3177,6 +3177,39 @@ body,
   background-color: var(--ui-surface) !important;
 }
 
+.el-cascader .el-input__wrapper,
+.el-cascader:not(.is-disabled):hover .el-input__wrapper,
+.el-cascader.is-disabled .el-input__wrapper,
+.el-autocomplete .el-input__wrapper,
+.el-autocomplete .el-input__wrapper:hover,
+.el-autocomplete .el-input.is-disabled .el-input__wrapper,
+.el-cascader__tags .el-tag,
+.el-cascader__tags .el-tag:hover,
+.el-cascader__tags .el-tag .el-tag__close,
+.el-cascader__collapse-tags .el-tag,
+.el-cascader__collapse-tags .el-tag:hover,
+.el-cascader__collapse-tags .el-tag .el-tag__close {
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+}
+
+.el-cascader .el-input.is-focus .el-input__wrapper,
+.el-cascader:has(.el-input__inner[aria-expanded="true"]) .el-input__wrapper,
+.el-autocomplete .el-input__wrapper.is-focus,
+.el-autocomplete[aria-expanded="true"] .el-input__wrapper {
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+  border-color: var(--ui-accent) !important;
+  box-shadow: 0 0 0 3px var(--ui-accent-ring) !important;
+}
+
+.el-cascader__tags .el-tag .el-tag__close:hover,
+.el-cascader__collapse-tags .el-tag .el-tag__close:hover {
+  color: var(--ui-accent) !important;
+  background: var(--ui-surface) !important;
+  background-color: var(--ui-surface) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .intercom-card,
   .published-solution-item,
