@@ -16,7 +16,7 @@
 
       <header class="app-shell-header">
         <div class="app-shell-title">
-          <div class="display-feature-title">CDP 圈选工作台</div>
+          <div class="display-feature-title">圈选工作台</div>
           <div class="display-body-light">可视化搭建、方案管理与任务调度</div>
         </div>
 

@@ -37,3 +37,10 @@ test('DataBank flow stops after opening the manual confirmation dialog', () => {
   assert.match(source, /自动流程已完成/)
   assert.match(source, /确认弹窗已打开，请前往 DataBank 页面人工点击“应用”/)
 })
+
+test('task center uses run copy for both idle actions without changing handlers', () => {
+  assert.match(source, /@click="runDatabank">运行<\/el-button>/)
+  assert.match(source, /@click="runDmp">运行<\/el-button>/)
+  assert.match(source, /输入人群包名称并点击运行，任务进度将在此处实时展示。/)
+  assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
+})

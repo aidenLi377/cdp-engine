@@ -15,7 +15,7 @@
           <div class="tc-test-label">数据引擎</div>
           <div class="tc-test-controls">
             <el-input v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">测试</el-button>
+            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
           </div>
         </div>
@@ -23,7 +23,7 @@
           <div class="tc-test-label">达摩盘</div>
           <div class="tc-test-controls">
             <el-input v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">测试</el-button>
+            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
           </div>
         </div>
@@ -180,7 +180,7 @@
       <section class="tc-empty-monitor" v-else-if="!activeTask && taskHistory.length === 0">
         <div class="tc-empty-icon">&#9674;</div>
         <div class="tc-empty-title">等待任务发起</div>
-        <div class="tc-empty-desc">输入人群包名称并点击测试，任务进度将在此处实时展示。</div>
+        <div class="tc-empty-desc">输入人群包名称并点击运行，任务进度将在此处实时展示。</div>
       </section>
 
       <!-- 任务记录 -->
