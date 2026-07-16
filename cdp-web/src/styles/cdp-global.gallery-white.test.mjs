@@ -243,12 +243,25 @@ test('gallery white custom-field scrollbars and tooltip are neutral controls', (
   assert.doesNotMatch(bar + thumb + thumbHover + tooltip, /(?:linear|radial)-gradient|#ff6b35|255\s*,\s*107\s*,\s*53/i)
 })
 
-test('gallery white offline banner is locked to the solid danger token', () => {
-  const rule = effectiveRule(themeCss, '.offline-banner')
+test('gallery white offline banner uses a white container with a small danger signal', () => {
+  const banner = effectiveRule(themeCss, '.offline-banner')
+  assert.match(banner, /color:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(banner, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(banner, /border-bottom:\s*1px solid var\(--ui-danger\)\s*!important/)
+  assert.match(banner, /box-shadow:\s*none\s*!important/)
+  assert.doesNotMatch(banner, /background:\s*var\(--ui-danger\)/)
 
-  assert.match(rule, /background:\s*var\(--ui-danger\)\s*!important/)
-  assert.match(rule, /box-shadow:\s*none\s*!important/)
-  assert.doesNotMatch(rule, /(?:linear|radial)-gradient|#ff6b35|255\s*,\s*107\s*,\s*53/i)
+  const signal = effectiveRule(themeCss, '.offline-banner::before')
+  assert.match(signal, /content:\s*["']{2}/)
+  assert.match(signal, /width:\s*6px/)
+  assert.match(signal, /height:\s*6px/)
+  assert.match(signal, /background:\s*var\(--ui-danger\)/)
+  assert.match(signal, /border-radius:\s*50%/)
+
+  assert.match(
+    effectiveRule(themeCss, '.offline-banner .el-button'),
+    /color:\s*var\(--ui-danger\)\s*!important/,
+  )
 })
 
 test('gallery white solution signals are solid and transient rings stay static', () => {
@@ -427,4 +440,43 @@ test('gallery white C keeps the workbench edge toggle white and shadow-free', ()
   assert.match(activeRule, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(activeRule, /border-color:\s*var\(--ui-accent\)\s*!important/)
   assert.match(activeRule, /box-shadow:\s*none\s*!important/)
+})
+
+test('gallery white C preserves combined selected, drag, ready, and disabled states', () => {
+  for (const selector of [
+    '.intercom-list-item.is-selected',
+    '.cf-use-card.drag-over',
+    '.cf-use-card.cf-use-card-active:hover',
+    '.cf-use-card.drag-over:hover',
+    '.card-header-inner.drag-over',
+  ]) {
+    const rule = effectiveSelectorListRule(themeCss, selector)
+    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
+    assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.match(rule, /transform:\s*none\s*!important/)
+  }
+
+  const checkedHover = effectiveSelectorListRule(
+    themeCss,
+    '#app .tc-tag-item.checked:hover:not(.disabled)',
+  )
+  assert.match(checkedHover, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(checkedHover, /border-color:\s*var\(--ui-accent\)\s*!important/)
+  assert.match(checkedHover, /box-shadow:\s*none\s*!important/)
+  assert.match(checkedHover, /transform:\s*none\s*!important/)
+
+  const readyHover = effectiveSelectorListRule(
+    themeCss,
+    '#app .tc-tag-item.ready:hover:not(.disabled)',
+  )
+  assert.match(readyHover, /box-shadow:\s*none\s*!important/)
+  assert.match(readyHover, /transform:\s*none\s*!important/)
+  assert.doesNotMatch(readyHover, /(?:^|;)\s*(?:background|border-color)\s*:/)
+
+  const taskStyle = vueStyle('components/TaskCenter.vue')
+  const disabledHover = effectiveRule(taskStyle, '.tc-tag-item.disabled.needCond:hover')
+  assert.match(disabledHover, /background:\s*var\(--ui-fill\)/)
+  assert.match(disabledHover, /border-color:\s*var\(--ui-divider\)/)
+  assert.match(disabledHover, /transform:\s*none/)
 })
