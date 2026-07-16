@@ -112,7 +112,8 @@ function onDragStart(event, folder) {
 
 <style scoped>
 .folder-tree-node.drag-over {
-  background: rgba(255, 107, 74, 0.08);
+  background: var(--ui-fill);
+  outline: 1px solid var(--ui-accent);
   border-radius: 4px;
 }
 .folder-tree-row {
@@ -124,12 +125,13 @@ function onDragStart(event, folder) {
   border-radius: 4px;
   transition: background 0.15s;
 }
-.folder-tree-row:hover {
-  background: rgba(0, 0, 0, 0.04);
+.folder-tree-row:hover:not(.active) {
+  background: var(--ui-fill);
 }
 .folder-tree-row.active {
-  background: rgba(255, 107, 74, 0.08);
-  color: #ff6b4a;
+  background: var(--ui-surface);
+  color: var(--ui-accent);
+  box-shadow: inset 2px 0 0 var(--ui-accent);
 }
 .folder-expand-toggle {
   width: 14px;
@@ -150,7 +152,7 @@ function onDragStart(event, folder) {
 }
 .folder-drop-hint {
   font-size: 10px;
-  color: #ff6b4a;
+  color: var(--ui-accent) !important;
   flex-shrink: 0;
 }
 .folder-children {

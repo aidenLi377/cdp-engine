@@ -64,3 +64,18 @@ test('app shell and login use neutral surfaces with signal orange only', () => {
   assert.match(loginStyle, /\.login-field input:focus\s*\{[\s\S]*var\(--ui-accent-ring\)/)
   assert.match(loginStyle, /\.login-submit\s*\{[\s\S]*background:\s*var\(--ui-ink\)/)
 })
+
+test('workbench supporting styles use tokens without warm fills or colored shadows', () => {
+  const files = [
+    'components/DynamicForm.vue',
+    'components/CustomFieldEditDialog.vue',
+    'components/FolderTree.vue',
+    'components/FolderTreeNode.vue',
+  ]
+  const styles = files.map(vueStyle).join('\n')
+
+  assert.doesNotMatch(styles, /#ff6b4a|#f05a3a|rgba\(255,\s*107,\s*74/i)
+  assert.doesNotMatch(styles, /box-shadow\s*:[^;]*(#ff6b35|255\s*,\s*107\s*,\s*53)/i)
+  assert.match(vueStyle('components/DynamicForm.vue'), /\.field-selected\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
+  assert.match(vueStyle('components/FolderTree.vue'), /\.folder-tree-row\.active\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
+})
