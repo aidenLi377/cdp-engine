@@ -5,9 +5,16 @@
         <div>
           <div class="display-feature-title">方案中心</div>
         </div>
-        <el-button v-if="libraryScope === 'mine'" class="intercom-btn-primary btn-small" @click="createBlankDraft" :loading="creatingDraft">
-          新建草稿
-        </el-button>
+        <el-tooltip v-if="libraryScope === 'mine'" content="新建草稿" placement="bottom">
+          <el-button
+            class="intercom-btn-primary btn-small solution-create-draft-btn"
+            :icon="Plus"
+            circle
+            aria-label="新建草稿"
+            @click="createBlankDraft"
+            :loading="creatingDraft"
+          />
+        </el-tooltip>
       </div>
 
       <div class="solution-sidebar-controls">
@@ -489,9 +496,6 @@
             </div>
 
             <div v-if="creatingCustomFieldStep === 2" class="creating-step-body">
-              <div class="display-body-light creating-hint">
-                {{ editingCustomFieldId ? '点击左侧字段可添加或移除绑定' : '在左侧主区域继续点击同类型字段以关联到「' + creatingCustomFieldName + '」' }}。已选 {{ creatingCustomFieldBindings.length }} 个绑定。
-              </div>
               <div v-if="creatingCustomFieldBindings.length > 0" class="creating-bindings-list">
                 <div v-for="(b, bi) in creatingCustomFieldBindings" :key="bi" class="creating-binding-item">
                   <span class="display-body-light">{{ getBindingLabel(b) }}</span>

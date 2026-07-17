@@ -442,7 +442,7 @@ function applyPaste(node, field) {
 }
 .check-mark {
   position: absolute;
-  top: 6px;
+  top: -26px;
   right: 8px;
   width: 18px;
   height: 18px;

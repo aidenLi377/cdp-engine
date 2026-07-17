@@ -22,7 +22,7 @@ test('custom field card bar uses a horizontal float-rail with stronger interacti
   assert.match(css, /\.cf-cards-bar \{[^}]*overflow-x: auto;[^}]*overflow-y: hidden;/s)
   assert.match(css, /\.cf-cards-bar \{[^}]*padding: 6px 6px 12px 8px;/s)
   assert.match(css, /\.cf-cards-bar \{[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/s)
-  assert.match(css, /\.cf-cards-bar::before \{[^}]*position: sticky;[^}]*left: 0;[^}]*width: 18px;[^}]*margin-right: 0;/s)
+  assert.doesNotMatch(css, /\.cf-cards-bar::(?:before|after)\s*\{/)
   assert.match(css, /\.cf-use-card \{[^}]*position: relative;[^}]*min-height: 50px;/s)
   assert.match(css, /\.cf-use-card::before \{[^}]*transform: translateX\(-130%\);/s)
   assert.match(css, /\.cf-use-card:hover::before \{[^}]*transform: translateX\(135%\);/s)

@@ -10,6 +10,10 @@ const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'ut
 const solutionAddNodeControl = solutionCenterVue.match(/<div class="solution-add-node-control">[\s\S]*?<div class="solution-toolbar-icon-actions">/)?.[0] || ''
 
 test('solution sidebar controls are compact and visually secondary', () => {
+  assert.match(solutionCenterVue, /class="intercom-btn-primary btn-small solution-create-draft-btn"/)
+  assert.match(solutionCenterVue, /:icon="Plus"/)
+  assert.match(solutionCenterVue, /aria-label="新建草稿"/)
+  assert.doesNotMatch(solutionCenterVue, />\s*新建草稿\s*<\/el-button>/)
   assert.match(solutionCenterVue, /class="solution-sidebar-toolbar"/)
   assert.match(solutionCenterVue, /class="solution-sidebar-icon-actions"/)
   assert.match(solutionCenterVue, /class="solution-sidebar-icon-btn"/)
@@ -92,6 +96,11 @@ test('custom field relationship is disclosed without persistent explanatory copy
   assert.match(solutionCenterVue, />\s*\+ 新增自定义字段\s*<\/el-button>/)
   assert.doesNotMatch(solutionCenterVue, /自定义字段（一对多）/)
   assert.doesNotMatch(solutionCenterVue, /创建字段，让一个字段控制多个组件/)
+  assert.doesNotMatch(solutionCenterVue, /点击左侧字段可添加或移除绑定/)
+  assert.match(css, /\.solution-toolbar-title-row \.display-feature-title \{[^}]*font-size: 18px;[^}]*font-weight: 550;/s)
+  assert.match(css, /\.solution-settings-card\.intercom-card \.solution-settings-head \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\) auto;[^}]*align-items: center;/s)
+  assert.match(css, /\.solution-settings-card\.intercom-card \.solution-settings-head \.display-feature-title \{[^}]*font-size: 17px;[^}]*white-space: nowrap;/s)
+  assert.match(css, /\.solution-settings-card\.intercom-card \.solution-field-actions \{[^}]*display: inline-flex;[^}]*white-space: nowrap;/s)
 })
 
 test('folder selection still filters in all status and all button clears folder context explicitly', () => {

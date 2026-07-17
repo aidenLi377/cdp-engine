@@ -80,7 +80,7 @@ test('gallery white workbench library is a compact borderless white row list', (
   assert.match(search, /height:\s*32px\s*!important/)
   assert.match(list, /display:\s*grid/)
   assert.match(list, /grid-template-columns:\s*minmax\(0,\s*1fr\)/)
-  assert.match(row, /height:\s*32px\s*!important/)
+  assert.match(row, /height:\s*34px\s*!important/)
   assert.match(row, /border:\s*0\s*!important/)
   assert.match(row, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(row, /box-shadow:\s*none\s*!important/)
@@ -108,7 +108,7 @@ test('gallery white custom-field relationship badge reveals on card hover or key
 
   assert.match(card, /position:\s*relative/)
   assert.match(badge, /position:\s*absolute/)
-  assert.match(badge, /top:\s*\d+px/)
+  assert.match(badge, /top:\s*-?\d+px/)
   assert.match(badge, /right:\s*\d+px/)
   assert.match(badge, /background:\s*var\(--ui-ink\)/)
   assert.match(badge, /color:\s*var\(--ui-surface\)/)
@@ -159,6 +159,7 @@ test('dynamic form uses neutral tokens and shared danger semantics', () => {
   assert.match(style, /\.paste-panel-body\s*\{[\s\S]*border:\s*1px solid var\(--ui-control-border\)[\s\S]*background:\s*var\(--ui-surface\)/)
   assert.match(style, /\.paste-stat\.err\s*\{[\s\S]*color:\s*var\(--ui-danger\)/)
   assert.match(style, /\.paste-chip\.err\s*\{[\s\S]*background:\s*rgba\(255,\s*59,\s*48,\s*0\.06\)[\s\S]*color:\s*var\(--ui-danger\)[\s\S]*border:\s*1px solid rgba\(255,\s*59,\s*48,\s*0\.1\)/)
+  assert.match(style, /\.check-mark\s*\{[\s\S]*top:\s*-26px;[\s\S]*right:\s*8px;/)
 })
 
 test('solution center keeps active, creating, drag, and highlight states clean', () => {
@@ -476,22 +477,84 @@ test('gallery white C card hover uses only a stronger neutral border', () => {
   }
 })
 
-test('gallery white C keeps the workbench edge toggle white and shadow-free', () => {
+test('gallery white C renders the workbench edge toggle as a vertical mode pill', () => {
   const baseRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle')
   assert.match(baseRule, /background:\s*var\(--ui-surface\)\s*!important/)
-  assert.match(baseRule, /border-color:\s*var\(--ui-divider\)\s*!important/)
-  assert.match(baseRule, /box-shadow:\s*none\s*!important/)
+  assert.match(baseRule, /border:\s*1px solid var\(--ui-control-border\)\s*!important/)
+  assert.match(baseRule, /writing-mode:\s*vertical-rl/)
+  assert.match(baseRule, /text-orientation:\s*upright/)
+  assert.match(baseRule, /border-radius:\s*999px/)
 
   const hoverRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle:hover')
-  assert.match(hoverRule, /background:\s*var\(--ui-surface\)\s*!important/)
-  assert.match(hoverRule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
-  assert.match(hoverRule, /box-shadow:\s*none\s*!important/)
+  assert.match(hoverRule, /color:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(hoverRule, /background:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(hoverRule, /border-color:\s*var\(--ui-ink\)\s*!important/)
 
   const activeRule = effectiveSelectorListRule(themeCss, '.left-panel-edge-toggle.is-solutions')
-  assert.match(activeRule, /color:\s*var\(--ui-accent\)\s*!important/)
-  assert.match(activeRule, /background:\s*var\(--ui-surface\)\s*!important/)
-  assert.match(activeRule, /border-color:\s*var\(--ui-accent\)\s*!important/)
-  assert.match(activeRule, /box-shadow:\s*none\s*!important/)
+  assert.match(activeRule, /color:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(activeRule, /background:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(activeRule, /border-color:\s*var\(--ui-ink\)\s*!important/)
+})
+
+test('workbench refinement keeps navigation compact and behavior selections black', () => {
+  const packageSection = effectiveSelectorListRule(
+    themeCss,
+    '.workbench-section.workbench-package-section',
+  )
+  assert.match(packageSection, /border:\s*0\s*!important/)
+  assert.match(packageSection, /background:\s*transparent\s*!important/)
+
+  const behaviorButton = effectiveSelectorListRule(
+    themeCss,
+    '.workbench-package-section .btn-group .el-button',
+  )
+  assert.match(behaviorButton, /height:\s*34px\s*!important/)
+  assert.match(behaviorButton, /font-size:\s*13px\s*!important/)
+  assert.doesNotMatch(themeCss, /\.workbench-package-section \.btn-group \.el-button::before/)
+
+  const packageSearch = effectiveSelectorListRule(
+    themeCss,
+    '.workbench-section .pkg-search .el-input__wrapper',
+  )
+  assert.match(packageSearch, /background:\s*var\(--ui-fill\)\s*!important/)
+  assert.match(packageSearch, /border:\s*0\s*!important/)
+
+  const activeBehaviorRadio = effectiveSelectorListRule(
+    themeCss,
+    '.behavior-card .dynamic-form .intercom-radio-group .el-radio-button.is-active .el-radio-button__inner',
+  )
+  assert.match(activeBehaviorRadio, /color:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(activeBehaviorRadio, /background:\s*var\(--ui-ink\)\s*!important/)
+
+  const countHint = effectiveSelectorListRule(themeCss, '.dynamic-form .count-hint')
+  assert.match(countHint, /background:\s*var\(--ui-ink\)/)
+
+  const summaryOp = effectiveSelectorListRule(themeCss, '.summary-op')
+  assert.match(summaryOp, /white-space:\s*nowrap/)
+  assert.match(summaryOp, /writing-mode:\s*horizontal-tb/)
+})
+
+test('solution center uses Apple-style borderless search and crisp segmented controls', () => {
+  const search = effectiveSelectorListRule(
+    themeCss,
+    '.solution-center-page .solution-sidebar-controls .intercom-input .el-input__wrapper',
+  )
+  assert.match(search, /background:\s*var\(--ui-fill\)\s*!important/)
+  assert.match(search, /border:\s*0\s*!important/)
+  assert.match(search, /box-shadow:\s*none\s*!important/)
+
+  const inactiveLibrary = effectiveSelectorListRule(
+    themeCss,
+    '.solution-center-page .solution-library-switch .el-radio-button:not(.is-active) .el-radio-button__inner',
+  )
+  assert.match(inactiveLibrary, /border:\s*1px solid var\(--ui-ink\)\s*!important/)
+
+  const createButton = effectiveSelectorListRule(
+    themeCss,
+    '.solution-sidebar-head .solution-create-draft-btn.el-button',
+  )
+  assert.match(createButton, /width:\s*32px\s*!important/)
+  assert.match(createButton, /border-radius:\s*50%\s*!important/)
 })
 
 test('gallery white C preserves combined selected, drag, ready, and disabled states', () => {
