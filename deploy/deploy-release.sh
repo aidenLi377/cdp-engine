@@ -52,23 +52,30 @@ else
     fi
   done
 
-  python3 -m venv "$temporary_dir/.venv"
-  "$temporary_dir/.venv/bin/python" -m pip install \
-    --disable-pip-version-check \
-    --no-input \
-    -r "$temporary_dir/requirements.txt"
-
-  set -a
-  # shellcheck disable=SC1091
-  source /etc/cdp/cdp.env
-  set +a
-  (
-    cd "$temporary_dir"
-    "$temporary_dir/.venv/bin/python" -c "from app import app; assert app is not None"
-  )
-
-  chmod -R u=rwX,go=rX "$temporary_dir"
   mv -- "$temporary_dir" "$release_dir"
+
+  # Python virtualenv launchers contain absolute shebang paths, so the
+  # environment must be created only after the release reaches its final path.
+  if ! (
+    python3 -m venv "$release_dir/.venv"
+    "$release_dir/.venv/bin/python" -m pip install \
+      --disable-pip-version-check \
+      --no-input \
+      -r "$release_dir/requirements.txt"
+
+    set -a
+    # shellcheck disable=SC1091
+    source /etc/cdp/cdp.env
+    set +a
+    cd "$release_dir"
+    "$release_dir/.venv/bin/python" -c "from app import app; assert app is not None"
+  ); then
+    rm -rf -- "$release_dir"
+    echo "Failed to prepare release $release_id" >&2
+    exit 4
+  fi
+
+  chmod -R u=rwX,go=rX "$release_dir"
 fi
 
 set -a
