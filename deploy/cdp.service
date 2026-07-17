@@ -1,0 +1,27 @@
+[Unit]
+Description=CDP Engine Gunicorn service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=cdpdeploy
+Group=cdpdeploy
+WorkingDirectory=/srv/cdp/current
+EnvironmentFile=/etc/cdp/cdp.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/srv/cdp/current/.venv/bin/gunicorn -c /srv/cdp/current/gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0027
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/srv/cdp/shared /var/log/cdp
+
+[Install]
+WantedBy=multi-user.target

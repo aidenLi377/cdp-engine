@@ -1,0 +1,106 @@
+name: Test, build, and deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run backend tests
+        run: python -m unittest discover -v
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: cdp-web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: cdp-web
+        run: npm ci
+
+      - name: Run frontend tests
+        run: find cdp-web/src -type f -name '*.test.mjs' -print0 | xargs -0 node --test
+
+      - name: Run browser plugin tests
+        run: node --test DMP_PluginV2.1-CDP-Merged/tests/*.test.mjs
+
+      - name: Build frontend
+        working-directory: cdp-web
+        run: npm run build
+
+      - name: Package runtime release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          release_dir="$RUNNER_TEMP/cdp-release"
+          mkdir -p "$release_dir/cdp-web"
+
+          cp app.py gunicorn.conf.py manage.py requirements.txt "$release_dir/"
+          cp -R cdp_backend "$release_dir/"
+          cp -- *.csv "$release_dir/"
+          cp -R "批量圈人模板" "$release_dir/"
+          cp -R cdp-web/dist "$release_dir/cdp-web/"
+
+          tar -C "$release_dir" -czf "$RUNNER_TEMP/cdp-release.tar.gz" .
+
+      - name: Configure deployment SSH
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required repository secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Upload and activate release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          artifact="/srv/cdp/incoming/${GITHUB_SHA}.tar.gz"
+          ssh_target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh_options=(-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
+
+          ssh "${ssh_options[@]}" "$ssh_target" "mkdir -p /srv/cdp/incoming"
+          scp "${ssh_options[@]}" "$RUNNER_TEMP/cdp-release.tar.gz" "$ssh_target:$artifact"
+          scp "${ssh_options[@]}" deploy/deploy-release.sh "$ssh_target:/srv/cdp/deploy-release.sh"
+          ssh "${ssh_options[@]}" "$ssh_target" \
+            "chmod 700 /srv/cdp/deploy-release.sh && /srv/cdp/deploy-release.sh '${GITHUB_SHA}' '$artifact'"
