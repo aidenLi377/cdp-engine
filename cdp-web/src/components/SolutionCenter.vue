@@ -236,7 +236,6 @@
           v-for="(node, index) in nodeList"
           :key="node.id"
           class="node-wrapper solution-node-wrapper"
-          :class="{ 'node-highlighted': isNodeHighlighted(node.id) }"
         >
           <div v-if="index > 0" class="logic-connector">
             <div class="connector-line"></div>
@@ -412,8 +411,6 @@
               @dragover.prevent="onDragCustomFieldOver(cfIndex)"
               @dragend="onDragCustomFieldEnd"
               @click="highlightCustomField(cf.id)"
-              @mouseenter="highlightCustomField(cf.id)"
-              @mouseleave="highlightCustomField(null)"
             >
               <div class="custom-field-item-head">
                 <span class="drag-handle" title="拖拽排序">⠿</span>
@@ -1326,7 +1323,7 @@ function removeBinding(index) {
 }
 
 function highlightCustomField(cfId) {
-  highlightedCustomFieldId.value = cfId
+  highlightedCustomFieldId.value = highlightedCustomFieldId.value === cfId ? null : cfId
 }
 
 function getNodeHighlightedFieldKeys(nodeId) {
@@ -1598,11 +1595,6 @@ onMounted(async () => {
 }
 .cf-search-input {
   margin-bottom: 8px;
-}
-.node-highlighted {
-  border-color: var(--ui-accent) !important;
-  background: var(--ui-surface) !important;
-  box-shadow: 0 0 0 3px var(--ui-accent-ring) !important;
 }
 .drag-handle {
   cursor: grab;

@@ -3380,6 +3380,34 @@ body,
   }
 }
 
+/* Browser review: keep the workbench and solution editor panels visually borderless. */
+#app .right-panel > .panel-name-area,
+#app .solution-editor-toolbar,
+#app .solution-settings .panel-name-area,
+#app .solution-settings-card.intercom-card {
+  border: 0 !important;
+}
+
+#app .solution-settings .panel-name-area .el-input__wrapper,
+#app .solution-settings .cf-search-input .el-input__wrapper {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* The solution list uses a neutral black scrollbar instead of the accent color. */
+.solution-list {
+  scrollbar-color: #1d1d1f transparent;
+}
+
+.solution-list::-webkit-scrollbar-thumb {
+  background: #1d1d1f;
+  border-radius: 999px;
+}
+
+.solution-list::-webkit-scrollbar-thumb:hover {
+  background: #000000;
+}
+
 .workbench-package-section .btn-group .el-button:focus-visible {
   background: var(--ui-surface) !important;
   box-shadow: inset 2px 0 0 var(--ui-accent) !important;
