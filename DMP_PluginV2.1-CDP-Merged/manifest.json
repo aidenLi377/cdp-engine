@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "DMP Copilot - CDP 联合执行器",
+  "short_name": "DMP Copilot",
+  "version": "2.1.0",
+  "description": "保留 DMP 美妆洞察能力，并统一提供 CDP、DataBank 与 DMP 自动化任务执行。",
+  "author": "Bzhi",
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "permissions": [
+    "storage",
+    "clipboardWrite",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://databank.tmall.com/*",
+    "*://dmp.taobao.com/*",
+    "*://us.i.posthog.com/*",
+    "http://127.0.0.1:5173/*",
+    "http://localhost:5173/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["panel.html", "dmp_tags_dictionary.json"],
+      "matches": ["*://dmp.taobao.com/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:5173/*", "http://localhost:5173/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://databank.tmall.com/*"],
+      "js": ["databank-automation.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://dmp.taobao.com/*"],
+      "js": ["hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://dmp.taobao.com/*"],
+      "js": ["dmp-result-core.js", "content.js", "cdp-dmp-automation.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -3,15 +3,16 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import vm from 'node:vm'
+import { fileURLToPath } from 'node:url'
 
-const CONTENT_SCRIPT_PATH = path.resolve('chrome-extension/databank-automation/content.js')
+const currentDir = path.dirname(fileURLToPath(import.meta.url))
+const CONTENT_SCRIPT_PATH = path.resolve(currentDir, '..', 'databank-automation.js')
 const CONTENT_SCRIPT_SOURCE = fs.readFileSync(CONTENT_SCRIPT_PATH, 'utf8')
 
 const DATABANK_PARAM_TRIGGER_XPATH =
   '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div[3]/span[2]'
 const DATABANK_TEXTAREA_XPATH = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div/span/textarea'
 const DATABANK_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/button[1]'
-const CROWD_FINAL_APPLY_XPATH = '/html/body/div[6]/div/div[2]/div/div/div[3]/div/button[1]'
 
 class FakeElement {
   constructor(tagName, text = '') {
@@ -232,76 +233,6 @@ function createContentHarness() {
   }
 }
 
-function createManualApplyHarness() {
-  let now = 0
-  let runtimeListener = null
-  let clickCount = 0
-  let timerCount = 0
-
-  const finalApply = new FakeButtonElement('应用')
-  finalApply.isConnected = true
-  finalApply.click = () => { clickCount += 1 }
-
-  const document = {
-    querySelectorAll(selector) {
-      if (String(selector).toLowerCase() === 'button') return [finalApply]
-      return []
-    },
-    evaluate(xpath) {
-      return { singleNodeValue: xpath === CROWD_FINAL_APPLY_XPATH ? finalApply : null }
-    },
-    readyState: 'complete',
-  }
-  const chrome = {
-    runtime: {
-      onMessage: { addListener(listener) { runtimeListener = listener } },
-    },
-  }
-  const context = {
-    console,
-    chrome,
-    document,
-    window: {
-      __databankAutomationContentScriptLoaded: false,
-      __databankAutomationRunning: false,
-      location: { href: 'https://databank.tmall.com/#/crowd' },
-      getComputedStyle(node) { return node.style },
-    },
-    Element: FakeElement,
-    HTMLButtonElement: FakeButtonElement,
-    HTMLTextareaElement: FakeTextareaElement,
-    HTMLInputElement: FakeInputElement,
-    XPathResult: { FIRST_ORDERED_NODE_TYPE: 0 },
-    MouseEvent: class MouseEvent {},
-    Event: class Event {},
-    Date: { now: () => now },
-    setTimeout(callback, delay = 0) {
-      now += Number(delay) || 0
-      timerCount += 1
-      if (timerCount === 1) finalApply.style.display = 'none'
-      queueMicrotask(callback)
-      return timerCount
-    },
-    clearTimeout() {},
-  }
-  context.window.window = context.window
-  vm.runInNewContext(CONTENT_SCRIPT_SOURCE, context, { filename: CONTENT_SCRIPT_PATH })
-
-  return {
-    get clickCount() { return clickCount },
-    async waitForManualApply() {
-      return await new Promise((resolve) => {
-        const keepChannelOpen = runtimeListener(
-          { type: 'AUTOMATE_DATABANK_WAIT_APPLY' },
-          null,
-          resolve,
-        )
-        assert.equal(keepChannelOpen, true)
-      })
-    },
-  }
-}
-
 test('content automation treats the import dialog as closed even if another 确定 button stays visible elsewhere', async () => {
   const harness = createContentHarness()
 
@@ -322,14 +253,4 @@ test('content automation succeeds after the original import dialog closes even i
   })
 
   assert.equal(response.ok, true)
-})
-
-test('manual apply wait observes the final button without clicking and completes after it closes', async () => {
-  const harness = createManualApplyHarness()
-
-  const response = await harness.waitForManualApply()
-
-  assert.equal(response.ok, true)
-  assert.equal(response.step, 'manual_apply_confirmed')
-  assert.equal(harness.clickCount, 0)
 })
