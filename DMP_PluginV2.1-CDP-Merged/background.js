@@ -1,4 +1,8 @@
-const ALLOWED_ORIGINS = new Set(['http://127.0.0.1:5173', 'http://localhost:5173']);
+const ALLOWED_ORIGINS = new Set([
+  'https://duruo377.top',
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+]);
 
 // URL constants
 const DATABANK_PARAM_URL = 'https://databank.tmall.com/#/userDefinedAnalyses';

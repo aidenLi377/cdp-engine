@@ -18,7 +18,12 @@ test('merged manifest preserves DMP Copilot and adds CDP task execution surfaces
   }
   assert.ok(manifest.host_permissions.includes('https://databank.tmall.com/*'))
   assert.ok(manifest.host_permissions.includes('*://dmp.taobao.com/*'))
+  assert.ok(manifest.host_permissions.includes('https://duruo377.top/*'))
   assert.ok(manifest.host_permissions.includes('http://127.0.0.1:5173/*'))
+
+  const bridgeEntry = manifest.content_scripts.find((entry) => entry.js.includes('bridge.js'))
+  assert.ok(bridgeEntry)
+  assert.ok(bridgeEntry.matches.includes('https://duruo377.top/*'))
 
   const scripts = manifest.content_scripts.flatMap((entry) => entry.js)
   for (const expected of [

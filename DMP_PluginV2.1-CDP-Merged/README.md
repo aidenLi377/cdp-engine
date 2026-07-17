@@ -24,10 +24,11 @@
 
 ## 当前允许的 CDP 地址
 
+- `https://duruo377.top`
 - `http://127.0.0.1:5173`
 - `http://localhost:5173`
 
-正式上线域名确定后，需要同时更新 `manifest.json` 的 `host_permissions`、CDP `content_scripts.matches`，以及 `background.js` 的 `ALLOWED_ORIGINS`。
+新增或变更线上域名时，需要同时更新 `manifest.json` 的 `host_permissions`、CDP `content_scripts.matches`，以及 `background.js` 的 `ALLOWED_ORIGINS`。
 
 ## 文件职责
 

@@ -177,3 +177,14 @@ test('background reads and updates shared DMP settings', async () => {
   assert.equal(updated.settings.columnVisibility.PPC, false)
   assert.deepEqual(Array.from(harness.storageData.rebaseExcludedTagIds), ['200'])
 })
+
+test('background accepts task messages from the production CDP origin', async () => {
+  const harness = createBackgroundHarness()
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_DMP_GET_SETTINGS',
+    pageUrl: 'https://duruo377.top/',
+  })
+
+  assert.equal(response.ok, true)
+  assert.deepEqual(Array.from(response.settings.readyTagIds), ['200'])
+})

@@ -20,6 +20,7 @@
     "https://databank.tmall.com/*",
     "*://dmp.taobao.com/*",
     "*://us.i.posthog.com/*",
+    "https://duruo377.top/*",
     "http://127.0.0.1:5173/*",
     "http://localhost:5173/*"
   ],
@@ -34,7 +35,7 @@
   ],
   "content_scripts": [
     {
-      "matches": ["http://127.0.0.1:5173/*", "http://localhost:5173/*"],
+      "matches": ["https://duruo377.top/*", "http://127.0.0.1:5173/*", "http://localhost:5173/*"],
       "js": ["bridge.js"],
       "run_at": "document_idle"
     },
