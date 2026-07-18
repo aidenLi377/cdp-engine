@@ -50,12 +50,27 @@ class CdpApiTests(unittest.TestCase):
         self.assertIn("商品行为", packages)
 
     def test_meta_and_cache(self):
-        response = self.client.get("/api/meta/类目公域行为")
+        response = self.client.get("/api/meta/类目公域行为?v=test-release")
         meta = response.get_json()
         self.assertIn("schema", meta)
         self.assertIn("matrix", meta)
         self.assertTrue(meta["schema"])
         self.assertIn("类目公域行为", self.engine._meta_cache)
+        self.assertIn("max-age=31536000", response.headers["Cache-Control"])
+        self.assertIn("immutable", response.headers["Cache-Control"])
+        self.assertEqual(response.headers["Vary"], "Cookie")
+        self.assertTrue(response.headers.get("ETag"))
+
+        conditional = self.client.get(
+            "/api/meta/类目公域行为?v=test-release",
+            headers={"If-None-Match": response.headers["ETag"]},
+        )
+        self.assertEqual(conditional.status_code, 304)
+
+        bundle_response = self.client.get("/api/meta?v=test-release")
+        bundle = bundle_response.get_json()
+        self.assertEqual(set(bundle), set(self.engine.packages))
+        self.assertIn("schema", bundle["类目公域行为"])
 
         response_alias = self.client.get("/api/package_meta?name=类目公域行为")
         self.assertEqual(response_alias.status_code, 200)

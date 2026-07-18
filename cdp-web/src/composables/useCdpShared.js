@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 // ---- 模块级单例 (所有调用者共享) ----
 const schemaCache = ref({})
 const logicMatrixCache = ref({})
+const formattedOptionsCache = new WeakMap()
 
 // ---- 纯工具函数 ----
 function getArray(val) { return Array.isArray(val) ? val : (val ? [val] : []) }
@@ -49,7 +50,10 @@ function getEffectiveCount(fieldKey, vals) {
 function formatOptions(options) {
   if (!options) return []
   if (options.length > 0 && typeof options[0] === 'object') return options
-  return options.map(opt => ({ value: opt, label: String(opt) }))
+  if (formattedOptionsCache.has(options)) return formattedOptionsCache.get(options)
+  const formatted = options.map(opt => ({ value: opt, label: String(opt) }))
+  formattedOptionsCache.set(options, formatted)
+  return formatted
 }
 
 function formatDate(date) {

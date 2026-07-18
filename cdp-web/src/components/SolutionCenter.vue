@@ -556,6 +556,7 @@ import { getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
+import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const {
   listSolutions,
@@ -584,6 +585,7 @@ const {
   createRuntimeNode,
   hydrateNodes,
   normalizeWorkbenchFieldIds,
+  preloadAllPackageMeta,
 } = useSolutionRuntime()
 
 const solutions = ref([])
@@ -1423,7 +1425,7 @@ async function handleFolderChange(event) {
       await moveFolder(event.id, event.targetParentId)
       ElMessage.success('文件夹已移动')
     } else if (event.action === 'move-solution') {
-      await fetch(`/api/solutions/${event.solutionId}/move`, {
+      await fetchWithTimeout(`/api/solutions/${event.solutionId}/move`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderId: event.targetFolderId }),
@@ -1464,6 +1466,9 @@ function onSolutionDragStart(event, item) {
 }
 
 onMounted(async () => {
+  void preloadAllPackageMeta().catch(() => {
+    // Individual component loads remain available if background preloading fails.
+  })
   await Promise.all([loadSolutions(), loadAvailablePackages(), loadFolders()])
 })
 </script>

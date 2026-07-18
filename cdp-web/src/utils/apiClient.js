@@ -1,3 +1,5 @@
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
+
 function buildUrl(path, params) {
   const url = new URL(path, window.location.origin)
   if (params) {
@@ -8,6 +10,50 @@ function buildUrl(path, params) {
     })
   }
   return url.pathname + url.search
+}
+
+async function fetchWithTimeout(input, options = {}) {
+  const {
+    timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    signal: callerSignal,
+    ...fetchOptions
+  } = options
+
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return fetch(input, { ...fetchOptions, signal: callerSignal })
+  }
+
+  const controller = new AbortController()
+  let timedOut = false
+
+  const forwardCallerAbort = () => {
+    controller.abort(callerSignal?.reason)
+  }
+
+  if (callerSignal?.aborted) {
+    forwardCallerAbort()
+  } else {
+    callerSignal?.addEventListener('abort', forwardCallerAbort, { once: true })
+  }
+
+  const timeoutId = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+
+  try {
+    return await fetch(input, { ...fetchOptions, signal: controller.signal })
+  } catch (error) {
+    if (timedOut) {
+      const timeoutError = new Error(`请求超过 ${Math.max(1, Math.ceil(timeoutMs / 1000))} 秒，请稍后再试`)
+      timeoutError.name = 'TimeoutError'
+      throw timeoutError
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+    callerSignal?.removeEventListener('abort', forwardCallerAbort)
+  }
 }
 
 async function parseResponseBody(response) {
@@ -22,14 +68,13 @@ async function parseResponseBody(response) {
 }
 
 async function request(path, options = {}) {
-  const { signal, ...fetchOptions } = options
-  const response = await fetch(path, {
+  const { headers, ...fetchOptions } = options
+  const response = await fetchWithTimeout(path, {
     headers: {
       'Content-Type': 'application/json',
-      ...(fetchOptions.headers || {}),
+      ...(headers || {}),
     },
     ...fetchOptions,
-    signal,
   })
 
   if (response.status === 204) return null
@@ -49,4 +94,4 @@ async function request(path, options = {}) {
   return data
 }
 
-export { buildUrl, request }
+export { DEFAULT_REQUEST_TIMEOUT_MS, buildUrl, fetchWithTimeout, request }

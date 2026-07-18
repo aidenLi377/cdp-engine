@@ -606,6 +606,7 @@ import {
   chunkBySecondaryCategory,
 } from '../utils/solutionState.js'
 import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
+import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
@@ -621,6 +622,7 @@ const {
   createRuntimeNode,
   hydrateNodes,
   normalizeWorkbenchFieldIds,
+  preloadAllPackageMeta,
 } = useSolutionRuntime()
 const { listSolutions, getSolution, createDraft } = useSolutionsApi()
 const { listFolders } = useFoldersApi()
@@ -677,6 +679,7 @@ let cfResizeObserver = null
 let dragSrcIndex = null
 let saveTimer = null
 let jsonTimer = null
+let jsonBuildAbort = null
 
 provide('solutionCenterContext', {
   highlightedCustomFieldId: null,
@@ -1109,10 +1112,18 @@ function scrollToNode(index) {
 }
 
 function takeSnapshot() {
-  const snapshot = structuredClone({
-    nodeList: toRaw(nodeList.value),
+  const snapshot = {
+    nodeList: nodeList.value.map((node) => {
+      const rawNode = toRaw(node)
+      const { schema, logicMatrix, ...editableState } = rawNode
+      return {
+        ...structuredClone(editableState),
+        schema,
+        logicMatrix,
+      }
+    }),
     crowdNameInput: crowdNameInput.value,
-  })
+  }
 
   historyStack.value = historyStack.value.slice(0, historyPos.value + 1)
   historyStack.value.push(snapshot)
@@ -1444,8 +1455,13 @@ async function restoreSolutionDefaults() {
 }
 
 async function buildFinalJson() {
+  jsonBuildAbort?.abort()
+  const buildAbort = new AbortController()
+  jsonBuildAbort = buildAbort
+
   if (nodeList.value.length === 0) {
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
+    if (jsonBuildAbort === buildAbort) jsonBuildAbort = null
     return
   }
 
@@ -1497,10 +1513,11 @@ async function buildFinalJson() {
     })
 
     try {
-      const response = await fetch('/api/generate', {
+      const response = await fetchWithTimeout('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: buildAbort.signal,
       })
       const nodeJson = await response.json()
       if (nodeJson?.list?.length > 0) {
@@ -1513,15 +1530,18 @@ async function buildFinalJson() {
         list.push(baseTemplate)
       }
     } catch (error) {
+      if (error.name === 'AbortError') return
       console.error('JSON 生成失败，请检查后端服务状态', error)
     }
   }
 
+  if (buildAbort.signal.aborted) return
   generatedJson.value = {
     crowdName: String(crowdNameInput.value || '').trim() || DEFAULT_CROWD_NAME,
     list,
     compute,
   }
+  if (jsonBuildAbort === buildAbort) jsonBuildAbort = null
 }
 
 function enforceWorkbenchFieldConstraints(nodes) {
@@ -1704,6 +1724,7 @@ watch(
   [nodeList, crowdNameInput],
   ([nextNodes]) => {
     enforceWorkbenchFieldConstraints(nextNodes)
+    jsonBuildAbort?.abort()
     clearTimeout(jsonTimer)
     jsonTimer = setTimeout(async () => {
       await buildFinalJson()
@@ -1730,6 +1751,9 @@ watch(cfHiddenCount, (newVal, oldVal) => {
 })
 
 onMounted(async () => {
+  void preloadAllPackageMeta().catch(() => {
+    // Individual component loads remain available if background preloading fails.
+  })
   await Promise.all([loadPackages(), loadPublishedSolutions()])
   resetHistory()
   window.addEventListener('keydown', handleKeydown)
@@ -1744,6 +1768,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(jsonTimer)
+  jsonBuildAbort?.abort()
   window.removeEventListener('keydown', handleKeydown)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()

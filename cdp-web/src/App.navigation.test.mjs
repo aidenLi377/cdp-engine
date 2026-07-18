@@ -39,3 +39,17 @@ test('shell title is concise without the CDP prefix', () => {
   assert.doesNotMatch(appVue, />CDP 圈选工作台</)
   assert.doesNotMatch(appVue, /可视化搭建、方案管理与任务调度/)
 })
+
+test('brief network stalls do not immediately show a disconnected backend', () => {
+  assert.match(appVue, /const HEALTH_FAILURE_THRESHOLD = 3/)
+  assert.match(appVue, /consecutiveBackendFailures >= HEALTH_FAILURE_THRESHOLD/)
+  assert.match(appVue, />\s*暂时无法连接服务\s*</)
+  assert.doesNotMatch(appVue, />重试<\/el-button>/)
+  assert.doesNotMatch(appVue, /AbortSignal\.timeout\(5000\)/)
+})
+
+test('large top-level modes are loaded on demand', () => {
+  assert.match(appVue, /defineAsyncComponent\(\(\) => import\('\.\/components\/NormalMode\.vue'\)\)/)
+  assert.match(appVue, /defineAsyncComponent\(\(\) => import\('\.\/components\/SolutionCenter\.vue'\)\)/)
+  assert.match(appVue, /defineAsyncComponent\(\(\) => import\('\.\/components\/TaskCenter\.vue'\)\)/)
+})

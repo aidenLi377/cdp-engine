@@ -11,7 +11,9 @@ bind = "127.0.0.1:5000"
 
 # SQLite serialises writes — keep worker count low
 workers = 2
-worker_class = "sync"
+worker_class = "gthread"
+threads = 4
+keepalive = 5
 
 # batch_generate can take a while
 timeout = 120

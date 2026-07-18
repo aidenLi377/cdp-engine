@@ -110,6 +110,7 @@
 
 <script setup>
 import { nextTick, onMounted, reactive, ref } from 'vue'
+import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const emit = defineEmits(['authenticated'])
 
@@ -128,7 +129,7 @@ async function submitLogin() {
 
   loading.value = true
   try {
-    const response = await fetch('/api/auth/login', {
+    const response = await fetchWithTimeout('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),

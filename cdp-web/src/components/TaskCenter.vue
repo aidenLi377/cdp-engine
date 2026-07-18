@@ -257,6 +257,7 @@ import {
   normalizeResultRow,
   visibleResultColumns,
 } from '../utils/dmpResults.js'
+import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const API = '/api/tasks'
 
@@ -485,19 +486,19 @@ function clearResults() { taskResults.value = null; crowdCount.value = null }
 
 // -- API --
 async function apiPost(path, body) {
-  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetchWithTimeout(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || '请求失败')
   return res.json()
 }
 async function apiPut(path, body) {
-  const res = await fetch(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetchWithTimeout(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) throw new Error('更新失败')
   return res.json()
 }
 
 async function loadHistory() {
   try {
-    const res = await fetch(API)
+    const res = await fetchWithTimeout(API)
     if (res.ok) {
       const tasks = await res.json()
       taskHistory.value = tasks.map(t => ({
@@ -512,13 +513,13 @@ async function loadHistory() {
 async function deleteHistoryItem(idx) {
   const task = taskHistory.value[idx]
   if (!task) return
-  if (task.id) { try { await fetch(`${API}/${task.id}`, { method: 'DELETE' }) } catch { /* */ } }
+  if (task.id) { try { await fetchWithTimeout(`${API}/${task.id}`, { method: 'DELETE' }) } catch { /* */ } }
   taskHistory.value.splice(idx, 1)
   if (expandedHistory.value === idx) expandedHistory.value = -1
 }
 
 async function clearHistory() {
-  try { await Promise.all(taskHistory.value.map(t => fetch(`${API}/${t.id}`, { method: 'DELETE' }).catch(() => {}))) } catch { /* */ }
+  try { await Promise.all(taskHistory.value.map(t => fetchWithTimeout(`${API}/${t.id}`, { method: 'DELETE' }).catch(() => {}))) } catch { /* */ }
   taskHistory.value = []; expandedHistory.value = -1
 }
 

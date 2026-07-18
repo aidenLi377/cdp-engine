@@ -41,6 +41,20 @@ test('workbench phase status is a compact breathing-light indicator', () => {
   assert.match(css, /@keyframes phasePulseOrange/)
 })
 
+test('history snapshots reuse read-only component metadata instead of cloning large schemas', () => {
+  assert.match(normalModeVue, /const \{ schema, logicMatrix, \.\.\.editableState \} = rawNode/)
+  assert.match(normalModeVue, /\.\.\.structuredClone\(editableState\)/)
+  assert.match(normalModeVue, /schema,\s*logicMatrix,/s)
+  assert.doesNotMatch(normalModeVue, /structuredClone\(\{\s*nodeList: toRaw\(nodeList\.value\)/s)
+})
+
+test('live JSON generation cancels stale requests when the form changes again', () => {
+  assert.match(normalModeVue, /let jsonBuildAbort = null/)
+  assert.match(normalModeVue, /signal: buildAbort\.signal/)
+  assert.match(normalModeVue, /jsonBuildAbort\?\.abort\(\)\s*clearTimeout\(jsonTimer\)/)
+  assert.match(normalModeVue, /if \(error\.name === 'AbortError'\) return/)
+})
+
 test('derived solution sessions expose draft-save actions instead of the old exit control', () => {
   assert.match(normalModeVue, /另存为新方案/)
   assert.doesNotMatch(normalModeVue, /保存到草稿方案/)

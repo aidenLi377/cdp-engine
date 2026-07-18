@@ -117,6 +117,18 @@ def register_routes(
     def error_response(code: str, message: str, status: int):
         return jsonify({"code": code, "message": message}), status
 
+    def metadata_response(payload):
+        """Return version-aware browser-cacheable configuration metadata."""
+        response = jsonify(payload)
+        is_versioned = bool(request.args.get("v"))
+        response.cache_control.private = True
+        response.cache_control.max_age = 31_536_000 if is_versioned else 300
+        if is_versioned:
+            response.cache_control.immutable = True
+        response.headers["Vary"] = "Cookie"
+        response.add_etag()
+        return response.make_conditional(request)
+
     def validate_personal_folder(folder_id: str | None, user_id: str):
         if folder_id is None:
             return None
@@ -174,22 +186,28 @@ def register_routes(
 
     @app.route("/api/packages")
     def get_packages():
-        return jsonify(list(engine.packages.keys()))
+        return metadata_response(list(engine.packages.keys()))
 
     @app.route("/api/health")
     def health_check():
         return jsonify({"status": "ok"})
 
+    @app.route("/api/meta")
+    def get_all_package_meta():
+        return metadata_response(
+            {name: engine.get_package_meta(name) for name in engine.packages}
+        )
+
     @app.route("/api/meta/<package_name>")
     def get_package_meta(package_name: str):
-        return jsonify(engine.get_package_meta(package_name))
+        return metadata_response(engine.get_package_meta(package_name))
 
     @app.route("/api/package_meta")
     def get_package_meta_alias():
         name = request.args.get("name")
         if not name:
             return error_response("PACKAGE_NAME_REQUIRED", "请选择人群包类型", 400)
-        return jsonify(engine.get_package_meta(name))
+        return metadata_response(engine.get_package_meta(name))
 
     @app.route("/api/generate_json", methods=["POST"])
     def generate_json_alias():

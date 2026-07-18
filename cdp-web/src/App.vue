@@ -9,8 +9,7 @@
     <div v-else class="cdp-engine-container">
       <transition name="fade-slide">
         <div v-if="!backendOnline" class="offline-banner">
-          后端服务连接失败，请检查服务器是否已启动
-          <el-button size="small" text @click="checkHealth" style="color:#fff;text-decoration:underline">重试</el-button>
+          暂时无法连接服务
         </div>
       </transition>
 
@@ -44,12 +43,16 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import LoginView from './components/LoginView.vue'
-import NormalMode from './components/NormalMode.vue'
-import SolutionCenter from './components/SolutionCenter.vue'
-import TaskCenter from './components/TaskCenter.vue'
+import { fetchWithTimeout } from './utils/apiClient.js'
+
+const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
+const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
+const TaskCenter = defineAsyncComponent(() => import('./components/TaskCenter.vue'))
+
+const HEALTH_FAILURE_THRESHOLD = 3
 
 const appMode = ref('workbench')
 const backendOnline = ref(true)
@@ -60,20 +63,34 @@ let sessionTimer = null
 let healthCheckInFlight = false
 let sessionCheckInFlight = false
 let isDisposed = false
+let consecutiveBackendFailures = 0
 
 const userInitial = computed(() => {
   const label = currentUser.value?.displayName || currentUser.value?.username || 'U'
   return String(label).trim().slice(0, 1).toUpperCase()
 })
 
+function markBackendSuccess() {
+  consecutiveBackendFailures = 0
+  backendOnline.value = true
+}
+
+function markBackendFailure() {
+  consecutiveBackendFailures += 1
+  if (consecutiveBackendFailures >= HEALTH_FAILURE_THRESHOLD) {
+    backendOnline.value = false
+  }
+}
+
 const checkHealth = async () => {
   if (healthCheckInFlight) return
   healthCheckInFlight = true
   try {
-    const res = await fetch('/api/health', { signal: AbortSignal.timeout(5000) })
-    backendOnline.value = res.ok
+    const res = await fetchWithTimeout('/api/health', { cache: 'no-store' })
+    if (res.ok) markBackendSuccess()
+    else markBackendFailure()
   } catch {
-    backendOnline.value = false
+    markBackendFailure()
   } finally {
     healthCheckInFlight = false
   }
@@ -98,26 +115,31 @@ async function checkSession() {
   if (sessionCheckInFlight) return
   sessionCheckInFlight = true
   try {
-    const response = await fetch('/api/auth/me')
-    if (!response.ok) {
+    const response = await fetchWithTimeout('/api/auth/me', { cache: 'no-store' })
+    markBackendSuccess()
+    if (response.status === 401) {
       currentUser.value = null
       authState.value = 'guest'
       stopAuthenticatedLoops()
       return
     }
+    if (!response.ok) throw new Error(`Session check failed with status ${response.status}`)
     const data = await response.json()
     currentUser.value = data.user
     authState.value = 'authenticated'
   } catch {
-    currentUser.value = null
-    authState.value = 'guest'
-    stopAuthenticatedLoops()
+    markBackendFailure()
+    if (authState.value === 'checking') {
+      currentUser.value = null
+      authState.value = 'guest'
+    }
   } finally {
     sessionCheckInFlight = false
   }
 }
 
 function handleAuthenticated(user) {
+  markBackendSuccess()
   currentUser.value = user
   authState.value = 'authenticated'
   startAuthenticatedLoops()
@@ -142,7 +164,7 @@ async function handleVisibilityChange() {
 
 async function logout() {
   try {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await fetchWithTimeout('/api/auth/logout', { method: 'POST' })
   } finally {
     stopAuthenticatedLoops()
     currentUser.value = null

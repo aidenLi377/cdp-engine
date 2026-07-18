@@ -1,6 +1,7 @@
-import { toRaw } from 'vue'
+import { markRaw, toRaw } from 'vue'
 import { useCdpShared } from './useCdpShared.js'
 import { cleanWorkbenchFieldIds } from '../utils/solutionState.js'
+import { fetchWithTimeout } from '../utils/apiClient.js'
 
 function cloneValue(value) {
   if (value == null) return value
@@ -35,9 +36,53 @@ export function bindRuntimeUsageSections(baseSections, nodes) {
 }
 
 const pendingMetaFetches = {}
+let pendingMetaBundleFetch = null
+let metaBundleLoaded = false
+const metaBuildId = typeof __CDP_BUILD_ID__ === 'undefined' ? 'local' : __CDP_BUILD_ID__
+const metaVersionQuery = `?v=${encodeURIComponent(metaBuildId)}`
 
 export function useSolutionRuntime() {
   const { schemaCache, logicMatrixCache } = useCdpShared()
+
+  function getCachedPackageMeta(packageType) {
+    if (
+      Object.prototype.hasOwnProperty.call(schemaCache.value, packageType) &&
+      Object.prototype.hasOwnProperty.call(logicMatrixCache.value, packageType)
+    ) {
+      return {
+        schema: schemaCache.value[packageType],
+        matrix: logicMatrixCache.value[packageType],
+      }
+    }
+    return null
+  }
+
+  function storePackageMeta(packageType, data) {
+    schemaCache.value[packageType] = markRaw(data?.schema || [])
+    logicMatrixCache.value[packageType] = markRaw(data?.matrix || {})
+    return getCachedPackageMeta(packageType)
+  }
+
+  function preloadAllPackageMeta() {
+    if (metaBundleLoaded) return Promise.resolve(Object.keys(schemaCache.value).length)
+    if (pendingMetaBundleFetch) return pendingMetaBundleFetch
+
+    pendingMetaBundleFetch = (async () => {
+      const response = await fetchWithTimeout(`/api/meta${metaVersionQuery}`)
+      if (!response.ok) throw new Error('组件元数据预加载失败')
+
+      const bundle = await response.json()
+      Object.entries(bundle || {}).forEach(([packageType, data]) => {
+        storePackageMeta(packageType, data)
+      })
+      metaBundleLoaded = true
+      return Object.keys(bundle || {}).length
+    })().finally(() => {
+      pendingMetaBundleFetch = null
+    })
+
+    return pendingMetaBundleFetch
+  }
 
   function buildInitialNodeState(schema, packageType) {
     const formData = {}
@@ -81,11 +126,17 @@ export function useSolutionRuntime() {
   }
 
   async function fetchPackageMeta(packageType) {
-    if (schemaCache.value[packageType] && logicMatrixCache.value[packageType]) {
-      return {
-        schema: cloneValue(schemaCache.value[packageType]),
-        matrix: cloneValue(logicMatrixCache.value[packageType]),
+    const cached = getCachedPackageMeta(packageType)
+    if (cached) return cached
+
+    if (pendingMetaBundleFetch) {
+      try {
+        await pendingMetaBundleFetch
+      } catch {
+        // Fall back to the individual endpoint below.
       }
+      const bundled = getCachedPackageMeta(packageType)
+      if (bundled) return bundled
     }
 
     if (pendingMetaFetches[packageType]) {
@@ -94,19 +145,15 @@ export function useSolutionRuntime() {
 
     const promise = (async () => {
       try {
-        const response = await fetch(`/api/meta/${encodeURIComponent(packageType)}`)
+        const response = await fetchWithTimeout(
+          `/api/meta/${encodeURIComponent(packageType)}${metaVersionQuery}`,
+        )
         if (!response.ok) {
           throw new Error(`组件元数据加载失败: ${packageType}`)
         }
 
         const data = await response.json()
-        schemaCache.value[packageType] = data.schema || []
-        logicMatrixCache.value[packageType] = data.matrix || {}
-
-        return {
-          schema: cloneValue(schemaCache.value[packageType]),
-          matrix: cloneValue(logicMatrixCache.value[packageType]),
-        }
+        return storePackageMeta(packageType, data)
       } finally {
         delete pendingMetaFetches[packageType]
       }
@@ -172,5 +219,6 @@ export function useSolutionRuntime() {
     createRuntimeNode,
     hydrateNodes,
     normalizeWorkbenchFieldIds,
+    preloadAllPackageMeta,
   }
 }
