@@ -112,9 +112,8 @@ test('folder selection still filters in all status and all button clears folder 
 
 test('solution scrollable lists reserve room for the scrollbar', () => {
   assert.match(css, /\.solution-list \{[^}]*padding-right: 12px;[^}]*scrollbar-gutter: stable;/s)
-  assert.match(css, /\.solution-list-item,[\s\S]*?\.published-solution-item,[\s\S]*?\.intercom-list-item,[\s\S]*?box-sizing: border-box;/)
+  assert.match(css, /\.solution-list-item,[\s\S]*?\.published-solution-item,[\s\S]*?\.summary-node \{[^}]*box-sizing: border-box;/)
   assert.match(css, /\.solution-node-scroll,[\s\S]*?\.solution-settings-scroll \{[^}]*padding-right: 12px;/s)
-  assert.match(css, /\.solution-use-scroll \{[^}]*padding-right: 12px;/s)
 })
 
 test('active solution list item has room and layer for its glow', () => {

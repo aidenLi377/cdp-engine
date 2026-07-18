@@ -1,4 +1,4 @@
-// 共享 composable — 模块级单例，NormalMode 和 BatchMode 共享同一份缓存
+// 共享 composable — 模块级单例，工作台与动态表单共享同一份缓存
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 

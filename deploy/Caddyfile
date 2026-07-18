@@ -1,4 +1,5 @@
 www.duruo377.top {
+	header Strict-Transport-Security "max-age=15552000"
 	redir https://duruo377.top{uri} permanent
 }
 
@@ -10,13 +11,21 @@ duruo377.top {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
+		Strict-Transport-Security "max-age=15552000"
 	}
 
 	handle /api/* {
 		reverse_proxy 127.0.0.1:5000
 	}
 
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		root * /srv/cdp/current/cdp-web/dist
+		file_server
+	}
+
 	handle {
+		header Cache-Control "no-cache"
 		root * /srv/cdp/current/cdp-web/dist
 		try_files {path} /index.html
 		file_server

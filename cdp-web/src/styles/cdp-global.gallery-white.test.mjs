@@ -164,14 +164,11 @@ test('dynamic form uses neutral tokens and shared danger semantics', () => {
 
 test('solution center keeps active, creating, drag, and highlight states clean', () => {
   const solutionStyle = vueStyle('components/SolutionCenter.vue')
-  const useStyle = vueStyle('components/SolutionUseForm.vue')
-  const styles = solutionStyle + useStyle
 
-  assert.doesNotMatch(styles, /#ff6b4a|rgba\(255,\s*107,\s*74/i)
+  assert.doesNotMatch(solutionStyle, /#ff6b4a|rgba\(255,\s*107,\s*74/i)
   assert.match(solutionStyle, /\.custom-field-item\.active\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
   assert.match(solutionStyle, /\.creating-custom-field-panel\s*\{[\s\S]*background:\s*var\(--ui-fill\)/)
   assert.match(solutionStyle, /\.skeleton-bar\s*\{[\s\S]*background:\s*linear-gradient\([^;]*(#f5f5f7|var\(--ui-fill\))/)
-  assert.match(useStyle, /\.use-card-highlighted\s*\{[\s\S]*var\(--ui-accent-ring\)/)
 })
 
 test('task center uses neutral surfaces, signal orange, and P1 status colors', () => {
@@ -197,14 +194,7 @@ test('task center maps progress and history states to P1 semantic colors', () =>
 test('gallery white EOF explicitly overrides every reviewed reachable legacy selector', () => {
   const selectors = [
     '.solution-center-page',
-    '.plus-btn',
-    '.plus-btn::before',
-    '.plus-btn:hover',
-    '.final-header',
-    '.final-badge',
     '.empty-state-illustration.create',
-    '.empty-state-illustration.use',
-    '.use-card-highlighted',
     '.workbench-phase-status.is-free-build .workbench-phase-dot',
     '.workbench-phase-status.is-solution-use .workbench-phase-dot',
     '.cf-cards-bar',
@@ -224,47 +214,13 @@ test('gallery white solution center canvas has no effective warm atmosphere', ()
   assert.doesNotMatch(rule, /(?:linear|radial)-gradient|#fffdf8|#fff8f2|#fff3ed|#ff6b35|255\s*,\s*107\s*,\s*53/i)
 })
 
-test('gallery white plus action stays black and removes its orange halo', () => {
-  const base = effectiveRule(themeCss, '.plus-btn')
-  const halo = effectiveRule(themeCss, '.plus-btn::before')
-  const hover = effectiveRule(themeCss, '.plus-btn:hover')
-
-  assert.match(base, /background:\s*var\(--ui-ink\)\s*!important/)
-  assert.match(base, /box-shadow:\s*none\s*!important/)
-  assert.match(base, /animation:\s*none\s*!important/)
-  assert.match(halo, /display:\s*none\s*!important/)
-  assert.match(halo, /animation:\s*none\s*!important/)
-  assert.match(hover, /background:\s*var\(--ui-ink\)\s*!important/)
-  assert.match(hover, /box-shadow:\s*none\s*!important/)
-  assert.doesNotMatch(base + halo + hover, /(?:linear|radial)-gradient|#ff6b35|#ff6748|#e3472f|255\s*,\s*107\s*,\s*53|255\s*,\s*95\s*,\s*63/i)
-})
-
-test('gallery white final header and badge use neutral framing with a solid signal', () => {
-  const header = effectiveRule(themeCss, '.final-header')
-  const badge = effectiveRule(themeCss, '.final-badge')
-
-  assert.match(header, /background:\s*var\(--ui-surface\)\s*!important/)
-  assert.match(header, /border-color:\s*var\(--ui-divider\)\s*!important/)
-  assert.match(header, /box-shadow:\s*none\s*!important/)
-  assert.doesNotMatch(header, /(?:linear|radial)-gradient|#ff6b35|255\s*,\s*107\s*,\s*53/i)
-  assert.match(badge, /background:\s*var\(--ui-accent\)\s*!important/)
-  assert.match(badge, /box-shadow:\s*none\s*!important/)
-  assert.doesNotMatch(badge, /(?:linear|radial)-gradient|rgba\(255\s*,\s*107\s*,\s*53/i)
-})
-
-test('gallery white empty and highlighted cards use static neutral treatment', () => {
+test('gallery white empty cards use static neutral treatment', () => {
   const create = effectiveRule(themeCss, '.empty-state-illustration.create')
-  const use = effectiveRule(themeCss, '.empty-state-illustration.use')
-  const highlighted = effectiveRule(themeCss, '.use-card-highlighted')
 
-  for (const rule of [create, use]) {
-    assert.match(rule, /background:\s*var\(--ui-fill\)\s*!important/)
-    assert.match(rule, /color:\s*var\(--ui-text-tertiary\)\s*!important/)
-    assert.match(rule, /box-shadow:\s*none\s*!important/)
-    assert.doesNotMatch(rule, /(?:linear|radial)-gradient|#ff6b35|#3b82f6|255\s*,\s*107\s*,\s*53/i)
-  }
-  assert.match(highlighted, /animation:\s*none\s*!important/)
-  assert.match(highlighted, /box-shadow:\s*none\s*!important/)
+  assert.match(create, /background:\s*var\(--ui-fill\)\s*!important/)
+  assert.match(create, /color:\s*var\(--ui-text-tertiary\)\s*!important/)
+  assert.match(create, /box-shadow:\s*none\s*!important/)
+  assert.doesNotMatch(create, /(?:linear|radial)-gradient|#ff6b35|#3b82f6|255\s*,\s*107\s*,\s*53/i)
 })
 
 test('gallery white workbench phase dots use solid semantic signals without glow', () => {
@@ -436,11 +392,6 @@ test('gallery white C keeps persistent interior cards pure white and border-only
     assert.match(rule, /box-shadow:\s*none\s*!important/)
   }
 
-  assert.match(
-    effectiveSelectorListRule(themeCss, '.final-list-area'),
-    /background:\s*var\(--ui-surface\)\s*!important/,
-  )
-
   const solutionStyle = vueStyle('components/SolutionCenter.vue')
   for (const selector of ['.custom-field-item.active', '.custom-field-item.drag-over']) {
     assert.match(effectiveRule(solutionStyle, selector), /border-color:\s*var\(--ui-accent\)/)
@@ -462,8 +413,6 @@ test('gallery white C card hover uses only a stronger neutral border', () => {
     '.intercom-card:hover',
     '.published-solution-item:hover',
     '.solution-list-item:hover',
-    '.intercom-list-item:hover',
-    '.solution-use-card:hover',
     '.cf-use-card:hover',
     '.custom-field-item:hover:not(.active):not(.drag-over)',
     '#app .tc-history-item:hover',
@@ -559,7 +508,6 @@ test('solution center uses Apple-style borderless search and crisp segmented con
 
 test('gallery white C preserves combined selected, drag, ready, and disabled states', () => {
   for (const selector of [
-    '.intercom-list-item.is-selected',
     '.cf-use-card.drag-over',
     '.cf-use-card.cf-use-card-active:hover',
     '.cf-use-card.drag-over:hover',

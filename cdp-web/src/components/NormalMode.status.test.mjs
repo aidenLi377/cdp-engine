@@ -26,11 +26,9 @@ test('right panel crowd name header does not repeat the workbench phase status',
 
 test('custom field dialog can resolve persisted node display names', () => {
   const customFieldDialogVue = readFileSync(join(currentDir, 'CustomFieldEditDialog.vue'), 'utf8')
-  const solutionUseFormVue = readFileSync(join(currentDir, 'SolutionUseForm.vue'), 'utf8')
 
   assert.match(customFieldDialogVue, /getNodeDisplayNameById/)
   assert.match(customFieldDialogVue, /return getNodeDisplayNameById\(props\.nodeList \|\| \[\], nodeId\)/)
-  assert.match(solutionUseFormVue, /binding\.nodeDisplayName \|\| binding\.packageType/)
 })
 
 test('derived solution sessions clearly state free editing without mutating the published source', () => {

@@ -29,7 +29,7 @@ test('left panel search inputs use a line icon instead of emoji prefixes', () =>
 test('workbench scroll lists reserve room for native scrollbars', () => {
   assert.match(css, /\.btn-group,[\s\S]*?\.published-solution-list,[\s\S]*?scrollbar-gutter: stable;/)
   assert.match(css, /\.btn-group,[\s\S]*?\.published-solution-list,[\s\S]*?padding-right: 12px;/)
-  assert.match(css, /\.published-solution-item,[\s\S]*?\.intercom-list-item,[\s\S]*?box-sizing: border-box;/)
+  assert.match(css, /\.published-solution-item,[\s\S]*?\.summary-node \{[^}]*box-sizing: border-box;/)
 })
 
 test('package library omits redundant mode explanations', () => {

@@ -57,6 +57,9 @@ const authState = ref('checking')
 const currentUser = ref(null)
 let healthTimer = null
 let sessionTimer = null
+let healthCheckInFlight = false
+let sessionCheckInFlight = false
+let isDisposed = false
 
 const userInitial = computed(() => {
   const label = currentUser.value?.displayName || currentUser.value?.username || 'U'
@@ -64,25 +67,42 @@ const userInitial = computed(() => {
 })
 
 const checkHealth = async () => {
+  if (healthCheckInFlight) return
+  healthCheckInFlight = true
   try {
     const res = await fetch('/api/health', { signal: AbortSignal.timeout(5000) })
     backendOnline.value = res.ok
   } catch {
     backendOnline.value = false
+  } finally {
+    healthCheckInFlight = false
   }
 }
 
-function startHealthLoop() {
+function stopAuthenticatedLoops() {
+  clearInterval(healthTimer)
+  clearInterval(sessionTimer)
+  healthTimer = null
+  sessionTimer = null
+}
+
+function startAuthenticatedLoops() {
+  stopAuthenticatedLoops()
+  if (document.hidden || authState.value !== 'authenticated') return
   checkHealth()
   healthTimer = setInterval(checkHealth, 30000)
+  sessionTimer = setInterval(checkSession, 60000)
 }
 
 async function checkSession() {
+  if (sessionCheckInFlight) return
+  sessionCheckInFlight = true
   try {
     const response = await fetch('/api/auth/me')
     if (!response.ok) {
       currentUser.value = null
       authState.value = 'guest'
+      stopAuthenticatedLoops()
       return
     }
     const data = await response.json()
@@ -91,42 +111,58 @@ async function checkSession() {
   } catch {
     currentUser.value = null
     authState.value = 'guest'
+    stopAuthenticatedLoops()
+  } finally {
+    sessionCheckInFlight = false
   }
 }
 
 function handleAuthenticated(user) {
   currentUser.value = user
   authState.value = 'authenticated'
+  startAuthenticatedLoops()
 }
 
 function handleAuthRequired() {
   currentUser.value = null
   authState.value = 'guest'
+  stopAuthenticatedLoops()
+}
+
+async function handleVisibilityChange() {
+  if (document.hidden) {
+    stopAuthenticatedLoops()
+    return
+  }
+  if (authState.value !== 'authenticated') return
+
+  await checkSession()
+  if (!isDisposed && authState.value === 'authenticated') startAuthenticatedLoops()
 }
 
 async function logout() {
   try {
     await fetch('/api/auth/logout', { method: 'POST' })
   } finally {
+    stopAuthenticatedLoops()
     currentUser.value = null
     authState.value = 'guest'
     appMode.value = 'workbench'
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('cdp:auth-required', handleAuthRequired)
-  startHealthLoop()
-  checkSession()
-  sessionTimer = setInterval(() => {
-    if (authState.value === 'authenticated') checkSession()
-  }, 60000)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  await checkSession()
+  if (!isDisposed && authState.value === 'authenticated') startAuthenticatedLoops()
 })
 
 onBeforeUnmount(() => {
+  isDisposed = true
   window.removeEventListener('cdp:auth-required', handleAuthRequired)
-  clearInterval(healthTimer)
-  clearInterval(sessionTimer)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  stopAuthenticatedLoops()
 })
 </script>
 
