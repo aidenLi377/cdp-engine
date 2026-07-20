@@ -80,17 +80,130 @@ class CdpApiTests(unittest.TestCase):
     def test_generate_category_json(self):
         payload = {
             "_package": "类目公域行为",
-            "bhv": ["浏览", "购买"],
+            "bhv": ["购买"],
+            "leafCates": ["美容护肤/美体/精油>乳液/面霜"],
+            "stdBrand": ["CPB/肌肤之钥"],
             "channel": ["天猫"],
-            "time": {"val": {"days": 30}, "min": "recent"},
+            "frequency": {"min": "", "max": ""},
+            "price": {"min": "", "max": ""},
+            "itemprice": {"min": "", "max": ""},
+            "time": {
+                "val": {"start": "20260501", "end": "20260621"},
+                "min": "range",
+            },
         }
         response = self.client.post("/api/generate", json=payload)
         data = response.get_json()
         self.assertEqual(response.status_code, 200)
-        self.assertIn("list", data)
-        self.assertEqual(data["compute"], "(0)")
-        self.assertTrue(data["list"])
-        self.assertIn("selectionLv3", data["list"][0])
+        expected = {
+            "crowdName": "未命名",
+            "list": [
+                {
+                    "selectionLv1": ["COMMON_TOUCH", "PUBLIC_CATE_BHV"],
+                    "selectionLv3": {
+                        "extraFilters": {
+                            "channel": ["16772#|#4"],
+                            "stdBrand": ["18641319"],
+                            "frequency": {"op": "OPEN_OPEN"},
+                            "price": {"op": "OPEN_OPEN"},
+                            "itemprice": {"op": "OPEN_OPEN"},
+                        },
+                        "leafCates": ["50011980#|#50011980"],
+                        "bhv": ["18919#|#CATE_PUBLIC_PAY"],
+                        "dateType": "ABSOLUTE_DATE_RANGE",
+                        "dateValue": {"from": "20260501", "to": "20260621"},
+                    },
+                    "fromPoolId": 0,
+                }
+            ],
+            "compute": "(0)",
+        }
+        self.assertEqual(data, expected)
+        self.assertEqual(list(data["list"][0]), ["selectionLv1", "selectionLv3", "fromPoolId"])
+        self.assertEqual(
+            list(data["list"][0]["selectionLv3"]),
+            ["extraFilters", "leafCates", "bhv", "dateType", "dateValue"],
+        )
+        self.assertEqual(
+            list(data["list"][0]["selectionLv3"]["extraFilters"]),
+            ["channel", "stdBrand", "frequency", "price", "itemprice"],
+        )
+        response_text = response.get_data(as_text=True)
+        self.assertLess(response_text.index('"selectionLv1"'), response_text.index('"selectionLv3"'))
+        self.assertLess(response_text.index('"selectionLv3"'), response_text.index('"fromPoolId"'))
+
+    def test_generate_commodity_json(self):
+        payload = {
+            "_package": "商品行为",
+            "channel": "天猫",
+            "shop": "SHISEIDO资生堂官方旗舰店",
+            "bhv": ["购买"],
+            "frequency": {"min": "", "max": ""},
+            "money": {"min": "", "max": ""},
+            "cate": "全部",
+            "time": {
+                "val": {"start": "20260501", "end": "20260621"},
+                "min": "range",
+            },
+            "selectedGoodsType": "任意品牌商品",
+        }
+        response = self.client.post("/api/generate", json=payload)
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        expected = {
+            "crowdName": "未命名",
+            "list": [
+                {
+                    "selectionLv1": ["COMMODITY", "ITEM"],
+                    "selectionLv3": {
+                        "shop": "113498758#|#113498758",
+                        "keywords": None,
+                        "cate": "ALL",
+                        "bhv": ["16709#|#PAY"],
+                        "frequency": {"op": "OPEN_OPEN"},
+                        "money": {"op": "OPEN_OPEN"},
+                        "dateType": "ABSOLUTE_DATE_RANGE",
+                        "dateValue": {"from": "20260501", "to": "20260621"},
+                        "selectedGoodsType": "1",
+                    },
+                    "tipProperty": None,
+                    "fromPoolId": 0,
+                    "selectionLv2": ["16612#|#4"],
+                    "selectionLv2Name": "天猫",
+                }
+            ],
+            "compute": "(0)",
+        }
+        self.assertEqual(data, expected)
+        self.assertEqual(
+            list(data["list"][0]),
+            [
+                "selectionLv1",
+                "selectionLv3",
+                "tipProperty",
+                "fromPoolId",
+                "selectionLv2",
+                "selectionLv2Name",
+            ],
+        )
+        self.assertEqual(
+            list(data["list"][0]["selectionLv3"]),
+            [
+                "shop",
+                "keywords",
+                "cate",
+                "bhv",
+                "frequency",
+                "money",
+                "dateType",
+                "dateValue",
+                "selectedGoodsType",
+            ],
+        )
+        response_text = response.get_data(as_text=True)
+        self.assertLess(response_text.index('"selectionLv1"'), response_text.index('"selectionLv3"'))
+        self.assertLess(response_text.index('"selectionLv3"'), response_text.index('"tipProperty"'))
+        self.assertLess(response_text.index('"tipProperty"'), response_text.index('"fromPoolId"'))
 
     def test_generate_alias_json(self):
         payload = {

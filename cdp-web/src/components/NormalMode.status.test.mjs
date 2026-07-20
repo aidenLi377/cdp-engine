@@ -31,6 +31,19 @@ test('custom field dialog can resolve persisted node display names', () => {
   assert.match(customFieldDialogVue, /return getNodeDisplayNameById\(props\.nodeList \|\| \[\], nodeId\)/)
 })
 
+test('DataBank automation leaves more headroom than the extension bridge timeout', () => {
+  assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 70000/)
+})
+
+test('official parity outputs use the official default name and tab indentation', () => {
+  assert.match(normalModeVue, /const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'/)
+  assert.match(normalModeVue, /const COMMODITY_PACKAGE = '商品行为'/)
+  assert.match(normalModeVue, /const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'/)
+  assert.match(normalModeVue, /isPureOfficialParityOutput\(\) \? OFFICIAL_DEFAULT_CROWD_NAME : DEFAULT_CROWD_NAME/)
+  assert.match(normalModeVue, /\[CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE\]\.includes\(packageType\)/)
+  assert.match(normalModeVue, /JSON\.stringify\(generatedJson\.value, null, isPureOfficialParityOutput\(\) \? '\\t' : 4\)/)
+})
+
 test('derived solution sessions clearly state free editing without mutating the published source', () => {
   assert.doesNotMatch(normalModeVue, /当前内容可自由编辑，不影响原正式方案/)
   assert.match(normalModeVue, /当前内容已偏离原方案结构/)
@@ -71,6 +84,10 @@ test('crowd naming stays manual while runtime JSON keeps an unnamed fallback', (
   assert.ok(buildFinalJson, 'runtime JSON builder should exist')
   assert.match(
     buildFinalJson,
-    /crowdName: String\(crowdNameInput\.value \|\| ''\)\.trim\(\) \|\| DEFAULT_CROWD_NAME/,
+    /crowdName: String\(crowdNameInput\.value \|\| ''\)\.trim\(\) \|\| \(/,
+  )
+  assert.match(
+    buildFinalJson,
+    /isPureOfficialParityOutput\(\) \? OFFICIAL_DEFAULT_CROWD_NAME : DEFAULT_CROWD_NAME/,
   )
 })

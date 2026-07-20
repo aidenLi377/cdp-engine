@@ -25,6 +25,7 @@ class FakeElement {
     this.parentElement = null
     this.children = []
     this.value = ''
+    this.isConnected = true
   }
 
   appendChild(child) {
@@ -32,13 +33,12 @@ class FakeElement {
     this.children.push(child)
   }
 
-  querySelectorAll(tagName) {
-    const wantedTag = String(tagName || '').toUpperCase()
+  querySelectorAll(selector) {
     const results = []
 
     function visit(node) {
       for (const child of node.children) {
-        if (child.tagName === wantedTag) {
+        if (matchesSelector(child, selector)) {
           results.push(child)
         }
         visit(child)
@@ -64,7 +64,10 @@ class FakeElement {
     this.attributes.set(name, String(value))
   }
 
-  dispatchEvent(_event) {}
+  dispatchEvent(event) {
+    this.onDispatchEvent?.(event)
+    return true
+  }
 
   focus() {}
 
@@ -101,6 +104,14 @@ class FakeTextareaElement extends FakeElement {
   constructor() {
     super('textarea', '')
   }
+
+  get value() {
+    return this._value || ''
+  }
+
+  set value(nextValue) {
+    this._value = String(nextValue ?? '')
+  }
 }
 
 class FakeInputElement extends FakeElement {
@@ -109,55 +120,120 @@ class FakeInputElement extends FakeElement {
   }
 }
 
-function createContentHarness() {
+function matchesSelector(node, selector) {
+  return String(selector || '')
+    .split(',')
+    .map((item) => item.trim())
+    .some((item) => {
+      if (item === '[role="button"]') return node.getAttribute?.('role') === 'button'
+      return node.tagName === item.toUpperCase()
+    })
+}
+
+function createContentHarness(options = {}) {
   let now = 0
   let runtimeListener = null
   let dialogOpen = false
   let followupDialogOpen = false
+  let confirmClickCount = 0
+  let frameworkInputAccepted = false
+  let rerenderCount = 0
 
   const trigger = new FakeElement('span', '参数粘贴')
-  const dialogRoot = new FakeElement('div')
-  dialogRoot.className = 'el-dialog'
-  dialogRoot.setAttribute('role', 'dialog')
-  const textarea = new FakeTextareaElement()
-  const dialogConfirm = new FakeButtonElement('确定')
-  dialogRoot.appendChild(textarea)
-  dialogRoot.appendChild(dialogConfirm)
-
   const unrelatedConfirm = new FakeButtonElement('确定')
   const followupDialogRoot = new FakeElement('div')
   followupDialogRoot.className = 'el-dialog'
   followupDialogRoot.setAttribute('role', 'dialog')
+  followupDialogRoot.isConnected = false
   const followupTextarea = new FakeTextareaElement()
   const followupConfirm = new FakeButtonElement('确定')
   followupDialogRoot.appendChild(followupTextarea)
   followupDialogRoot.appendChild(followupConfirm)
 
+  let dialogRoot = null
+  let textarea = null
+  let dialogConfirm = null
+
+  function setConfirmEnabled(node, enabled) {
+    if (node instanceof FakeButtonElement) node.disabled = !enabled
+    node.setAttribute('aria-disabled', enabled ? 'false' : 'true')
+  }
+
+  function buildImportDialog(initialValue = '') {
+    const root = new FakeElement('div')
+    root.className = 'el-dialog'
+    root.setAttribute('role', 'dialog')
+
+    const nextTextarea = new FakeTextareaElement()
+    nextTextarea._value = String(initialValue)
+    let trackedValue = nextTextarea.value
+    if (options.controlledTextarea) {
+      Object.defineProperty(nextTextarea, 'value', {
+        configurable: true,
+        get() {
+          return this._value || ''
+        },
+        set(nextValue) {
+          this._value = String(nextValue ?? '')
+          trackedValue = this._value
+        },
+      })
+    }
+
+    const nextConfirm = options.confirmRoleButton
+      ? new FakeElement('div', options.confirmText || '确认')
+      : new FakeButtonElement(options.confirmText || '确定')
+    if (options.confirmRoleButton) nextConfirm.setAttribute('role', 'button')
+    setConfirmEnabled(nextConfirm, !options.confirmInitiallyDisabled)
+
+    root.appendChild(nextTextarea)
+    root.appendChild(nextConfirm)
+
+    nextTextarea.onDispatchEvent = (event) => {
+      if (event.type !== 'input') return
+      const inputAccepted = !options.controlledTextarea || trackedValue !== nextTextarea.value
+      if (!inputAccepted) return
+      frameworkInputAccepted = true
+      trackedValue = nextTextarea.value
+      if (options.enableConfirmOnAcceptedInput) setConfirmEnabled(nextConfirm, true)
+      if (options.rerenderOnAcceptedInput && rerenderCount === 0) {
+        root.isConnected = false
+        rerenderCount += 1
+        const replacement = buildImportDialog(nextTextarea.value)
+        dialogRoot = replacement.root
+        textarea = replacement.textarea
+        dialogConfirm = replacement.confirm
+      }
+    }
+
+    nextConfirm.click = () => {
+      confirmClickCount += 1
+      root.isConnected = false
+      dialogOpen = false
+      followupDialogOpen = true
+      followupDialogRoot.isConnected = true
+    }
+
+    return { root, textarea: nextTextarea, confirm: nextConfirm }
+  }
+
+  const initialDialog = buildImportDialog()
+  dialogRoot = initialDialog.root
+  textarea = initialDialog.textarea
+  dialogConfirm = initialDialog.confirm
+  dialogRoot.isConnected = false
+
   trigger.click = () => {
     dialogOpen = true
-  }
-  dialogConfirm.click = () => {
-    dialogOpen = false
-    followupDialogOpen = true
+    dialogRoot.isConnected = true
   }
 
   const document = {
-    querySelectorAll(tagName) {
-      const tag = String(tagName || '').toLowerCase()
-      if (tag === 'span') return [trigger]
-      if (tag === 'textarea') {
-        const textareas = []
-        if (dialogOpen) textareas.push(textarea)
-        if (followupDialogOpen) textareas.push(followupTextarea)
-        return textareas
-      }
-      if (tag === 'button') {
-        const buttons = [unrelatedConfirm]
-        if (dialogOpen) buttons.push(dialogConfirm)
-        if (followupDialogOpen) buttons.push(followupConfirm)
-        return buttons
-      }
-      return []
+    querySelectorAll(selector) {
+      const nodes = [trigger, unrelatedConfirm]
+      if (dialogOpen) nodes.push(textarea, dialogConfirm)
+      if (followupDialogOpen) nodes.push(followupTextarea, followupConfirm)
+      return nodes.filter((node) => matchesSelector(node, selector))
     },
     evaluate(xpath) {
       const node =
@@ -212,6 +288,9 @@ function createContentHarness() {
     Date: { now: () => now },
     setTimeout(callback, delay = 0) {
       now += Number(delay) || 0
+      if (dialogOpen && options.enableConfirmAfterMs != null && now >= options.enableConfirmAfterMs) {
+        setConfirmEnabled(dialogConfirm, true)
+      }
       queueMicrotask(callback)
       return now
     },
@@ -230,6 +309,14 @@ function createContentHarness() {
 
   return {
     sendAutomationMessage,
+    getState() {
+      return {
+        confirmClickCount,
+        frameworkInputAccepted,
+        rerenderCount,
+        now,
+      }
+    },
   }
 }
 
@@ -253,4 +340,68 @@ test('content automation succeeds after the original import dialog closes even i
   })
 
   assert.equal(response.ok, true)
+})
+
+test('content automation waits for a visible disabled confirm button to become enabled', async () => {
+  const harness = createContentHarness({
+    confirmInitiallyDisabled: true,
+    enableConfirmAfterMs: 500,
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"delayed"}',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(harness.getState().confirmClickCount, 1)
+  assert.ok(harness.getState().now >= 500)
+  assert.ok(response.trail.some((entry) => entry.step === 'confirm_button_ready'))
+})
+
+test('content automation uses the native textarea setter so controlled input enables confirm', async () => {
+  const harness = createContentHarness({
+    controlledTextarea: true,
+    confirmInitiallyDisabled: true,
+    enableConfirmOnAcceptedInput: true,
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"controlled"}',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(harness.getState().frameworkInputAccepted, true)
+  assert.equal(harness.getState().confirmClickCount, 1)
+})
+
+test('content automation reacquires a rerendered dialog and accepts a 确认 role button', async () => {
+  const harness = createContentHarness({
+    controlledTextarea: true,
+    rerenderOnAcceptedInput: true,
+    confirmRoleButton: true,
+    confirmText: '确认',
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"rerendered"}',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(harness.getState().rerenderCount, 1)
+  assert.equal(harness.getState().confirmClickCount, 1)
+})
+
+test('content automation reports a visible disabled button instead of claiming it is missing', async () => {
+  const harness = createContentHarness({ confirmInitiallyDisabled: true })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"blocked"}',
+  })
+
+  assert.equal(response.ok, false)
+  assert.match(response.error, /确认按钮可见但未启用/)
 })

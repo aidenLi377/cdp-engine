@@ -49,6 +49,52 @@ export function normalizeResultRow(row) {
   }
 }
 
+export function orderTagIdsByDictionary(tagIds, dictionary) {
+  const selectedIds = Array.isArray(tagIds) ? tagIds.map(String) : []
+  const selectedSet = new Set(selectedIds)
+  const orderedIds = []
+  const addedIds = new Set()
+
+  for (const tag of Array.isArray(dictionary) ? dictionary : []) {
+    const tagId = String(tag?.tagId ?? '')
+    if (!tagId || !selectedSet.has(tagId) || addedIds.has(tagId)) continue
+    orderedIds.push(tagId)
+    addedIds.add(tagId)
+  }
+
+  for (const tagId of selectedIds) {
+    if (addedIds.has(tagId)) continue
+    orderedIds.push(tagId)
+    addedIds.add(tagId)
+  }
+
+  return orderedIds
+}
+
+export function orderResultRowsByDictionary(rows, dictionary) {
+  const sourceRows = Array.isArray(rows) ? rows : []
+  const tagOrder = new Map()
+
+  for (const tag of Array.isArray(dictionary) ? dictionary : []) {
+    const tagName = String(tag?.tagName ?? '')
+    if (tagName && !tagOrder.has(tagName)) tagOrder.set(tagName, tagOrder.size)
+  }
+
+  return sourceRows
+    .map((row, sourceIndex) => ({ row, sourceIndex }))
+    .sort((left, right) => {
+      const leftOrder = tagOrder.get(String(left.row?.['标签名称'] ?? ''))
+      const rightOrder = tagOrder.get(String(right.row?.['标签名称'] ?? ''))
+      const leftKnown = leftOrder !== undefined
+      const rightKnown = rightOrder !== undefined
+
+      if (leftKnown && rightKnown && leftOrder !== rightOrder) return leftOrder - rightOrder
+      if (leftKnown !== rightKnown) return leftKnown ? -1 : 1
+      return left.sourceIndex - right.sourceIndex
+    })
+    .map(({ row }) => row)
+}
+
 export function visibleResultColumns(_rows, visibility) {
   const columnVisibility = visibility || defaultColumnVisibility()
   return DMP_RESULT_COLUMNS.filter((column) => columnVisibility[column] !== false)

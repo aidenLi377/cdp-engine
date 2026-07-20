@@ -44,6 +44,44 @@ class BatchGenerateResult:
 
 
 class ConfigEngine:
+    CATEGORY_PUBLIC_PACKAGE = "类目公域行为"
+    COMMODITY_PACKAGE = "商品行为"
+    OFFICIAL_ORDERED_PACKAGES = (CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE)
+    CATEGORY_PUBLIC_TOP_LEVEL_ORDER = ("selectionLv1", "selectionLv3", "fromPoolId")
+    CATEGORY_PUBLIC_SELECTION_LV3_ORDER = (
+        "extraFilters",
+        "leafCates",
+        "bhv",
+        "dateType",
+        "dateValue",
+    )
+    CATEGORY_PUBLIC_EXTRA_FILTER_ORDER = (
+        "channel",
+        "stdBrand",
+        "frequency",
+        "price",
+        "itemprice",
+    )
+    COMMODITY_TOP_LEVEL_ORDER = (
+        "selectionLv1",
+        "selectionLv3",
+        "tipProperty",
+        "fromPoolId",
+        "selectionLv2",
+        "selectionLv2Name",
+    )
+    COMMODITY_SELECTION_LV3_ORDER = (
+        "shop",
+        "keywords",
+        "cate",
+        "bhv",
+        "frequency",
+        "money",
+        "dateType",
+        "dateValue",
+        "selectedGoodsType",
+    )
+
     def __init__(self, logger: logging.Logger | None = None, validate_on_load: bool = True):
         self.logger = logger or logging.getLogger(__name__)
         self._meta_cache: dict[str, dict[str, Any]] = {}
@@ -375,13 +413,70 @@ class ConfigEngine:
             base_template["selectionLv3"] = {}
 
         base_template["fromPoolId"] = 0
-        if "channel" in payload:
+        if "channel" in payload and current_pkg != self.CATEGORY_PUBLIC_PACKAGE:
             channel_val = payload["channel"]
             base_template["selectionLv2Name"] = (
                 channel_val[0] if isinstance(channel_val, list) and channel_val else str(channel_val)
             )
 
+        if current_pkg == self.CATEGORY_PUBLIC_PACKAGE:
+            base_template = self._canonicalize_category_public(base_template)
+        elif current_pkg == self.COMMODITY_PACKAGE:
+            base_template = self._canonicalize_commodity(base_template)
+
         return {"crowdName": "未命名", "list": [base_template], "compute": "(0)"}
+
+    @classmethod
+    def _canonicalize_category_public(cls, base_template: dict[str, Any]) -> dict[str, Any]:
+        canonical = dict(base_template)
+        canonical.pop("selectionLv2Name", None)
+
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            selection_lv3 = dict(selection_lv3)
+            extra_filters = selection_lv3.get("extraFilters")
+            if isinstance(extra_filters, dict):
+                selection_lv3["extraFilters"] = cls._order_mapping(
+                    extra_filters,
+                    cls.CATEGORY_PUBLIC_EXTRA_FILTER_ORDER,
+                )
+            canonical["selectionLv3"] = cls._order_mapping(
+                selection_lv3,
+                cls.CATEGORY_PUBLIC_SELECTION_LV3_ORDER,
+            )
+
+        return cls._order_mapping(canonical, cls.CATEGORY_PUBLIC_TOP_LEVEL_ORDER)
+
+    @classmethod
+    def _canonicalize_commodity(cls, base_template: dict[str, Any]) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if not isinstance(selection_lv3, dict):
+            selection_lv3 = {}
+        else:
+            selection_lv3 = dict(selection_lv3)
+
+        selection_lv3.setdefault("keywords", None)
+        if selection_lv3.get("cate") in [None, "", "全部"]:
+            selection_lv3["cate"] = "ALL"
+        canonical["selectionLv3"] = cls._order_mapping(
+            selection_lv3,
+            cls.COMMODITY_SELECTION_LV3_ORDER,
+        )
+        canonical.setdefault("tipProperty", None)
+
+        return cls._order_mapping(canonical, cls.COMMODITY_TOP_LEVEL_ORDER)
+
+    @staticmethod
+    def _order_mapping(source: dict[str, Any], preferred_order: tuple[str, ...]) -> dict[str, Any]:
+        ordered: dict[str, Any] = {}
+        for key in preferred_order:
+            if key in source:
+                ordered[key] = source[key]
+        for key, value in source.items():
+            if key not in ordered:
+                ordered[key] = value
+        return ordered
 
     def _load_base_template(self, package_name: str) -> dict[str, Any]:
         package_rows = self.params_df[

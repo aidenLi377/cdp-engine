@@ -19,6 +19,8 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DATAHUB_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[1]/span/span/span[1]/input';
   const DATAHUB_STATUS_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[2]/div[1]/section/div[1]/div/div/div/div/div/table/tbody/tr[1]/td[5]/div/span';
   const DIALOG_ROOT_SELECTORS = '[role="dialog"], .el-dialog, .el-overlay-dialog, .next-dialog, .ant-modal, .ui-dialog';
+  const CONFIRM_CONTROL_SELECTOR = 'button, [role="button"]';
+  const CONFIRM_CONTROL_TEXTS = ['确定', '确认'];
   let pendingManualApplyControl = null;
 
   function getNodeByXpath(xpath) {
@@ -55,6 +57,20 @@ if (!window.__databankAutomationContentScriptLoaded) {
     ) || null;
   }
 
+  function isConfirmControl(node) {
+    if (!node) return false;
+    const text = String(node.textContent || '').replace(/\s+/g, '');
+    return CONFIRM_CONTROL_TEXTS.some((label) => text.includes(label));
+  }
+
+  function getVisibleConfirmControlWithin(root) {
+    if (!root || typeof root.querySelectorAll !== 'function') return null;
+    const visibleControls = Array.from(root.querySelectorAll(CONFIRM_CONTROL_SELECTOR)).filter(
+      (node) => isNodeVisible(node) && isConfirmControl(node)
+    );
+    return visibleControls.find((node) => isNodeInteractive(node)) || visibleControls[0] || null;
+  }
+
   function getVisibleTextareas() {
     return Array.from(document.querySelectorAll('textarea')).filter(
       (node) => isNodeVisible(node) && !node.readOnly && !node.disabled
@@ -87,31 +103,76 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   function isDialogRootActive(dialogRoot) {
     if (!isNodeVisible(dialogRoot)) return false;
+    if ('isConnected' in dialogRoot && !dialogRoot.isConnected) return false;
     const textareaNode = typeof dialogRoot.querySelectorAll === 'function'
       ? Array.from(dialogRoot.querySelectorAll('textarea')).find((node) => isNodeInteractive(node)) || null
       : null;
     if (textareaNode) return true;
-    const confirmNode = getVisibleNodeByTextWithin(dialogRoot, 'button', '确定');
-    return isNodeInteractive(confirmNode);
+    return Boolean(getVisibleConfirmControlWithin(dialogRoot));
   }
 
-  function getVisibleDialogConfirmNode() {
-    const xpathNode = getNodeByXpath(DATABANK_CONFIRM_XPATH);
-    if (isNodeInteractive(xpathNode)) return xpathNode;
-    const textareaNode = getVisibleTextareaNode();
-    const dialogRoot = getDialogRoot(textareaNode) || getVisibleDialogRoot();
-    if (dialogRoot) {
-      const scopedConfirmNode = getVisibleNodeByTextWithin(dialogRoot, 'button', '确定');
-      if (isNodeInteractive(scopedConfirmNode)) return scopedConfirmNode;
+  function getVisibleDialogConfirmNode(dialogRoot) {
+    const activeDialogRoot = isNodeVisible(dialogRoot) ? dialogRoot : getVisibleDialogRoot();
+    if (activeDialogRoot) {
+      const scopedConfirmNode = getVisibleConfirmControlWithin(activeDialogRoot);
+      if (scopedConfirmNode) return scopedConfirmNode;
     }
+    const xpathNode = getNodeByXpath(DATABANK_CONFIRM_XPATH);
+    if (isNodeVisible(xpathNode) && (!activeDialogRoot || getDialogRoot(xpathNode) === activeDialogRoot)) return xpathNode;
     return null;
   }
 
-  function getVisibleConfirmNode() {
-    const dialogConfirmNode = getVisibleDialogConfirmNode();
+  function getVisibleConfirmNode(dialogRoot) {
+    const dialogConfirmNode = getVisibleDialogConfirmNode(dialogRoot);
     if (dialogConfirmNode) return dialogConfirmNode;
-    const globalConfirmNode = getVisibleNodeByText('button', '确定');
-    return isNodeInteractive(globalConfirmNode) ? globalConfirmNode : null;
+    if (dialogRoot) return null;
+    const visibleControls = Array.from(document.querySelectorAll(CONFIRM_CONTROL_SELECTOR)).filter(
+      (node) => isNodeVisible(node) && isConfirmControl(node)
+    );
+    return visibleControls.find((node) => isNodeInteractive(node)) || visibleControls[0] || null;
+  }
+
+  function describeConfirmState(node, dialogRoot) {
+    return {
+      dialogFound: Boolean(dialogRoot),
+      buttonFound: Boolean(node),
+      buttonText: node ? String(node.textContent || '').trim() : '',
+      buttonTag: node ? String(node.tagName || '').toLowerCase() : '',
+      buttonRole: node?.getAttribute?.('role') || '',
+      disabled: Boolean(node && (node.disabled || node.readOnly || node.getAttribute?.('aria-disabled') === 'true')),
+    };
+  }
+
+  async function waitForEnabledConfirmButton(textareaNode, textareaValue, timeoutMs, intervalMs) {
+    timeoutMs = timeoutMs || 30000;
+    intervalMs = intervalMs || 250;
+    const deadline = Date.now() + timeoutMs;
+    let lastDialogRoot = getDialogRoot(textareaNode);
+    let lastState = describeConfirmState(null, lastDialogRoot);
+
+    while (Date.now() < deadline) {
+      let liveTextareaNode = getVisibleTextareaNode();
+      if (liveTextareaNode && String(liveTextareaNode.value || '') !== textareaValue) {
+        inputTextarea(liveTextareaNode, textareaValue);
+        liveTextareaNode = getVisibleTextareaNode() || liveTextareaNode;
+      }
+      const liveDialogRoot = getDialogRoot(liveTextareaNode);
+      if (isNodeVisible(liveDialogRoot)) lastDialogRoot = liveDialogRoot;
+      if (!isNodeVisible(lastDialogRoot)) lastDialogRoot = getVisibleDialogRoot();
+
+      const confirmNode = getVisibleConfirmNode(lastDialogRoot);
+      lastState = describeConfirmState(confirmNode, lastDialogRoot);
+      if (confirmNode && isNodeInteractive(confirmNode)) {
+        return { confirmNode, dialogRoot: lastDialogRoot, state: lastState };
+      }
+      await sleep(intervalMs);
+    }
+
+    console.warn('[Databank Automation] confirm button wait timed out', lastState);
+    const reason = lastState.buttonFound
+      ? '确认按钮可见但未启用'
+      : '未找到当前导入弹窗中的确认按钮';
+    throw new Error(reason + '，等待超时');
   }
 
   async function waitForLocator(resolveNode, label, timeoutMs, intervalMs) {
@@ -156,9 +217,26 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   function inputTextarea(node, value) {
     if (typeof node.focus === 'function') node.focus();
-    node.value = value;
-    node.dispatchEvent(new Event('input', { bubbles: true }));
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    if (nativeSetter) nativeSetter.call(node, value);
+    else node.value = value;
+    const InputEventConstructor = typeof InputEvent === 'function' ? InputEvent : Event;
+    node.dispatchEvent(new InputEventConstructor('input', {
+      bubbles: true,
+      composed: true,
+      data: value,
+      inputType: 'insertText',
+    }));
     node.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  async function waitForTextareaValue(initialTextareaNode, value) {
+    return await waitForLocator(() => {
+      const textareaNode = getVisibleTextareaNode() || initialTextareaNode;
+      if (!isNodeInteractive(textareaNode)) return null;
+      if (String(textareaNode.value || '') !== value) inputTextarea(textareaNode, value);
+      return String(textareaNode.value || '') === value ? textareaNode : null;
+    }, '导入内容生效', 10000, 100);
   }
 
   function isAutomationPageReady() {
@@ -240,13 +318,14 @@ if (!window.__databankAutomationContentScriptLoaded) {
     );
     clickNode(triggerNode);
     trail.push({ step: 'clicked_paste' });
-    await sleep(50);
-    const textareaNode = await waitForLocator(() => getVisibleTextareaNode(), '导入输入框');
-    inputTextarea(textareaNode, jsonText);
+    const initialTextareaNode = await waitForLocator(() => getVisibleTextareaNode(), '导入输入框');
+    inputTextarea(initialTextareaNode, jsonText);
+    const textareaNode = await waitForTextareaValue(initialTextareaNode, jsonText);
     trail.push({ step: 'filled_textarea' });
-    await sleep(50);
-    const confirmNode = await waitForLocator(() => getVisibleConfirmNode(), '确定按钮');
-    const importDialogRoot = getDialogRoot(confirmNode) || getDialogRoot(textareaNode) || getVisibleDialogRoot();
+    const confirmResult = await waitForEnabledConfirmButton(textareaNode, jsonText);
+    const confirmNode = confirmResult.confirmNode;
+    const importDialogRoot = confirmResult.dialogRoot || getDialogRoot(confirmNode) || getDialogRoot(textareaNode);
+    trail.push({ step: 'confirm_button_ready', ...confirmResult.state });
     clickNode(confirmNode);
     trail.push({ step: 'clicked_confirm' });
     try {

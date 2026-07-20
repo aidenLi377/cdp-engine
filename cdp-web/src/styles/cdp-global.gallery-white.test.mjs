@@ -178,7 +178,7 @@ test('task center uses neutral surfaces, signal orange, and P1 status colors', (
   assert.doesNotMatch(taskStyle, /(?:linear|radial)-gradient\([^)]*(#ff6b35|255\s*,\s*107\s*,\s*53)/i)
   assert.match(taskStyle, /\.task-center-page\s*\{[\s\S]*background:\s*var\(--ui-canvas\)/)
   assert.match(taskStyle, /\.tc-btn-sm\.is-dmp\s*\{[\s\S]*background:\s*var\(--ui-ink\)/)
-  assert.match(taskStyle, /\.tc-tag-item\.checked\s*\{[\s\S]*background:\s*var\(--ui-surface\)/)
+  assert.match(taskStyle, /\.tc-feature-option\.checked\s*\{[\s\S]*background:\s*transparent/)
   assert.match(taskStyle, /\.tc-phase-step\.current \.tc-phase-dot\s*\{[\s\S]*border-color:\s*var\(--ui-accent\)/)
 })
 
@@ -314,7 +314,7 @@ test('task center disabled actions and tag labels remain opaque and readable', (
   const taskStyle = vueStyle('components/TaskCenter.vue')
   const button = effectiveRule(taskStyle, '.tc-btn-sm:disabled')
   const settings = effectiveRule(taskStyle, '.tc-settings-btn:disabled')
-  const tag = effectiveRule(taskStyle, '.tc-tag-item.disabled')
+  const tag = effectiveRule(taskStyle, '.tc-feature-option.disabled')
 
   assert.match(button, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(button, /color:\s*var\(--ui-text-secondary\)\s*!important/)
@@ -328,33 +328,17 @@ test('task center disabled actions and tag labels remain opaque and readable', (
   assert.match(settings, /border-color:\s*var\(--ui-control-border\)/)
   assert.match(settings, /opacity:\s*1/)
 
-  assert.match(tag, /background:\s*var\(--ui-fill\)/)
-  assert.match(tag, /color:\s*var\(--ui-text-tertiary\)/)
-  assert.match(tag, /border-color:\s*var\(--ui-divider\)/)
+  assert.match(tag, /background:\s*transparent/)
+  assert.match(tag, /color:\s*#ff4d6d/)
+  assert.match(tag, /cursor:\s*not-allowed/)
   assert.match(tag, /opacity:\s*1/)
 
-  const disabledConditionalHover = effectiveRule(taskStyle, '.tc-tag-item.disabled.needCond:hover')
-  assert.match(disabledConditionalHover, /background:\s*var\(--ui-fill\)/)
-  assert.match(disabledConditionalHover, /border-color:\s*var\(--ui-divider\)/)
+  const disabledConditionalHover = effectiveRule(taskStyle, '.tc-feature-option.disabled.needCond:hover')
+  assert.match(disabledConditionalHover, /background:\s*transparent/)
   assert.match(disabledConditionalHover, /transform:\s*none/)
 
-  for (const selector of [
-    '.tc-tag-item.disabled .tc-tag-name',
-    '.tc-tag-item.disabled .tc-tag-check',
-    '.tc-tag-item.disabled .tc-tag-need-cond',
-    '.tc-tag-item.disabled .tc-tag-ready',
-    '.tc-tag-item.disabled .tc-tag-pending',
-  ]) {
-    assert.match(effectiveRule(taskStyle, selector), /color:\s*var\(--ui-text-tertiary\)/)
-  }
-
-  for (const selector of [
-    '.tc-tag-item.disabled .tc-tag-need-cond',
-    '.tc-tag-item.disabled .tc-tag-ready',
-    '.tc-tag-item.disabled .tc-tag-pending',
-  ]) {
-    assert.match(effectiveRule(taskStyle, selector), /background:\s*var\(--ui-surface\)/)
-  }
+  assert.match(effectiveRule(taskStyle, '.tc-tag-name'), /color:\s*inherit/)
+  assert.match(effectiveRule(taskStyle, '.tc-tag-condition'), /font-weight:\s*600/)
 })
 
 test('gallery white keeps full-height three-column rails pure white', () => {
@@ -538,9 +522,8 @@ test('gallery white C preserves combined selected, drag, ready, and disabled sta
   assert.doesNotMatch(readyHover, /(?:^|;)\s*(?:background|border-color)\s*:/)
 
   const taskStyle = vueStyle('components/TaskCenter.vue')
-  const disabledHover = effectiveRule(taskStyle, '.tc-tag-item.disabled.needCond:hover')
-  assert.match(disabledHover, /background:\s*var\(--ui-fill\)/)
-  assert.match(disabledHover, /border-color:\s*var\(--ui-divider\)/)
+  const disabledHover = effectiveRule(taskStyle, '.tc-feature-option.disabled.needCond:hover')
+  assert.match(disabledHover, /background:\s*transparent/)
   assert.match(disabledHover, /transform:\s*none/)
 })
 

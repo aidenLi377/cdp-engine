@@ -575,7 +575,7 @@
         </div>
       </div>
 
-      <pre v-else class="json-code display-mono">{{ JSON.stringify(generatedJson, null, 2) }}</pre>
+      <pre v-else class="json-code display-mono">{{ JSON.stringify(generatedJson, null, isPureOfficialParityOutput() ? '\t' : 2) }}</pre>
     </div>
   </div>
 </template>
@@ -609,12 +609,15 @@ import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '.
 import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
+const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'
+const COMMODITY_PACKAGE = '商品行为'
+const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
 const MAX_HISTORY = 20
 const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
 const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
-const EXTENSION_RESPONSE_TIMEOUT_MS = 45000
+const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
 
 const { getArray, isVisible } = useCdpShared()
 const {
@@ -1537,7 +1540,9 @@ async function buildFinalJson() {
 
   if (buildAbort.signal.aborted) return
   generatedJson.value = {
-    crowdName: String(crowdNameInput.value || '').trim() || DEFAULT_CROWD_NAME,
+    crowdName: String(crowdNameInput.value || '').trim() || (
+      isPureOfficialParityOutput() ? OFFICIAL_DEFAULT_CROWD_NAME : DEFAULT_CROWD_NAME
+    ),
     list,
     compute,
   }
@@ -1619,8 +1624,15 @@ function getNodeSummary(node) {
   return items
 }
 
+function isPureOfficialParityOutput() {
+  if (nodeList.value.length === 0) return false
+  const packageType = nodeList.value[0]?.packageType
+  if (![CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE].includes(packageType)) return false
+  return nodeList.value.every((node) => node.packageType === packageType)
+}
+
 function getGeneratedJsonText() {
-  return JSON.stringify(generatedJson.value, null, 4)
+  return JSON.stringify(generatedJson.value, null, isPureOfficialParityOutput() ? '\t' : 4)
 }
 
 async function copyJson() {

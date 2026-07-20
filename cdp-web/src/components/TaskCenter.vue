@@ -75,7 +75,7 @@
       <!-- 标签选择 -->
       <section class="tc-tags-card">
         <div class="tc-tags-head">
-          <span class="tc-tags-title">可选标签</span>
+          <span class="tc-tags-title">🎛️ 特征大盘</span>
           <span class="tc-tags-count">{{ selectedTags.length }} 个</span>
         </div>
         <div class="tc-tags-search">
@@ -83,25 +83,36 @@
         </div>
         <div class="tc-tags-body">
           <template v-for="group in filteredTagGroups" :key="group.mainCategory">
-            <div class="tc-tag-group" v-if="group.tags.length">
-              <div class="tc-tag-group-name">{{ group.mainCategory }}</div>
-              <div class="tc-tag-group-items">
-                <label
-                  v-for="tag in group.tags" :key="tag.tagId"
-                  class="tc-tag-item"
-                  :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
+            <div class="tc-tag-main" v-if="group.categories.some(category => category.tags.length)">
+              <div class="tc-tag-main-header">📂 {{ group.mainCategory }}</div>
+              <div class="tc-tag-main-body">
+                <div
+                  v-for="category in group.categories"
+                  :key="category.category"
+                  v-show="category.tags.length"
+                  class="tc-tag-category"
                 >
-                  <input type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
-                  <span class="tc-tag-check"></span>
-                  <span class="tc-tag-name">{{ tag.tagName }}</span>
-                  <span class="tc-tag-need-cond" v-if="tag.needCondition">多条件</span>
-                  <span class="tc-tag-ready" v-if="tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds)">已就绪</span>
-                  <span class="tc-tag-pending" v-else-if="tag.needCondition" title="请先在 DMP 页面配置该标签的下钻条件">待配置</span>
-                </label>
+                  <div class="tc-tag-category-name">{{ category.category }}</div>
+                  <div class="tc-tag-options">
+                    <label
+                      v-for="tag in category.tags"
+                      :key="tag.tagId"
+                      class="tc-feature-option"
+                      :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
+                      :title="tag.annotation || (!isTagSelectable(tag) ? '请先在 DMP 页面配置该标签的下钻条件' : '')"
+                    >
+                      <input class="tc-tag-checkbox" type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
+                      <span class="tc-tag-name">{{ tag.tagName }}</span>
+                      <span class="tc-tag-condition" v-if="tag.needCondition">
+                        {{ isConditionalTagReady(tag, dmpSettings.readyTagIds) ? '✅(已就绪)' : '⚙️' }}
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
-          <div class="tc-tags-empty" v-if="!filteredTagGroups.some(g => g.tags.length)">无匹配标签</div>
+          <div class="tc-tags-empty" v-if="!hasFilteredTags">无匹配标签</div>
         </div>
       </section>
     </aside>
@@ -201,12 +212,6 @@
               <el-button size="small" class="tc-history-delete" text @click.stop="deleteHistoryItem(idx)">✕</el-button>
             </div>
             <div class="tc-history-item-detail" v-if="expandedHistory === idx">
-              <div class="tc-history-meta-bar">
-                <span><i>类型</i> {{ task.type === 'databank' ? '数据引擎' : '达摩盘' }}</span>
-                <span><i>人群包</i> {{ task.crowdName }}</span>
-                <span><i>标签数</i> {{ task.tagCount }} 个</span>
-                <span><i>说明</i> {{ task.message }}</span>
-              </div>
               <div class="tc-history-results" v-if="task.status === 'completed' && task.results && task.results.length">
                 <div class="tc-history-results-head">
                   <span class="tc-history-results-title">透视结果</span>
@@ -255,6 +260,8 @@ import {
   isConditionalTagReady,
   normalizeDmpSettings,
   normalizeResultRow,
+  orderResultRowsByDictionary,
+  orderTagIdsByDictionary,
   visibleResultColumns,
 } from '../utils/dmpResults.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
@@ -292,8 +299,17 @@ const phases = ref(dmpPhases)
 
 const tagGroups = computed(() => {
   const map = {}
-  for (const t of tagDictionary) { (map[t.mainCategory || '其他'] || (map[t.mainCategory || '其他'] = [])).push(t) }
-  return Object.entries(map).map(([mainCategory, tags]) => ({ mainCategory, tags }))
+  for (const tag of tagDictionary) {
+    const mainCategory = tag.mainCategory || '其他'
+    const category = tag.category || '其他'
+    if (!map[mainCategory]) map[mainCategory] = {}
+    if (!map[mainCategory][category]) map[mainCategory][category] = []
+    map[mainCategory][category].push(tag)
+  }
+  return Object.entries(map).map(([mainCategory, categories]) => ({
+    mainCategory,
+    categories: Object.entries(categories).map(([category, tags]) => ({ category, tags })),
+  }))
 })
 
 const filteredTagGroups = computed(() => {
@@ -301,9 +317,20 @@ const filteredTagGroups = computed(() => {
   if (!q) return tagGroups.value
   return tagGroups.value.map(g => ({
     ...g,
-    tags: g.tags.filter(t => t.tagName.includes(q) || (t.category || '').includes(q) || (t.mainCategory || '').includes(q)),
+    categories: g.categories.map(category => ({
+      ...category,
+      tags: category.tags.filter(tag => (
+        tag.tagName.toLowerCase().includes(q)
+        || (tag.category || '').toLowerCase().includes(q)
+        || (tag.mainCategory || '').toLowerCase().includes(q)
+      )),
+    })),
   }))
 })
+
+const hasFilteredTags = computed(() => filteredTagGroups.value.some(
+  (group) => group.categories.some((category) => category.tags.length > 0),
+))
 
 const allDmpTags = computed(() => {
   const seen = new Set()
@@ -338,9 +365,11 @@ function userError(msg) {
 
 const normalizedTaskResults = computed(() => normalizeResultRows(taskResults.value))
 const resultColumns = computed(() => visibleResultColumns(normalizedTaskResults.value, dmpSettings.value.columnVisibility))
+const orderedSelectedTagIds = computed(() => orderTagIdsByDictionary(selectedTags.value, tagDictionary))
 
 function normalizeResultRows(results) {
-  return Array.isArray(results) ? results.map(normalizeResultRow) : []
+  const normalizedRows = Array.isArray(results) ? results.map(normalizeResultRow) : []
+  return orderResultRowsByDictionary(normalizedRows, tagDictionary)
 }
 
 function historyColumns(results) {
@@ -597,7 +626,7 @@ async function executeDmp(crowdName) {
   // Phase 3: navigate to portrait page → extract data
   updateProgress(7, phases.value[7])
 
-  const phase3 = await sendToExtension('CDP_AUTOMATE_DMP_EXTRACT', { phase1Result: JSON.parse(JSON.stringify(phase1)), selectedTags: [...selectedTags.value] })
+  const phase3 = await sendToExtension('CDP_AUTOMATE_DMP_EXTRACT', { phase1Result: JSON.parse(JSON.stringify(phase1)), selectedTags: orderedSelectedTagIds.value })
   if (!phase3.ok) throw new Error(phase3.error || '数据提取失败')
   advancePhasesFromTrail(phase3.trail, { 'entered_portrait': 7, 'payload_intercepted': 8, 'data_extracted': 8 })
   return phase3
@@ -605,7 +634,7 @@ async function executeDmp(crowdName) {
 
 async function executeViaExtension(crowdName, type) {
   phases.value = type === 'databank' ? databankPhases : dmpPhases
-  const taskMeta = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagIds: selectedTags.value }
+  const taskMeta = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagIds: orderedSelectedTagIds.value }
   let backendTask = null; try { backendTask = await apiPost(API, taskMeta) } catch { /* */ }
 
   activeTask.value = { id: backendTask?.id || null, ...taskMeta, tagCount: selectedTags.value.length, status: 'running', phaseIndex: 0, progress: 0, message: '任务已发起，正在连接...', hasResults: false }
@@ -625,9 +654,10 @@ async function executeViaExtension(crowdName, type) {
       : '任务执行完成'
     updateProgress(finalPhase, completionMessage)
     const hasResults = result?.results && result.results.length > 0
+    const orderedResults = hasResults ? normalizeResultRows(result.results) : null
     activeTask.value = { ...activeTask.value, status: 'completed', hasResults }
-    if (hasResults) { taskResults.value = result.results; crowdCount.value = result.crowdCount || null }
-    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? result.results : result, crowdCount: crowdCount.value }).catch(() => {}) }
+    if (hasResults) { taskResults.value = orderedResults; crowdCount.value = result.crowdCount || null }
+    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? orderedResults : result, crowdCount: crowdCount.value }).catch(() => {}) }
   } catch (err) {
     if (taskCancelled.value) { taskRunning.value = null; return }
     if (activeTask.value) {
@@ -783,33 +813,26 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-tags-search-input { width: 100%; padding: 6px 10px; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; font-size: 11px; outline: none; background: rgba(0,0,0,0.015); color: #333; transition: border-color 0.2s ease; box-sizing: border-box; }
 .tc-tags-search-input:focus { border-color: var(--ui-accent); background: var(--ui-surface); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
 .tc-tags-search-input::placeholder { color: #c0c0c0; }
-.tc-tags-body { flex: 1; overflow-y: auto; padding: 6px 12px 10px; }
-.tc-tag-group { margin-bottom: 10px; }
-.tc-tag-group:last-child { margin-bottom: 0; }
-.tc-tag-group-name { font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.05em; margin-bottom: 5px; }
-.tc-tag-group-items { display: flex; flex-wrap: wrap; gap: 4px; }
-.tc-tag-item { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 7px; border: 1px solid rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); cursor: pointer; transition: all 0.18s ease; user-select: none; font-size: 11px; }
-.tc-tag-item:hover:not(.disabled) { border-color: var(--ui-control-border); background: var(--ui-fill); transform: translateY(-1px); }
-.tc-tag-item.checked { border-color: var(--ui-accent); background: var(--ui-surface); }
-.tc-tag-item.disabled { background: var(--ui-fill); color: var(--ui-text-tertiary); border-color: var(--ui-divider); opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
-.tc-tag-item.needCond { border-style: dashed; }
-.tc-tag-item.needCond:not(.ready):hover { border-color: rgba(0,0,0,0.05); background: rgba(255,255,255,0.55); transform: none; }
-.tc-tag-item.needCond.ready { border-color: rgba(52,199,89,0.24); background: rgba(52,199,89,0.04); }
-.tc-tag-item.needCond.ready.checked { border-color: var(--ui-accent); background: var(--ui-surface); }
-.tc-tag-item.disabled.needCond:hover { background: var(--ui-fill); border-color: var(--ui-divider); transform: none; }
-.tc-tag-item input { display: none; }
-.tc-tag-check { width: 11px; height: 11px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,0.10); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 7px; color: transparent; transition: all 0.18s ease; }
-.tc-tag-item.checked .tc-tag-check { color: #ffffff; background: var(--ui-accent); border-color: var(--ui-accent); }
-.tc-tag-name { font-weight: 450; color: #171717; }
-.tc-tag-need-cond { font-size: 8px; font-weight: 600; color: #fa8c16; background: rgba(250,140,22,0.08); padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
-.tc-tag-ready, .tc-tag-pending { font-size: 8px; font-weight: 600; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
-.tc-tag-ready { color: #208a43; background: rgba(52,199,89,0.08); }
-.tc-tag-pending { color: #c87800; background: rgba(255,149,0,0.08); }
-.tc-tag-item.disabled .tc-tag-name { color: var(--ui-text-tertiary); }
-.tc-tag-item.disabled .tc-tag-check { color: var(--ui-text-tertiary); background: var(--ui-surface); border-color: var(--ui-control-border); }
-.tc-tag-item.disabled .tc-tag-need-cond { color: var(--ui-text-tertiary); background: var(--ui-surface); }
-.tc-tag-item.disabled .tc-tag-ready { color: var(--ui-text-tertiary); background: var(--ui-surface); }
-.tc-tag-item.disabled .tc-tag-pending { color: var(--ui-text-tertiary); background: var(--ui-surface); }
+.tc-tags-body { flex: 1; overflow-y: auto; padding: 6px 12px 12px; }
+.tc-tag-main { margin-bottom: 15px; }
+.tc-tag-main:last-child { margin-bottom: 0; }
+.tc-tag-main-header { padding: 10px 14px; border-left: 4px solid #171717; border-radius: 0 6px 6px 0; background: #f8f9fa; color: #333; font-size: 13px; font-weight: 600; transition: background 0.2s ease; }
+.tc-tag-main-header:hover { background: #f1f3f5; }
+.tc-tag-main-body { padding-left: 10px; }
+.tc-tag-category { margin-top: 10px; }
+.tc-tag-category-name { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px dashed #eee; color: #888; font-size: 12px; font-weight: 700; }
+.tc-tag-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 11px; }
+.tc-feature-option { display: inline-flex; align-items: center; min-width: 0; padding: 3px 6px; border-radius: 4px; color: #444; cursor: pointer; transition: background 0.2s ease; user-select: none; }
+.tc-feature-option:hover:not(.disabled) { background: #f4f5f7; }
+.tc-feature-option.checked { background: transparent; }
+.tc-feature-option.disabled { background: transparent; color: #ff4d6d; cursor: not-allowed; opacity: 1; }
+.tc-feature-option.disabled.needCond:hover { background: transparent; transform: none; }
+.tc-feature-option.needCond:not(.ready) { color: #ff4d6d; }
+.tc-feature-option.needCond.ready { color: #28a745; }
+.tc-tag-checkbox { width: 13px; height: 13px; margin: 0; accent-color: #171717; cursor: pointer; flex-shrink: 0; }
+.tc-tag-checkbox:disabled { cursor: not-allowed; opacity: 0.62; }
+.tc-tag-name { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 450; color: inherit; }
+.tc-tag-condition { margin-left: 4px; white-space: nowrap; font-size: 9px; font-weight: 600; }
 .tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */
@@ -867,8 +890,8 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-results-close { font-size: 12px !important; color: #a1a1a6 !important; min-width: 24px !important; padding: 0 !important; }
 .tc-results-table-wrap { flex: 1; overflow: auto; padding: 0 14px; }
 .tc-results-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10px; }
-.tc-results-table thead { position: sticky; top: 0; z-index: 3; }
-.tc-results-table th { background: #f8f9fa; color: #333; font-weight: 600; padding: 7px 6px; border-bottom: 2px solid #d9d9d9; white-space: nowrap; font-size: 10px; text-align: left; }
+.tc-results-table thead { position: sticky; top: 0; z-index: 4; }
+.tc-results-table th { background: var(--ui-surface, #fff); background-clip: padding-box; color: #333333; font-weight: 600; padding: 7px 6px; border-bottom: 2px solid #d9d9d9; white-space: nowrap; font-size: 10px; text-align: left; }
 .tc-results-table td { padding: 3px 5px; border-bottom: 1px solid #f0f0f0; border-right: 1px solid #f0f0f0; color: #555; font-size: 10px; vertical-align: middle; }
 .tc-results-table td:first-child { border-left: 1px solid #f0f0f0; }
 .tc-results-table tr:first-child td { border-top: 1px solid #f0f0f0; }
@@ -969,10 +992,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-history-delete:hover { color: #ff3b30 !important; }
 
 .tc-history-item-detail { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(0,0,0,0.025); cursor: default; }
-.tc-history-meta-bar { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 10px; color: #555; }
-.tc-history-meta-bar i { font-style: normal; color: #a1a1a6; margin-right: 1px; }
-
-.tc-history-results { margin-top: 7px; border: 1px solid rgba(0,0,0,0.04); border-radius: 8px; overflow: hidden; cursor: default; }
+.tc-history-results { margin-top: 0; border: 1px solid rgba(0,0,0,0.04); border-radius: 8px; overflow: hidden; cursor: default; }
 .tc-history-results-head { display: flex; align-items: center; gap: 8px; padding: 5px 9px; background: #fafafa; font-size: 10px; color: #555; }
 .tc-history-results-head .tc-btn-copy,
 .tc-history-results-head .tc-btn-csv { cursor: pointer; }

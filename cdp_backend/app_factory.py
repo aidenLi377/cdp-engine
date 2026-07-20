@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import sys
 from datetime import timedelta
@@ -117,6 +118,14 @@ def register_routes(
     def error_response(code: str, message: str, status: int):
         return jsonify({"code": code, "message": message}), status
 
+    def generation_response(payload: dict, package_name: str | None):
+        if package_name in ConfigEngine.OFFICIAL_ORDERED_PACKAGES:
+            return app.response_class(
+                json.dumps(payload, ensure_ascii=False),
+                mimetype="application/json",
+            )
+        return jsonify(payload)
+
     def metadata_response(payload):
         """Return version-aware browser-cacheable configuration metadata."""
         response = jsonify(payload)
@@ -218,7 +227,7 @@ def register_routes(
         params = data.get("params", {})
         params["_package"] = package_name
         try:
-            return jsonify(engine.generate_json(params))
+            return generation_response(engine.generate_json(params), package_name)
         except Exception as exc:
             app.logger.exception("generate_json failed [%s]: %s", package_name, exc)
             return error_response("GENERATION_FAILED", "圈选条件生成失败，请检查填写内容后重试", 500)
@@ -229,7 +238,8 @@ def register_routes(
         if not isinstance(payload, dict):
             return error_response("INVALID_REQUEST", "圈选参数格式不正确", 400)
         try:
-            return jsonify(engine.generate_json(payload))
+            package_name = payload.get("_package", ConfigEngine.CATEGORY_PUBLIC_PACKAGE)
+            return generation_response(engine.generate_json(payload), package_name)
         except Exception as exc:
             app.logger.exception("generate failed: %s", exc)
             return error_response("GENERATION_FAILED", "圈选条件生成失败，请检查填写内容后重试", 500)
@@ -259,12 +269,13 @@ def register_routes(
         if "file" not in request.files:
             return error_response("FILE_REQUIRED", "请选择需要处理的文件", 400)
         result = engine.batch_generate(request.files["file"])
-        return jsonify(
+        return generation_response(
             {
                 "results": result.results,
                 "detected_pkg": result.detected_pkg,
                 "errors": result.errors,
-            }
+            },
+            result.detected_pkg,
         )
 
     @app.route("/api/solutions")

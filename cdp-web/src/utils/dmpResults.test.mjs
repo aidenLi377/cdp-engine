@@ -7,6 +7,8 @@ import {
   isConditionalTagReady,
   normalizeDmpSettings,
   normalizeResultRow,
+  orderResultRowsByDictionary,
+  orderTagIdsByDictionary,
   visibleResultColumns,
 } from './dmpResults.js'
 
@@ -56,4 +58,36 @@ test('visible result columns follow the original ten-column order', () => {
     visibleResultColumns([{ 所属大类: '用户特征', CTR: '120', PPC: '80' }], visibility),
     DMP_RESULT_COLUMNS.filter((column) => !['标签类型', 'PPC'].includes(column)),
   )
+})
+
+test('selected tag ids follow dictionary order instead of checkbox click order', () => {
+  const dictionary = [
+    { tagId: '100', tagName: '城市' },
+    { tagId: '200', tagName: '年龄' },
+    { tagId: '300', tagName: '性别' },
+  ]
+
+  assert.deepEqual(
+    orderTagIdsByDictionary(['300', '100', '200'], dictionary),
+    ['100', '200', '300'],
+  )
+})
+
+test('result rows follow dictionary tag order and preserve row order within each tag', () => {
+  const dictionary = [
+    { tagId: '100', tagName: '城市' },
+    { tagId: '200', tagName: '年龄' },
+  ]
+  const rows = [
+    { 标签名称: '年龄', 特征明细: '25-29岁' },
+    { 标签名称: '城市', 特征明细: '上海' },
+    { 标签名称: '年龄', 特征明细: '30-34岁' },
+    { 标签名称: '未知标签', 特征明细: '保留在末尾' },
+  ]
+
+  assert.deepEqual(
+    orderResultRowsByDictionary(rows, dictionary).map((row) => row.特征明细),
+    ['上海', '25-29岁', '30-34岁', '保留在末尾'],
+  )
+  assert.equal(rows[0].特征明细, '25-29岁')
 })
