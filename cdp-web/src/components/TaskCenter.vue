@@ -12,19 +12,73 @@
       <!-- 测试任务（上下排列） -->
       <div class="tc-test-row">
         <div class="tc-test-col">
-          <div class="tc-test-label">数据引擎</div>
+          <div class="tc-test-head">
+            <div class="tc-test-label">数据引擎</div>
+            <label class="tc-auto-apply" title="开启后将自动点击最终应用按钮并提交推送">
+              <span>自动应用</span>
+              <el-switch v-model="databankAutoApply" size="small" :disabled="taskRunning !== null" />
+            </label>
+          </div>
           <div class="tc-test-controls">
-            <el-input v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">运行</el-button>
+            <el-input v-if="!databankBatchMode" v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
+            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('databank')">
+              已检测 {{ databankBatch.items.length }} 个
+            </button>
+            <button type="button" class="tc-mode-btn" :class="{ active: databankBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('databank')">
+              {{ databankBatchMode ? '单个' : '批量' }}
+            </button>
+            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">{{ databankBatchMode ? '批量运行' : '运行' }}</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
+          </div>
+          <div v-if="databankBatchMode" class="tc-batch-panel">
+            <textarea
+              ref="databankBatchEditor"
+              v-model="databankBatchText"
+              class="tc-batch-textarea"
+              rows="3"
+              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
+            ></textarea>
+            <div class="tc-batch-stats">
+              <span class="is-valid">检测到 {{ databankBatch.items.length }} 个人群包</span>
+              <span v-if="databankBatch.duplicateCount" class="is-duplicate">已去重 {{ databankBatch.duplicateCount }} 个</span>
+            </div>
+            <div v-if="databankBatch.items.length" class="tc-batch-chips">
+              <span v-for="name in databankBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
+              <span v-if="databankBatch.items.length > 12" class="tc-batch-more">+{{ databankBatch.items.length - 12 }}</span>
+            </div>
           </div>
         </div>
         <div class="tc-test-col">
-          <div class="tc-test-label">达摩盘</div>
+          <div class="tc-test-head">
+            <div class="tc-test-label">达摩盘</div>
+          </div>
           <div class="tc-test-controls">
-            <el-input v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">运行</el-button>
+            <el-input v-if="!dmpBatchMode" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
+            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('dmp')">
+              已检测 {{ dmpBatch.items.length }} 个
+            </button>
+            <button type="button" class="tc-mode-btn" :class="{ active: dmpBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('dmp')">
+              {{ dmpBatchMode ? '单个' : '批量' }}
+            </button>
+            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">{{ dmpBatchMode ? '批量运行' : '运行' }}</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
+          </div>
+          <div v-if="dmpBatchMode" class="tc-batch-panel">
+            <textarea
+              ref="dmpBatchEditor"
+              v-model="dmpBatchText"
+              class="tc-batch-textarea"
+              rows="3"
+              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
+            ></textarea>
+            <div class="tc-batch-stats">
+              <span class="is-valid">检测到 {{ dmpBatch.items.length }} 个人群包</span>
+              <span v-if="dmpBatch.duplicateCount" class="is-duplicate">已去重 {{ dmpBatch.duplicateCount }} 个</span>
+            </div>
+            <div v-if="dmpBatch.items.length" class="tc-batch-chips">
+              <span v-for="name in dmpBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
+              <span v-if="dmpBatch.items.length > 12" class="tc-batch-more">+{{ dmpBatch.items.length - 12 }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -139,6 +193,7 @@
       <section class="tc-progress-card" v-if="activeTask && (activeTask.status === 'running' || activeTask.status === 'pending')">
         <div class="tc-progress-header">
           <div class="tc-progress-name">{{ activeTask.name }}</div>
+          <div class="tc-progress-batch" v-if="activeTask.batchTotal">{{ activeTask.batchIndex }}/{{ activeTask.batchTotal }}</div>
           <div class="tc-progress-phase" :class="activeTask.status">{{ phaseLabel(activeTask.status) }}</div>
         </div>
         <div class="tc-phase-bar">
@@ -251,8 +306,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import tagDictionary from '../data/dmp_tags_dictionary.json'
 import {
   DMP_RESULT_COLUMNS,
@@ -265,8 +320,10 @@ import {
   visibleResultColumns,
 } from '../utils/dmpResults.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
+import { parseCrowdBatch } from '../utils/crowdBatch.js'
 
 const API = '/api/tasks'
+const BATCH_EXECUTION_GAP_MS = 2500
 
 // -- persistence --
 function loadPersisted(k, def) { try { const v = localStorage.getItem('cdp_task_' + k); return v ? JSON.parse(v) : def } catch { return def } }
@@ -274,6 +331,13 @@ function savePersisted(k, val) { try { localStorage.setItem('cdp_task_' + k, JSO
 
 const databankCrowd = ref(loadPersisted('databankCrowd', ''))
 const dmpCrowd = ref(loadPersisted('dmpCrowd', ''))
+const databankBatchMode = ref(false)
+const dmpBatchMode = ref(false)
+const databankBatchText = ref('')
+const dmpBatchText = ref('')
+const databankBatchEditor = ref(null)
+const dmpBatchEditor = ref(null)
+const databankAutoApply = ref(false)
 const selectedTags = ref(loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
 const tagSearch = ref('')
 
@@ -293,9 +357,19 @@ const dmpSettings = ref(normalizeDmpSettings())
 const dmpSettingsSyncing = ref(false)
 const dmpSettingsLoaded = ref(false)
 
-const databankPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在选择渠道', '正在选择平台', '等待人工确认', '自动流程已完成']
+const databankManualPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在选择渠道', '正在选择平台', '正在保留确认页面', '确认页面已保留']
+const databankAutoPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在选择渠道', '正在选择平台', '正在自动应用', '推送已提交']
 const dmpPhases = ['已发起任务', '正在打开页面', '正在搜索人群包', '正在精准匹配', '已匹配成功', '正在判断人群数据是否同步好', '正在等待入口', '已进入透视', '正在获取数据', '已完成']
 const phases = ref(dmpPhases)
+
+const databankBatch = computed(() => parseCrowdBatch(databankBatchText.value))
+const dmpBatch = computed(() => parseCrowdBatch(dmpBatchText.value))
+const databankCrowdNames = computed(() => (
+  databankBatchMode.value ? databankBatch.value.items : [databankCrowd.value.trim()].filter(Boolean)
+))
+const dmpCrowdNames = computed(() => (
+  dmpBatchMode.value ? dmpBatch.value.items : [dmpCrowd.value.trim()].filter(Boolean)
+))
 
 const tagGroups = computed(() => {
   const map = {}
@@ -344,8 +418,23 @@ const allDmpTags = computed(() => {
 
 const allRebaseEnabled = computed(() => allDmpTags.value.every((tag) => isRebaseEnabled(tag.tagId)))
 
-const canRunDatabank = computed(() => extConnected.value && databankCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
-const canRunDmp = computed(() => extConnected.value && dmpCrowd.value.trim() && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunDatabank = computed(() => extConnected.value && databankCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunDmp = computed(() => extConnected.value && dmpCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+
+function toggleBatchMode(type) {
+  if (taskRunning.value !== null) return
+  if (type === 'databank') databankBatchMode.value = !databankBatchMode.value
+  else dmpBatchMode.value = !dmpBatchMode.value
+  if ((type === 'databank' && databankBatchMode.value) || (type === 'dmp' && dmpBatchMode.value)) {
+    focusBatchEditor(type)
+  }
+}
+
+async function focusBatchEditor(type) {
+  await nextTick()
+  const editor = type === 'databank' ? databankBatchEditor.value : dmpBatchEditor.value
+  editor?.focus()
+}
 
 function phaseLabel(s) { return { running: '执行中', completed: '已完成', failed: '执行失败' }[s] || s }
 function statusLabel(s) { return { completed: '已完成', failed: '失败', cancelled: '已取消', running: '进行中' }[s] || s }
@@ -593,13 +682,22 @@ function advancePhasesFromTrail(trail, trailToPhase) {
   }
 }
 
-async function executeDatabank(crowdName) {
+async function executeDatabank(crowdName, autoApply) {
   // Phase 1: search → match → apply → select channel → select platform → show confirm dialog
-  const phase1 = await sendToExtension('CDP_AUTOMATE_DATABANK_CROWD', { crowdName })
+  const phase1 = await sendToExtension('CDP_AUTOMATE_DATABANK_CROWD', { crowdName, autoApply })
   if (!phase1.ok) throw new Error(phase1.error || '数据引擎执行失败')
-  advancePhasesFromTrail(phase1.trail, { 'searched': 2, 'matched': 3, 'clicked_apply': 4, 'selected_alimama': 5, 'selected_dmp': 6, 'confirm_dialog_found': 7 })
-  if (!phase1.trail?.some((item) => item.step === 'confirm_dialog_found')) {
-    throw new Error('未检测到应用确认弹窗，请返回 DataBank 页面重试')
+  advancePhasesFromTrail(phase1.trail, {
+    'searched': 2,
+    'matched': 3,
+    'clicked_apply': 4,
+    'selected_alimama': 5,
+    'selected_dmp': 6,
+    'confirm_dialog_found': 7,
+    'auto_apply_submitted': 7,
+  })
+  const expectedStep = autoApply ? 'auto_apply_submitted' : 'confirm_dialog_found'
+  if (!phase1.trail?.some((item) => item.step === expectedStep)) {
+    throw new Error(autoApply ? '未能自动点击应用，请返回 DataBank 页面检查' : '未检测到应用确认弹窗，请返回 DataBank 页面重试')
   }
 
   return phase1
@@ -632,25 +730,41 @@ async function executeDmp(crowdName) {
   return phase3
 }
 
-async function executeViaExtension(crowdName, type) {
-  phases.value = type === 'databank' ? databankPhases : dmpPhases
+async function executeViaExtension(crowdName, type, options = {}) {
+  const autoApply = type === 'databank' && options.autoApply === true
+  const keepRunning = options.keepRunning === true
+  phases.value = type === 'databank' ? (autoApply ? databankAutoPhases : databankManualPhases) : dmpPhases
   const taskMeta = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagIds: orderedSelectedTagIds.value }
   let backendTask = null; try { backendTask = await apiPost(API, taskMeta) } catch { /* */ }
 
-  activeTask.value = { id: backendTask?.id || null, ...taskMeta, tagCount: selectedTags.value.length, status: 'running', phaseIndex: 0, progress: 0, message: '任务已发起，正在连接...', hasResults: false }
+  taskResults.value = null
+  crowdCount.value = null
+  activeTask.value = {
+    id: backendTask?.id || null,
+    ...taskMeta,
+    tagCount: selectedTags.value.length,
+    batchIndex: options.batchIndex || null,
+    batchTotal: options.batchTotal || null,
+    status: 'running',
+    phaseIndex: 0,
+    progress: 0,
+    message: '任务已发起，正在连接...',
+    hasResults: false,
+  }
+  let outcome = 'failed'
 
   try {
     updateProgress(0, phases.value[0]); await new Promise(r => setTimeout(r, 800))
     updateProgress(1, phases.value[1])
 
     let result
-    if (type === 'databank') { result = await executeDatabank(crowdName) }
+    if (type === 'databank') { result = await executeDatabank(crowdName, autoApply) }
     else { result = await executeDmp(crowdName) }
 
     const finalPhase = phases.value.length - 1
-    const completionLabel = type === 'databank' ? '自动流程已完成' : '任务执行完成'
+    const completionLabel = type === 'databank' ? (autoApply ? '推送已提交' : '确认页面已保留') : '任务执行完成'
     const completionMessage = type === 'databank'
-      ? '确认弹窗已打开，请前往 DataBank 页面人工点击“应用”'
+      ? (autoApply ? '已自动点击“应用”，推送已提交至达摩盘' : '确认页面已保留，批量完成后请逐个点击“应用”')
       : '任务执行完成'
     updateProgress(finalPhase, completionMessage)
     const hasResults = result?.results && result.results.length > 0
@@ -658,8 +772,12 @@ async function executeViaExtension(crowdName, type) {
     activeTask.value = { ...activeTask.value, status: 'completed', hasResults }
     if (hasResults) { taskResults.value = orderedResults; crowdCount.value = result.crowdCount || null }
     if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? orderedResults : result, crowdCount: crowdCount.value }).catch(() => {}) }
+    outcome = 'completed'
   } catch (err) {
-    if (taskCancelled.value) { taskRunning.value = null; return }
+    if (taskCancelled.value) {
+      taskRunning.value = null
+      return { status: 'cancelled', task: null }
+    }
     if (activeTask.value) {
       const friendlyMsg = userError(err.message || '执行失败')
       activeTask.value = { ...activeTask.value, status: 'failed', message: friendlyMsg }
@@ -670,10 +788,10 @@ async function executeViaExtension(crowdName, type) {
   const task = activeTask.value
   if (task) {
     taskHistory.value.unshift({ ...task, time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: taskResults.value ? [...taskResults.value] : null, crowdCount: crowdCount.value })
-    if (taskHistory.value.length > 50) taskHistory.value.length = 50
   }
   expandedHistory.value = -1 // collapse all history on new entry
-  taskRunning.value = null
+  if (!keepRunning) taskRunning.value = null
+  return { status: outcome, task }
 }
 
 function cancelTask() {
@@ -687,23 +805,85 @@ function cancelTask() {
 async function runDatabank() {
   if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
   if (!canRunDatabank.value) return
-  const n = databankCrowd.value.trim()
+  const names = [...databankCrowdNames.value]
+  if (databankBatchMode.value) {
+    const confirmed = await confirmBatchRun('databank', names.length)
+    if (!confirmed) return
+  }
   taskRunning.value = 'databank'; taskCancelled.value = false
-  await executeViaExtension(n, 'databank')
+  if (databankBatchMode.value) await executeBatch(names, 'databank', { autoApply: databankAutoApply.value })
+  else await executeViaExtension(names[0], 'databank', { autoApply: databankAutoApply.value })
 }
 
 async function runDmp() {
   if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
   if (!canRunDmp.value) return
-  const n = dmpCrowd.value.trim()
+  const names = [...dmpCrowdNames.value]
+  if (dmpBatchMode.value) {
+    const confirmed = await confirmBatchRun('dmp', names.length)
+    if (!confirmed) return
+  }
   taskRunning.value = 'dmp'; taskCancelled.value = false
-  await executeViaExtension(n, 'dmp')
+  if (dmpBatchMode.value) await executeBatch(names, 'dmp')
+  else await executeViaExtension(names[0], 'dmp')
 }
 
-function retryTask() {
+async function confirmBatchRun(type, count) {
+  const detail = type === 'databank'
+    ? (databankAutoApply.value
+      ? '已开启自动应用，系统将逐个提交推送。'
+      : '未开启自动应用，系统会保留全部确认页面，批量完成后请逐个点击“应用”。')
+    : '任务将严格按顺序逐个执行。'
+  try {
+    await ElMessageBox.confirm(
+      `目前检测到 ${count} 个人群包，是否批量执行？\n${detail}`,
+      '批量执行确认',
+      { confirmButtonText: '批量执行', cancelButtonText: '取消', type: 'warning' },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function executeBatch(names, type, options = {}) {
+  let completed = 0
+  let failed = 0
+
+  for (let index = 0; index < names.length; index += 1) {
+    if (taskCancelled.value) break
+    const outcome = await executeViaExtension(names[index], type, {
+      ...options,
+      keepRunning: true,
+      batchIndex: index + 1,
+      batchTotal: names.length,
+    })
+    if (outcome.status === 'completed') completed += 1
+    else if (outcome.status === 'failed') failed += 1
+
+    if (!taskCancelled.value && index < names.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_EXECUTION_GAP_MS))
+    }
+  }
+
+  taskRunning.value = null
+  if (taskCancelled.value) return
+  const summary = `批量执行完成：成功 ${completed} 个，失败 ${failed} 个`
+  if (failed > 0) ElMessage.warning(summary)
+  else ElMessage.success(summary)
+}
+
+async function retryTask() {
   const task = activeTask.value; if (!task) return
-  if (task.type === 'databank') { databankCrowd.value = task.crowdName; runDatabank() }
-  else { dmpCrowd.value = task.crowdName; runDmp() }
+  if (task.type === 'databank') {
+    databankBatchMode.value = false
+    databankCrowd.value = task.crowdName
+    await runDatabank()
+  } else {
+    dmpBatchMode.value = false
+    dmpCrowd.value = task.crowdName
+    await runDmp()
+  }
 }
 
 async function checkExtension() {
@@ -762,13 +942,29 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-test-row { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
 .tc-test-col { background: var(--ui-surface); border: 1px solid var(--ui-divider); border-radius: 10px; padding: 7px 10px; transition: border-color 0.25s ease; }
 .tc-test-col:focus-within { border-color: var(--ui-accent); }
-.tc-test-label { font-size: 10px; font-weight: 600; color: #a1a1a6; margin-bottom: 4px; letter-spacing: 0.04em; }
+.tc-test-head { min-height: 22px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.tc-test-label { font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
+.tc-auto-apply { display: inline-flex; align-items: center; gap: 6px; color: #6e6e73; font-size: 10px; cursor: pointer; }
+.tc-auto-apply :deep(.el-switch) { --el-switch-on-color: #1d1d1f; --el-switch-off-color: #d1d1d6; height: 18px; }
 .tc-test-controls { display: flex; gap: 6px; align-items: center; }
 .tc-input-sm { flex: 1; min-width: 0; }
 .tc-input-sm :deep(.el-input__wrapper) { background: rgba(0,0,0,0.015); border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; box-shadow: none !important; padding: 0 10px; height: 32px; font-size: 12px; }
 .tc-input-sm :deep(.el-input__wrapper:hover) { border-color: rgba(0,0,0,0.10); }
 .tc-input-sm :deep(.el-input__wrapper.is-focus) { background: var(--ui-surface); border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring) !important; }
 .tc-input-sm :deep(.el-input__inner) { font-size: 12px; }
+.tc-mode-btn { height: 32px; padding: 0 8px; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; background: rgba(0,0,0,0.015); color: #6e6e73; font-size: 10px; cursor: pointer; flex-shrink: 0; }
+.tc-mode-btn:hover:not(:disabled), .tc-mode-btn.active { color: #1d1d1f; border-color: rgba(0,0,0,0.14); background: rgba(0,0,0,0.04); }
+.tc-batch-summary { flex: 1; min-width: 0; height: 32px; padding: 0 10px; overflow: hidden; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; background: rgba(0,0,0,0.015); color: #4b4b4f; font-size: 11px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: text; }
+.tc-batch-panel { margin-top: 6px; padding: 7px; border: 1px solid rgba(0,0,0,0.055); border-radius: 9px; background: rgba(0,0,0,0.012); }
+.tc-batch-textarea { display: block; width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; padding: 7px 9px; border: 1px solid rgba(0,0,0,0.07); border-radius: 7px; outline: none; background: #fff; color: #333; font: 11px/1.5 "SF Mono", "Cascadia Code", ui-monospace; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+.tc-batch-textarea:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.tc-batch-textarea::placeholder { color: #b5b5ba; }
+.tc-batch-stats { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10px; }
+.tc-batch-stats .is-valid { color: #208a43; font-weight: 600; }
+.tc-batch-stats .is-duplicate { color: #b87300; }
+.tc-batch-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 52px; margin-top: 6px; overflow-y: auto; }
+.tc-batch-chip, .tc-batch-more { max-width: 100%; padding: 2px 6px; overflow: hidden; border-radius: 5px; background: rgba(52,199,89,0.07); color: #267a43; font-size: 9px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
+.tc-batch-more { background: rgba(0,0,0,0.04); color: #6e6e73; font-weight: 600; }
 
 .tc-btn-sm { height: 32px !important; padding: 0 14px !important; border-radius: 8px !important; border: none !important; background: #1d1d1f !important; color: #fff !important; font-size: 12px !important; font-weight: 500 !important; flex-shrink: 0; transition: all 0.22s ease !important; }
 .tc-btn-sm:hover:not(:disabled) { background: #333336 !important; transform: translateY(-1px); }
@@ -856,7 +1052,9 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 
 /* 进度卡片 */
 .tc-progress-card { background: rgba(255,255,255,0.76); backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%); border: 1px solid rgba(0,0,0,0.05); border-radius: 14px; padding: 16px 20px; flex-shrink: 0; }
-.tc-progress-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.tc-progress-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.tc-progress-name { flex: 1; min-width: 0; }
+.tc-progress-batch { padding: 2px 7px; border-radius: 20px; background: rgba(0,0,0,0.035); color: #6e6e73; font: 600 9px/1.4 "SF Mono", "Cascadia Code", ui-monospace; flex-shrink: 0; }
 .tc-progress-name { font-size: 14px; font-weight: 500; color: #171717; }
 .tc-progress-phase { font-size: 10px; font-weight: 600; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
 .tc-progress-phase.running { background: rgba(255,149,0,0.07); color: #ff9500; }

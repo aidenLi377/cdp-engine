@@ -13,8 +13,17 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const CROWD_FIRST_NAME_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div[1]/div/div/div[2]/div/div/div[1]/div/div[2]/div[1]/div/div/div[2]/div[2]/table/tbody/tr[1]/td[2]/div/div/div';
   const CROWD_FIRST_APPLY_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[2]/div[1]/div/div/div[2]/div[2]/table/tbody/tr[1]/td[7]/div/div/a[1]';
   const CROWD_FINAL_APPLY_XPATH = '/html/body/div[6]/div/div[2]/div/div/div[3]/div/button[1]';
+  const CROWD_FINAL_APPLY_SPAN_XPATH = '/html/body/div[6]/div/div[2]/div/div/div[3]/div/button[1]/span';
   const CROWD_DIALOG_ALIMAMA_XPATH = '/html/body/div[6]/div/div[2]/div/div/div[2]/div[2]/div/div[2]/label[1]/span[2]';
   const CROWD_DIALOG_DMP_IMG_XPATH = '/html/body/div[6]/div/div[2]/div/div/div[2]/div[2]/div/div[4]/div/div[1]/div[1]/div[1]/img';
+  const PARAM_DIALOG_SETTLE_MS = 700;
+  const PARAM_VALUE_SETTLE_MS = 900;
+  const PARAM_COMPLETION_SETTLE_MS = 1500;
+  const PARAM_PAGE_STABLE_CHECKS = 4;
+  const PARAM_PAGE_POLL_MS = 500;
+  const PARAM_PAGE_FINAL_SETTLE_MS = 2000;
+  const PARAM_PAGE_READY_TIMEOUT_MS = 90000;
+  const CROWD_CONFIRM_SETTLE_MS = 900;
   // DataHub XPaths
   const DATAHUB_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[1]/span/span/span[1]/input';
   const DATAHUB_STATUS_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[2]/div[1]/section/div[1]/div/div/div/div/div/table/tbody/tr[1]/td[5]/div/span';
@@ -29,6 +38,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   function isNodeVisible(node) {
     if (!node || !(node instanceof Element)) return false;
+    if ('isConnected' in node && !node.isConnected) return false;
     const style = window.getComputedStyle(node);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
     const rect = node.getBoundingClientRect();
@@ -48,6 +58,86 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return Array.from(document.querySelectorAll(tagName)).find(
       (node) => isNodeVisible(node) && String(node.textContent || '').trim().includes(text)
     ) || null;
+  }
+
+  function getParamTriggerNode() {
+    const xpathNode = getNodeByXpath(DATABANK_PARAM_TRIGGER_XPATH);
+    return isNodeInteractive(xpathNode) ? xpathNode : getVisibleNodeByText('span', '参数粘贴');
+  }
+
+  function isParamPageLoading() {
+    const selectors = [
+      '.next-loading-mask',
+      '.next-loading-indicator',
+      '.next-loading-tip',
+      '.ant-spin-spinning',
+      '.el-loading-mask',
+      '.el-loading-spinner',
+      '[aria-busy="true"]',
+    ];
+    return selectors.some((selector) =>
+      Array.from(document.querySelectorAll(selector)).some(isNodeVisible)
+    );
+  }
+
+  function getParamPageSignature() {
+    if (!window.location.href.includes('databank.tmall.com/#/userDefinedAnalyses')) return '';
+    if (document.readyState && document.readyState !== 'complete') return '';
+    if (document.fonts?.status === 'loading') return '';
+    if (Array.from(document.images || []).some((image) => !image.complete)) return '';
+    if (isParamPageLoading()) return '';
+
+    const triggerNode = getParamTriggerNode();
+    if (!isNodeInteractive(triggerNode)) return '';
+
+    const allElementCount = document.querySelectorAll('*').length;
+    const visibleControlCount = Array.from(
+      document.querySelectorAll('input, textarea, button, [role="button"]')
+    ).filter(isNodeVisible).length;
+    const bodyTextLength = String(document.body?.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .length;
+    const bodyScrollHeight = Number(
+      document.body?.scrollHeight || document.documentElement?.scrollHeight || 0
+    );
+
+    return [allElementCount, visibleControlCount, bodyTextLength, bodyScrollHeight].join('|');
+  }
+
+  async function waitForParamPageInitialized() {
+    const deadline = Date.now() + PARAM_PAGE_READY_TIMEOUT_MS;
+    let previousSignature = '';
+    let stableChecks = 0;
+
+    while (Date.now() < deadline) {
+      const signature = getParamPageSignature();
+      if (!signature) {
+        previousSignature = '';
+        stableChecks = 0;
+        await sleep(PARAM_PAGE_POLL_MS);
+        continue;
+      }
+
+      if (signature === previousSignature) stableChecks += 1;
+      else stableChecks = 1;
+      previousSignature = signature;
+
+      if (stableChecks >= PARAM_PAGE_STABLE_CHECKS) {
+        await sleep(PARAM_PAGE_FINAL_SETTLE_MS);
+        if (getParamPageSignature() === signature) {
+          console.info('[Databank Automation] parameter page is fully settled');
+          return { step: 'page_initialized', message: '参数页面已完整加载并保持稳定' };
+        }
+        previousSignature = '';
+        stableChecks = 0;
+        continue;
+      }
+
+      await sleep(PARAM_PAGE_POLL_MS);
+    }
+
+    throw new Error('等待数据引擎参数页面完整加载超时');
   }
 
   function getVisibleNodeByTextWithin(root, tagName, text) {
@@ -149,6 +239,8 @@ if (!window.__databankAutomationContentScriptLoaded) {
     const deadline = Date.now() + timeoutMs;
     let lastDialogRoot = getDialogRoot(textareaNode);
     let lastState = describeConfirmState(null, lastDialogRoot);
+    let stableConfirmNode = null;
+    let stableInteractiveChecks = 0;
 
     while (Date.now() < deadline) {
       let liveTextareaNode = getVisibleTextareaNode();
@@ -163,7 +255,17 @@ if (!window.__databankAutomationContentScriptLoaded) {
       const confirmNode = getVisibleConfirmNode(lastDialogRoot);
       lastState = describeConfirmState(confirmNode, lastDialogRoot);
       if (confirmNode && isNodeInteractive(confirmNode)) {
-        return { confirmNode, dialogRoot: lastDialogRoot, state: lastState };
+        if (stableConfirmNode === confirmNode) stableInteractiveChecks += 1;
+        else {
+          stableConfirmNode = confirmNode;
+          stableInteractiveChecks = 1;
+        }
+        if (stableInteractiveChecks >= 2) {
+          return { confirmNode, dialogRoot: lastDialogRoot, state: lastState };
+        }
+      } else {
+        stableConfirmNode = null;
+        stableInteractiveChecks = 0;
       }
       await sleep(intervalMs);
     }
@@ -189,8 +291,8 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   async function waitForImportDialogClosed(dialogRoot, timeoutMs, intervalMs) {
     if (!dialogRoot) return;
-    timeoutMs = timeoutMs || 800;
-    intervalMs = intervalMs || 80;
+    timeoutMs = timeoutMs || 10000;
+    intervalMs = intervalMs || 150;
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (!isDialogRootActive(dialogRoot)) return;
@@ -240,15 +342,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   }
 
   function isAutomationPageReady() {
-    const currentUrl = window.location.href;
-    if (!currentUrl.includes('databank.tmall.com/#/userDefinedAnalyses')) return false;
-    if (document.readyState && document.readyState !== 'complete') return false;
-    const triggerNode = getNodeByXpath(DATABANK_PARAM_TRIGGER_XPATH);
-    if (isNodeInteractive(triggerNode)) return true;
-    if (getVisibleNodeByText('span', '参数粘贴')) return true;
-    if (getVisibleTextareaNode()) return true;
-    if (getVisibleDialogConfirmNode()) return true;
-    return false;
+    return Boolean(getParamPageSignature());
   }
 
   function isOnDataHubPage() {
@@ -309,31 +403,28 @@ if (!window.__databankAutomationContentScriptLoaded) {
     const trail = [];
     console.info('[Databank Automation][content] param paste start');
     trail.push(await runPreflightChecks());
+    trail.push(await waitForParamPageInitialized());
     const triggerNode = await waitForLocator(
-      () => {
-        const node = getNodeByXpath(DATABANK_PARAM_TRIGGER_XPATH);
-        return isNodeInteractive(node) ? node : getVisibleNodeByText('span', '参数粘贴');
-      },
+      () => getParamTriggerNode(),
       '参数粘贴入口', 30000, 300
     );
     clickNode(triggerNode);
     trail.push({ step: 'clicked_paste' });
     const initialTextareaNode = await waitForLocator(() => getVisibleTextareaNode(), '导入输入框');
+    await sleep(PARAM_DIALOG_SETTLE_MS);
     inputTextarea(initialTextareaNode, jsonText);
     const textareaNode = await waitForTextareaValue(initialTextareaNode, jsonText);
     trail.push({ step: 'filled_textarea' });
+    await sleep(PARAM_VALUE_SETTLE_MS);
     const confirmResult = await waitForEnabledConfirmButton(textareaNode, jsonText);
     const confirmNode = confirmResult.confirmNode;
     const importDialogRoot = confirmResult.dialogRoot || getDialogRoot(confirmNode) || getDialogRoot(textareaNode);
     trail.push({ step: 'confirm_button_ready', ...confirmResult.state });
     clickNode(confirmNode);
     trail.push({ step: 'clicked_confirm' });
-    try {
-      await waitForImportDialogClosed(importDialogRoot);
-      trail.push({ step: 'dialog_closed' });
-    } catch (error) {
-      trail.push({ step: 'dialog_close_check_skipped' });
-    }
+    await waitForImportDialogClosed(importDialogRoot);
+    trail.push({ step: 'dialog_closed' });
+    await sleep(PARAM_COMPLETION_SETTLE_MS);
     console.info('[Databank Automation][content] param paste success');
     return { ok: true, trail, message: '参数已自动导入' };
   }
@@ -464,29 +555,61 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   function findVisibleManualApplyControls() {
     const finalBtn = getNodeByXpath(CROWD_FINAL_APPLY_XPATH);
-    const applyBtns = Array.from(document.querySelectorAll('button')).filter(
-      (b) => isNodeVisible(b) && (b.textContent || '').trim() === '应用'
-    );
-    const confirmBtns = Array.from(document.querySelectorAll('button')).filter(
-      (b) => isNodeVisible(b) && (b.textContent || '').trim() === '确定'
-    );
+    const finalSpan = getNodeByXpath(CROWD_FINAL_APPLY_SPAN_XPATH);
+    const finalSpanButton = finalSpan?.closest?.('button') || finalSpan;
+    const dialogControls = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTORS))
+      .filter((root) => isNodeVisible(root))
+      .flatMap((root) => Array.from(root.querySelectorAll(CONFIRM_CONTROL_SELECTOR)))
+      .filter((control) => {
+        const text = String(control.textContent || '').replace(/\s+/g, '');
+        return isNodeVisible(control) && (text === '应用' || text === '确定' || text === '确认');
+      });
     return Array.from(new Set([
       ...(isNodeVisible(finalBtn) ? [finalBtn] : []),
-      ...applyBtns,
-      ...confirmBtns,
+      ...(isNodeVisible(finalSpanButton) ? [finalSpanButton] : []),
+      ...dialogControls,
     ]));
   }
 
   async function databankConfirmApply() {
     // Detect the final dialog and stop. The human remains the only actor that
     // can click its 应用/确定 control.
-    const controls = findVisibleManualApplyControls();
+    const control = await waitForLocator(
+      () => findVisibleManualApplyControls().find((node) => isNodeInteractive(node)) || null,
+      '应用确认按钮', 20000, 300
+    );
+    pendingManualApplyControl = control;
+    return { step: 'confirm_dialog_found', stopped: true, message: '已保留应用确认页面，请稍后手动点击应用' };
+  }
 
-    if (controls.length > 0) {
-      pendingManualApplyControl = controls[0];
-      return { step: 'confirm_dialog_found', stopped: true, message: '已到达应用确认弹窗，请手动点击应用' };
+  async function waitForApplyDialogClosed(timeoutMs, intervalMs) {
+    timeoutMs = timeoutMs || 20000;
+    intervalMs = intervalMs || 250;
+    const deadline = Date.now() + timeoutMs;
+    let absentSince = null;
+    while (Date.now() < deadline) {
+      const controls = findVisibleManualApplyControls();
+      if (controls.length > 0) absentSince = null;
+      else if (absentSince === null) absentSince = Date.now();
+      else if (Date.now() - absentSince >= 750) return;
+      await sleep(intervalMs);
     }
-    return { step: 'no_dialog', message: '未检测到确认弹窗' };
+    throw new Error('已点击应用，但确认弹窗未关闭');
+  }
+
+  async function databankAutoApply() {
+    let control = await waitForLocator(
+      () => findVisibleManualApplyControls().find((node) => isNodeInteractive(node)) || null,
+      '应用确认按钮', 20000, 300
+    );
+    pendingManualApplyControl = control;
+    await sleep(CROWD_CONFIRM_SETTLE_MS);
+    control = findVisibleManualApplyControls().find((node) => isNodeInteractive(node)) || control;
+    if (!isNodeInteractive(control)) throw new Error('应用按钮尚未启用，请稍后重试');
+    clickNode(control);
+    await waitForApplyDialogClosed();
+    pendingManualApplyControl = null;
+    return { step: 'auto_apply_submitted', message: '已自动点击应用并提交推送' };
   }
 
   async function waitForManualApplyConfirmation() {
@@ -624,7 +747,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return { ok: true, trail };
   }
 
-  async function runDatabankCrowdFlow(crowdName) {
+  async function runDatabankCrowdFlow(crowdName, autoApply) {
     const trail = [];
     console.info('[Databank Automation] starting crowd flow for:', crowdName);
 
@@ -634,10 +757,11 @@ if (!window.__databankAutomationContentScriptLoaded) {
     trail.push(await databankApplyCrowd(matchResult));
     trail.push(await databankSelectAlimama());
     trail.push(await databankSelectDmp());
-    trail.push(await databankConfirmApply());  // stops at dialog, does NOT click
+    if (autoApply) trail.push(await databankAutoApply());
+    else trail.push(await databankConfirmApply());
 
-    console.info('[Databank Automation] crowd flow complete (stopped before final apply)');
-    return { ok: true, trail, crowdName };
+    console.info('[Databank Automation] crowd flow complete, autoApply=', Boolean(autoApply));
+    return { ok: true, trail, crowdName, autoApplied: Boolean(autoApply) };
   }
 
   // === Message handler ===
@@ -685,7 +809,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
         sendResponse({ ok: false, error: '人群包名称不能为空' });
         return false;
       }
-      runDatabankCrowdFlow(crowdName)
+      runDatabankCrowdFlow(crowdName, message.autoApply === true)
         .then((result) => sendResponse(result))
         .catch((error) => {
           console.error('[Databank Automation] crowd flow failed:', error);

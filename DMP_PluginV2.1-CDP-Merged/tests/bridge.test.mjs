@@ -80,6 +80,20 @@ test('bridge forwards DataBank payload and returns the correlated response', () 
   assert.equal(harness.posted[0].payload.ok, true)
 })
 
+test('bridge forwards the explicit DataBank auto apply choice', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_AUTOMATE_DATABANK_CROWD',
+    requestId: 'crowd-1',
+    crowdName: '待推送人群',
+    autoApply: true,
+  })
+
+  assert.equal(harness.forwarded[0].crowdName, '待推送人群')
+  assert.equal(harness.forwarded[0].autoApply, true)
+})
+
 test('bridge forwards and returns shared DMP settings', () => {
   const harness = createHarness()
   harness.dispatch({

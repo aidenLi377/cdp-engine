@@ -58,6 +58,7 @@
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
       extMsg.crowdName = p.crowdName || '';
       if (!extMsg.crowdName.trim()) { safeRespond(p, { ok: false, error: '人群包名称不能为空' }); return; }
+      if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') extMsg.autoApply = p.autoApply === true;
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT') {
       // No payload needed — just forward to background
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {

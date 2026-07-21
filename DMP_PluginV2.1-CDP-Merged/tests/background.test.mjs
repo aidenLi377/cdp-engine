@@ -14,7 +14,9 @@ function createBackgroundHarness() {
   let now = 0
   let pingCount = 0
   const messageTrail = []
+  const sentPayloads = []
   const updateTrail = []
+  const removeTrail = []
   const windowUpdateTrail = []
   const storageData = {
     dmpConditionCache: { 200: [{ tagId: 200 }], 201: [] },
@@ -49,14 +51,27 @@ function createBackgroundHarness() {
       async update(tabId, payload) {
         updateTrail.push({ tabId, payload })
       },
+      async remove(tabId) {
+        removeTrail.push(tabId)
+      },
       async sendMessage(_tabId, payload) {
         messageTrail.push(payload.type)
+        sentPayloads.push(payload)
         if (payload.type === 'PING_AUTOMATION_READY') {
           pingCount += 1
           return { ok: true, ready: pingCount >= 3 }
         }
+        if (payload.type === 'PING_CROWD_READY') {
+          return { ok: true, ready: true }
+        }
         if (payload.type === 'AUTOMATE_DATABANK') {
           return { ok: true, message: 'done' }
+        }
+        if (payload.type === 'AUTOMATE_DATABANK_CROWD') {
+          return {
+            ok: true,
+            trail: [{ step: payload.autoApply ? 'auto_apply_submitted' : 'confirm_dialog_found' }],
+          }
         }
         throw new Error(`Unexpected message type: ${payload.type}`)
       },
@@ -113,7 +128,9 @@ function createBackgroundHarness() {
   return {
     sendProjectMessage,
     messageTrail,
+    sentPayloads,
     updateTrail,
+    removeTrail,
     windowUpdateTrail,
     storageData,
   }
@@ -176,6 +193,38 @@ test('background reads and updates shared DMP settings', async () => {
   })
   assert.equal(updated.settings.columnVisibility.PPC, false)
   assert.deepEqual(Array.from(harness.storageData.rebaseExcludedTagIds), ['200'])
+})
+
+test('background keeps manual DataBank confirmation tabs and forwards autoApply=false', async () => {
+  const harness = createBackgroundHarness()
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_AUTOMATE_DATABANK_CROWD',
+    pageUrl: 'http://127.0.0.1:5173/',
+    crowdName: '人工确认人群',
+    autoApply: false,
+  })
+
+  const command = harness.sentPayloads.find((payload) => payload.type === 'AUTOMATE_DATABANK_CROWD')
+  assert.equal(response.ok, true)
+  assert.equal(command.autoApply, false)
+  assert.deepEqual(harness.removeTrail, [])
+})
+
+test('background closes only successfully auto-applied DataBank tabs and returns focus to the task center', async () => {
+  const harness = createBackgroundHarness()
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_AUTOMATE_DATABANK_CROWD',
+    pageUrl: 'http://127.0.0.1:5173/',
+    crowdName: '自动推送人群',
+    autoApply: true,
+  })
+
+  assert.equal(response.ok, true)
+  assert.deepEqual(harness.removeTrail, [101])
+  assert.equal(JSON.stringify(harness.updateTrail.at(-1)), JSON.stringify({
+    tabId: 7,
+    payload: { active: true },
+  }))
 })
 
 test('background accepts task messages from the production CDP origin', async () => {

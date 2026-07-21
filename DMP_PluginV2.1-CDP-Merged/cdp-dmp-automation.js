@@ -24,6 +24,10 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   const DMP_SEARCH_XPATH = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div[1]/div[4]/div/input';
   const DMP_FIRST_NAME_XPATH = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[2]/div[2]/div[1]/div[2]/table/tbody/tr[1]/td[2]/span';
+  const DMP_INITIAL_LIST_STABLE_CHECKS = 4;
+  const DMP_INITIAL_LIST_POLL_MS = 500;
+  const DMP_INITIAL_LIST_SETTLE_MS = 2000;
+  const DMP_INITIAL_LIST_TIMEOUT_MS = 90000;
 
   function getNodeByXpath(xpath) {
     return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
@@ -98,6 +102,69 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     // Fallback: check if body has reasonable content
     if (document.body && document.body.textContent && document.body.textContent.length > 200) return true;
     return false;
+  }
+
+  function isCrowdListLoading() {
+    const selectors = [
+      '.next-loading-mask',
+      '.next-loading-indicator',
+      '.next-loading-tip',
+      '.ant-spin-spinning',
+      '.el-loading-mask',
+      '[aria-busy="true"]',
+    ];
+    return selectors.some((selector) =>
+      Array.from(document.querySelectorAll(selector)).some(isVisible)
+    );
+  }
+
+  function getInitialCrowdListSignature() {
+    if (document.readyState !== 'complete' || isCrowdListLoading()) return '';
+    const tbody = document.querySelector('table tbody');
+    if (!tbody) return '';
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+      (row) => row.querySelectorAll('td').length > 0
+    );
+    if (rows.length === 0) return '';
+    return rows
+      .map((row) => (row.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 250))
+      .join('|');
+  }
+
+  async function waitForCrowdListInitialized() {
+    const deadline = Date.now() + DMP_INITIAL_LIST_TIMEOUT_MS;
+    let previousSignature = '';
+    let stableChecks = 0;
+
+    while (Date.now() < deadline) {
+      const signature = getInitialCrowdListSignature();
+      if (!signature) {
+        previousSignature = '';
+        stableChecks = 0;
+        await sleep(DMP_INITIAL_LIST_POLL_MS);
+        continue;
+      }
+
+      if (signature === previousSignature) stableChecks += 1;
+      else stableChecks = 1;
+      previousSignature = signature;
+
+      if (stableChecks >= DMP_INITIAL_LIST_STABLE_CHECKS) {
+        // Leave a final buffer for late SPA initialization requests to finish.
+        await sleep(DMP_INITIAL_LIST_SETTLE_MS);
+        if (getInitialCrowdListSignature() === signature) {
+          console.info('[DMP Automation] initial crowd list is fully settled');
+          return true;
+        }
+        previousSignature = '';
+        stableChecks = 0;
+        continue;
+      }
+
+      await sleep(DMP_INITIAL_LIST_POLL_MS);
+    }
+
+    throw new Error('等待达摩盘人群列表初始化完成超时');
   }
 
   function findCrowdRowByName(targetName) {
@@ -197,8 +264,9 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     const trail = [];
     activeCrowdName = crowdName;
 
-    // Wait for page DOM
-    await waitForLocator(() => isPageDomReady(), '页面DOM就绪', 60000, 500);
+    // The search input renders before the SPA finishes its default list request.
+    // Wait for the full list to settle so the late initialization response cannot overwrite our search.
+    await waitForCrowdListInitialized();
 
     // Find search input
     const searchInput = await waitForLocator(() => {
@@ -219,6 +287,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     searchInput.dispatchEvent(new Event('change', { bubbles: true }));
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
     searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    trail.push({ step: 'searched', crowdName });
 
     // Wait for results table
     await waitForLocator(() => {
@@ -227,8 +296,6 @@ if (!window.__dmpAutomationContentScriptLoaded) {
       const rows = table.querySelectorAll('tr');
       return rows.length > 0 ? rows : null;
     }, '搜索结果列表', 20000, 500);
-    trail.push({ step: 'searched', crowdName });
-
     // Match exact crowd name
     const rowMatch = await (async () => {
       const deadline = Date.now() + 15000;

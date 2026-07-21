@@ -26,24 +26,52 @@ test('task center enables only ready multi-condition tags with compact status co
   assert.doesNotMatch(source, /:disabled="tag\.needCondition"/)
 })
 
-test('DataBank flow stops after opening the manual confirmation dialog', () => {
+test('DMP flow continues from search matching into portrait extraction', () => {
+  const start = source.indexOf('async function executeDmp')
+  const end = source.indexOf('async function executeViaExtension', start)
+  const dmpFlow = source.slice(start, end)
+  const crowdIdCheckAt = dmpFlow.indexOf('!phase1.crowdId')
+  const portraitWaitAt = dmpFlow.indexOf('CDP_AUTOMATE_DMP_WAIT_PORTRAIT')
+  const extractAt = dmpFlow.indexOf('CDP_AUTOMATE_DMP_EXTRACT')
+
+  assert.ok(crowdIdCheckAt >= 0)
+  assert.ok(portraitWaitAt > crowdIdCheckAt)
+  assert.ok(extractAt > portraitWaitAt)
+  assert.doesNotMatch(dmpFlow, /searchOnly/)
+})
+
+test('DataBank flow supports explicit auto apply while preserving manual confirmation pages by default', () => {
   const start = source.indexOf('async function executeDatabank')
   const end = source.indexOf('async function executeDmp', start)
   const databankFlow = source.slice(start, end)
 
   assert.match(databankFlow, /sendToExtension\('CDP_AUTOMATE_DATABANK_CROWD'/)
   assert.match(databankFlow, /confirm_dialog_found/)
+  assert.match(databankFlow, /auto_apply_submitted/)
+  assert.match(databankFlow, /autoApply/)
   assert.doesNotMatch(databankFlow, /CDP_AUTOMATE_DATABANK_WAIT_APPLY/)
   assert.doesNotMatch(databankFlow, /CDP_AUTOMATE_DATABANK_DATAHUB/)
-  assert.match(source, /自动流程已完成/)
-  assert.match(source, /确认弹窗已打开，请前往 DataBank 页面人工点击“应用”/)
+  assert.match(source, /const databankAutoApply = ref\(false\)/)
+  assert.match(source, /确认页面已保留，批量完成后请逐个点击“应用”/)
+  assert.match(source, /已自动点击“应用”，推送已提交至达摩盘/)
 })
 
-test('task center uses run copy for both idle actions without changing handlers', () => {
-  assert.match(source, /@click="runDatabank">运行<\/el-button>/)
-  assert.match(source, /@click="runDmp">运行<\/el-button>/)
+test('task center keeps single run actions and adds batch paste entry points', () => {
+  assert.match(source, /@click="runDatabank">\{\{ databankBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
+  assert.match(source, /@click="runDmp">\{\{ dmpBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
+  assert.match(source, /parseCrowdBatch/)
+  assert.match(source, /目前检测到 \$\{count\} 个人群包，是否批量执行/)
+  assert.match(source, /keepRunning: true/)
+  assert.match(source, /BATCH_EXECUTION_GAP_MS/)
   assert.match(source, /输入人群包名称并点击运行，任务进度将在此处实时展示。/)
   assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
+})
+
+test('batch execution has no frontend item cap and keeps one history record per crowd package', () => {
+  assert.doesNotMatch(source, /MAX_BATCH|batchLimit|批量上限/)
+  assert.doesNotMatch(source, /taskHistory\.value\.length > 50/)
+  assert.match(source, /taskHistory\.value\.unshift/)
+  assert.match(source, /失败 \$\{failed\} 个/)
 })
 
 test('task center centers every native and Element Plus button and keeps disabled surfaces white', () => {

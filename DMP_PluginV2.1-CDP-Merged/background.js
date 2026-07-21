@@ -9,6 +9,7 @@ const DATABANK_PARAM_URL = 'https://databank.tmall.com/#/userDefinedAnalyses';
 const DATABANK_CROWD_URL = 'https://databank.tmall.com/#/customAnalysis';
 const DATABANK_DATAHUB_URL = 'https://databank.tmall.com/#/dataHub';
 const DMP_CROWD_URL = 'https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=';
+const PARAM_PAGE_SETTLE_MS = 2000;
 
 // Message types from frontend (via bridge)
 const MSG_DATABANK_PARAM = 'CDP_AUTOMATE_DATABANK';
@@ -186,6 +187,7 @@ async function runDatabankParam(senderTab, jsonText, sendResponse) {
     await ensureScriptInjected(tab.id, ['databank-automation.js']);
     await focusTab(tab);
     await waitForReady(tab.id, CONTENT_PING);
+    await new Promise((r) => setTimeout(r, PARAM_PAGE_SETTLE_MS));
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK,
       jsonText: jsonText,
@@ -202,7 +204,7 @@ async function runDatabankParam(senderTab, jsonText, sendResponse) {
 }
 
 // Run DataBank crowd search/match/push flow (Phase 1)
-async function runDatabankCrowd(senderTab, crowdName, sendResponse) {
+async function runDatabankCrowd(senderTab, crowdName, autoApply, sendResponse) {
   let tab = null;
   try {
     await taskStateReady;
@@ -215,9 +217,19 @@ async function runDatabankCrowd(senderTab, crowdName, sendResponse) {
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK_CROWD,
       crowdName: crowdName,
+      autoApply: autoApply === true,
     });
     log('info', 'databank crowd flow done', result);
-    // Keep this tab in front so the human can see and operate the final dialog.
+    const autoApplySubmitted = autoApply && result?.ok && Array.isArray(result.trail)
+      && result.trail.some((entry) => entry?.step === 'auto_apply_submitted');
+    if (autoApplySubmitted) {
+      await setTaskTabId('databank', null);
+      try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore cleanup failure */ }
+      if (senderTab?.id) {
+        try { await focusTab(senderTab); } catch (e) { /* ignore */ }
+      }
+    }
+    // Manual mode intentionally keeps every completed tab so the human can apply later.
     sendResponse(result);
   } catch (error) {
     log('error', 'databank crowd flow failed', error.message);
@@ -423,7 +435,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: '人群包名称不能为空' });
       return;
     }
-    runDatabankCrowd(senderTab, crowdName, sendResponse);
+    runDatabankCrowd(senderTab, crowdName, message.autoApply === true, sendResponse);
     return true;
   }
 
