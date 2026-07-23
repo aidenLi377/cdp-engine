@@ -24,32 +24,10 @@
             </label>
           </div>
           <div class="tc-test-controls">
-            <el-input v-if="!databankBatchMode" v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('databank')">
-              已检测 {{ databankBatch.items.length }} 个
-            </button>
-            <button type="button" class="tc-mode-btn" :class="{ active: databankBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('databank')">
-              {{ databankBatchMode ? '单个' : '批量' }}
-            </button>
-            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">{{ databankBatchMode ? '批量运行' : '运行' }}</el-button>
+            <el-input v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
+            <button type="button" class="tc-mode-btn" :disabled="taskRunning !== null" @click="openBatchComposer('databank')">批量</button>
+            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunSingleDatabank" @click="runDatabank">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
-          </div>
-          <div v-if="databankBatchMode" class="tc-batch-panel">
-            <textarea
-              ref="databankBatchEditor"
-              v-model="databankBatchText"
-              class="tc-batch-textarea"
-              rows="3"
-              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
-            ></textarea>
-            <div class="tc-batch-stats">
-              <span class="is-valid">检测到 {{ databankBatch.items.length }} 个人群包</span>
-              <span v-if="databankBatch.duplicateCount" class="is-duplicate">已去重 {{ databankBatch.duplicateCount }} 个</span>
-            </div>
-            <div v-if="databankBatch.items.length" class="tc-batch-chips">
-              <span v-for="name in databankBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
-              <span v-if="databankBatch.items.length > 12" class="tc-batch-more">+{{ databankBatch.items.length - 12 }}</span>
-            </div>
           </div>
         </div>
         <div class="tc-test-col">
@@ -57,32 +35,10 @@
             <div class="tc-test-label">达摩盘</div>
           </div>
           <div class="tc-test-controls">
-            <el-input v-if="!dmpBatchMode" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('dmp')">
-              已检测 {{ dmpBatch.items.length }} 个
-            </button>
-            <button type="button" class="tc-mode-btn" :class="{ active: dmpBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('dmp')">
-              {{ dmpBatchMode ? '单个' : '批量' }}
-            </button>
-            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">{{ dmpBatchMode ? '批量运行' : '运行' }}</el-button>
+            <el-input v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
+            <button type="button" class="tc-mode-btn" :disabled="taskRunning !== null" @click="openBatchComposer('dmp')">批量</button>
+            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunSingleDmp" @click="runDmp">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
-          </div>
-          <div v-if="dmpBatchMode" class="tc-batch-panel">
-            <textarea
-              ref="dmpBatchEditor"
-              v-model="dmpBatchText"
-              class="tc-batch-textarea"
-              rows="3"
-              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
-            ></textarea>
-            <div class="tc-batch-stats">
-              <span class="is-valid">检测到 {{ dmpBatch.items.length }} 个人群包</span>
-              <span v-if="dmpBatch.duplicateCount" class="is-duplicate">已去重 {{ dmpBatch.duplicateCount }} 个</span>
-            </div>
-            <div v-if="dmpBatch.items.length" class="tc-batch-chips">
-              <span v-for="name in dmpBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
-              <span v-if="dmpBatch.items.length > 12" class="tc-batch-more">+{{ dmpBatch.items.length - 12 }}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -306,6 +262,110 @@
         <div class="tc-history-empty" v-else><span>暂无任务记录</span></div>
       </section>
     </main>
+
+    <el-drawer
+      v-model="batchDrawerOpen"
+      class="tc-batch-drawer"
+      size="480px"
+      direction="rtl"
+      append-to-body
+      :show-close="false"
+      :destroy-on-close="false"
+      @closed="onBatchDrawerClosed"
+    >
+      <template #header>
+        <div class="tc-batch-drawer-header">
+          <div>
+            <div class="tc-batch-kicker">{{ batchComposerType === 'databank' ? '数据引擎' : '达摩盘' }}</div>
+            <div class="tc-batch-drawer-title">批量任务</div>
+          </div>
+          <button type="button" class="tc-batch-close" aria-label="关闭批量任务" @click="cancelBatchComposer">×</button>
+        </div>
+      </template>
+
+      <div class="tc-batch-workspace">
+        <div class="tc-batch-steps" aria-label="批量任务流程">
+          <span class="active"><b>01</b> 输入名单</span>
+          <span :class="{ active: activeBatch.items.length > 0 }"><b>02</b> 检测结果</span>
+          <span :class="{ active: activeBatch.items.length > 0 }"><b>03</b> 确认执行</span>
+        </div>
+
+        <section class="tc-batch-editor-section">
+          <div class="tc-batch-section-head">
+            <div>
+              <div class="tc-batch-section-title">粘贴人群包名称</div>
+              <div class="tc-batch-section-help">支持 Excel 单列、换行、逗号、分号或 Tab；数量不设上限。</div>
+            </div>
+          </div>
+          <textarea
+            v-if="batchComposerType === 'databank'"
+            ref="databankBatchEditor"
+            v-model="databankBatchText"
+            class="tc-batch-textarea tc-batch-textarea-large"
+            placeholder="每行粘贴一个人群包名称"
+          ></textarea>
+          <textarea
+            v-else
+            ref="dmpBatchEditor"
+            v-model="dmpBatchText"
+            class="tc-batch-textarea tc-batch-textarea-large"
+            placeholder="每行粘贴一个人群包名称"
+          ></textarea>
+        </section>
+
+        <section class="tc-batch-review-section">
+          <div class="tc-batch-review-summary">
+            <div>
+              <span class="tc-batch-count">{{ activeBatch.items.length }}</span>
+              <span>个人群包</span>
+            </div>
+            <span v-if="activeBatch.duplicateCount" class="tc-batch-duplicate">
+              已自动去重 {{ activeBatch.duplicateCount }} 个
+            </span>
+          </div>
+
+          <div v-if="activeBatch.items.length" class="tc-batch-name-list">
+            <div v-for="(name, index) in activeBatch.items" :key="`${name}-${index}`" class="tc-batch-name-row">
+              <span class="tc-batch-row-index">{{ String(index + 1).padStart(2, '0') }}</span>
+              <span class="tc-batch-row-name">{{ name }}</span>
+            </div>
+          </div>
+          <div v-else class="tc-batch-empty">
+            粘贴后将在这里核对识别结果
+          </div>
+        </section>
+
+        <section class="tc-batch-note">
+          <span class="tc-batch-note-mark"></span>
+          <span v-if="batchComposerType === 'databank' && databankAutoApply">
+            自动应用已开启：每个人群包完成后会直接提交推送。
+          </span>
+          <span v-else-if="batchComposerType === 'databank'">
+            自动应用未开启：确认页面会保留，批量完成后请逐个点击“应用”。
+          </span>
+          <span v-else>
+            达摩盘任务将严格按名单顺序逐个执行。
+          </span>
+        </section>
+      </div>
+
+      <template #footer>
+        <div class="tc-batch-drawer-footer">
+          <button type="button" class="tc-batch-cancel" @click="cancelBatchComposer">取消</button>
+          <div class="tc-batch-footer-summary">
+            <span>已检测 {{ activeBatch.items.length }} 个</span>
+            <small>下一步会再次显示最终确认</small>
+          </div>
+          <el-button
+            class="tc-batch-submit"
+            :disabled="!canSubmitBatch"
+            @click="submitBatchComposer"
+          >
+            继续确认
+          </el-button>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -341,6 +401,9 @@ const databankBatchText = ref('')
 const dmpBatchText = ref('')
 const databankBatchEditor = ref(null)
 const dmpBatchEditor = ref(null)
+const batchDrawerOpen = ref(false)
+const batchComposerType = ref('databank')
+const batchLaunchPending = ref(false)
 const databankAutoApply = ref(false)
 const selectedTags = ref(loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
 const tagSearch = ref('')
@@ -368,6 +431,9 @@ const phases = ref(dmpPhases)
 
 const databankBatch = computed(() => parseCrowdBatch(databankBatchText.value))
 const dmpBatch = computed(() => parseCrowdBatch(dmpBatchText.value))
+const activeBatch = computed(() => (
+  batchComposerType.value === 'databank' ? databankBatch.value : dmpBatch.value
+))
 const databankCrowdNames = computed(() => (
   databankBatchMode.value ? databankBatch.value.items : [databankCrowd.value.trim()].filter(Boolean)
 ))
@@ -424,6 +490,32 @@ const allRebaseEnabled = computed(() => allDmpTags.value.every((tag) => isRebase
 
 const canRunDatabank = computed(() => extConnected.value && databankCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
 const canRunDmp = computed(() => extConnected.value && dmpCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunSingleDatabank = computed(() => extConnected.value && databankCrowd.value.trim().length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunSingleDmp = computed(() => extConnected.value && dmpCrowd.value.trim().length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+const canSubmitBatch = computed(() => extConnected.value && activeBatch.value.items.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+
+function openBatchComposer(type) {
+  if (taskRunning.value !== null) return
+  batchComposerType.value = type
+  databankBatchMode.value = type === 'databank'
+  dmpBatchMode.value = type === 'dmp'
+  batchDrawerOpen.value = true
+  focusBatchEditor(type)
+}
+
+function resetBatchComposerMode() {
+  databankBatchMode.value = false
+  dmpBatchMode.value = false
+}
+
+function cancelBatchComposer() {
+  batchDrawerOpen.value = false
+}
+
+function onBatchDrawerClosed() {
+  if (batchLaunchPending.value) return
+  resetBatchComposerMode()
+}
 
 function toggleBatchMode(type) {
   if (taskRunning.value !== null) return
@@ -438,6 +530,27 @@ async function focusBatchEditor(type) {
   await nextTick()
   const editor = type === 'databank' ? databankBatchEditor.value : dmpBatchEditor.value
   editor?.focus()
+}
+
+async function submitBatchComposer() {
+  if (!canSubmitBatch.value) return
+  const type = batchComposerType.value
+  const names = [...activeBatch.value.items]
+  const confirmed = await confirmBatchRun(type, names.length)
+  if (!confirmed) return
+
+  batchLaunchPending.value = true
+  batchDrawerOpen.value = false
+  taskRunning.value = type
+  taskCancelled.value = false
+
+  try {
+    if (type === 'databank') await executeBatch(names, type, { autoApply: databankAutoApply.value })
+    else await executeBatch(names, type)
+  } finally {
+    resetBatchComposerMode()
+    batchLaunchPending.value = false
+  }
 }
 
 function phaseLabel(s) { return { running: '执行中', completed: '已完成', failed: '执行失败' }[s] || s }
