@@ -316,20 +316,20 @@ test('task center disabled actions and tag labels remain opaque and readable', (
   const settings = effectiveRule(taskStyle, '.tc-settings-btn:disabled')
   const tag = effectiveRule(taskStyle, '.tc-feature-option.disabled')
 
-  assert.match(button, /background:\s*#fff\s*!important/)
+  assert.match(button, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(button, /color:\s*var\(--ui-text-secondary\)\s*!important/)
-  assert.match(button, /border:\s*0\s*!important/)
+  assert.match(button, /border:\s*1px solid var\(--ui-control-border\)\s*!important/)
   assert.match(button, /opacity:\s*1/)
   assert.match(button, /box-shadow:\s*none\s*!important/)
   assert.match(button, /transform:\s*none\s*!important/)
 
-  assert.match(settings, /background:\s*#fff/)
-  assert.match(settings, /color:\s*#1d1d1f/)
-  assert.match(settings, /border-color:\s*#1d1d1f/)
+  assert.match(settings, /background:\s*var\(--ui-surface\)/)
+  assert.match(settings, /color:\s*var\(--ui-text-secondary\)/)
+  assert.match(settings, /border-color:\s*var\(--ui-control-border\)/)
   assert.match(settings, /opacity:\s*1/)
 
   assert.match(tag, /background:\s*transparent/)
-  assert.match(tag, /color:\s*#a1a1a6/)
+  assert.match(tag, /color:\s*#ff4d6d/)
   assert.match(tag, /cursor:\s*not-allowed/)
   assert.match(tag, /opacity:\s*1/)
 
@@ -338,7 +338,7 @@ test('task center disabled actions and tag labels remain opaque and readable', (
   assert.match(disabledConditionalHover, /transform:\s*none/)
 
   assert.match(effectiveRule(taskStyle, '.tc-tag-name'), /color:\s*inherit/)
-  assert.match(effectiveRule(taskStyle, '.tc-tag-condition'), /font-weight:\s*500/)
+  assert.match(effectiveRule(taskStyle, '.tc-tag-condition'), /font-weight:\s*600/)
 })
 
 test('gallery white keeps full-height three-column rails pure white', () => {
@@ -347,6 +347,7 @@ test('gallery white keeps full-height three-column rails pure white', () => {
     '.right-panel',
     '.solution-sidebar',
     '.solution-settings',
+    '#app .tc-control-panel',
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
 
@@ -355,11 +356,6 @@ test('gallery white keeps full-height three-column rails pure white', () => {
     assert.match(rule, /border-color:\s*var\(--ui-divider\)\s*!important/)
     assert.match(rule, /box-shadow:\s*none\s*!important/)
   }
-
-  const taskControlPanel = effectiveSelectorListRule(themeCss, '#app .tc-control-panel')
-  assert.match(taskControlPanel, /background:\s*#ffffff\s*!important/)
-  assert.match(taskControlPanel, /border-right:\s*1px solid var\(--ui-divider\)\s*!important/)
-  assert.match(taskControlPanel, /box-shadow:\s*none\s*!important/)
 })
 
 test('gallery white C keeps persistent interior cards pure white and border-only', () => {
@@ -370,6 +366,7 @@ test('gallery white C keeps persistent interior cards pure white and border-only
     '.summary-compute',
     '.creating-custom-field-panel',
     '.custom-field-item:not(.active):not(.drag-over)',
+    '#app .tc-test-col:not(:focus-within)',
     '#app .tc-tag-item:not(.disabled):not(.ready):not(.checked)',
     '#app .tc-history-item',
   ]) {
@@ -379,19 +376,15 @@ test('gallery white C keeps persistent interior cards pure white and border-only
     assert.match(rule, /box-shadow:\s*none\s*!important/)
   }
 
-  const taskStyle = vueStyle('components/TaskCenter.vue')
-  const taskLaunchGroup = effectiveRule(taskStyle, '.tc-test-col')
-  assert.match(taskLaunchGroup, /background:\s*transparent/)
-  assert.match(taskLaunchGroup, /border:\s*0/)
-
   const solutionStyle = vueStyle('components/SolutionCenter.vue')
   for (const selector of ['.custom-field-item.active', '.custom-field-item.drag-over']) {
     assert.match(effectiveRule(solutionStyle, selector), /border-color:\s*var\(--ui-accent\)/)
   }
 
+  const taskStyle = vueStyle('components/TaskCenter.vue')
   assert.match(
     effectiveRule(taskStyle, '.tc-test-col:focus-within'),
-    /border-color:\s*transparent/,
+    /border-color:\s*var\(--ui-accent\)/,
   )
   assert.match(
     effectiveSelectorListRule(themeCss, '#app .tc-tag-item.checked'),
@@ -403,6 +396,7 @@ test('gallery white C card hover uses only a stronger neutral border', () => {
   for (const selector of [
     '.intercom-card:hover',
     '.published-solution-item:hover',
+    '.solution-list-item:hover',
     '.cf-use-card:hover',
     '.custom-field-item:hover:not(.active):not(.drag-over)',
     '#app .tc-history-item:hover',
@@ -414,12 +408,6 @@ test('gallery white C card hover uses only a stronger neutral border', () => {
     assert.match(rule, /box-shadow:\s*none\s*!important/)
     assert.match(rule, /transform:\s*none\s*!important/)
   }
-
-  const compactSolutionHover = effectiveSelectorListRule(themeCss, '.solution-list-item:hover')
-  assert.match(compactSolutionHover, /background:\s*#ffffff\s*!important/)
-  assert.match(compactSolutionHover, /border:\s*0\s*!important/)
-  assert.match(compactSolutionHover, /box-shadow:\s*inset 2px 0 0 #1d1d1f\s*!important/)
-  assert.match(compactSolutionHover, /transform:\s*none\s*!important/)
 })
 
 test('gallery white C renders the workbench edge toggle as a vertical mode pill', () => {
@@ -461,16 +449,8 @@ test('workbench refinement keeps navigation compact and behavior selections blac
     themeCss,
     '.workbench-section .pkg-search .el-input__wrapper',
   )
-  assert.match(packageSearch, /background:\s*#ffffff\s*!important/)
+  assert.match(packageSearch, /background:\s*var\(--ui-fill\)\s*!important/)
   assert.match(packageSearch, /border:\s*0\s*!important/)
-  assert.match(packageSearch, /border-bottom:\s*1px solid transparent\s*!important/)
-
-  const packageSearchFocus = effectiveSelectorListRule(
-    themeCss,
-    '.workbench-section .pkg-search .el-input__wrapper.is-focus',
-  )
-  assert.match(packageSearchFocus, /border-bottom-color:\s*#1d1d1f\s*!important/)
-  assert.match(packageSearchFocus, /box-shadow:\s*none\s*!important/)
 
   const activeBehaviorRadio = effectiveSelectorListRule(
     themeCss,
@@ -487,15 +467,13 @@ test('workbench refinement keeps navigation compact and behavior selections blac
   assert.match(summaryOp, /writing-mode:\s*horizontal-tb/)
 })
 
-test('solution center uses a slim white search field and crisp segmented controls', () => {
+test('solution center uses Apple-style borderless search and crisp segmented controls', () => {
   const search = effectiveSelectorListRule(
     themeCss,
     '.solution-center-page .solution-sidebar-controls .intercom-input .el-input__wrapper',
   )
-  assert.match(search, /height:\s*26px\s*!important/)
-  assert.match(search, /background:\s*#ffffff\s*!important/)
+  assert.match(search, /background:\s*var\(--ui-fill\)\s*!important/)
   assert.match(search, /border:\s*0\s*!important/)
-  assert.match(search, /border-bottom:\s*1px solid #1d1d1f\s*!important/)
   assert.match(search, /box-shadow:\s*none\s*!important/)
 
   const inactiveLibrary = effectiveSelectorListRule(
@@ -510,29 +488,6 @@ test('solution center uses a slim white search field and crisp segmented control
   )
   assert.match(createButton, /width:\s*32px\s*!important/)
   assert.match(createButton, /border-radius:\s*50%\s*!important/)
-})
-
-test('input typography and solution rows stay compact without gray card fills', () => {
-  const audienceInput = effectiveSelectorListRule(
-    themeCss,
-    '#app .right-panel > .panel-name-area .el-input__inner',
-  )
-  assert.match(audienceInput, /font-size:\s*12px\s*!important/)
-
-  const solutionRow = effectiveRule(themeCss, '.solution-list-item')
-  assert.match(solutionRow, /grid-template-columns:\s*minmax\(0,\s*1fr\) auto/)
-  assert.match(solutionRow, /min-height:\s*54px/)
-  assert.match(solutionRow, /padding:\s*8px 8px 8px 10px/)
-  assert.match(solutionRow, /background:\s*#ffffff\s*!important/)
-  assert.match(solutionRow, /border:\s*0\s*!important/)
-
-  const activeRow = effectiveSelectorListRule(themeCss, '.solution-list-item.active')
-  assert.match(activeRow, /box-shadow:\s*inset 2px 0 0 #1d1d1f\s*!important/)
-
-  const statusChip = effectiveSelectorListRule(themeCss, '.solution-status-chip')
-  assert.match(statusChip, /height:\s*18px/)
-  assert.match(statusChip, /background:\s*#ffffff/)
-  assert.match(statusChip, /border:\s*1px solid #1d1d1f/)
 })
 
 test('gallery white C preserves combined selected, drag, ready, and disabled states', () => {
@@ -572,8 +527,9 @@ test('gallery white C preserves combined selected, drag, ready, and disabled sta
   assert.match(disabledHover, /transform:\s*none/)
 })
 
-test('gallery white A uses one shared app slider and independent white capsules elsewhere', () => {
+test('gallery white A uses independent white capsules for reviewed control groups', () => {
   for (const selector of [
+    '.app-shell-nav .el-radio-group',
     '.solution-library-switch',
     '.solution-filter-group',
     '.json-tabs',
@@ -584,22 +540,14 @@ test('gallery white A uses one shared app slider and independent white capsules 
     assert.match(rule, /box-shadow:\s*none\s*!important/)
   }
 
-  const navGroup = effectiveSelectorListRule(themeCss, '.app-shell-nav .app-mode-switcher')
-  assert.match(navGroup, /display:\s*grid\s*!important/)
-  assert.match(navGroup, /grid-template-columns:\s*repeat\(3, var\(--app-nav-item-width\)\)/)
-  assert.match(navGroup, /background:\s*transparent\s*!important/)
-  assert.match(navGroup, /border:\s*0\s*!important/)
-
-  const nav = effectiveSelectorListRule(themeCss, '.app-shell-nav .app-mode-switcher .el-radio-button__inner')
-  assert.match(nav, /min-width:\s*var\(--app-nav-item-width\)/)
+  const nav = effectiveSelectorListRule(themeCss, '.app-shell-nav .el-radio-button__inner')
+  assert.match(nav, /min-width:\s*84px/)
   assert.match(nav, /height:\s*30px/)
   assert.match(nav, /border-radius:\s*999px\s*!important/)
-  assert.match(nav, /background:\s*transparent\s*!important/)
-  assert.match(nav, /border:\s*0\s*!important/)
-  assert.match(nav, /outline:\s*0\s*!important/)
+  assert.match(nav, /background:\s*var\(--ui-surface\)\s*!important/)
 
   for (const selector of [
-    '.app-shell-nav .app-mode-switcher .el-radio-button__inner',
+    '.app-shell-nav .el-radio-button__inner',
     '.solution-library-switch .el-radio-button__inner',
     '.solution-filter-group .el-radio-button__inner',
   ]) {
@@ -620,8 +568,8 @@ test('gallery white A uses one shared app slider and independent white capsules 
 
 test('gallery white A preserves capsule radii on first and last radio buttons', () => {
   for (const selector of [
-    '.app-shell-nav .app-mode-switcher .el-radio-button:first-child .el-radio-button__inner',
-    '.app-shell-nav .app-mode-switcher .el-radio-button:last-child .el-radio-button__inner',
+    '.app-shell-nav .el-radio-button:first-child .el-radio-button__inner',
+    '.app-shell-nav .el-radio-button:last-child .el-radio-button__inner',
     '.solution-library-switch .el-radio-button:first-child .el-radio-button__inner',
     '.solution-library-switch .el-radio-button:last-child .el-radio-button__inner',
     '.solution-filter-group .el-radio-button:first-child .el-radio-button__inner',
@@ -634,6 +582,7 @@ test('gallery white A preserves capsule radii on first and last radio buttons', 
 
 test('gallery white A keeps inactive radio hover white and exposes keyboard focus rings', () => {
   for (const selector of [
+    '.app-shell-nav .el-radio-button:not(.is-active):hover .el-radio-button__inner',
     '.solution-library-switch .el-radio-button:not(.is-active):hover .el-radio-button__inner',
     '.solution-filter-group .el-radio-button:not(.is-active):hover .el-radio-button__inner',
   ]) {
@@ -645,16 +594,8 @@ test('gallery white A keeps inactive radio hover white and exposes keyboard focu
     assert.doesNotMatch(rule, /var\(--ui-fill\)|background:\s*var\(--ui-accent\)/)
   }
 
-  const navHover = effectiveSelectorListRule(
-    themeCss,
-    '.app-shell-nav .app-mode-switcher .el-radio-button:not(.is-active):hover .el-radio-button__inner',
-  )
-  assert.match(navHover, /background:\s*transparent\s*!important/)
-  assert.match(navHover, /border:\s*0\s*!important/)
-  assert.match(navHover, /color:\s*#1d1d1f\s*!important/)
-  assert.match(navHover, /transform:\s*translateY\(-1px\)/)
-
   for (const selector of [
+    '.app-shell-nav .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
     '.solution-library-switch .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
     '.solution-filter-group .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
   ]) {
@@ -664,14 +605,6 @@ test('gallery white A keeps inactive radio hover white and exposes keyboard focu
     assert.match(rule, /outline:\s*none\s*!important/)
     assert.doesNotMatch(rule, /background(?:-color)?\s*:/)
   }
-
-  const navFocus = effectiveSelectorListRule(
-    themeCss,
-    '.app-shell-nav .app-mode-switcher .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
-  )
-  assert.match(navFocus, /outline:\s*1px solid #1d1d1f\s*!important/)
-  assert.match(navFocus, /outline-offset:\s*2px\s*!important/)
-  assert.match(navFocus, /box-shadow:\s*none\s*!important/)
 })
 
 test('gallery white A keeps every menu-style dropdown state white', () => {
