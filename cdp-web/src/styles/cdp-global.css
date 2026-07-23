@@ -2491,6 +2491,84 @@ body,
   box-shadow: 0 0 0 3px var(--ui-accent-ring) !important;
 }
 
+/* Task Center uses a clean black-and-white control rail. */
+#app .tc-control-panel {
+  background: #ffffff !important;
+  border-right: 1px solid var(--ui-divider) !important;
+  box-shadow: none !important;
+}
+
+#app .tc-test-col,
+#app .tc-test-col:focus-within,
+#app .tc-tags-card {
+  background: #ffffff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+#app .tc-input-sm .el-input__wrapper,
+#app .tc-input-sm .el-input__wrapper.is-focus,
+#app .tc-tags-search-input,
+#app .tc-tags-search-input:focus {
+  background: #ffffff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+#app .tc-input-sm .el-input__wrapper.is-focus,
+#app .tc-tags-search-input:focus {
+  box-shadow: inset 0 -1px 0 #1d1d1f !important;
+}
+
+#app .tc-test-col button:disabled,
+#app .tc-test-col .el-button.is-disabled {
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+#app .tc-settings-btn {
+  min-width: 48px !important;
+  height: 24px !important;
+  padding: 0 7px !important;
+  color: #1d1d1f !important;
+  background: #ffffff !important;
+  border: 1px solid #1d1d1f !important;
+  border-radius: 3px !important;
+  box-shadow: none !important;
+}
+
+#app .tc-settings-btn:hover:not(:disabled) {
+  color: #ffffff !important;
+  background: #1d1d1f !important;
+  border-color: #1d1d1f !important;
+  transform: translateY(-1px);
+}
+
+#app .tc-settings-btn:disabled {
+  color: #1d1d1f !important;
+  background: #ffffff !important;
+  border-color: #1d1d1f !important;
+  opacity: 1 !important;
+}
+
+#app .tc-history-card,
+#app .tc-history-card.expanded {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+@media (max-width: 1120px) {
+  #app .tc-control-panel {
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+  }
+}
+
 .published-solution-item.active,
 .solution-list-item.active,
 .cf-use-card-active,
@@ -3071,7 +3149,7 @@ body,
 /* Workbench visual refinement: compact navigation and stronger selected states. */
 .workbench-section.workbench-package-section,
 .workbench-section.workbench-solution-section {
-  padding: 18px 18px 14px !important;
+  padding: 10px 18px 14px !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -3235,4 +3313,252 @@ body,
   white-space: nowrap;
   word-break: keep-all;
   writing-mode: horizontal-tb;
+}
+
+/* Top-level modes share one moving black lens instead of three static pills. */
+.app-shell-nav .app-mode-switcher {
+  --app-nav-item-width: 84px;
+  position: relative;
+  isolation: isolate;
+  display: grid !important;
+  grid-template-columns: repeat(3, var(--app-nav-item-width));
+  gap: 0 !important;
+  padding: 3px !important;
+  overflow: visible;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell-nav .app-mode-switcher::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: var(--app-nav-item-width);
+  border-radius: 999px;
+  background: #1d1d1f;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.app-shell-nav .app-mode-switcher.is-solutions::before {
+  transform: translate3d(var(--app-nav-item-width), 0, 0);
+}
+
+.app-shell-nav .app-mode-switcher.is-task-center::before {
+  transform: translate3d(calc(var(--app-nav-item-width) * 2), 0, 0);
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button {
+  position: relative;
+  z-index: 1;
+  margin: 0 !important;
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button__inner,
+.app-shell-nav .app-mode-switcher .el-radio-button:first-child .el-radio-button__inner,
+.app-shell-nav .app-mode-switcher .el-radio-button:last-child .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--app-nav-item-width);
+  min-width: var(--app-nav-item-width);
+  height: 30px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  outline: 0 !important;
+  background: transparent !important;
+  color: #6e6e73 !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0;
+  line-height: 1 !important;
+  transition:
+    color 220ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    letter-spacing 220ms ease !important;
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button:not(.is-active):hover .el-radio-button__inner {
+  border: 0 !important;
+  background: transparent !important;
+  color: #1d1d1f !important;
+  box-shadow: none !important;
+  transform: translateY(-1px);
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button.is-active .el-radio-button__inner,
+.app-shell-nav .app-mode-switcher .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  border: 0 !important;
+  background: transparent !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.015em;
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button__inner:active {
+  transform: scale(0.97);
+}
+
+.app-shell-nav .app-mode-switcher .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
+  border: 0 !important;
+  outline: 1px solid #1d1d1f !important;
+  outline-offset: 2px !important;
+  box-shadow: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell-nav .app-mode-switcher::before,
+  .app-shell-nav .app-mode-switcher .el-radio-button__inner {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Pure-white search fields: use a slim black baseline instead of gray fill. */
+.workbench-section .pkg-search .el-input__wrapper,
+.workbench-section .pkg-search .el-input__wrapper:hover {
+  background: #ffffff !important;
+  border: 0 !important;
+  border-bottom: 1px solid transparent !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.workbench-section .pkg-search .el-input__wrapper.is-focus {
+  background: #ffffff !important;
+  border-bottom-color: #1d1d1f !important;
+  box-shadow: none !important;
+}
+
+.workbench-section .pkg-search .search-prefix-icon {
+  color: #1d1d1f !important;
+}
+
+#app .right-panel > .panel-name-area .el-input__wrapper {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding-inline: 9px !important;
+}
+
+#app .right-panel > .panel-name-area .el-input__inner {
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+}
+
+.solution-center-page .solution-sidebar-controls .intercom-input .el-input__wrapper,
+.solution-center-page .solution-sidebar-controls .intercom-input .el-input__wrapper:hover {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding-inline: 2px !important;
+  background: #ffffff !important;
+  border: 0 !important;
+  border-bottom: 1px solid #1d1d1f !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.solution-center-page .solution-sidebar-controls .intercom-input .el-input__wrapper.is-focus {
+  background: #ffffff !important;
+  border-bottom-color: #000000 !important;
+  box-shadow: inset 0 -1px 0 #1d1d1f !important;
+}
+
+.solution-center-page .solution-sidebar-controls .intercom-input .el-input__inner {
+  font-size: 11px !important;
+}
+
+/* Solution cards become compact white list rows with a crisp active rail. */
+.solution-list {
+  gap: 2px;
+  padding-top: 2px;
+  padding-right: 6px;
+}
+
+.solution-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name head"
+    "meta head";
+  column-gap: 8px;
+  row-gap: 3px;
+  min-height: 54px;
+  padding: 8px 8px 8px 10px;
+  background: #ffffff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.solution-list-item:hover,
+.solution-list-item.active {
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: inset 2px 0 0 #1d1d1f !important;
+  transform: none !important;
+}
+
+.solution-list-item-head {
+  grid-area: head;
+  align-self: center;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.solution-list-name {
+  grid-area: name;
+  align-self: end;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solution-list-meta {
+  grid-area: meta;
+  align-self: start;
+  gap: 8px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.solution-status-chip,
+.solution-status-chip.draft,
+.solution-status-chip.published {
+  min-width: 0;
+  height: 18px;
+  padding: 0 6px;
+  color: #1d1d1f;
+  font-size: 9px;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+  background: #ffffff;
+  border: 1px solid #1d1d1f;
+}
+
+.solution-list-item-actions {
+  gap: 2px;
+}
+
+.solution-list-icon-btn.el-button {
+  width: 20px !important;
+  min-width: 20px !important;
+  height: 20px !important;
+  color: #1d1d1f !important;
+  background: #ffffff !important;
+  border: 0 !important;
 }

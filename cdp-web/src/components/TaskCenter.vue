@@ -10,6 +10,10 @@
       </div>
 
       <!-- 测试任务（上下排列） -->
+      <div class="tc-section-heading">
+        <span class="tc-section-marker" aria-hidden="true"></span>
+        <span>任务执行</span>
+      </div>
       <div class="tc-test-row">
         <div class="tc-test-col">
           <div class="tc-test-head">
@@ -129,8 +133,8 @@
       <!-- 标签选择 -->
       <section class="tc-tags-card">
         <div class="tc-tags-head">
-          <span class="tc-tags-title">🎛️ 特征大盘</span>
-          <span class="tc-tags-count">{{ selectedTags.length }} 个</span>
+          <span class="tc-tags-title">特征大盘</span>
+          <span class="tc-tags-count">已选 {{ selectedTags.length }}</span>
         </div>
         <div class="tc-tags-search">
           <input v-model="tagSearch" placeholder="搜索标签…" class="tc-tags-search-input" />
@@ -138,7 +142,7 @@
         <div class="tc-tags-body">
           <template v-for="group in filteredTagGroups" :key="group.mainCategory">
             <div class="tc-tag-main" v-if="group.categories.some(category => category.tags.length)">
-              <div class="tc-tag-main-header">📂 {{ group.mainCategory }}</div>
+              <div class="tc-tag-main-header">{{ group.mainCategory }}</div>
               <div class="tc-tag-main-body">
                 <div
                   v-for="category in group.categories"
@@ -158,7 +162,7 @@
                       <input class="tc-tag-checkbox" type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
                       <span class="tc-tag-name">{{ tag.tagName }}</span>
                       <span class="tc-tag-condition" v-if="tag.needCondition">
-                        {{ isConditionalTagReady(tag, dmpSettings.readyTagIds) ? '✅(已就绪)' : '⚙️' }}
+                        {{ isConditionalTagReady(tag, dmpSettings.readyTagIds) ? '已就绪' : '需配置' }}
                       </span>
                     </label>
                   </div>
@@ -918,46 +922,50 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 
 /* ---- 左栏 ---- */
 .tc-control-panel {
-  display: flex; flex-direction: column; gap: 6px;
+  display: flex; flex-direction: column; gap: 0;
   padding: 18px 18px 14px;
-  background: var(--ui-fill);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-right: 1px solid var(--ui-divider);
   overflow: hidden;
 }
 
 .tc-ext-status {
   display: flex; align-items: center; gap: 7px;
-  padding: 5px 10px; border-radius: 8px; font-size: 11px;
-  background: rgba(255,59,48,0.04); border: 1px solid rgba(255,59,48,0.10);
+  margin-bottom: 16px; padding: 2px 1px; border: 0; border-radius: 0; font-size: 11px;
+  background: transparent;
   transition: all 0.35s ease; flex-shrink: 0;
 }
-.tc-ext-status.connected { background: rgba(52,199,89,0.03); border-color: rgba(52,199,89,0.10); }
-.tc-ext-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 0 2px rgba(255,59,48,0.10); flex-shrink: 0; transition: all 0.3s ease; }
-.tc-ext-status.connected .tc-ext-dot { background: #34c759; box-shadow: 0 0 0 2px rgba(52,199,89,0.10), 0 0 8px rgba(52,199,89,0.20); }
+.tc-ext-status.connected { background: transparent; border-color: transparent; }
+.tc-ext-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: none; flex-shrink: 0; transition: all 0.3s ease; }
+.tc-ext-status.connected .tc-ext-dot { background: #34c759; box-shadow: none; }
 .tc-ext-label { font-weight: 500; color: #171717; }
 .tc-ext-hint { color: #ff3b30; }
 
-.tc-test-row { display: flex; flex-direction: column; gap: 5px; flex-shrink: 0; }
-.tc-test-col { background: var(--ui-surface); border: 1px solid var(--ui-divider); border-radius: 10px; padding: 7px 10px; transition: border-color 0.25s ease; }
-.tc-test-col:focus-within { border-color: var(--ui-accent); }
+.tc-section-heading { display: flex; align-items: center; gap: 7px; margin: 0 1px 11px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
+.tc-section-marker { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; flex: 0 0 auto; }
+.tc-test-row { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; padding-left: 9px; flex-shrink: 0; }
+.tc-test-col { background: transparent; border: 0; border-radius: 0; padding: 0 1px; }
+.tc-test-col:focus-within { border-color: transparent; }
 .tc-test-head { min-height: 22px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
 .tc-test-label { font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
 .tc-auto-apply { display: inline-flex; align-items: center; gap: 6px; color: #6e6e73; font-size: 10px; cursor: pointer; }
 .tc-auto-apply :deep(.el-switch) { --el-switch-on-color: #1d1d1f; --el-switch-off-color: #d1d1d6; height: 18px; }
 .tc-test-controls { display: flex; gap: 6px; align-items: center; }
 .tc-input-sm { flex: 1; min-width: 0; }
-.tc-input-sm :deep(.el-input__wrapper) { background: rgba(0,0,0,0.015); border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; box-shadow: none !important; padding: 0 10px; height: 32px; font-size: 12px; }
-.tc-input-sm :deep(.el-input__wrapper:hover) { border-color: rgba(0,0,0,0.10); }
-.tc-input-sm :deep(.el-input__wrapper.is-focus) { background: var(--ui-surface); border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring) !important; }
+.tc-input-sm :deep(.el-input__wrapper) { background: #fff; border: 0; border-radius: 0; box-shadow: none !important; padding: 0 6px; height: 32px; font-size: 12px; }
+.tc-input-sm :deep(.el-input__wrapper:hover) { background: #fff; }
+.tc-input-sm :deep(.el-input__wrapper.is-focus) { background: #fff; border-color: transparent; box-shadow: inset 0 -1px 0 #1d1d1f !important; }
 .tc-input-sm :deep(.el-input__inner) { font-size: 12px; }
-.tc-mode-btn { height: 32px; padding: 0 8px; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; background: rgba(0,0,0,0.015); color: #6e6e73; font-size: 10px; cursor: pointer; flex-shrink: 0; }
-.tc-mode-btn:hover:not(:disabled), .tc-mode-btn.active { color: #1d1d1f; border-color: rgba(0,0,0,0.14); background: rgba(0,0,0,0.04); }
-.tc-batch-summary { flex: 1; min-width: 0; height: 32px; padding: 0 10px; overflow: hidden; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; background: rgba(0,0,0,0.015); color: #4b4b4f; font-size: 11px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: text; }
-.tc-batch-panel { margin-top: 6px; padding: 7px; border: 1px solid rgba(0,0,0,0.055); border-radius: 9px; background: rgba(0,0,0,0.012); }
-.tc-batch-textarea { display: block; width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; padding: 7px 9px; border: 1px solid rgba(0,0,0,0.07); border-radius: 7px; outline: none; background: #fff; color: #333; font: 11px/1.5 "SF Mono", "Cascadia Code", ui-monospace; transition: border-color 0.18s ease, box-shadow 0.18s ease; }
-.tc-batch-textarea:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.tc-mode-btn { height: 32px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: #6e6e73; font-size: 10px; cursor: pointer; flex-shrink: 0; }
+.tc-mode-btn:hover:not(:disabled) { color: #1d1d1f; background: transparent; }
+.tc-mode-btn.active { color: #fff; background: #1d1d1f; }
+.tc-batch-summary { flex: 1; min-width: 0; height: 32px; padding: 0 6px; overflow: hidden; border: 0; border-radius: 0; background: #fff; color: #1d1d1f; font-size: 11px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: text; }
+.tc-batch-summary:focus-visible { outline: none; box-shadow: inset 0 -1px 0 #1d1d1f; }
+.tc-batch-panel { margin-top: 6px; padding: 8px; border: 0; border-radius: 10px; background: #fff; }
+.tc-batch-textarea { display: block; width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; padding: 7px 6px; border: 0; border-radius: 0; outline: none; background: #fff; color: #333; font: 11px/1.5 "SF Mono", "Cascadia Code", ui-monospace; transition: background 0.18s ease; }
+.tc-batch-textarea:focus { background: #fff; box-shadow: inset 0 -1px 0 #1d1d1f; }
 .tc-batch-textarea::placeholder { color: #b5b5ba; }
 .tc-batch-stats { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10px; }
 .tc-batch-stats .is-valid { color: #208a43; font-weight: 600; }
@@ -980,15 +988,17 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
   border-color: var(--ui-ink) !important;
   box-shadow: none !important;
 }
-.tc-btn-sm:disabled { background: var(--ui-surface) !important; color: var(--ui-text-secondary) !important; border: 1px solid var(--ui-control-border) !important; opacity: 1; box-shadow: none !important; transform: none !important; }
+.tc-btn-sm:disabled { background: #fff !important; color: var(--ui-text-secondary) !important; border: 0 !important; opacity: 1; box-shadow: none !important; transform: none !important; }
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 
-.tc-dmp-tools { display: flex; align-items: center; gap: 5px; padding: 2px 1px; flex-shrink: 0; }
-.tc-dmp-tools-label { margin-right: auto; font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
-.tc-settings-btn { height: 26px; padding: 0 9px; border: 1px solid rgba(0,0,0,0.06); border-radius: 7px; background: rgba(255,255,255,0.72); color: #4b4b4f; font-size: 10px; cursor: pointer; transition: all 0.18s ease; }
-.tc-settings-btn:hover:not(:disabled) { color: var(--ui-accent); border-color: var(--ui-control-border); background: var(--ui-surface); }
-.tc-settings-btn:disabled { background: var(--ui-surface); color: var(--ui-text-secondary); border-color: var(--ui-control-border); opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
+.tc-dmp-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 20px; padding: 0 1px; flex-shrink: 0; }
+.tc-dmp-tools-label { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
+.tc-dmp-tools-label::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
+.tc-settings-btn { min-width: 48px; height: 24px; padding: 0 7px; border: 1px solid #1d1d1f; border-radius: 3px; background: #fff; color: #1d1d1f; font-size: 9px; font-weight: 550; letter-spacing: 0.01em; cursor: pointer; transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease; }
+.tc-settings-btn:hover:not(:disabled) { color: #fff; background: #1d1d1f; transform: translateY(-1px); }
+.tc-settings-btn:active:not(:disabled) { transform: scale(0.96); }
+.tc-settings-btn:disabled { background: #fff; color: #1d1d1f; border-color: #1d1d1f; opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
 .tc-settings-state { font-size: 9px; color: #a1a1a6; }
 .tc-settings-panel { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; padding: 2px; }
 .tc-settings-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 1; padding-bottom: 5px; background: #fff; }
@@ -1001,34 +1011,35 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-rebase-panel { max-height: 390px; }
 
 /* 标签 */
-.tc-tags-card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(255,255,255,0.74); border: 1px solid rgba(0,0,0,0.05); border-radius: 14px; overflow: hidden; }
-.tc-tags-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--ui-divider); background: var(--ui-surface); flex-shrink: 0; }
-.tc-tags-title { font-size: 12px; font-weight: 550; color: #171717; }
-.tc-tags-count { font-family: "SF Mono", "Cascadia Code", ui-monospace; font-size: 10px; color: var(--ui-accent); font-weight: 600; }
-.tc-tags-search { padding: 6px 10px; flex-shrink: 0; }
-.tc-tags-search-input { width: 100%; padding: 6px 10px; border: 1px solid rgba(0,0,0,0.06); border-radius: 8px; font-size: 11px; outline: none; background: rgba(0,0,0,0.015); color: #333; transition: border-color 0.2s ease; box-sizing: border-box; }
-.tc-tags-search-input:focus { border-color: var(--ui-accent); background: var(--ui-surface); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.tc-tags-card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; border: 0; border-radius: 0; overflow: hidden; }
+.tc-tags-head { display: flex; align-items: center; justify-content: space-between; padding: 0 3px 8px 1px; border: 0; background: transparent; flex-shrink: 0; }
+.tc-tags-title { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; color: #1d1d1f; letter-spacing: -0.01em; }
+.tc-tags-title::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
+.tc-tags-count { font-family: inherit; font-size: 10px; color: #86868b; font-weight: 500; }
+.tc-tags-search { padding: 0 0 10px; flex-shrink: 0; }
+.tc-tags-search-input { width: 100%; height: 32px; padding: 0 6px; border: 0; border-radius: 0; font-size: 11px; outline: none; background: #fff; color: #1d1d1f; transition: color 0.2s ease, box-shadow 0.18s ease; box-sizing: border-box; }
+.tc-tags-search-input:focus { border-color: transparent; background: #fff; box-shadow: inset 0 -1px 0 #1d1d1f; }
 .tc-tags-search-input::placeholder { color: #c0c0c0; }
-.tc-tags-body { flex: 1; overflow-y: auto; padding: 6px 12px 12px; }
-.tc-tag-main { margin-bottom: 15px; }
+.tc-tags-body { flex: 1; overflow-y: auto; padding: 0 2px 12px; scrollbar-width: thin; scrollbar-color: #c7c7cc transparent; }
+.tc-tag-main { margin-bottom: 18px; }
 .tc-tag-main:last-child { margin-bottom: 0; }
-.tc-tag-main-header { padding: 10px 14px; border-left: 4px solid #171717; border-radius: 0 6px 6px 0; background: #f8f9fa; color: #333; font-size: 13px; font-weight: 600; transition: background 0.2s ease; }
-.tc-tag-main-header:hover { background: #f1f3f5; }
-.tc-tag-main-body { padding-left: 10px; }
+.tc-tag-main-header { padding: 8px 2px 6px; border: 0; border-radius: 0; background: transparent; color: #1d1d1f; font-size: 12px; font-weight: 650; letter-spacing: -0.01em; }
+.tc-tag-main-header:hover { background: transparent; }
+.tc-tag-main-body { padding-left: 0; }
 .tc-tag-category { margin-top: 10px; }
-.tc-tag-category-name { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px dashed #eee; color: #888; font-size: 12px; font-weight: 700; }
-.tc-tag-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 11px; }
-.tc-feature-option { display: inline-flex; align-items: center; min-width: 0; padding: 3px 6px; border-radius: 4px; color: #444; cursor: pointer; transition: background 0.2s ease; user-select: none; }
-.tc-feature-option:hover:not(.disabled) { background: #f4f5f7; }
-.tc-feature-option.checked { background: transparent; }
-.tc-feature-option.disabled { background: transparent; color: #ff4d6d; cursor: not-allowed; opacity: 1; }
+.tc-tag-category-name { margin-bottom: 4px; padding: 0 3px; border: 0; color: #86868b; font-size: 10px; font-weight: 550; letter-spacing: 0.03em; }
+.tc-tag-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 6px; font-size: 11px; }
+.tc-feature-option { display: inline-flex; align-items: center; min-width: 0; min-height: 27px; padding: 3px 6px; border-radius: 7px; color: #3a3a3c; cursor: pointer; transition: background 0.18s ease, color 0.18s ease; user-select: none; }
+.tc-feature-option:hover:not(.disabled) { background: transparent; color: #000; }
+.tc-feature-option.checked { background: transparent; color: #000; font-weight: 550; }
+.tc-feature-option.disabled { background: transparent; color: #a1a1a6; cursor: not-allowed; opacity: 1; }
 .tc-feature-option.disabled.needCond:hover { background: transparent; transform: none; }
-.tc-feature-option.needCond:not(.ready) { color: #ff4d6d; }
-.tc-feature-option.needCond.ready { color: #28a745; }
-.tc-tag-checkbox { width: 13px; height: 13px; margin: 0; accent-color: #171717; cursor: pointer; flex-shrink: 0; }
+.tc-feature-option.needCond:not(.ready) { color: #86868b; }
+.tc-feature-option.needCond.ready { color: #1d1d1f; }
+.tc-tag-checkbox { width: 12px; height: 12px; margin: 0; accent-color: #171717; cursor: pointer; flex-shrink: 0; }
 .tc-tag-checkbox:disabled { cursor: not-allowed; opacity: 0.62; }
 .tc-tag-name { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 450; color: inherit; }
-.tc-tag-condition { margin-left: 4px; white-space: nowrap; font-size: 9px; font-weight: 600; }
+.tc-tag-condition { margin-left: 4px; white-space: nowrap; color: #86868b; font-size: 8px; font-weight: 500; }
 .tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */
@@ -1159,8 +1170,8 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-empty-desc { font-size: 11px; color: rgba(0,0,0,0.12); text-align: center; line-height: 1.5; }
 
 /* 任务记录 */
-.tc-history-card { flex: 1 1 0; min-height: 120px; display: flex; flex-direction: column; background: rgba(255,255,255,0.60); border: 1px solid rgba(0,0,0,0.03); border-radius: 14px; padding: 12px 16px; overflow: hidden; transition: all 0.3s ease; }
-.tc-history-card.expanded { background: rgba(255,255,255,0.76); }
+.tc-history-card { flex: 1 1 0; min-height: 120px; display: flex; flex-direction: column; background: transparent; border: 0; border-radius: 0; padding: 12px 16px; overflow: hidden; transition: none; }
+.tc-history-card.expanded { background: transparent; }
 .tc-history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; flex-shrink: 0; }
 .tc-history-title { font-size: 13px; font-weight: 550; color: #171717; }
 .tc-history-clear { font-size: 10px !important; color: #a1a1a6 !important; }
@@ -1220,6 +1231,6 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 
 @media (max-width: 1120px) {
   .task-center-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
-  .tc-control-panel { border-right: none; border-bottom: 1px solid rgba(0,0,0,0.06); }
+  .tc-control-panel { border-right: 0; border-bottom: 0; }
 }
 </style>

@@ -19,10 +19,16 @@
         </div>
 
         <nav class="app-shell-nav" aria-label="主导航">
-          <el-radio-group v-model="appMode" size="small" class="intercom-radio-group">
-            <el-radio-button label="workbench">工作台</el-radio-button>
-            <el-radio-button label="solutions">方案中心</el-radio-button>
-            <el-radio-button label="task-center">任务中台</el-radio-button>
+          <el-radio-group
+            v-model="appMode"
+            size="small"
+            class="intercom-radio-group app-mode-switcher"
+            :class="`is-${appMode}`"
+            aria-label="切换工作区域"
+          >
+            <el-radio-button value="workbench">工作台</el-radio-button>
+            <el-radio-button value="solutions">方案中心</el-radio-button>
+            <el-radio-button value="task-center">任务中台</el-radio-button>
           </el-radio-group>
         </nav>
 
