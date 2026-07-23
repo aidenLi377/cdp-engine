@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DMP Copilot - CDP 联合执行器",
   "short_name": "DMP Copilot",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "保留 DMP 美妆洞察能力，并统一提供 CDP、DataBank 与 DMP 自动化任务执行。",
   "author": "Bzhi",
   "icons": {

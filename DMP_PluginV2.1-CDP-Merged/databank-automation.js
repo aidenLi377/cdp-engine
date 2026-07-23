@@ -23,6 +23,9 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const PARAM_PAGE_POLL_MS = 500;
   const PARAM_PAGE_FINAL_SETTLE_MS = 2000;
   const PARAM_PAGE_READY_TIMEOUT_MS = 90000;
+  const CROWD_DIALOG_POLL_MS = 500;
+  const CROWD_DIALOG_FINAL_SETTLE_MS = 2000;
+  const CROWD_DIALOG_READY_TIMEOUT_MS = 60000;
   const CROWD_CONFIRM_SETTLE_MS = 900;
   // DataHub XPaths
   const DATAHUB_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div/div/div[2]/div/div/div[1]/div[2]/div[1]/span/span/span[1]/input';
@@ -30,6 +33,15 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DIALOG_ROOT_SELECTORS = '[role="dialog"], .el-dialog, .el-overlay-dialog, .next-dialog, .ant-modal, .ui-dialog';
   const CONFIRM_CONTROL_SELECTOR = 'button, [role="button"]';
   const CONFIRM_CONTROL_TEXTS = ['确定', '确认'];
+  const PAGE_LOADING_SELECTORS = [
+    '.next-loading-mask',
+    '.next-loading-indicator',
+    '.next-loading-tip',
+    '.ant-spin-spinning',
+    '.el-loading-mask',
+    '.el-loading-spinner',
+    '[aria-busy="true"]',
+  ];
   let pendingManualApplyControl = null;
 
   function getNodeByXpath(xpath) {
@@ -65,19 +77,15 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return isNodeInteractive(xpathNode) ? xpathNode : getVisibleNodeByText('span', '参数粘贴');
   }
 
-  function isParamPageLoading() {
-    const selectors = [
-      '.next-loading-mask',
-      '.next-loading-indicator',
-      '.next-loading-tip',
-      '.ant-spin-spinning',
-      '.el-loading-mask',
-      '.el-loading-spinner',
-      '[aria-busy="true"]',
-    ];
-    return selectors.some((selector) =>
-      Array.from(document.querySelectorAll(selector)).some(isNodeVisible)
+  function hasVisibleLoadingIndicator(root) {
+    const queryRoot = root && typeof root.querySelectorAll === 'function' ? root : document;
+    return PAGE_LOADING_SELECTORS.some((selector) =>
+      Array.from(queryRoot.querySelectorAll(selector)).some(isNodeVisible)
     );
+  }
+
+  function isParamPageLoading() {
+    return hasVisibleLoadingIndicator(document);
   }
 
   function getParamPageSignature() {
@@ -525,15 +533,107 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return { step: 'clicked_apply' };
   }
 
+  function getAlimamaCandidateText(node) {
+    return [
+      node?.textContent,
+      node?.getAttribute?.('aria-label'),
+      node?.getAttribute?.('title'),
+      node?.getAttribute?.('alt'),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, '')
+      .trim();
+  }
+
+  function findVisibleAlimamaControl() {
+    const xpathNode = getNodeByXpath(CROWD_DIALOG_ALIMAMA_XPATH);
+    if (isNodeInteractive(xpathNode)) return xpathNode;
+
+    const visibleDialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTORS))
+      .filter(isNodeVisible);
+    const searchRoots = visibleDialogRoots.length > 0 ? visibleDialogRoots : [document];
+    const candidateSelector = [
+      'label',
+      '[role="radio"]',
+      'button',
+      '[role="button"]',
+      '[aria-label*="阿里妈妈"]',
+      '[title*="阿里妈妈"]',
+      'img[alt*="阿里妈妈"]',
+      'span',
+      'div',
+    ].join(', ');
+
+    for (const root of searchRoots) {
+      const candidates = Array.from(root.querySelectorAll(candidateSelector))
+        .filter((node) => isNodeVisible(node) && getAlimamaCandidateText(node).includes('阿里妈妈'))
+        .sort((left, right) => {
+          const leftText = getAlimamaCandidateText(left);
+          const rightText = getAlimamaCandidateText(right);
+          const leftExact = leftText === '阿里妈妈' ? 0 : 1;
+          const rightExact = rightText === '阿里妈妈' ? 0 : 1;
+          return leftExact - rightExact || leftText.length - rightText.length;
+        });
+
+      for (const candidate of candidates) {
+        const clickableAncestor = candidate.closest?.(
+          'label, [role="radio"], button, [role="button"]'
+        );
+        if (isNodeInteractive(clickableAncestor)) return clickableAncestor;
+        if (isNodeInteractive(candidate)) return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  async function waitForCrowdApplyDialogInitialized() {
+    const deadline = Date.now() + CROWD_DIALOG_READY_TIMEOUT_MS;
+    let firstVisibleAt = null;
+
+    while (Date.now() < deadline) {
+      const currentControl = findVisibleAlimamaControl();
+      if (!isNodeInteractive(currentControl)) {
+        firstVisibleAt = null;
+        await sleep(CROWD_DIALOG_POLL_MS);
+        continue;
+      }
+
+      const dialogRoot = getDialogRoot(currentControl)
+        || currentControl.closest?.('[class*="dialog"], [class*="modal"]');
+      if (isNodeVisible(dialogRoot) && hasVisibleLoadingIndicator(dialogRoot)) {
+        firstVisibleAt = null;
+        await sleep(CROWD_DIALOG_POLL_MS);
+        continue;
+      }
+
+      if (firstVisibleAt === null) firstVisibleAt = Date.now();
+      if (Date.now() - firstVisibleAt >= CROWD_DIALOG_FINAL_SETTLE_MS) {
+        // The platform may replace the option node while repainting. Confirm the
+        // current live control twice, but do not require it to be the same object.
+        await sleep(200);
+        const latestControl = findVisibleAlimamaControl();
+        if (isNodeInteractive(latestControl)) {
+          const latestDialogRoot = getDialogRoot(latestControl)
+            || latestControl.closest?.('[class*="dialog"], [class*="modal"]');
+          if (!isNodeVisible(latestDialogRoot) || !hasVisibleLoadingIndicator(latestDialogRoot)) {
+            console.info('[Databank Automation] Alimama option is ready for click');
+            return latestControl;
+          }
+        }
+        firstVisibleAt = null;
+      }
+
+      await sleep(CROWD_DIALOG_POLL_MS);
+    }
+
+    throw new Error('等待可点击的阿里妈妈选项超时');
+  }
+
   async function databankSelectAlimama() {
     // Click "阿里妈妈" radio in the apply dialog
-    const label = await waitForLocator(
-      () => {
-        const node = getNodeByXpath(CROWD_DIALOG_ALIMAMA_XPATH);
-        return isNodeVisible(node) ? node : null;
-      },
-      '阿里妈妈选项', 10000, 300
-    );
+    const label = await waitForCrowdApplyDialogInitialized();
     clickNode(label);
     await sleep(500);
     return { step: 'selected_alimama' };

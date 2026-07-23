@@ -351,6 +351,31 @@ test('content automation waits for the full parameter page to settle before clic
   assert.ok(harness.getState().triggerClickAt >= pageLoadingUntilMs + 3500)
 })
 
+test('crowd push finds Alimama inside the visible dialog and clicks the refreshed live node', () => {
+  const locatorStart = CONTENT_SCRIPT_SOURCE.indexOf('function findVisibleAlimamaControl')
+  const locatorEnd = CONTENT_SCRIPT_SOURCE.indexOf('async function waitForCrowdApplyDialogInitialized', locatorStart)
+  const locatorFlow = CONTENT_SCRIPT_SOURCE.slice(locatorStart, locatorEnd)
+  const waitStart = CONTENT_SCRIPT_SOURCE.indexOf('async function waitForCrowdApplyDialogInitialized')
+  const waitEnd = CONTENT_SCRIPT_SOURCE.indexOf('async function databankSelectAlimama', waitStart)
+  const waitFlow = CONTENT_SCRIPT_SOURCE.slice(waitStart, waitEnd)
+  const selectStart = CONTENT_SCRIPT_SOURCE.indexOf('async function databankSelectAlimama')
+  const selectEnd = CONTENT_SCRIPT_SOURCE.indexOf('async function databankSelectDmp', selectStart)
+  const selectFlow = CONTENT_SCRIPT_SOURCE.slice(selectStart, selectEnd)
+  const settleAt = selectFlow.indexOf('const label = await waitForCrowdApplyDialogInitialized()')
+  const clickAt = selectFlow.indexOf('clickNode(label)')
+
+  assert.match(locatorFlow, /getNodeByXpath\(CROWD_DIALOG_ALIMAMA_XPATH\)/)
+  assert.match(locatorFlow, /document\.querySelectorAll\(DIALOG_ROOT_SELECTORS\)/)
+  assert.match(locatorFlow, /includes\('阿里妈妈'\)/)
+  assert.match(locatorFlow, /label, \[role="radio"\], button, \[role="button"\]/)
+  assert.match(waitFlow, /Date\.now\(\) - firstVisibleAt >= CROWD_DIALOG_FINAL_SETTLE_MS/)
+  assert.match(waitFlow, /const latestControl = findVisibleAlimamaControl\(\)/)
+  assert.match(waitFlow, /return latestControl/)
+  assert.doesNotMatch(waitFlow, /alimamaNode ===|dialogRoot ===|signature ===/)
+  assert.ok(settleAt >= 0)
+  assert.ok(clickAt > settleAt)
+})
+
 test('content automation treats the import dialog as closed even if another 确定 button stays visible elsewhere', async () => {
   const harness = createContentHarness()
 

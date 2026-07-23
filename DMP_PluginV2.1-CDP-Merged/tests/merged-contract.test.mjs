@@ -11,7 +11,7 @@ const manifest = JSON.parse(read('manifest.json'))
 
 test('merged manifest preserves DMP Copilot and adds CDP task execution surfaces', () => {
   assert.equal(manifest.manifest_version, 3)
-  assert.equal(manifest.version, '2.1.0')
+  assert.equal(manifest.version, '2.2.0')
   assert.equal(manifest.background.service_worker, 'background.js')
   for (const permission of ['storage', 'clipboardWrite', 'tabs', 'scripting']) {
     assert.ok(manifest.permissions.includes(permission), `missing permission: ${permission}`)
