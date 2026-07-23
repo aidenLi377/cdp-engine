@@ -57,14 +57,9 @@ test('DataBank flow supports explicit auto apply while preserving manual confirm
   assert.match(source, /已自动点击“应用”，推送已提交至达摩盘/)
 })
 
-test('task center keeps single run actions and moves batch creation into a review drawer', () => {
-  assert.match(source, /@click="runDatabank">运行<\/el-button>/)
-  assert.match(source, /@click="runDmp">运行<\/el-button>/)
-  assert.match(source, /@click="openBatchComposer\('databank'\)">批量<\/button>/)
-  assert.match(source, /@click="openBatchComposer\('dmp'\)">批量<\/button>/)
-  assert.match(source, /<el-drawer[\s\S]*class="tc-batch-drawer"/)
-  assert.match(source, /批量任务[\s\S]*输入名单[\s\S]*检测结果[\s\S]*确认执行/)
-  assert.match(source, /@click="submitBatchComposer"\s*>\s*继续确认\s*<\/el-button>/)
+test('task center keeps single run actions and adds batch paste entry points', () => {
+  assert.match(source, /@click="runDatabank">\{\{ databankBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
+  assert.match(source, /@click="runDmp">\{\{ dmpBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
   assert.match(source, /parseCrowdBatch/)
   assert.match(source, /目前检测到 \$\{count\} 个人群包，是否批量执行/)
   assert.match(source, /keepRunning: true/)
