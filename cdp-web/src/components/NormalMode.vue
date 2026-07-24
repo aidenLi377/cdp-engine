@@ -13,15 +13,17 @@
       <div class="workbench-section-head">
         <div>
           <div class="display-feature-title">已发布方案</div>
-          <div class="display-body-light">加载后进入工作台方案使用态</div>
         </div>
-        <el-button
-          class="intercom-btn-outlined btn-small"
-          @click="loadPublishedSolutions"
-          :loading="loadingPublishedSolutions"
-        >
-          刷新
-        </el-button>
+        <el-tooltip content="刷新方案" placement="bottom">
+          <el-button
+            class="workbench-section-icon-btn"
+            :icon="RefreshRight"
+            circle
+            aria-label="刷新方案"
+            @click="loadPublishedSolutions"
+            :loading="loadingPublishedSolutions"
+          />
+        </el-tooltip>
       </div>
 
       <el-radio-group
@@ -60,11 +62,13 @@
           :class="{ active: currentSolution?.id === item.id && workbenchMode === 'solution-use' }"
           @click="loadPublishedSolution(item)"
         >
-          <div class="published-solution-top">
-            <span class="solution-status-chip published">已发布</span>
-            <span class="display-mono">{{ item.nodes?.length || 0 }} 节点</span>
+          <div class="solution-list-item-head">
+            <span class="solution-status-light published" role="img" aria-label="已发布"></span>
           </div>
-          <div class="display-body strong published-solution-name">{{ item.name || '未命名方案' }}</div>
+          <div class="display-body strong solution-list-name published-solution-name">{{ item.name || '未命名方案' }}</div>
+          <div class="solution-list-meta">
+            <span>{{ item.nodes?.length || 0 }} 个节点</span>
+          </div>
           <div v-if="loadingSolutionId === item.id" class="display-body-light published-solution-loading">
             正在加载...
           </div>
@@ -575,7 +579,7 @@
         </div>
       </div>
 
-      <pre v-else class="json-code display-mono">{{ JSON.stringify(generatedJson, null, isPureOfficialParityOutput() ? '\t' : 2) }}</pre>
+      <pre v-else class="json-code display-mono" aria-label="JSON 预览">{{ getPreviewJsonText() }}</pre>
     </div>
   </div>
 </template>
@@ -583,7 +587,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch, provide } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, FolderAdd, RefreshLeft, Search } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, FolderAdd, RefreshLeft, RefreshRight, Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import FolderTree from './FolderTree.vue'
 import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
@@ -1633,6 +1637,10 @@ function isPureOfficialParityOutput() {
 
 function getGeneratedJsonText() {
   return JSON.stringify(generatedJson.value, null, isPureOfficialParityOutput() ? '\t' : 4)
+}
+
+function getPreviewJsonText() {
+  return JSON.stringify(generatedJson.value, null, 2)
 }
 
 async function copyJson() {

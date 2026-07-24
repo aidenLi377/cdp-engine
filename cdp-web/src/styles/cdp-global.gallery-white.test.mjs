@@ -402,7 +402,6 @@ test('gallery white C keeps persistent interior cards pure white and border-only
 test('gallery white C card hover uses only a stronger neutral border', () => {
   for (const selector of [
     '.intercom-card:hover',
-    '.published-solution-item:hover',
     '.cf-use-card:hover',
     '.custom-field-item:hover:not(.active):not(.drag-over)',
     '#app .tc-history-item:hover',
@@ -416,10 +415,16 @@ test('gallery white C card hover uses only a stronger neutral border', () => {
   }
 
   const compactSolutionHover = effectiveSelectorListRule(themeCss, '.solution-list-item:hover')
-  assert.match(compactSolutionHover, /background:\s*#ffffff\s*!important/)
+  assert.match(compactSolutionHover, /background:\s*var\(--ui-surface\)\s*!important/)
   assert.match(compactSolutionHover, /border:\s*0\s*!important/)
   assert.match(compactSolutionHover, /box-shadow:\s*inset 2px 0 0 #1d1d1f\s*!important/)
   assert.match(compactSolutionHover, /transform:\s*none\s*!important/)
+
+  const workbenchSolutionHover = effectiveSelectorListRule(themeCss, '.published-solution-item:hover')
+  assert.match(workbenchSolutionHover, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(workbenchSolutionHover, /border:\s*0\s*!important/)
+  assert.match(workbenchSolutionHover, /box-shadow:\s*inset 2px 0 0 #1d1d1f\s*!important/)
+  assert.match(workbenchSolutionHover, /transform:\s*none\s*!important/)
 })
 
 test('gallery white C renders the workbench edge toggle as a vertical mode pill', () => {
@@ -502,7 +507,9 @@ test('solution center uses a slim white search field and crisp segmented control
     themeCss,
     '.solution-center-page .solution-library-switch .el-radio-button:not(.is-active) .el-radio-button__inner',
   )
-  assert.match(inactiveLibrary, /border:\s*1px solid var\(--ui-ink\)\s*!important/)
+  assert.match(inactiveLibrary, /background:\s*transparent\s*!important/)
+  assert.match(inactiveLibrary, /border:\s*0\s*!important/)
+  assert.match(inactiveLibrary, /box-shadow:\s*none\s*!important/)
 
   const createButton = effectiveSelectorListRule(
     themeCss,
@@ -529,10 +536,13 @@ test('input typography and solution rows stay compact without gray card fills', 
   const activeRow = effectiveSelectorListRule(themeCss, '.solution-list-item.active')
   assert.match(activeRow, /box-shadow:\s*inset 2px 0 0 #1d1d1f\s*!important/)
 
-  const statusChip = effectiveSelectorListRule(themeCss, '.solution-status-chip')
-  assert.match(statusChip, /height:\s*18px/)
-  assert.match(statusChip, /background:\s*#ffffff/)
-  assert.match(statusChip, /border:\s*1px solid #1d1d1f/)
+  const statusLight = effectiveSelectorListRule(themeCss, '.solution-status-light')
+  assert.match(statusLight, /width:\s*8px/)
+  assert.match(statusLight, /height:\s*8px/)
+  assert.match(statusLight, /--solution-status-color:\s*#ff9500/)
+  assert.match(statusLight, /animation:\s*solution-status-breathe/)
+  assert.match(effectiveRule(themeCss, '.solution-status-light.published'), /#1d1d1f/)
+  assert.match(effectiveRule(themeCss, '.solution-status-light.draft'), /#ff3b30/)
 })
 
 test('gallery white C preserves combined selected, drag, ready, and disabled states', () => {
@@ -572,7 +582,7 @@ test('gallery white C preserves combined selected, drag, ready, and disabled sta
   assert.match(disabledHover, /transform:\s*none/)
 })
 
-test('gallery white A uses one shared app slider and independent white capsules elsewhere', () => {
+test('gallery white A uses one shared app slider and borderless secondary switches', () => {
   for (const selector of [
     '.solution-library-switch',
     '.solution-filter-group',
@@ -618,32 +628,50 @@ test('gallery white A uses one shared app slider and independent white capsules 
   }
 })
 
-test('gallery white A preserves capsule radii on first and last radio buttons', () => {
+test('gallery white A reserves capsules for primary navigation and uses compact status tiles', () => {
   for (const selector of [
     '.app-shell-nav .app-mode-switcher .el-radio-button:first-child .el-radio-button__inner',
     '.app-shell-nav .app-mode-switcher .el-radio-button:last-child .el-radio-button__inner',
     '.solution-library-switch .el-radio-button:first-child .el-radio-button__inner',
     '.solution-library-switch .el-radio-button:last-child .el-radio-button__inner',
-    '.solution-filter-group .el-radio-button:first-child .el-radio-button__inner',
-    '.solution-filter-group .el-radio-button:last-child .el-radio-button__inner',
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
     assert.match(rule, /border-radius:\s*999px\s*!important/)
   }
+
+  for (const selector of [
+    '.solution-filter-group .el-radio-button:first-child .el-radio-button__inner',
+    '.solution-filter-group .el-radio-button:last-child .el-radio-button__inner',
+  ]) {
+    assert.match(effectiveSelectorListRule(themeCss, selector), /border-radius:\s*7px\s*!important/)
+  }
 })
 
-test('gallery white A keeps inactive radio hover white and exposes keyboard focus rings', () => {
-  for (const selector of [
+test('gallery white A gives the compact status switch a clear black and white hierarchy', () => {
+  const libraryHover = effectiveSelectorListRule(
+    themeCss,
     '.solution-library-switch .el-radio-button:not(.is-active):hover .el-radio-button__inner',
+  )
+  assert.match(libraryHover, /background:\s*transparent\s*!important/)
+  assert.match(libraryHover, /border:\s*0\s*!important/)
+  assert.match(libraryHover, /color:\s*var\(--ui-ink\)\s*!important/)
+
+  const filterHover = effectiveSelectorListRule(
+    themeCss,
     '.solution-filter-group .el-radio-button:not(.is-active):hover .el-radio-button__inner',
-  ]) {
-    const rule = effectiveSelectorListRule(themeCss, selector)
-    assert.match(rule, /background:\s*var\(--ui-surface\)\s*!important/)
-    assert.match(rule, /border-color:\s*var\(--ui-control-border\)\s*!important/)
-    assert.match(rule, /color:\s*var\(--ui-ink\)\s*!important/)
-    assert.match(rule, /box-shadow:\s*none\s*!important/)
-    assert.doesNotMatch(rule, /var\(--ui-fill\)|background:\s*var\(--ui-accent\)/)
-  }
+  )
+  assert.match(filterHover, /background:\s*rgba\(29,\s*29,\s*31,\s*0\.045\)\s*!important/)
+  assert.match(filterHover, /border:\s*0\s*!important/)
+  assert.match(filterHover, /transform:\s*translateY\(-1px\)/)
+
+  const activeFilter = effectiveSelectorListRule(
+    themeCss,
+    '.solution-filter-group .el-radio-button.is-active .el-radio-button__inner',
+  )
+  assert.match(activeFilter, /color:\s*#ffffff\s*!important/)
+  assert.match(activeFilter, /background:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(activeFilter, /border:\s*0\s*!important/)
+  assert.match(activeFilter, /box-shadow:\s*0 4px 10px rgba\(29,\s*29,\s*31,\s*0\.14\)\s*!important/)
 
   const navHover = effectiveSelectorListRule(
     themeCss,
@@ -659,9 +687,9 @@ test('gallery white A keeps inactive radio hover white and exposes keyboard focu
     '.solution-filter-group .el-radio-button__original-radio:focus-visible + .el-radio-button__inner',
   ]) {
     const rule = effectiveSelectorListRule(themeCss, selector)
-    assert.match(rule, /border-color:\s*var\(--ui-accent\)\s*!important/)
-    assert.match(rule, /box-shadow:\s*0 0 0 3px var\(--ui-accent-ring\)\s*!important/)
-    assert.match(rule, /outline:\s*none\s*!important/)
+    assert.match(rule, /border:\s*0\s*!important/)
+    assert.match(rule, /box-shadow:\s*none\s*!important/)
+    assert.match(rule, /outline:\s*1px solid var\(--ui-ink\)\s*!important/)
     assert.doesNotMatch(rule, /background(?:-color)?\s*:/)
   }
 
@@ -826,4 +854,34 @@ test('gallery white A keeps trigger and selected-tag interaction states white', 
     assert.match(rule, /box-shadow:\s*0 0 0 3px var\(--ui-accent-ring\)\s*!important/)
     assert.doesNotMatch(rule, /background(?:-color)?:\s*var\(--ui-accent\)/)
   }
+})
+
+test('reviewed solution panels use tighter top spacing without gray container fills', () => {
+  const editor = effectiveSelectorListRule(themeCss, '.solution-editor')
+  const toolbar = effectiveSelectorListRule(themeCss, '.solution-editor-toolbar')
+  const settings = effectiveSelectorListRule(themeCss, '.solution-settings')
+  const settingsScroll = effectiveSelectorListRule(themeCss, '.solution-settings-scroll')
+  const nameCard = effectiveSelectorListRule(themeCss, '.solution-settings .panel-name-area.solution-settings-card')
+
+  assert.match(editor, /padding:\s*18px 26px 24px\s*!important/)
+  assert.match(toolbar, /margin-bottom:\s*8px/)
+  assert.match(settings, /padding:\s*16px 18px 20px/)
+  assert.match(settings, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(settingsScroll, /padding-top:\s*0/)
+  assert.match(nameCard, /margin-bottom:\s*8px/)
+  assert.match(nameCard, /padding:\s*10px 12px/)
+})
+
+test('Element Plus message boxes use a monochrome Apple-like dialog treatment', () => {
+  const dialog = effectiveRule(themeCss, '.el-message-box')
+  const buttons = effectiveRule(themeCss, '.el-message-box__btns .el-button')
+  const primary = effectiveSelectorListRule(themeCss, '.el-message-box__btns .el-button--primary')
+
+  assert.match(dialog, /border-radius:\s*22px/)
+  assert.match(dialog, /background:\s*rgba\(255,\s*255,\s*255,\s*0\.98\)/)
+  assert.match(dialog, /box-shadow:\s*0 24px 80px rgba\(0,\s*0,\s*0,\s*0\.18\)/)
+  assert.match(buttons, /background:\s*var\(--ui-surface\)\s*!important/)
+  assert.match(buttons, /color:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(primary, /background:\s*var\(--ui-ink\)\s*!important/)
+  assert.match(primary, /color:\s*var\(--ui-surface\)\s*!important/)
 })

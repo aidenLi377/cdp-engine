@@ -32,9 +32,35 @@ test('workbench scroll lists reserve room for native scrollbars', () => {
   assert.match(css, /\.published-solution-item,[\s\S]*?\.summary-node \{[^}]*box-sizing: border-box;/)
 })
 
+test('JSON preview preserves code spacing instead of scattering characters', () => {
+  assert.match(normalModeVue, /aria-label="JSON 预览"/)
+  assert.match(normalModeVue, /getPreviewJsonText\(\)/)
+  assert.match(css, /\.json-code \{[\s\S]*?white-space: pre;[\s\S]*?word-break: normal;[\s\S]*?overflow-wrap: normal;[\s\S]*?tab-size: 2;/s)
+  assert.match(css, /\.json-code \{[\s\S]*?letter-spacing: 0 !important;[\s\S]*?text-align: left;/s)
+})
+
 test('package library omits redundant mode explanations', () => {
   assert.doesNotMatch(normalModeVue, /自由搭建时可继续增删节点/)
   assert.doesNotMatch(normalModeVue, /已应用方案，仍可继续增删节点和调整逻辑关系/)
+  assert.doesNotMatch(normalModeVue, /加载后进入工作台方案使用态/)
+})
+
+test('published solution header uses an accessible refresh icon instead of button text', () => {
+  assert.match(normalModeVue, /class="workbench-section-icon-btn"/)
+  assert.match(normalModeVue, /:icon="RefreshRight"/)
+  assert.match(normalModeVue, /aria-label="刷新方案"/)
+  assert.doesNotMatch(normalModeVue, />\s*刷新\s*<\/el-button>/)
+})
+
+test('workbench published solutions use the same status light and compact row anatomy as solution center', () => {
+  const publishedSolutionCard = normalModeVue.match(/<button[\s\S]*?class="published-solution-item"[\s\S]*?<\/button>/)?.[0] || ''
+
+  assert.match(publishedSolutionCard, /class="solution-status-light published"/)
+  assert.match(publishedSolutionCard, /role="img"/)
+  assert.match(publishedSolutionCard, /aria-label="已发布"/)
+  assert.match(publishedSolutionCard, /class="display-body strong solution-list-name published-solution-name"/)
+  assert.match(publishedSolutionCard, /class="solution-list-meta"/)
+  assert.doesNotMatch(publishedSolutionCard, /solution-status-chip/)
 })
 
 test('published solution hover card has room and layer for its glow', () => {

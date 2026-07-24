@@ -19,6 +19,7 @@ const MSG_DATABANK_DATAHUB = 'CDP_AUTOMATE_DATABANK_DATAHUB';
 const MSG_DMP = 'CDP_AUTOMATE_DMP';
 const MSG_DMP_WAIT_PORTRAIT = 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT';
 const MSG_DMP_EXTRACT = 'CDP_AUTOMATE_DMP_EXTRACT';
+const MSG_CANCEL_TASK = 'CDP_CANCEL_TASK';
 const MSG_DMP_GET_SETTINGS = 'CDP_DMP_GET_SETTINGS';
 const MSG_DMP_UPDATE_SETTINGS = 'CDP_DMP_UPDATE_SETTINGS';
 
@@ -39,20 +40,36 @@ const CONTENT_CMD_DATABANK_DATAHUB = 'AUTOMATE_DATABANK_DATAHUB';
 const CONTENT_CMD_DMP = 'AUTOMATE_DMP';
 const CONTENT_CMD_DMP_WAIT_PORTRAIT = 'AUTOMATE_DMP_WAIT_PORTRAIT';
 const CONTENT_CMD_DMP_EXTRACT = 'AUTOMATE_DMP_EXTRACT';
+const CONTENT_CMD_CANCEL = 'CANCEL_CDP_AUTOMATION';
 
 let dmpTabId = null; // Track DMP tab for two-phase flow
 let databankTabId = null; // Track DataBank tab across phases
+let dmpRunId = null;
+let databankRunId = null;
+const trackedTabsByRun = new Map();
+const cancelledRunIds = new Set();
 const TASK_TAB_KEYS = {
   dmp: 'cdpTaskDmpTabId',
   databank: 'cdpTaskDatabankTabId',
+};
+const TASK_RUN_KEYS = {
+  dmp: 'cdpTaskDmpRunId',
+  databank: 'cdpTaskDatabankRunId',
 };
 const taskStorage = chrome.storage?.session || chrome.storage?.local || null;
 const taskStateReady = (async () => {
   if (!taskStorage) return;
   try {
-    const state = await taskStorage.get(Object.values(TASK_TAB_KEYS));
+    const state = await taskStorage.get([
+      ...Object.values(TASK_TAB_KEYS),
+      ...Object.values(TASK_RUN_KEYS),
+    ]);
     dmpTabId = Number.isInteger(state[TASK_TAB_KEYS.dmp]) ? state[TASK_TAB_KEYS.dmp] : null;
     databankTabId = Number.isInteger(state[TASK_TAB_KEYS.databank]) ? state[TASK_TAB_KEYS.databank] : null;
+    dmpRunId = typeof state[TASK_RUN_KEYS.dmp] === 'string' ? state[TASK_RUN_KEYS.dmp] : null;
+    databankRunId = typeof state[TASK_RUN_KEYS.databank] === 'string' ? state[TASK_RUN_KEYS.databank] : null;
+    if (dmpTabId && dmpRunId) registerRunTab(dmpRunId, dmpTabId);
+    if (databankTabId && databankRunId) registerRunTab(databankRunId, databankTabId);
   } catch (error) {
     log('info', 'task state restore skipped', error?.message || error);
   }
@@ -98,17 +115,84 @@ async function updateDmpSettings(message) {
   return readDmpSettings();
 }
 
-async function setTaskTabId(kind, tabId) {
-  if (kind === 'dmp') dmpTabId = tabId;
-  if (kind === 'databank') databankTabId = tabId;
+function normalizeRunId(runId) {
+  return String(runId || '').trim();
+}
+
+function registerRunTab(runId, tabId) {
+  const normalizedRunId = normalizeRunId(runId);
+  if (!normalizedRunId || !Number.isInteger(tabId)) return;
+  const tabs = trackedTabsByRun.get(normalizedRunId) || new Set();
+  tabs.add(tabId);
+  trackedTabsByRun.set(normalizedRunId, tabs);
+}
+
+function unregisterRunTab(runId, tabId) {
+  const normalizedRunId = normalizeRunId(runId);
+  const tabs = trackedTabsByRun.get(normalizedRunId);
+  if (!tabs) return;
+  tabs.delete(tabId);
+  if (tabs.size === 0) trackedTabsByRun.delete(normalizedRunId);
+}
+
+function assertRunNotCancelled(runId) {
+  const normalizedRunId = normalizeRunId(runId);
+  if (normalizedRunId && cancelledRunIds.has(normalizedRunId)) {
+    const error = new Error('任务已终止');
+    error.name = 'AbortError';
+    throw error;
+  }
+}
+
+async function setTaskTabId(kind, tabId, runId = null) {
+  const normalizedRunId = tabId == null ? null : normalizeRunId(runId) || null;
+  if (kind === 'dmp') {
+    dmpTabId = tabId;
+    dmpRunId = normalizedRunId;
+  }
+  if (kind === 'databank') {
+    databankTabId = tabId;
+    databankRunId = normalizedRunId;
+  }
   if (!taskStorage) return;
   const key = TASK_TAB_KEYS[kind];
+  const runKey = TASK_RUN_KEYS[kind];
   try {
-    if (tabId == null) await taskStorage.remove(key);
-    else await taskStorage.set({ [key]: tabId });
+    if (tabId == null) await taskStorage.remove([key, runKey]);
+    else await taskStorage.set({ [key]: tabId, [runKey]: normalizedRunId });
   } catch (error) {
     log('info', 'task state persist skipped', error?.message || error);
   }
+}
+
+async function cancelRun(runId) {
+  const normalizedRunId = normalizeRunId(runId);
+  if (normalizedRunId) cancelledRunIds.add(normalizedRunId);
+  const tabIds = new Set(normalizedRunId ? (trackedTabsByRun.get(normalizedRunId) || []) : []);
+
+  if ((!normalizedRunId || dmpRunId === normalizedRunId) && dmpTabId) tabIds.add(dmpTabId);
+  if ((!normalizedRunId || databankRunId === normalizedRunId) && databankTabId) tabIds.add(databankTabId);
+
+  let closedTabs = 0;
+  for (const tabId of tabIds) {
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: CONTENT_CMD_CANCEL, runId: normalizedRunId });
+    } catch (error) {
+      // Closing the task tab remains the hard-stop fallback if the content script is unavailable.
+    }
+    try {
+      await chrome.tabs.remove(tabId);
+      closedTabs += 1;
+    } catch (error) {
+      log('info', 'task tab close skipped', { tabId, error: error?.message || error });
+    }
+    unregisterRunTab(normalizedRunId, tabId);
+  }
+
+  if (!normalizedRunId || dmpRunId === normalizedRunId) await setTaskTabId('dmp', null);
+  if (!normalizedRunId || databankRunId === normalizedRunId) await setTaskTabId('databank', null);
+
+  return { ok: true, cancelled: true, closedTabs };
 }
 
 function log(level, msg, extra) {
@@ -204,53 +288,69 @@ async function runDatabankParam(senderTab, jsonText, sendResponse) {
 }
 
 // Run DataBank crowd search/match/push flow (Phase 1)
-async function runDatabankCrowd(senderTab, crowdName, autoApply, sendResponse) {
+async function runDatabankCrowd(senderTab, crowdName, autoApply, runId, sendResponse) {
   let tab = null;
   try {
     await taskStateReady;
+    assertRunNotCancelled(runId);
     tab = await createTab(DATABANK_CROWD_URL);
-    await setTaskTabId('databank', tab.id);
+    registerRunTab(runId, tab.id);
+    await setTaskTabId('databank', tab.id, runId);
     await waitForTabComplete(tab.id);
+    assertRunNotCancelled(runId);
     await ensureScriptInjected(tab.id, ['databank-automation.js']);
     await focusTab(tab);
     await waitForReady(tab.id, CONTENT_PING_CROWD);
+    assertRunNotCancelled(runId);
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK_CROWD,
       crowdName: crowdName,
       autoApply: autoApply === true,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'databank crowd flow done', result);
     const autoApplySubmitted = autoApply && result?.ok && Array.isArray(result.trail)
       && result.trail.some((entry) => entry?.step === 'auto_apply_submitted');
     if (autoApplySubmitted) {
       await setTaskTabId('databank', null);
       try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore cleanup failure */ }
+      unregisterRunTab(runId, tab.id);
       if (senderTab?.id) {
         try { await focusTab(senderTab); } catch (e) { /* ignore */ }
       }
     }
     // Manual mode intentionally keeps every completed tab so the human can apply later.
     sendResponse(result);
+    unregisterRunTab(runId, tab.id);
   } catch (error) {
     log('error', 'databank crowd flow failed', error.message);
     await setTaskTabId('databank', null);
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
+      unregisterRunTab(runId, tab.id);
     }
-    sendResponse({ ok: false, error: error?.message || '数据引擎人群流程执行失败' });
+    sendResponse({
+      ok: false,
+      cancelled: error?.name === 'AbortError',
+      error: error?.message || '数据引擎人群流程执行失败',
+    });
   }
 }
 
 // Wait on the retained crowd tab until the human closes the final apply dialog.
-async function runDatabankWaitApply(senderTab, sendResponse) {
+async function runDatabankWaitApply(senderTab, runId, sendResponse) {
   try {
     await taskStateReady;
+    assertRunNotCancelled(runId);
     if (!databankTabId) throw new Error('没有活跃的数据引擎推送任务');
     const tab = await chrome.tabs.get(databankTabId);
     await focusTab(tab);
     const result = await sendMessageWithRetry(databankTabId, {
       type: CONTENT_CMD_DATABANK_WAIT_APPLY,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'databank manual apply confirmed', result);
     sendResponse(result);
   } catch (error) {
@@ -260,23 +360,30 @@ async function runDatabankWaitApply(senderTab, sendResponse) {
 }
 
 // Run DataBank dataHub status check (Phase 2) — open NEW tab for dataHub, poll until "已应用"
-async function runDatabankDataHubCheck(senderTab, crowdName, sendResponse) {
+async function runDatabankDataHubCheck(senderTab, crowdName, runId, sendResponse) {
   let tab = null;
   try {
+    assertRunNotCancelled(runId);
     // Open a fresh tab for dataHub — don't reuse the crowd tab so the dialog stays open
     tab = await createTab(DATABANK_DATAHUB_URL);
+    registerRunTab(runId, tab.id);
     await waitForTabComplete(tab.id, 60);
+    assertRunNotCancelled(runId);
     await new Promise((r) => setTimeout(r, 2000));
+    assertRunNotCancelled(runId);
     await ensureScriptInjected(tab.id, ['databank-automation.js']);
     await waitForReady(tab.id, CONTENT_PING_DATAHUB, 60);
 
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK_DATAHUB,
       crowdName: crowdName,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'databank dataHub check done', result);
     // Clean up the dataHub tab
     try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
+    unregisterRunTab(runId, tab.id);
     if (senderTab?.id) {
       try { await focusTab(senderTab); } catch (e) { /* ignore */ }
     }
@@ -285,22 +392,27 @@ async function runDatabankDataHubCheck(senderTab, crowdName, sendResponse) {
     log('error', 'databank dataHub check failed', error.message);
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
+      unregisterRunTab(runId, tab.id);
     }
-    sendResponse({ ok: false, error: error?.message || 'DataHub状态检查失败' });
+    sendResponse({ ok: false, cancelled: error?.name === 'AbortError', error: error?.message || 'DataHub状态检查失败' });
   }
 }
 
 // Run DMP portrait entry wait (Phase 2) — same tab, polls for 画像透视
-async function runDmpWaitPortrait(senderTab, phase1Result, sendResponse) {
+async function runDmpWaitPortrait(senderTab, phase1Result, runId, sendResponse) {
   try {
     await taskStateReady;
+    assertRunNotCancelled(runId);
     if (!dmpTabId) throw new Error('没有活跃的 DMP 任务');
+    if (runId && dmpRunId && dmpRunId !== runId) throw new Error('DMP 任务运行标识不匹配');
     log('info', 'dmp phase 2: waiting for portrait entry on tab', dmpTabId);
     await waitForReady(dmpTabId, CONTENT_PING_DMP, 10);
     const result = await sendMessageWithRetry(dmpTabId, {
       type: CONTENT_CMD_DMP_WAIT_PORTRAIT,
       phase1Result,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'dmp phase 2 done', result);
     sendResponse(result);
   } catch (error) {
@@ -310,20 +422,26 @@ async function runDmpWaitPortrait(senderTab, phase1Result, sendResponse) {
 }
 
 // Run DMP crowd search/match/portrait flow (Phase 1)
-async function runDmp(senderTab, crowdName, sendResponse) {
+async function runDmp(senderTab, crowdName, runId, sendResponse) {
   let tab = null;
   try {
     await taskStateReady;
+    assertRunNotCancelled(runId);
     tab = await createTab(DMP_CROWD_URL);
-    await setTaskTabId('dmp', tab.id);
+    registerRunTab(runId, tab.id);
+    await setTaskTabId('dmp', tab.id, runId);
     await waitForTabComplete(tab.id);
+    assertRunNotCancelled(runId);
     await ensureScriptInjected(tab.id, ['dmp-result-core.js', 'cdp-dmp-automation.js']);
     await focusTab(tab);
     await waitForReady(tab.id, CONTENT_PING_DMP, 120);
+    assertRunNotCancelled(runId);
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DMP,
       crowdName: crowdName,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'dmp phase 1 done', result);
     // Keep DMP active while its list refreshes; backgrounding the page can pause
     // the site's readiness updates before the portrait entry is rendered.
@@ -333,17 +451,20 @@ async function runDmp(senderTab, crowdName, sendResponse) {
     await setTaskTabId('dmp', null);
     if (tab?.id) {
       try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
+      unregisterRunTab(runId, tab.id);
     }
-    sendResponse({ ok: false, error: error?.message || '达摩盘流程执行失败' });
+    sendResponse({ ok: false, cancelled: error?.name === 'AbortError', error: error?.message || '达摩盘流程执行失败' });
   }
 }
 
 // Run DMP extract (Phase 2) — navigate tab to portrait page, then extract
-async function runDmpExtract(senderTab, phase1Result, selectedTags, sendResponse) {
+async function runDmpExtract(senderTab, phase1Result, selectedTags, runId, sendResponse) {
   try {
     await taskStateReady;
+    assertRunNotCancelled(runId);
     const tabId = dmpTabId;
     if (!tabId) throw new Error('没有活跃的 DMP 任务');
+    if (runId && dmpRunId && dmpRunId !== runId) throw new Error('DMP 任务运行标识不匹配');
     const crowdId = phase1Result.crowdId;
     if (!crowdId) throw new Error('缺少 crowdId，无法进入透视');
 
@@ -352,17 +473,22 @@ async function runDmpExtract(senderTab, phase1Result, selectedTags, sendResponse
     log('info', 'navigating tab to portrait page', { tabId, portraitUrl });
     await chrome.tabs.update(tabId, { url: portraitUrl });
     await waitForTabComplete(tabId, 120);
+    assertRunNotCancelled(runId);
     // Extra wait for SPA to render after page load
     await new Promise((r) => setTimeout(r, 2000));
+    assertRunNotCancelled(runId);
     await waitForReady(tabId, CONTENT_PING_DMP, 60);
 
     const result = await sendMessageWithRetry(tabId, {
       type: CONTENT_CMD_DMP_EXTRACT,
       phase1Result: phase1Result,
       selectedTags: selectedTags,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'dmp phase 2 done', result);
     await setTaskTabId('dmp', null);
+    unregisterRunTab(runId, tabId);
     if (senderTab?.id) {
       try { await focusTab(senderTab); } catch (e) { /* ignore */ }
     }
@@ -371,16 +497,17 @@ async function runDmpExtract(senderTab, phase1Result, selectedTags, sendResponse
     log('error', 'dmp phase 2 failed', error.message);
     if (dmpTabId) {
       try { await chrome.tabs.remove(dmpTabId); } catch (e) { /* ignore */ }
+      unregisterRunTab(runId, dmpTabId);
     }
     await setTaskTabId('dmp', null);
-    sendResponse({ ok: false, error: error?.message || '达摩盘数据提取失败' });
+    sendResponse({ ok: false, cancelled: error?.name === 'AbortError', error: error?.message || '达摩盘数据提取失败' });
   }
 }
 
 // Main message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const msgType = message?.type;
-  if (![MSG_DATABANK_PARAM, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
+  if (![MSG_DATABANK_PARAM, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_CANCEL_TASK, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
 
   const senderUrl = message.pageUrl || sender.tab?.url || '';
   const senderOrigin = (function() {
@@ -394,12 +521,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const senderTab = sender?.tab?.id ? { id: sender.tab.id, windowId: sender.tab.windowId } : null;
+  const runId = normalizeRunId(message.runId);
 
   if (msgType === MSG_DMP_GET_SETTINGS || msgType === MSG_DMP_UPDATE_SETTINGS) {
     const operation = msgType === MSG_DMP_GET_SETTINGS ? readDmpSettings() : updateDmpSettings(message);
     operation
       .then((settings) => sendResponse({ ok: true, settings }))
       .catch((error) => sendResponse({ ok: false, error: error?.message || 'DMP设置同步失败' }));
+    return true;
+  }
+
+  if (msgType === MSG_CANCEL_TASK) {
+    cancelRun(runId)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, cancelled: false, error: error?.message || '终止任务失败' }));
     return true;
   }
 
@@ -417,25 +552,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const crowdName = String(message.crowdName || '').trim();
     // Cancel signal — close any open DMP/DataBank tabs
     if (crowdName === '__CANCEL__') {
-      (async () => {
-        await taskStateReady;
-        if (dmpTabId) {
-          try { await chrome.tabs.remove(dmpTabId); } catch (e) { /* ignore */ }
-          await setTaskTabId('dmp', null);
-        }
-        if (databankTabId) {
-          try { await chrome.tabs.remove(databankTabId); } catch (e) { /* ignore */ }
-          await setTaskTabId('databank', null);
-        }
-        sendResponse({ ok: true, cancelled: true });
-      })();
+      cancelRun(runId)
+        .then(sendResponse)
+        .catch((error) => sendResponse({ ok: false, cancelled: false, error: error?.message || '终止任务失败' }));
       return true;
     }
     if (!crowdName) {
       sendResponse({ ok: false, error: '人群包名称不能为空' });
       return;
     }
-    runDatabankCrowd(senderTab, crowdName, message.autoApply === true, sendResponse);
+    runDatabankCrowd(senderTab, crowdName, message.autoApply === true, runId, sendResponse);
     return true;
   }
 
@@ -445,12 +571,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: '人群包名称不能为空' });
       return;
     }
-    runDatabankDataHubCheck(senderTab, crowdName, sendResponse);
+    runDatabankDataHubCheck(senderTab, crowdName, runId, sendResponse);
     return true;
   }
 
   if (msgType === MSG_DATABANK_WAIT_APPLY) {
-    runDatabankWaitApply(senderTab, sendResponse);
+    runDatabankWaitApply(senderTab, runId, sendResponse);
     return true;
   }
 
@@ -460,19 +586,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: '人群包名称不能为空' });
       return;
     }
-    runDmp(senderTab, crowdName, sendResponse);
+    runDmp(senderTab, crowdName, runId, sendResponse);
     return true;
   }
 
   if (msgType === MSG_DMP_WAIT_PORTRAIT) {
-    runDmpWaitPortrait(senderTab, message.phase1Result || {}, sendResponse);
+    runDmpWaitPortrait(senderTab, message.phase1Result || {}, runId, sendResponse);
     return true;
   }
 
   if (msgType === MSG_DMP_EXTRACT) {
     const phase1Result = message.phase1Result || {};
     const selectedTags = message.selectedTags || [];
-    runDmpExtract(senderTab, phase1Result, selectedTags, sendResponse);
+    runDmpExtract(senderTab, phase1Result, selectedTags, runId, sendResponse);
     return true;
   }
 });
@@ -482,5 +608,8 @@ chrome.tabs.onRemoved?.addListener((tabId) => {
     await taskStateReady;
     if (tabId === dmpTabId) await setTaskTabId('dmp', null);
     if (tabId === databankTabId) await setTaskTabId('databank', null);
+    for (const [runId, tabs] of trackedTabsByRun.entries()) {
+      if (tabs.has(tabId)) unregisterRunTab(runId, tabId);
+    }
   })();
 });

@@ -35,13 +35,19 @@ test('DataBank automation leaves more headroom than the extension bridge timeout
   assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 70000/)
 })
 
-test('official parity outputs use the official default name and tab indentation', () => {
+test('official parity outputs keep the official default name and copy indentation', () => {
   assert.match(normalModeVue, /const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'/)
   assert.match(normalModeVue, /const COMMODITY_PACKAGE = '商品行为'/)
   assert.match(normalModeVue, /const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'/)
   assert.match(normalModeVue, /isPureOfficialParityOutput\(\) \? OFFICIAL_DEFAULT_CROWD_NAME : DEFAULT_CROWD_NAME/)
   assert.match(normalModeVue, /\[CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE\]\.includes\(packageType\)/)
   assert.match(normalModeVue, /JSON\.stringify\(generatedJson\.value, null, isPureOfficialParityOutput\(\) \? '\\t' : 4\)/)
+})
+
+test('JSON preview uses readable spacing without changing copied parity output', () => {
+  assert.match(normalModeVue, /class="json-code display-mono" aria-label="JSON 预览">\{\{ getPreviewJsonText\(\) \}\}/)
+  assert.match(normalModeVue, /function getPreviewJsonText\(\) \{[\s\S]*?JSON\.stringify\(generatedJson\.value, null, 2\)/)
+  assert.match(normalModeVue, /function getGeneratedJsonText\(\) \{[\s\S]*?isPureOfficialParityOutput\(\) \? '\\t' : 4/)
 })
 
 test('derived solution sessions clearly state free editing without mutating the published source', () => {

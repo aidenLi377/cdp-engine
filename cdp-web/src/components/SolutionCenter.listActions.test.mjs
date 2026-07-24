@@ -15,6 +15,7 @@ test('solution sidebar controls are compact and visually secondary', () => {
   assert.match(solutionCenterVue, /aria-label="新建草稿"/)
   assert.doesNotMatch(solutionCenterVue, />\s*新建草稿\s*<\/el-button>/)
   assert.match(solutionCenterVue, /class="solution-sidebar-toolbar"/)
+  assert.match(solutionCenterVue, /class="intercom-radio-group solution-filter-group"[\s\S]*?aria-label="按状态筛选方案"/)
   assert.match(solutionCenterVue, /class="solution-sidebar-icon-actions"/)
   assert.match(solutionCenterVue, /class="solution-sidebar-icon-btn"/)
   assert.match(solutionCenterVue, /:icon="RefreshRight"/)
@@ -23,6 +24,9 @@ test('solution sidebar controls are compact and visually secondary', () => {
   assert.match(css, /\.solution-sidebar-controls \{[^}]*gap: 6px;[^}]*padding: 0;[^}]*background: transparent;/s)
   assert.match(css, /\.solution-sidebar-toolbar \{[^}]*display: flex;[^}]*align-items: center;[^}]*gap: 8px;/s)
   assert.match(css, /\.solution-filter-group \.el-radio-button__inner \{[^}]*padding: 4px 0 !important;[^}]*font-size: 12px !important;/s)
+  assert.match(css, /\.solution-filter-group \{[^}]*display: grid !important;[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);[^}]*background: transparent !important;[^}]*border: 0 !important;/s)
+  assert.match(css, /\.solution-filter-group \.el-radio-button__inner,[\s\S]*?\{[^}]*border-radius: 7px !important;/s)
+  assert.match(css, /\.solution-filter-group \.el-radio-button\.is-active \.el-radio-button__inner,[^}]*\{[^}]*color: #ffffff !important;[^}]*background: var\(--ui-ink\) !important;[^}]*border: 0 !important;/s)
   assert.match(css, /\.solution-sidebar-controls \.intercom-input \.el-input__wrapper \{[^}]*min-height: 28px !important;[^}]*font-size: 13px !important;/s)
   assert.match(css, /\.solution-sidebar-icon-btn\.el-button \{[^}]*width: 28px !important;[^}]*height: 28px !important;[^}]*border-radius: 999px !important;/s)
 })
@@ -156,10 +160,14 @@ test('solution center uses the app main height and keeps the list scrollable', (
   assert.doesNotMatch(solutionCenterVue, /class="solution-sidebar-footer"/)
 })
 
-test('active solution is marked inside the card instead of using a separate footer block', () => {
-  assert.match(solutionCenterVue, /class="solution-active-dot pulse-breath"/)
-  assert.match(solutionCenterVue, /item\.id === activeSolution\?\.id/)
-  assert.match(css, /\.solution-active-dot \{[^}]*width: 8px;[^}]*background: radial-gradient\(/s)
+test('solution status is marked by an accessible breathing light inside each card', () => {
+  assert.match(solutionCenterVue, /class="solution-status-light"/)
+  assert.match(solutionCenterVue, /:class="item\.status"/)
+  assert.match(solutionCenterVue, /:aria-label="statusText\(item\.status\)"/)
+  assert.doesNotMatch(solutionCenterVue, /class="solution-status-chip" :class="item\.status"/)
+  assert.match(css, /\.solution-status-light \{[^}]*width: 8px;[^}]*animation: solution-status-breathe/s)
+  assert.match(css, /\.solution-status-light\.published \{[^}]*#1d1d1f/s)
+  assert.match(css, /\.solution-status-light\.draft \{[^}]*#ff3b30/s)
 })
 
 test('solution center does not expose internal source metadata in the UI', () => {

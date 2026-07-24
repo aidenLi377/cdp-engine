@@ -22,3 +22,12 @@ test('context menu rename action starts edit mode instead of being a dead-end', 
   assert.match(folderTreeVue, /startEdit\(contextMenu\.value\.folder\.id, contextMenu\.value\.folder\.name\)/)
   assert.match(folderTreeNodeVue, /v-if="editingFolderId === folder\.id"/)
 })
+
+test('folder rows use a monochrome vector icon instead of a colored emoji', () => {
+  assert.match(folderTreeVue, /import \{ Folder as FolderIcon \} from '@element-plus\/icons-vue'/)
+  assert.match(folderTreeNodeVue, /import \{ Folder as FolderIcon \} from '@element-plus\/icons-vue'/)
+  assert.match(folderTreeVue, /<el-icon class="folder-icon"><FolderIcon \/><\/el-icon>/)
+  assert.match(folderTreeNodeVue, /<el-icon class="folder-icon"><FolderIcon \/><\/el-icon>/)
+  assert.doesNotMatch(folderTreeVue, /📂/)
+  assert.doesNotMatch(folderTreeNodeVue, /📂/)
+})

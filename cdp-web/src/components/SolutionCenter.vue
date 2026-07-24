@@ -36,7 +36,12 @@
         />
 
         <div class="solution-sidebar-toolbar">
-          <el-radio-group v-model="statusFilter" size="small" class="intercom-radio-group solution-filter-group">
+          <el-radio-group
+            v-model="statusFilter"
+            size="small"
+            class="intercom-radio-group solution-filter-group"
+            aria-label="按状态筛选方案"
+          >
             <el-radio-button label="all" @click="handleAllFilterClick">全部</el-radio-button>
             <el-radio-button label="draft">草稿</el-radio-button>
             <el-radio-button label="published">已发布</el-radio-button>
@@ -92,12 +97,12 @@
           <div class="solution-list-item-head">
             <div class="solution-list-badges">
               <span
-                v-if="item.id === activeSolution?.id"
-                class="solution-active-dot pulse-breath"
-                :class="{ dirty: hasUnsavedChanges && !isPublished }"
-                aria-hidden="true"
+                class="solution-status-light"
+                :class="item.status"
+                role="img"
+                :aria-label="statusText(item.status)"
+                :title="statusText(item.status)"
               ></span>
-              <span class="solution-status-chip" :class="item.status">{{ statusText(item.status) }}</span>
             </div>
             <div class="solution-list-item-actions">
               <el-tooltip

@@ -28,7 +28,7 @@
         >
           {{ expandedIds.has(folder.id) ? '▾' : '▸' }}
         </span>
-        <span class="folder-icon">📂</span>
+        <el-icon class="folder-icon"><FolderIcon /></el-icon>
         <template v-if="editingFolderId === folder.id">
           <el-input
             v-model="editName"
@@ -82,7 +82,7 @@
       @dragleave="onDragLeaveFolder"
       @drop.prevent="onDropOnFolder($event, '__uncategorized__')"
     >
-      <span class="folder-icon" style="opacity:0.5">📂</span>
+      <el-icon class="folder-icon is-muted"><FolderIcon /></el-icon>
       <span class="folder-name" style="color:#999">未分类</span>
     </div>
 
@@ -109,7 +109,7 @@
           @click.stop
         >
           <div class="context-menu-item" @click="contextRename">✏️ 重命名</div>
-          <div class="context-menu-item" @click="contextNewChild">📂 新建子文件夹</div>
+          <div class="context-menu-item" @click="contextNewChild"><el-icon><FolderIcon /></el-icon> 新建子文件夹</div>
           <div class="context-menu-divider"></div>
           <div class="context-menu-item danger" @click="contextDelete">🗑 删除</div>
         </div>
@@ -121,6 +121,7 @@
 <script setup>
 import { nextTick, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import { Folder as FolderIcon } from '@element-plus/icons-vue'
 import FolderTreeNode from './FolderTreeNode.vue'
 
 const props = defineProps({

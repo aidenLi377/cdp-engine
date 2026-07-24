@@ -1,6 +1,8 @@
 if (!window.__databankAutomationContentScriptLoaded) {
   window.__databankAutomationContentScriptLoaded = true;
   window.__databankAutomationRunning = false;
+  window.__databankAutomationRunId = null;
+  window.__databankAutomationCancelled = false;
   console.info('[Databank Automation][content] script initialized');
 
   // -- Parameter paste XPaths (existing) --
@@ -43,6 +45,27 @@ if (!window.__databankAutomationContentScriptLoaded) {
     '[aria-busy="true"]',
   ];
   let pendingManualApplyControl = null;
+
+  function beginAutomationRun(runId) {
+    window.__databankAutomationRunId = String(runId || '');
+    window.__databankAutomationCancelled = false;
+  }
+
+  function finishAutomationRun(runId) {
+    if (window.__databankAutomationRunId === String(runId || '')) {
+      window.__databankAutomationRunId = null;
+    }
+  }
+
+  function cancellationError() {
+    const error = new Error('任务已终止');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  function assertAutomationActive() {
+    if (window.__databankAutomationCancelled) throw cancellationError();
+  }
 
   function getNodeByXpath(xpath) {
     return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
@@ -292,7 +315,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
     while (Date.now() < deadline) {
       const node = resolveNode();
       if (node) return node;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await sleep(intervalMs);
     }
     throw new Error('等待页面元素超时: ' + label);
   }
@@ -304,16 +327,22 @@ if (!window.__databankAutomationContentScriptLoaded) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       if (!isDialogRootActive(dialogRoot)) return;
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await sleep(intervalMs);
     }
     throw new Error('已点击确定，但导入弹窗未关闭');
   }
 
   async function sleep(ms) {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    const deadline = Date.now() + Math.max(0, Number(ms) || 0);
+    while (Date.now() < deadline) {
+      assertAutomationActive();
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+    }
+    assertAutomationActive();
   }
 
   function clickNode(node) {
+    assertAutomationActive();
     if (typeof node.scrollIntoView === 'function') {
       node.scrollIntoView({ block: 'center', inline: 'center' });
     }
@@ -866,6 +895,15 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
   // === Message handler ===
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'CANCEL_CDP_AUTOMATION') {
+      const targetRunId = String(message.runId || '');
+      if (!targetRunId || !window.__databankAutomationRunId || window.__databankAutomationRunId === targetRunId) {
+        window.__databankAutomationCancelled = true;
+      }
+      sendResponse({ ok: true, cancelled: true });
+      return false;
+    }
+
     if (message?.type === 'PING_AUTOMATION_READY') {
       sendResponse({ ok: true, ready: isAutomationPageReady() || isOnCrowdPage() });
       return false;
@@ -887,13 +925,17 @@ if (!window.__databankAutomationContentScriptLoaded) {
         return false;
       }
       window.__databankAutomationRunning = true;
+      beginAutomationRun(message.runId);
       automateDatabank(String(message.jsonText || ''))
         .then((result) => sendResponse(result))
         .catch((error) => {
           console.error('[Databank Automation] param paste failed:', error);
           sendResponse({ ok: false, error: error?.message || '自动化执行失败' });
         })
-        .finally(() => { window.__databankAutomationRunning = false; });
+        .finally(() => {
+          window.__databankAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
 
@@ -903,9 +945,11 @@ if (!window.__databankAutomationContentScriptLoaded) {
         return false;
       }
       window.__databankAutomationRunning = true;
+      beginAutomationRun(message.runId);
       const crowdName = String(message.crowdName || '').trim();
       if (!crowdName) {
         window.__databankAutomationRunning = false;
+        finishAutomationRun(message.runId);
         sendResponse({ ok: false, error: '人群包名称不能为空' });
         return false;
       }
@@ -915,7 +959,10 @@ if (!window.__databankAutomationContentScriptLoaded) {
           console.error('[Databank Automation] crowd flow failed:', error);
           sendResponse({ ok: false, error: error?.message || '数据引擎自动化执行失败' });
         })
-        .finally(() => { window.__databankAutomationRunning = false; });
+        .finally(() => {
+          window.__databankAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
 
@@ -925,13 +972,17 @@ if (!window.__databankAutomationContentScriptLoaded) {
         return false;
       }
       window.__databankAutomationRunning = true;
+      beginAutomationRun(message.runId);
       waitForManualApplyConfirmation()
         .then((result) => sendResponse({ ok: true, ...result }))
         .catch((error) => {
           console.error('[Databank Automation] manual apply wait failed:', error);
           sendResponse({ ok: false, error: error?.message || '等待人工确认失败' });
         })
-        .finally(() => { window.__databankAutomationRunning = false; });
+        .finally(() => {
+          window.__databankAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
 
@@ -941,9 +992,11 @@ if (!window.__databankAutomationContentScriptLoaded) {
         return false;
       }
       window.__databankAutomationRunning = true;
+      beginAutomationRun(message.runId);
       const crowdName = String(message.crowdName || '').trim();
       if (!crowdName) {
         window.__databankAutomationRunning = false;
+        finishAutomationRun(message.runId);
         sendResponse({ ok: false, error: '人群包名称不能为空' });
         return false;
       }
@@ -953,7 +1006,10 @@ if (!window.__databankAutomationContentScriptLoaded) {
           console.error('[Databank Automation] dataHub flow failed:', error);
           sendResponse({ ok: false, error: error?.message || 'DataHub状态检查失败' });
         })
-        .finally(() => { window.__databankAutomationRunning = false; });
+        .finally(() => {
+          window.__databankAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
   });

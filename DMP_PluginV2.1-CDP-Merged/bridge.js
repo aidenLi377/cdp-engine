@@ -10,6 +10,7 @@
     'CDP_AUTOMATE_DMP',
     'CDP_AUTOMATE_DMP_WAIT_PORTRAIT',
     'CDP_AUTOMATE_DMP_EXTRACT',
+    'CDP_CANCEL_TASK',
     'CDP_DMP_GET_SETTINGS',
     'CDP_DMP_UPDATE_SETTINGS',
   ];
@@ -28,6 +29,8 @@
         crowdCount: data.crowdCount || null,
         results: data.results || null,
         settings: data.settings || null,
+        cancelled: data.cancelled === true,
+        closedTabs: Number(data.closedTabs || 0),
       }));
       window.postMessage(msg, window.location.origin);
     } catch (e) {
@@ -50,7 +53,12 @@
     }
 
     // Build extension message
-    var extMsg = { type: p.type, requestId: p.requestId, pageUrl: window.location.href };
+    var extMsg = {
+      type: p.type,
+      requestId: p.requestId,
+      pageUrl: window.location.href,
+      runId: String(p.runId || ''),
+    };
 
     if (p.type === 'CDP_AUTOMATE_DATABANK') {
       extMsg.jsonText = p.jsonText || '';
@@ -59,7 +67,7 @@
       extMsg.crowdName = p.crowdName || '';
       if (!extMsg.crowdName.trim()) { safeRespond(p, { ok: false, error: '人群包名称不能为空' }); return; }
       if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') extMsg.autoApply = p.autoApply === true;
-    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT') {
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' || p.type === 'CDP_CANCEL_TASK') {
       // No payload needed — just forward to background
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {
       extMsg.phase1Result = p.phase1Result || {};
@@ -86,7 +94,9 @@
 
     // Send to background with timeout — SPA flows need generous headroom for tab creation, page load, and DOM waits
     var timeoutMs;
-    if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY') {
+    if (p.type === 'CDP_CANCEL_TASK') {
+      timeoutMs = 12000;   // hard-stop acknowledgement, including tab cleanup
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY') {
       timeoutMs = 2100000; // 35min — human confirmation wait (up to 30min polling)
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB') {
       timeoutMs = 420000;  // 7min — dataHub polling

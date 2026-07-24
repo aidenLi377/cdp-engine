@@ -28,6 +28,8 @@ function createHarness() {
         forwarded.push(payload)
         if (payload.type === 'CDP_DMP_GET_SETTINGS' || payload.type === 'CDP_DMP_UPDATE_SETTINGS') {
           callback({ ok: true, settings: { readyTagIds: ['200'], columnVisibility: { CTR: false }, rebaseExcludedTagIds: ['300'] } })
+        } else if (payload.type === 'CDP_CANCEL_TASK') {
+          callback({ ok: true, cancelled: true, closedTabs: 2 })
         } else {
           callback({ ok: true, trail: [{ step: 'done' }] })
         }
@@ -106,4 +108,20 @@ test('bridge forwards and returns shared DMP settings', () => {
   assert.equal(harness.forwarded[0].columnVisibility.CTR, true)
   assert.deepEqual(harness.forwarded[0].rebaseExcludedTagIds, ['200'])
   assert.deepEqual(harness.posted[0].payload.settings.readyTagIds, ['200'])
+})
+
+test('bridge forwards hard-stop requests with the correlated run id and acknowledgement', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_CANCEL_TASK',
+    requestId: 'cancel-1',
+    runId: 'run-42',
+  })
+
+  assert.equal(harness.forwarded[0].type, 'CDP_CANCEL_TASK')
+  assert.equal(harness.forwarded[0].runId, 'run-42')
+  assert.equal(harness.posted[0].payload.requestId, 'cancel-1')
+  assert.equal(harness.posted[0].payload.cancelled, true)
+  assert.equal(harness.posted[0].payload.closedTabs, 2)
 })

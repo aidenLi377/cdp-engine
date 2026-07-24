@@ -1,6 +1,8 @@
 if (!window.__dmpAutomationContentScriptLoaded) {
   window.__dmpAutomationContentScriptLoaded = true;
   window.__dmpAutomationRunning = false;
+  window.__dmpAutomationRunId = null;
+  window.__dmpAutomationCancelled = false;
   console.info('[DMP Automation][content] script initialized');
 
   const dmpResultCore = globalThis.DmpResultCore;
@@ -29,6 +31,27 @@ if (!window.__dmpAutomationContentScriptLoaded) {
   const DMP_INITIAL_LIST_SETTLE_MS = 2000;
   const DMP_INITIAL_LIST_TIMEOUT_MS = 90000;
 
+  function beginAutomationRun(runId) {
+    window.__dmpAutomationRunId = String(runId || '');
+    window.__dmpAutomationCancelled = false;
+  }
+
+  function finishAutomationRun(runId) {
+    if (window.__dmpAutomationRunId === String(runId || '')) {
+      window.__dmpAutomationRunId = null;
+    }
+  }
+
+  function cancellationError() {
+    const error = new Error('任务已终止');
+    error.name = 'AbortError';
+    return error;
+  }
+
+  function assertAutomationActive() {
+    if (window.__dmpAutomationCancelled) throw cancellationError();
+  }
+
   function getNodeByXpath(xpath) {
     return document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
   }
@@ -50,6 +73,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
   }
 
   function clickNode(node) {
+    assertAutomationActive();
     if (typeof node.scrollIntoView === 'function') {
       node.scrollIntoView({ block: 'center', inline: 'center' });
     }
@@ -71,13 +95,18 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         console.info('[DMP Automation][content] locator ready:', label);
         return node;
       }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await sleep(intervalMs);
     }
     throw new Error('等待页面元素超时: ' + label);
   }
 
   async function sleep(ms) {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    const deadline = Date.now() + Math.max(0, Number(ms) || 0);
+    while (Date.now() < deadline) {
+      assertAutomationActive();
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
+    }
+    assertAutomationActive();
   }
 
   function isOnCrowdListPage() {
@@ -524,6 +553,15 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   // ============= Message handler =============
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === 'CANCEL_CDP_AUTOMATION') {
+      const targetRunId = String(message.runId || '');
+      if (!targetRunId || !window.__dmpAutomationRunId || window.__dmpAutomationRunId === targetRunId) {
+        window.__dmpAutomationCancelled = true;
+      }
+      sendResponse({ ok: true, cancelled: true });
+      return false;
+    }
+
     if (message?.type === 'PING_DMP_READY') {
       const onCrowd = isOnCrowdListPage();
       const onPortrait = isOnPortraitPage();
@@ -539,9 +577,11 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         return false;
       }
       window.__dmpAutomationRunning = true;
+      beginAutomationRun(message.runId);
       const crowdName = String(message.crowdName || '').trim();
       if (!crowdName) {
         window.__dmpAutomationRunning = false;
+        finishAutomationRun(message.runId);
         sendResponse({ ok: false, error: '人群包名称不能为空' });
         return false;
       }
@@ -552,7 +592,10 @@ if (!window.__dmpAutomationContentScriptLoaded) {
           console.error('[DMP Automation] phase 1 failed:', error);
           sendResponse({ ok: false, error: error?.message || '达摩盘搜索匹配失败' });
         })
-        .finally(() => { window.__dmpAutomationRunning = false; });
+        .finally(() => {
+          window.__dmpAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
 
@@ -563,6 +606,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         return false;
       }
       window.__dmpAutomationRunning = true;
+      beginAutomationRun(message.runId);
 
       runDmpPhase2WaitPortrait(message.phase1Result || {})
         .then((result) => sendResponse(result))
@@ -570,7 +614,10 @@ if (!window.__dmpAutomationContentScriptLoaded) {
           console.error('[DMP Automation] phase 2 wait failed:', error);
           sendResponse({ ok: false, error: error?.message || '等待画像透视入口超时' });
         })
-        .finally(() => { window.__dmpAutomationRunning = false; });
+        .finally(() => {
+          window.__dmpAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
 
@@ -581,6 +628,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         return false;
       }
       window.__dmpAutomationRunning = true;
+      beginAutomationRun(message.runId);
       const phase1Result = message.phase1Result || {};
       const selectedTags = message.selectedTags || [];
 
@@ -590,7 +638,10 @@ if (!window.__dmpAutomationContentScriptLoaded) {
           console.error('[DMP Automation] phase 3 failed:', error);
           sendResponse({ ok: false, error: error?.message || '达摩盘数据提取失败' });
         })
-        .finally(() => { window.__dmpAutomationRunning = false; });
+        .finally(() => {
+          window.__dmpAutomationRunning = false;
+          finishAutomationRun(message.runId);
+        });
       return true;
     }
   });

@@ -73,6 +73,9 @@ function createBackgroundHarness() {
             trail: [{ step: payload.autoApply ? 'auto_apply_submitted' : 'confirm_dialog_found' }],
           }
         }
+        if (payload.type === 'CANCEL_CDP_AUTOMATION') {
+          return { ok: true, cancelled: true }
+        }
         throw new Error(`Unexpected message type: ${payload.type}`)
       },
     },
@@ -208,6 +211,30 @@ test('background keeps manual DataBank confirmation tabs and forwards autoApply=
   assert.equal(response.ok, true)
   assert.equal(command.autoApply, false)
   assert.deepEqual(harness.removeTrail, [])
+})
+
+test('background hard-stop acknowledges only after cancelling and closing the tracked run tab', async () => {
+  const harness = createBackgroundHarness()
+  await harness.sendProjectMessage({
+    type: 'CDP_AUTOMATE_DATABANK_CROWD',
+    pageUrl: 'http://127.0.0.1:5173/',
+    crowdName: '待终止人群',
+    autoApply: false,
+    runId: 'run-stop-1',
+  })
+
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_CANCEL_TASK',
+    pageUrl: 'http://127.0.0.1:5173/',
+    runId: 'run-stop-1',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.cancelled, true)
+  assert.equal(response.closedTabs, 1)
+  assert.equal(harness.sentPayloads.at(-1).type, 'CANCEL_CDP_AUTOMATION')
+  assert.equal(harness.sentPayloads.at(-1).runId, 'run-stop-1')
+  assert.deepEqual(harness.removeTrail, [101])
 })
 
 test('background closes only successfully auto-applied DataBank tabs and returns focus to the task center', async () => {

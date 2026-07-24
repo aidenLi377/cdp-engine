@@ -3562,3 +3562,469 @@ body,
   background: #ffffff !important;
   border: 0 !important;
 }
+
+/* ============================================================ */
+/*  Browser review refinement — editorial black & white          */
+/* ============================================================ */
+
+/* Workbench section heads share the same baseline as the canvas toolbar. */
+.workbench-section.workbench-package-section,
+.workbench-section.workbench-solution-section {
+  padding: 0 18px 14px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.workbench-section .workbench-section-head {
+  position: relative;
+  align-items: center;
+  min-height: 32px;
+  margin-bottom: 11px;
+  padding-bottom: 10px;
+}
+
+.workbench-section .workbench-section-head::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(29, 29, 31, 0.22), rgba(29, 29, 31, 0.05) 58%, transparent);
+  content: "";
+}
+
+.workbench-section .workbench-section-head .display-feature-title {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.workbench-section-icon-btn.el-button {
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  box-shadow: none !important;
+}
+
+.workbench-section-icon-btn.el-button:hover:not(.is-disabled),
+.workbench-section-icon-btn.el-button:focus-visible {
+  color: var(--ui-surface) !important;
+  background: var(--ui-ink) !important;
+  transform: rotate(18deg);
+}
+
+/* Borderless switches: primary library scope is a quiet black lens. */
+.solution-library-switch {
+  gap: 3px !important;
+  padding: 2px !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.solution-library-switch .el-radio-button__inner,
+.solution-library-switch .el-radio-button:first-child .el-radio-button__inner,
+.solution-library-switch .el-radio-button:last-child .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  line-height: 1;
+  color: var(--ui-text-secondary) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.solution-library-switch .el-radio-button:not(.is-active):hover .el-radio-button__inner {
+  color: var(--ui-ink) !important;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.solution-center-page .solution-library-switch .el-radio-button:not(.is-active) .el-radio-button__inner,
+.solution-center-page .solution-library-switch .el-radio-button:not(.is-active):hover .el-radio-button__inner {
+  color: var(--ui-text-secondary) !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.solution-library-switch .el-radio-button.is-active .el-radio-button__inner,
+.solution-library-switch .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  color: var(--ui-surface) !important;
+  background: var(--ui-ink) !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Compact editorial state switch: quieter than scope navigation, decisive when selected. */
+.solution-filter-group {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px !important;
+  min-height: 30px;
+  padding: 1px !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  overflow: visible;
+}
+
+.solution-filter-group .el-radio-button {
+  width: 100%;
+  min-width: 0;
+  flex: none;
+}
+
+.solution-filter-group .el-radio-button__inner,
+.solution-filter-group .el-radio-button:first-child .el-radio-button__inner,
+.solution-filter-group .el-radio-button:last-child .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 28px;
+  line-height: 1;
+  padding: 0 7px !important;
+  color: var(--ui-text-tertiary) !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em;
+  box-shadow: none !important;
+  transform: translateY(0);
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 200ms ease,
+    transform 200ms var(--ease-out-expo);
+}
+
+.solution-filter-group .el-radio-button:not(.is-active):hover .el-radio-button__inner {
+  color: var(--ui-ink) !important;
+  background: rgba(29, 29, 31, 0.045) !important;
+  border: 0 !important;
+  transform: translateY(-1px);
+}
+
+.solution-filter-group .el-radio-button.is-active .el-radio-button__inner,
+.solution-filter-group .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  color: #ffffff !important;
+  background: var(--ui-ink) !important;
+  border: 0 !important;
+  font-weight: 620 !important;
+  box-shadow: 0 4px 10px rgba(29, 29, 31, 0.14) !important;
+  transform: translateY(-1px);
+}
+
+.solution-library-switch .el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+.solution-filter-group .el-radio-button__original-radio:focus-visible + .el-radio-button__inner {
+  border: 0 !important;
+  outline: 1px solid var(--ui-ink) !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+/* Folder glyphs stay monochrome and inherit the editor's ink. */
+.folder-tree .folder-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--ui-ink);
+  font-size: 14px;
+}
+
+.folder-tree .folder-icon.is-muted {
+  opacity: 0.42;
+}
+
+/* JSON is a reading surface: preserve code rhythm and keep long tokens intact. */
+.json-code {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 14px 16px !important;
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-divider) !important;
+  border-color: var(--ui-divider) !important;
+  border-radius: var(--ui-radius-panel) !important;
+  box-shadow: none !important;
+  overflow: auto;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  tab-size: 2;
+  font-family: "Cascadia Mono", "SFMono-Regular", "Noto Sans Mono CJK SC", "Sarasa Mono SC", ui-monospace, monospace !important;
+  font-size: 12px !important;
+  font-variant-ligatures: none;
+  letter-spacing: 0 !important;
+  line-height: 1.6 !important;
+  text-align: left;
+}
+
+.folder-context-menu .context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* One compact row system is shared by solution center and workbench. */
+.solution-list,
+.published-solution-list {
+  gap: 2px;
+  padding-top: 2px;
+  padding-bottom: 10px;
+}
+
+.solution-list-item,
+.published-solution-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name head"
+    "meta head";
+  column-gap: 8px;
+  row-gap: 3px;
+  min-height: 54px;
+  padding: 8px 8px 8px 10px;
+  color: var(--ui-ink);
+  text-align: left;
+  background: var(--ui-surface) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: box-shadow 180ms ease, opacity 180ms ease !important;
+}
+
+.solution-list-item:hover,
+.solution-list-item.active,
+.published-solution-item:hover,
+.published-solution-item.active {
+  background: var(--ui-surface) !important;
+  border: 0 !important;
+  box-shadow: inset 2px 0 0 #1d1d1f !important;
+  transform: none !important;
+}
+
+.solution-list-item-head,
+.published-solution-item .solution-list-item-head {
+  grid-area: head;
+  align-self: center;
+  justify-content: flex-end;
+}
+
+.solution-list-name,
+.published-solution-name {
+  grid-area: name;
+  align-self: end;
+  margin: 0;
+}
+
+.solution-list-meta,
+.published-solution-item .solution-list-meta {
+  grid-area: meta;
+  align-self: start;
+}
+
+.published-solution-loading {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  font-size: 10px;
+}
+
+/* Status is information, not a badge: published black, draft red, other orange. */
+.solution-status-light {
+  --solution-status-color: #ff9500;
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--solution-status-color);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--solution-status-color) 28%, transparent);
+  animation: solution-status-breathe 2.4s ease-in-out infinite;
+}
+
+.solution-status-light.published {
+  --solution-status-color: #1d1d1f;
+}
+
+.solution-status-light.draft {
+  --solution-status-color: #ff3b30;
+}
+
+@keyframes solution-status-breathe {
+  0%,
+  100% {
+    opacity: 0.76;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--solution-status-color) 18%, transparent);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--solution-status-color) 12%, transparent);
+  }
+}
+
+/* Pull editor content and settings upward while preserving breathing room. */
+.solution-editor {
+  padding: 18px 26px 24px !important;
+}
+
+.solution-editor-toolbar {
+  margin-bottom: 8px;
+  padding: 12px 14px;
+}
+
+.solution-node-scroll {
+  padding-top: 2px;
+}
+
+.solution-settings {
+  padding: 16px 18px 20px;
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-divider) !important;
+  box-shadow: none !important;
+}
+
+.solution-settings-scroll {
+  padding-top: 0;
+}
+
+.solution-settings .panel-name-area.solution-settings-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+.solution-settings .panel-name-area.solution-settings-card + .panel-name-area.solution-settings-card {
+  margin-bottom: 10px;
+}
+
+.solution-settings-card.intercom-card {
+  position: relative;
+  margin-top: 0;
+}
+
+/* Apple-like Element Plus dialogs, kept strictly monochrome. */
+.el-overlay.is-message-box {
+  background: rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.el-message-box {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+}
+
+.el-message-box__header {
+  padding: 0 36px 10px 0;
+}
+
+.el-message-box__title {
+  color: var(--ui-ink);
+  font-size: 19px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.el-message-box__headerbtn {
+  top: 15px;
+  right: 15px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
+
+.el-message-box__headerbtn:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.el-message-box__headerbtn .el-message-box__close,
+.el-message-box__headerbtn:hover .el-message-box__close,
+.el-message-box__status,
+.el-message-box__status.el-icon {
+  color: var(--ui-ink);
+}
+
+.el-message-box__content {
+  padding: 4px 0 18px;
+  color: var(--ui-text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.el-message-box__status + .el-message-box__message {
+  padding-left: 32px;
+}
+
+.el-message-box__btns {
+  gap: 8px;
+  padding: 0;
+}
+
+.el-message-box__btns .el-button {
+  min-width: 86px;
+  height: 38px !important;
+  margin: 0 !important;
+  padding: 0 18px !important;
+  color: var(--ui-ink) !important;
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-control-border) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+
+.el-message-box__btns .el-button:hover,
+.el-message-box__btns .el-button:focus-visible {
+  border-color: var(--ui-ink) !important;
+  transform: translateY(-1px);
+}
+
+.el-message-box__btns .el-button--primary,
+.el-message-box__btns .el-button--primary:hover,
+.el-message-box__btns .el-button--primary:focus-visible {
+  color: var(--ui-surface) !important;
+  background: var(--ui-ink) !important;
+  border-color: var(--ui-ink) !important;
+}
+
+.el-message-box .el-input__wrapper {
+  border: 0 !important;
+  border-bottom: 1px solid var(--ui-ink) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solution-status-light {
+    animation: none;
+    opacity: 1;
+    box-shadow: none;
+  }
+
+  .workbench-section-icon-btn.el-button,
+  .solution-center-page .solution-filter-group .el-radio-button__inner {
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -75,6 +75,18 @@ test('batch execution has no frontend item cap and keeps one history record per 
   assert.match(source, /失败 \$\{failed\} 个/)
 })
 
+test('task termination waits for extension acknowledgement and isolates stale runs', () => {
+  assert.match(source, /createRunContext/)
+  assert.match(source, /new AbortController\(\)/)
+  assert.match(source, /runId: run\.id/)
+  assert.match(source, /sendToExtension\('CDP_CANCEL_TASK'/)
+  assert.match(source, /extensionResult\?\.cancelled/)
+  assert.match(source, /status: 'cancelled'/)
+  assert.match(source, /activeTask\.value\?\.runId === run\.id/)
+  assert.match(source, /当前任务已终止，后续队列不会继续执行/)
+  assert.doesNotMatch(source, /crowdName: '__CANCEL__'/)
+})
+
 test('DataBank and DMP launch groups use borderless white controls', () => {
   assert.match(source, /\.tc-test-col\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/s)
   assert.match(source, /\.tc-input-sm :deep\(\.el-input__wrapper\)\s*\{[^}]*background:\s*#fff;[^}]*border:\s*0;/s)
@@ -95,6 +107,12 @@ test('task center uses compact section markers and focus-only input underlines',
   assert.match(source, /\.tc-tags-search-input:focus\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f;/s)
   assert.match(globalStyles, /#app \.tc-control-panel\s*\{[^}]*border-right:\s*1px solid var\(--ui-divider\) !important;/s)
   assert.match(globalStyles, /#app \.tc-input-sm \.el-input__wrapper\.is-focus,[\s\S]*?#app \.tc-tags-search-input:focus\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f !important;/s)
+})
+
+test('task execution and DMP settings are separated by a quiet fading hairline', () => {
+  assert.match(source, /\.tc-test-row\s*\{[^}]*position:\s*relative;[^}]*padding:\s*0 0 18px 9px;/s)
+  assert.match(source, /\.tc-test-row::after\s*\{[^}]*height:\s*1px;[^}]*linear-gradient\(90deg, rgba\(29,29,31,0\.16\), rgba\(29,29,31,0\.04\) 72%, transparent\)/s)
+  assert.match(source, /\.tc-dmp-tools\s*\{[^}]*padding:\s*0 1px 0 10px;/s)
 })
 
 test('DMP settings use small rectangular black and white buttons', () => {

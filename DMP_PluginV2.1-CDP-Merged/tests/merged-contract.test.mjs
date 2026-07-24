@@ -98,7 +98,26 @@ test('long-running task tab state survives service worker suspension', () => {
   assert.match(background, /chrome\.storage\?\.session/)
   assert.match(background, /cdpTaskDmpTabId/)
   assert.match(background, /cdpTaskDatabankTabId/)
+  assert.match(background, /cdpTaskDmpRunId/)
+  assert.match(background, /cdpTaskDatabankRunId/)
   assert.match(background, /chrome\.tabs\.onRemoved/)
+})
+
+test('hard-stop is correlated by run id and reaches both automation content scripts', () => {
+  const bridge = read('bridge.js')
+  const background = read('background.js')
+  const databank = read('databank-automation.js')
+  const dmpAutomation = read('cdp-dmp-automation.js')
+
+  assert.match(bridge, /CDP_CANCEL_TASK/)
+  assert.match(bridge, /runId: String\(p\.runId/)
+  assert.match(background, /trackedTabsByRun/)
+  assert.match(background, /cancelRun\(runId\)/)
+  assert.match(background, /CANCEL_CDP_AUTOMATION/)
+  assert.match(databank, /CANCEL_CDP_AUTOMATION/)
+  assert.match(databank, /assertAutomationActive/)
+  assert.match(dmpAutomation, /CANCEL_CDP_AUTOMATION/)
+  assert.match(dmpAutomation, /assertAutomationActive/)
 })
 
 test('DataBank crowd automation only clicks the final apply control when explicitly enabled', () => {

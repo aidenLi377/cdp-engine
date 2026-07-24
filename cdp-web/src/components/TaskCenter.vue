@@ -32,7 +32,7 @@
               {{ databankBatchMode ? '单个' : '批量' }}
             </button>
             <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">{{ databankBatchMode ? '批量运行' : '运行' }}</el-button>
-            <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
+            <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
           </div>
           <div v-if="databankBatchMode" class="tc-batch-panel">
             <textarea
@@ -65,7 +65,7 @@
               {{ dmpBatchMode ? '单个' : '批量' }}
             </button>
             <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">{{ dmpBatchMode ? '批量运行' : '运行' }}</el-button>
-            <el-button v-else class="tc-btn-sm is-cancel" @click="cancelTask">取消</el-button>
+            <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
           </div>
           <div v-if="dmpBatchMode" class="tc-batch-panel">
             <textarea
@@ -352,11 +352,13 @@ watch(selectedTags, (v) => savePersisted('selectedTags', v), { deep: true })
 const extConnected = ref(false)
 const taskRunning = ref(null)
 const activeTask = ref(null)
-const taskCancelled = ref(false)
+const cancelling = ref(false)
 const taskResults = ref(null)
 const crowdCount = ref(null)
 const taskHistory = ref([])
 const expandedHistory = ref(-1)
+let activeRunContext = null
+let runSequence = 0
 const dmpSettings = ref(normalizeDmpSettings())
 const dmpSettingsSyncing = ref(false)
 const dmpSettingsLoaded = ref(false)
@@ -647,25 +649,86 @@ async function clearHistory() {
 
 // -- Extension --
 let extRequestId = 0
-function sendToExtension(msgType, payload) {
+function cancellationError() {
+  const error = new Error('任务已终止')
+  error.name = 'AbortError'
+  return error
+}
+
+function createRunContext(type) {
+  const run = {
+    id: `run_${Date.now()}_${++runSequence}`,
+    type,
+    cancelled: false,
+    cancelling: false,
+    controller: new AbortController(),
+  }
+  activeRunContext = run
+  return run
+}
+
+function isRunActive(run) {
+  return Boolean(run && activeRunContext === run && !run.cancelled && !run.controller.signal.aborted)
+}
+
+function ensureRunActive(run) {
+  if (!isRunActive(run)) throw cancellationError()
+}
+
+function waitForAbortableDelay(ms, signal) {
+  if (signal?.aborted) return Promise.reject(cancellationError())
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(cleanupAndResolve, ms)
+    function cleanupAndResolve() {
+      signal?.removeEventListener('abort', handleAbort)
+      resolve()
+    }
+    function handleAbort() {
+      clearTimeout(timeout)
+      signal?.removeEventListener('abort', handleAbort)
+      reject(cancellationError())
+    }
+    signal?.addEventListener('abort', handleAbort, { once: true })
+  })
+}
+
+function sendToExtension(msgType, payload = {}, options = {}) {
+  return new Promise((resolve, reject) => {
+    const signal = options.signal
+    if (signal?.aborted) {
+      reject(cancellationError())
+      return
+    }
     const requestId = ++extRequestId
     const settingsMessage = msgType === 'CDP_DMP_GET_SETTINGS' || msgType === 'CDP_DMP_UPDATE_SETTINGS'
-    const timeoutMs = settingsMessage ? 10000 : msgType === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' ? 2100000 : msgType === 'CDP_AUTOMATE_DATABANK_DATAHUB' ? 420000 : msgType === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' ? 2100000 : 300000
-    const timeout = setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('插件响应超时，请刷新页面后重试')) }, timeoutMs)
+    const timeoutMs = options.timeoutMs ?? (settingsMessage ? 10000 : msgType === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' ? 2100000 : msgType === 'CDP_AUTOMATE_DATABANK_DATAHUB' ? 420000 : msgType === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' ? 2100000 : 300000)
+    const cleanup = () => {
+      clearTimeout(timeout)
+      window.removeEventListener('message', handler)
+      signal?.removeEventListener('abort', handleAbort)
+    }
+    const handleAbort = () => {
+      cleanup()
+      reject(cancellationError())
+    }
     const handler = (e) => {
       if (e.data?.source === 'databank-extension-bridge' && e.data?.requestId === requestId) {
-        clearTimeout(timeout); window.removeEventListener('message', handler)
+        cleanup()
         if (e.data?.ok) resolve(e.data); else reject(new Error(e.data?.error || '扩展执行失败'))
       }
     }
+    const timeout = setTimeout(() => {
+      cleanup()
+      reject(new Error('插件响应超时，请刷新页面后重试'))
+    }, timeoutMs)
     window.addEventListener('message', handler)
+    signal?.addEventListener('abort', handleAbort, { once: true })
     window.postMessage({ source: 'cdp-web', type: msgType, requestId, ...payload }, window.location.origin)
   })
 }
 
-function updateProgress(phaseIndex, message) {
-  if (!activeTask.value || taskCancelled.value) return
+function updateProgress(phaseIndex, message, run = activeRunContext) {
+  if (!isRunActive(run) || !activeTask.value || activeTask.value.runId !== run.id) return
   const p = phases.value
   const pct = Math.round(((phaseIndex + 1) / p.length) * 100)
   const crowdName = activeTask.value.crowdName
@@ -674,21 +737,22 @@ function updateProgress(phaseIndex, message) {
   if (activeTask.value.id) { apiPut(`${API}/${activeTask.value.id}/progress`, { status: 'running', phase: phaseIndex, phaseLabel: fullMsg, progress: pct, message: fullMsg }).catch(() => {}) }
 }
 
-function advancePhasesFromTrail(trail, trailToPhase) {
+function advancePhasesFromTrail(trail, trailToPhase, run) {
   if (!trail) return
   let lastPhase = 1
   for (const step of trail) {
     const phaseIdx = trailToPhase[step.step]
     if (phaseIdx !== undefined) {
-      for (let p = lastPhase + 1; p <= phaseIdx; p++) updateProgress(p, phases.value[p])
+      for (let p = lastPhase + 1; p <= phaseIdx; p++) updateProgress(p, phases.value[p], run)
       lastPhase = phaseIdx
     }
   }
 }
 
-async function executeDatabank(crowdName, autoApply) {
+async function executeDatabank(crowdName, autoApply, run) {
   // Phase 1: search → match → apply → select channel → select platform → show confirm dialog
-  const phase1 = await sendToExtension('CDP_AUTOMATE_DATABANK_CROWD', { crowdName, autoApply })
+  const phase1 = await sendToExtension('CDP_AUTOMATE_DATABANK_CROWD', { crowdName, autoApply, runId: run.id }, { signal: run.controller.signal })
+  ensureRunActive(run)
   if (!phase1.ok) throw new Error(phase1.error || '数据引擎执行失败')
   advancePhasesFromTrail(phase1.trail, {
     'searched': 2,
@@ -698,7 +762,7 @@ async function executeDatabank(crowdName, autoApply) {
     'selected_dmp': 6,
     'confirm_dialog_found': 7,
     'auto_apply_submitted': 7,
-  })
+  }, run)
   const expectedStep = autoApply ? 'auto_apply_submitted' : 'confirm_dialog_found'
   if (!phase1.trail?.some((item) => item.step === expectedStep)) {
     throw new Error(autoApply ? '未能自动点击应用，请返回 DataBank 页面检查' : '未检测到应用确认弹窗，请返回 DataBank 页面重试')
@@ -707,44 +771,56 @@ async function executeDatabank(crowdName, autoApply) {
   return phase1
 }
 
-async function executeDmp(crowdName) {
+async function executeDmp(crowdName, run) {
   const settingsReady = await loadDmpSettings(true)
+  ensureRunActive(run)
   if (!settingsReady) throw new Error('无法同步 DMP 设置，请重新加载新版合并插件')
   if (selectedTags.value.length === 0) throw new Error('请选择至少一个已就绪的标签')
 
   // Phase 1: search → match on crowd list page
-  const phase1 = await sendToExtension('CDP_AUTOMATE_DMP', { crowdName })
+  const phase1 = await sendToExtension('CDP_AUTOMATE_DMP', { crowdName, runId: run.id }, { signal: run.controller.signal })
+  ensureRunActive(run)
   if (!phase1.ok) throw new Error(phase1.error || '搜索匹配失败')
-  advancePhasesFromTrail(phase1.trail, { 'searched': 2, 'matched': 3, 'row_expanded': 4 })
+  advancePhasesFromTrail(phase1.trail, { 'searched': 2, 'matched': 3, 'row_expanded': 4 }, run)
   if (!phase1.crowdId) throw new Error('搜索匹配完成但未能提取人群ID（crowdId），无法进入透视')
 
   // Phase 2: wait for portrait entry to appear (up to 30 min, updates progress)
-  updateProgress(5, '正在判断人群数据是否同步好…')
+  updateProgress(5, '正在判断人群数据是否同步好…', run)
 
-  const phase2 = await sendToExtension('CDP_AUTOMATE_DMP_WAIT_PORTRAIT', { phase1Result: JSON.parse(JSON.stringify(phase1)) })
+  const phase2 = await sendToExtension('CDP_AUTOMATE_DMP_WAIT_PORTRAIT', { phase1Result: JSON.parse(JSON.stringify(phase1)), runId: run.id }, { signal: run.controller.signal })
+  ensureRunActive(run)
   if (!phase2.ok) throw new Error(phase2.error || '等待画像透视入口超时')
-  updateProgress(6, phases.value[6]); await new Promise(r => setTimeout(r, 500))
+  updateProgress(6, phases.value[6], run); await waitForAbortableDelay(500, run.controller.signal)
 
   // Phase 3: navigate to portrait page → extract data
-  updateProgress(7, phases.value[7])
+  updateProgress(7, phases.value[7], run)
 
-  const phase3 = await sendToExtension('CDP_AUTOMATE_DMP_EXTRACT', { phase1Result: JSON.parse(JSON.stringify(phase1)), selectedTags: orderedSelectedTagIds.value })
+  const phase3 = await sendToExtension('CDP_AUTOMATE_DMP_EXTRACT', { phase1Result: JSON.parse(JSON.stringify(phase1)), selectedTags: orderedSelectedTagIds.value, runId: run.id }, { signal: run.controller.signal })
+  ensureRunActive(run)
   if (!phase3.ok) throw new Error(phase3.error || '数据提取失败')
-  advancePhasesFromTrail(phase3.trail, { 'entered_portrait': 7, 'payload_intercepted': 8, 'data_extracted': 8 })
+  advancePhasesFromTrail(phase3.trail, { 'entered_portrait': 7, 'payload_intercepted': 8, 'data_extracted': 8 }, run)
   return phase3
 }
 
 async function executeViaExtension(crowdName, type, options = {}) {
+  const run = options.run
+  ensureRunActive(run)
   const autoApply = type === 'databank' && options.autoApply === true
-  const keepRunning = options.keepRunning === true
   phases.value = type === 'databank' ? (autoApply ? databankAutoPhases : databankManualPhases) : dmpPhases
   const taskMeta = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagIds: orderedSelectedTagIds.value }
   let backendTask = null; try { backendTask = await apiPost(API, taskMeta) } catch { /* */ }
+  if (!isRunActive(run)) {
+    if (backendTask?.id) {
+      apiPut(`${API}/${backendTask.id}/progress`, { status: 'cancelled', phase: 0, phaseLabel: '已终止', progress: 0, message: '用户终止' }).catch(() => {})
+    }
+    return { status: 'cancelled', task: null }
+  }
 
   taskResults.value = null
   crowdCount.value = null
   activeTask.value = {
     id: backendTask?.id || null,
+    runId: run.id,
     ...taskMeta,
     tagCount: selectedTags.value.length,
     batchIndex: options.batchIndex || null,
@@ -758,19 +834,20 @@ async function executeViaExtension(crowdName, type, options = {}) {
   let outcome = 'failed'
 
   try {
-    updateProgress(0, phases.value[0]); await new Promise(r => setTimeout(r, 800))
-    updateProgress(1, phases.value[1])
+    updateProgress(0, phases.value[0], run); await waitForAbortableDelay(800, run.controller.signal)
+    updateProgress(1, phases.value[1], run)
 
     let result
-    if (type === 'databank') { result = await executeDatabank(crowdName, autoApply) }
-    else { result = await executeDmp(crowdName) }
+    if (type === 'databank') { result = await executeDatabank(crowdName, autoApply, run) }
+    else { result = await executeDmp(crowdName, run) }
+    ensureRunActive(run)
 
     const finalPhase = phases.value.length - 1
     const completionLabel = type === 'databank' ? (autoApply ? '推送已提交' : '确认页面已保留') : '任务执行完成'
     const completionMessage = type === 'databank'
       ? (autoApply ? '已自动点击“应用”，推送已提交至达摩盘' : '确认页面已保留，批量完成后请逐个点击“应用”')
       : '任务执行完成'
-    updateProgress(finalPhase, completionMessage)
+    updateProgress(finalPhase, completionMessage, run)
     const hasResults = result?.results && result.results.length > 0
     const orderedResults = hasResults ? normalizeResultRows(result.results) : null
     activeTask.value = { ...activeTask.value, status: 'completed', hasResults }
@@ -778,32 +855,63 @@ async function executeViaExtension(crowdName, type, options = {}) {
     if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? orderedResults : result, crowdCount: crowdCount.value }).catch(() => {}) }
     outcome = 'completed'
   } catch (err) {
-    if (taskCancelled.value) {
-      taskRunning.value = null
+    if (err?.name === 'AbortError' || !isRunActive(run)) {
       return { status: 'cancelled', task: null }
     }
-    if (activeTask.value) {
+    if (activeTask.value?.runId === run.id) {
       const friendlyMsg = userError(err.message || '执行失败')
       activeTask.value = { ...activeTask.value, status: 'failed', message: friendlyMsg }
       if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'failed', phase: activeTask.value.phaseIndex, phaseLabel: friendlyMsg, progress: activeTask.value.progress, message: friendlyMsg }).catch(() => {}) }
     }
   }
 
-  const task = activeTask.value
+  const task = activeTask.value?.runId === run.id ? activeTask.value : null
   if (task) {
     taskHistory.value.unshift({ ...task, time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: taskResults.value ? [...taskResults.value] : null, crowdCount: crowdCount.value })
   }
   expandedHistory.value = -1 // collapse all history on new entry
-  if (!keepRunning) taskRunning.value = null
   return { status: outcome, task }
 }
 
-function cancelTask() {
-  taskCancelled.value = true
-  window.postMessage({ source: 'cdp-web', type: 'CDP_AUTOMATE_DATABANK_CROWD', requestId: 'cancel_' + Date.now(), crowdName: '__CANCEL__' }, window.location.origin)
-  const task = activeTask.value
+async function cancelTask() {
+  const run = activeRunContext
+  if (!run || cancelling.value) return
+  cancelling.value = true
+  run.cancelled = true
+  run.cancelling = true
+  run.controller.abort()
+  const task = activeTask.value?.runId === run.id ? activeTask.value : null
   if (task) { taskHistory.value.unshift({ ...task, status: 'cancelled', message: '用户取消', time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: null, crowdCount: null }) }
-  activeTask.value = null; taskRunning.value = null; taskResults.value = null; crowdCount.value = null; expandedHistory.value = -1
+  activeTask.value = null
+  taskResults.value = null
+  crowdCount.value = null
+  expandedHistory.value = -1
+
+  const backendCancellation = task?.id
+    ? apiPut(`${API}/${task.id}/progress`, {
+        status: 'cancelled',
+        phase: task.phaseIndex || 0,
+        phaseLabel: '已终止',
+        progress: task.progress || 0,
+        message: '用户终止',
+      }).catch(() => null)
+    : Promise.resolve(null)
+
+  try {
+    const [extensionResult] = await Promise.all([
+      sendToExtension('CDP_CANCEL_TASK', { runId: run.id }, { timeoutMs: 12000 }),
+      backendCancellation,
+    ])
+    if (!extensionResult?.cancelled) throw new Error('扩展未确认终止')
+    ElMessage.success('当前任务已终止，后续队列不会继续执行')
+  } catch (error) {
+    await backendCancellation
+    ElMessage.warning('前端队列已停止，但扩展未确认终止；请检查并关闭仍在运行的插件页面')
+  } finally {
+    if (activeRunContext === run) activeRunContext = null
+    taskRunning.value = null
+    cancelling.value = false
+  }
 }
 
 async function runDatabank() {
@@ -814,9 +922,17 @@ async function runDatabank() {
     const confirmed = await confirmBatchRun('databank', names.length)
     if (!confirmed) return
   }
-  taskRunning.value = 'databank'; taskCancelled.value = false
-  if (databankBatchMode.value) await executeBatch(names, 'databank', { autoApply: databankAutoApply.value })
-  else await executeViaExtension(names[0], 'databank', { autoApply: databankAutoApply.value })
+  taskRunning.value = 'databank'
+  const run = createRunContext('databank')
+  try {
+    if (databankBatchMode.value) await executeBatch(names, 'databank', { autoApply: databankAutoApply.value }, run)
+    else await executeViaExtension(names[0], 'databank', { autoApply: databankAutoApply.value, run })
+  } finally {
+    if (activeRunContext === run && !run.cancelling) {
+      activeRunContext = null
+      taskRunning.value = null
+    }
+  }
 }
 
 async function runDmp() {
@@ -827,9 +943,17 @@ async function runDmp() {
     const confirmed = await confirmBatchRun('dmp', names.length)
     if (!confirmed) return
   }
-  taskRunning.value = 'dmp'; taskCancelled.value = false
-  if (dmpBatchMode.value) await executeBatch(names, 'dmp')
-  else await executeViaExtension(names[0], 'dmp')
+  taskRunning.value = 'dmp'
+  const run = createRunContext('dmp')
+  try {
+    if (dmpBatchMode.value) await executeBatch(names, 'dmp', {}, run)
+    else await executeViaExtension(names[0], 'dmp', { run })
+  } finally {
+    if (activeRunContext === run && !run.cancelling) {
+      activeRunContext = null
+      taskRunning.value = null
+    }
+  }
 }
 
 async function confirmBatchRun(type, count) {
@@ -850,28 +974,34 @@ async function confirmBatchRun(type, count) {
   }
 }
 
-async function executeBatch(names, type, options = {}) {
+async function executeBatch(names, type, options = {}, run) {
   let completed = 0
   let failed = 0
 
   for (let index = 0; index < names.length; index += 1) {
-    if (taskCancelled.value) break
+    if (!isRunActive(run)) break
     const outcome = await executeViaExtension(names[index], type, {
       ...options,
+      run,
       keepRunning: true,
       batchIndex: index + 1,
       batchTotal: names.length,
     })
     if (outcome.status === 'completed') completed += 1
     else if (outcome.status === 'failed') failed += 1
+    else if (outcome.status === 'cancelled') break
 
-    if (!taskCancelled.value && index < names.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, BATCH_EXECUTION_GAP_MS))
+    if (isRunActive(run) && index < names.length - 1) {
+      try {
+        await waitForAbortableDelay(BATCH_EXECUTION_GAP_MS, run.controller.signal)
+      } catch (error) {
+        if (error?.name === 'AbortError') break
+        throw error
+      }
     }
   }
 
-  taskRunning.value = null
-  if (taskCancelled.value) return
+  if (!isRunActive(run)) return
   const summary = `批量执行完成：成功 ${completed} 个，失败 ${failed} 个`
   if (failed > 0) ElMessage.warning(summary)
   else ElMessage.success(summary)
@@ -945,7 +1075,8 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 
 .tc-section-heading { display: flex; align-items: center; gap: 7px; margin: 0 1px 11px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
 .tc-section-marker { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; flex: 0 0 auto; }
-.tc-test-row { display: flex; flex-direction: column; gap: 14px; margin-bottom: 22px; padding-left: 9px; flex-shrink: 0; }
+.tc-test-row { position: relative; display: flex; flex-direction: column; gap: 14px; margin-bottom: 15px; padding: 0 0 18px 9px; flex-shrink: 0; }
+.tc-test-row::after { position: absolute; right: 4%; bottom: 0; left: 9px; height: 1px; background: linear-gradient(90deg, rgba(29,29,31,0.16), rgba(29,29,31,0.04) 72%, transparent); content: ""; }
 .tc-test-col { background: transparent; border: 0; border-radius: 0; padding: 0 1px; }
 .tc-test-col:focus-within { border-color: transparent; }
 .tc-test-head { min-height: 22px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
@@ -992,7 +1123,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 
-.tc-dmp-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 20px; padding: 0 1px; flex-shrink: 0; }
+.tc-dmp-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; padding: 0 1px 0 10px; flex-shrink: 0; }
 .tc-dmp-tools-label { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
 .tc-dmp-tools-label::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
 .tc-settings-btn { min-width: 48px; height: 24px; padding: 0 7px; border: 1px solid #1d1d1f; border-radius: 3px; background: #fff; color: #1d1d1f; font-size: 9px; font-weight: 550; letter-spacing: 0.01em; cursor: pointer; transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease; }

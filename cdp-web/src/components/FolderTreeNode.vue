@@ -22,7 +22,7 @@
         {{ expandedIds.has(folder.id) ? '▾' : '▸' }}
       </span>
       <span v-else class="folder-expand-toggle" style="visibility:hidden">▸</span>
-      <span class="folder-icon">📂</span>
+      <el-icon class="folder-icon"><FolderIcon /></el-icon>
 
       <template v-if="editingFolderId === folder.id">
         <el-input
@@ -75,6 +75,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
+import { Folder as FolderIcon } from '@element-plus/icons-vue'
 
 const props = defineProps({
   folder: { type: Object, required: true },
@@ -141,8 +142,11 @@ function onDragStart(event, folder) {
   text-align: center;
 }
 .folder-icon {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
-  font-size: 13px;
+  color: var(--ui-ink);
+  font-size: 14px;
 }
 .folder-name {
   flex: 1;
