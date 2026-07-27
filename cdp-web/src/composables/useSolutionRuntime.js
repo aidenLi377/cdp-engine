@@ -2,6 +2,11 @@ import { markRaw, toRaw } from 'vue'
 import { useCdpShared } from './useCdpShared.js'
 import { cleanWorkbenchFieldIds } from '../utils/solutionState.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
+import {
+  buildMetaVersionKey,
+  CONFIG_VERSION_EVENT,
+  refreshConfigVersion,
+} from '../utils/configVersion.js'
 
 function cloneValue(value) {
   if (value == null) return value
@@ -37,9 +42,41 @@ export function bindRuntimeUsageSections(baseSections, nodes) {
 
 const pendingMetaFetches = {}
 let pendingMetaBundleFetch = null
-let metaBundleLoaded = false
+let pendingMetaBundleKey = null
+let metaBundleLoadedKey = null
+let activeMetaVersionKey = null
 const metaBuildId = typeof __CDP_BUILD_ID__ === 'undefined' ? 'local' : __CDP_BUILD_ID__
-const metaVersionQuery = `?v=${encodeURIComponent(metaBuildId)}`
+const runtimeSharedCache = useCdpShared()
+
+function clearRuntimeMetaCache() {
+  Object.keys(pendingMetaFetches).forEach((key) => {
+    delete pendingMetaFetches[key]
+  })
+  pendingMetaBundleFetch = null
+  pendingMetaBundleKey = null
+  metaBundleLoadedKey = null
+  runtimeSharedCache.schemaCache.value = {}
+  runtimeSharedCache.logicMatrixCache.value = {}
+}
+
+function activateConfigVersion(configVersion) {
+  const nextKey = buildMetaVersionKey(metaBuildId, configVersion)
+  if (nextKey !== activeMetaVersionKey) {
+    clearRuntimeMetaCache()
+    activeMetaVersionKey = nextKey
+  }
+  return nextKey
+}
+
+async function ensureActiveMetaVersion() {
+  return activateConfigVersion(await refreshConfigVersion())
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(CONFIG_VERSION_EVENT, (event) => {
+    activateConfigVersion(event.detail?.version)
+  })
+}
 
 export function useSolutionRuntime() {
   const { schemaCache, logicMatrixCache } = useCdpShared()
@@ -63,25 +100,41 @@ export function useSolutionRuntime() {
     return getCachedPackageMeta(packageType)
   }
 
-  function preloadAllPackageMeta() {
-    if (metaBundleLoaded) return Promise.resolve(Object.keys(schemaCache.value).length)
-    if (pendingMetaBundleFetch) return pendingMetaBundleFetch
+  async function preloadAllPackageMeta() {
+    const metaVersionKey = await ensureActiveMetaVersion()
+    if (metaBundleLoadedKey === metaVersionKey) {
+      return Object.keys(schemaCache.value).length
+    }
+    if (pendingMetaBundleFetch && pendingMetaBundleKey === metaVersionKey) {
+      return pendingMetaBundleFetch
+    }
 
-    pendingMetaBundleFetch = (async () => {
-      const response = await fetchWithTimeout(`/api/meta${metaVersionQuery}`)
+    const request = (async () => {
+      const versionQuery = `?v=${encodeURIComponent(metaVersionKey)}`
+      const response = await fetchWithTimeout(`/api/meta${versionQuery}`)
       if (!response.ok) throw new Error('组件元数据预加载失败')
 
       const bundle = await response.json()
+      if (activeMetaVersionKey !== metaVersionKey) {
+        return preloadAllPackageMeta()
+      }
       Object.entries(bundle || {}).forEach(([packageType, data]) => {
         storePackageMeta(packageType, data)
       })
-      metaBundleLoaded = true
+      metaBundleLoadedKey = metaVersionKey
       return Object.keys(bundle || {}).length
-    })().finally(() => {
-      pendingMetaBundleFetch = null
-    })
+    })()
 
-    return pendingMetaBundleFetch
+    pendingMetaBundleKey = metaVersionKey
+    pendingMetaBundleFetch = request
+    try {
+      return await request
+    } finally {
+      if (pendingMetaBundleFetch === request) {
+        pendingMetaBundleFetch = null
+        pendingMetaBundleKey = null
+      }
+    }
   }
 
   function buildInitialNodeState(schema, packageType) {
@@ -126,10 +179,11 @@ export function useSolutionRuntime() {
   }
 
   async function fetchPackageMeta(packageType) {
+    const metaVersionKey = await ensureActiveMetaVersion()
     const cached = getCachedPackageMeta(packageType)
     if (cached) return cached
 
-    if (pendingMetaBundleFetch) {
+    if (pendingMetaBundleFetch && pendingMetaBundleKey === metaVersionKey) {
       try {
         await pendingMetaBundleFetch
       } catch {
@@ -139,27 +193,32 @@ export function useSolutionRuntime() {
       if (bundled) return bundled
     }
 
-    if (pendingMetaFetches[packageType]) {
-      return pendingMetaFetches[packageType]
+    const pendingKey = `${metaVersionKey}:${packageType}`
+    if (pendingMetaFetches[pendingKey]) {
+      return pendingMetaFetches[pendingKey]
     }
 
     const promise = (async () => {
       try {
+        const versionQuery = `?v=${encodeURIComponent(metaVersionKey)}`
         const response = await fetchWithTimeout(
-          `/api/meta/${encodeURIComponent(packageType)}${metaVersionQuery}`,
+          `/api/meta/${encodeURIComponent(packageType)}${versionQuery}`,
         )
         if (!response.ok) {
           throw new Error(`组件元数据加载失败: ${packageType}`)
         }
 
         const data = await response.json()
+        if (activeMetaVersionKey !== metaVersionKey) {
+          return fetchPackageMeta(packageType)
+        }
         return storePackageMeta(packageType, data)
       } finally {
-        delete pendingMetaFetches[packageType]
+        delete pendingMetaFetches[pendingKey]
       }
     })()
 
-    pendingMetaFetches[packageType] = promise
+    pendingMetaFetches[pendingKey] = promise
     return promise
   }
 

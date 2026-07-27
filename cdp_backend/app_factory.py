@@ -6,6 +6,7 @@ import os
 import sys
 from datetime import timedelta
 from logging.handlers import RotatingFileHandler
+from threading import Lock
 
 from flask import Flask, abort, g, jsonify, request, send_from_directory, session
 from flask_cors import CORS
@@ -129,6 +130,36 @@ def register_routes(
     user_store: UserStore,
     dimension_store: DimensionStore,
 ) -> None:
+    config_reload_lock = Lock()
+    loaded_config_version = dimension_store.get_published_version()["version"]
+    config_dependent_endpoints = {
+        "get_packages",
+        "get_all_package_meta",
+        "get_package_meta",
+        "get_package_meta_alias",
+        "generate_json_alias",
+        "generate",
+        "batch_generate",
+    }
+
+    def ensure_latest_config() -> dict:
+        """Reload this worker when another worker publishes a newer version."""
+        nonlocal loaded_config_version
+        published = dimension_store.get_published_version()
+        if published["version"] == loaded_config_version:
+            return published
+
+        with config_reload_lock:
+            published = dimension_store.get_published_version()
+            if published["version"] != loaded_config_version:
+                engine.reload_config(validate_on_load=False)
+                loaded_config_version = published["version"]
+                app.logger.info(
+                    "ConfigEngine synchronized to published config V%s",
+                    loaded_config_version,
+                )
+        return published
+
     def error_response(code: str, message: str, status: int):
         return jsonify({"code": code, "message": message}), status
 
@@ -143,12 +174,20 @@ def register_routes(
     def metadata_response(payload):
         """Return version-aware browser-cacheable configuration metadata."""
         response = jsonify(payload)
-        is_versioned = bool(request.args.get("v"))
+        requested_version = str(request.args.get("v", ""))
+        requested_config_version = requested_version.rsplit(".", 1)[-1]
+        is_versioned = bool(requested_version) and requested_config_version == str(
+            loaded_config_version
+        )
         response.cache_control.private = True
-        response.cache_control.max_age = 31_536_000 if is_versioned else 300
         if is_versioned:
+            response.cache_control.max_age = 31_536_000
             response.cache_control.immutable = True
+        else:
+            response.cache_control.max_age = 0
+            response.cache_control.no_cache = True
         response.headers["Vary"] = "Cookie"
+        response.headers["X-CDP-Config-Version"] = str(loaded_config_version)
         response.add_etag()
         return response.make_conditional(request)
 
@@ -192,6 +231,12 @@ def register_routes(
             session.clear()
             return error_response("AUTH_REQUIRED", "登录已失效，请重新登录", 401)
         g.current_user = user
+        return None
+
+    @app.before_request
+    def synchronize_published_config():
+        if request.endpoint in config_dependent_endpoints:
+            ensure_latest_config()
         return None
 
     @app.route("/api/auth/login", methods=["POST"])
@@ -596,16 +641,19 @@ def register_routes(
 
     @app.route("/api/admin/config/publish", methods=["POST"])
     def admin_publish_config():
+        nonlocal loaded_config_version
         permission_error = require_config_admin()
         if permission_error is not None:
             return permission_error
         payload = request.get_json(silent=True) or {}
         try:
-            version = dimension_store.publish_changes(
-                g.current_user["id"],
-                payload.get("note", ""),
-            )
-            engine.reload_config(validate_on_load=False)
+            with config_reload_lock:
+                version = dimension_store.publish_changes(
+                    g.current_user["id"],
+                    payload.get("note", ""),
+                )
+                engine.reload_config(validate_on_load=False)
+                loaded_config_version = version["version"]
         except DimensionValidationError as exc:
             return error_response("INVALID_REQUEST", str(exc), 400)
         return jsonify(version), 201
@@ -625,6 +673,12 @@ def register_routes(
     @app.route("/api/health")
     def health_check():
         return jsonify({"status": "ok"})
+
+    @app.route("/api/config/version")
+    def get_config_version():
+        response = jsonify(dimension_store.get_published_version())
+        response.cache_control.no_store = True
+        return response
 
     @app.route("/api/meta")
     def get_all_package_meta():

@@ -49,8 +49,14 @@ class CdpApiTests(unittest.TestCase):
         self.assertIn("类目公域行为", packages)
         self.assertIn("商品行为", packages)
 
+    def test_config_version_is_never_browser_cached(self):
+        response = self.client.get("/api/config/version")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"version": 0, "publishedAt": None})
+        self.assertIn("no-store", response.headers["Cache-Control"])
+
     def test_meta_and_cache(self):
-        response = self.client.get("/api/meta/类目公域行为?v=test-release")
+        response = self.client.get("/api/meta/类目公域行为?v=test-release.0")
         meta = response.get_json()
         self.assertIn("schema", meta)
         self.assertIn("matrix", meta)
@@ -62,18 +68,20 @@ class CdpApiTests(unittest.TestCase):
         self.assertTrue(response.headers.get("ETag"))
 
         conditional = self.client.get(
-            "/api/meta/类目公域行为?v=test-release",
+            "/api/meta/类目公域行为?v=test-release.0",
             headers={"If-None-Match": response.headers["ETag"]},
         )
         self.assertEqual(conditional.status_code, 304)
 
-        bundle_response = self.client.get("/api/meta?v=test-release")
+        bundle_response = self.client.get("/api/meta?v=test-release.0")
         bundle = bundle_response.get_json()
         self.assertEqual(set(bundle), set(self.engine.packages))
         self.assertIn("schema", bundle["类目公域行为"])
 
         response_alias = self.client.get("/api/package_meta?name=类目公域行为")
         self.assertEqual(response_alias.status_code, 200)
+        self.assertIn("no-cache", response_alias.headers["Cache-Control"])
+        self.assertIn("max-age=0", response_alias.headers["Cache-Control"])
         alias_meta = response_alias.get_json()
         self.assertEqual(len(meta["schema"]), len(alias_meta["schema"]))
 

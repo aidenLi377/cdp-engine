@@ -425,7 +425,7 @@
           <span class="config-version">V{{ configStatus.currentVersion || 0 }}</span>
           <span>
             <strong>{{ configStatus.pendingChanges || 0 }} 项待发布</strong>
-            <small>保存只进入草稿，发布后工作台才会加载新配置。</small>
+            <small>保存只进入草稿，发布后工作台会自动同步新配置。</small>
           </span>
         </div>
         <div class="config-release-actions">
@@ -567,6 +567,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { request } from '../utils/apiClient.js'
+import { adoptConfigVersion } from '../utils/configVersion.js'
 
 const props = defineProps({
   currentUserId: {
@@ -859,9 +860,10 @@ async function publishConfig() {
       method: 'POST',
       body: JSON.stringify({ note: publishNote.value }),
     })
+    adoptConfigVersion(version, { notify: true })
     publishNote.value = ''
     await Promise.all([loadDimensionRows(), refreshConfigSummary()])
-    showMessage(`配置 V${version.version} 已发布，共 ${version.changeCount} 项修改`)
+    showMessage(`配置 V${version.version} 已发布并同步，共 ${version.changeCount} 项修改`)
   } catch (error) {
     showMessage(error.message || '配置发布失败', 'error')
   } finally {

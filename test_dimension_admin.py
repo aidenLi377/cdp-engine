@@ -41,6 +41,20 @@ class DimensionAdminApiTests(unittest.TestCase):
 
     def test_config_admin_can_create_and_disable_dimension_row(self):
         client = self.login("config", "config-password")
+        second_app, _ = create_app(
+            {
+                "TESTING": True,
+                "DB_PATH": self.db_path,
+                "SECRET_KEY": "dimension-test-secret",
+                "SESSION_COOKIE_SECURE": False,
+            }
+        )
+        second_client = second_app.test_client()
+        second_login = second_client.post(
+            "/api/auth/login",
+            json={"username": "config", "password": "config-password"},
+        )
+        self.assertEqual(second_login.status_code, 200)
         filename = "类目维表.csv"
         initial = client.get(f"/api/admin/dimensions/{filename}?pageSize=1")
         self.assertEqual(initial.status_code, 200)
@@ -72,8 +86,16 @@ class DimensionAdminApiTests(unittest.TestCase):
             json={"note": "add test category"},
         )
         self.assertEqual(published.status_code, 201)
+        self.assertEqual(published.get_json()["version"], 1)
+        version_marker = second_client.get("/api/config/version")
+        self.assertEqual(version_marker.get_json()["version"], 1)
 
-        meta = client.get("/api/meta/类目公域行为").get_json()
+        second_meta_response = second_client.get(
+            "/api/meta/类目公域行为?v=test-release.1"
+        )
+        self.assertEqual(second_meta_response.headers["X-CDP-Config-Version"], "1")
+        self.assertIn("immutable", second_meta_response.headers["Cache-Control"])
+        meta = second_meta_response.get_json()
         leaf_cates = next(
             item for item in meta["schema"] if item["key"] == "leafCates"
         )

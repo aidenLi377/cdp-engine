@@ -596,6 +596,7 @@ import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
+import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import {
   fieldToken,
   getNodeDisplayName,
@@ -1770,7 +1771,43 @@ watch(cfHiddenCount, (newVal, oldVal) => {
   }
 })
 
+let configRefreshInFlight = false
+
+async function handleConfigVersionChanged(event) {
+  if (configRefreshInFlight) return
+  configRefreshInFlight = true
+  const previousSnapshotPause = snapshotPaused.value
+  try {
+    await preloadAllPackageMeta()
+    if (nodeList.value.length) {
+      const currentNodes = nodeList.value
+      const refreshedNodes = await hydrateNodes(currentNodes)
+      snapshotPaused.value = true
+      nodeList.value = currentNodes.map((node, index) => {
+        const refreshed = refreshedNodes[index]
+        if (!refreshed || refreshed._hydrationError) return node
+        return {
+          ...node,
+          schema: refreshed.schema,
+          logicMatrix: refreshed.logicMatrix,
+          formData: refreshed.formData,
+          modeData: refreshed.modeData,
+        }
+      })
+      await nextTick()
+      resetHistory()
+    }
+    ElMessage.success(`配置 V${event.detail?.version ?? 0} 已自动同步`)
+  } catch (error) {
+    ElMessage.warning(error.message || '新配置同步失败，请刷新页面重试')
+  } finally {
+    snapshotPaused.value = previousSnapshotPause
+    configRefreshInFlight = false
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
@@ -1790,6 +1827,7 @@ onBeforeUnmount(() => {
   clearTimeout(jsonTimer)
   jsonBuildAbort?.abort()
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()
     cfResizeObserver = null

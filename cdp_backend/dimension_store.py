@@ -414,6 +414,18 @@ class DimensionStore:
             ),
         }
 
+    def get_published_version(self) -> dict:
+        """Return the lightweight version marker shared by all app workers."""
+        with get_db(self.db_path) as conn:
+            latest = conn.execute(
+                """SELECT version_number, published_at
+                   FROM config_versions ORDER BY version_number DESC LIMIT 1"""
+            ).fetchone()
+        return {
+            "version": latest["version_number"] if latest else 0,
+            "publishedAt": latest["published_at"] if latest else None,
+        }
+
     def publish_changes(self, user_id: str, note: str = "") -> dict:
         note = str(note or "").strip()
         if len(note) > 300:

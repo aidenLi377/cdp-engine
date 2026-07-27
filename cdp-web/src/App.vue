@@ -76,6 +76,10 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import { fetchWithTimeout } from './utils/apiClient.js'
+import {
+  refreshConfigVersion,
+  resetConfigVersionState,
+} from './utils/configVersion.js'
 
 const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
 const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
@@ -93,6 +97,7 @@ let healthTimer = null
 let sessionTimer = null
 let healthCheckInFlight = false
 let sessionCheckInFlight = false
+let configVersionCheckInFlight = false
 let isDisposed = false
 let consecutiveBackendFailures = 0
 
@@ -122,12 +127,27 @@ const checkHealth = async () => {
   healthCheckInFlight = true
   try {
     const res = await fetchWithTimeout('/api/health', { cache: 'no-store' })
-    if (res.ok) markBackendSuccess()
+    if (res.ok) {
+      markBackendSuccess()
+      void checkConfigVersion()
+    }
     else markBackendFailure()
   } catch {
     markBackendFailure()
   } finally {
     healthCheckInFlight = false
+  }
+}
+
+async function checkConfigVersion() {
+  if (configVersionCheckInFlight || authState.value !== 'authenticated') return
+  configVersionCheckInFlight = true
+  try {
+    await refreshConfigVersion()
+  } catch {
+    // Health and session checks remain the source of connection state.
+  } finally {
+    configVersionCheckInFlight = false
   }
 }
 
@@ -197,6 +217,7 @@ function cancelInviteRegistration() {
 function handleAuthRequired() {
   currentUser.value = null
   authState.value = 'guest'
+  resetConfigVersionState()
   stopAuthenticatedLoops()
 }
 
@@ -216,6 +237,7 @@ async function logout() {
     await fetchWithTimeout('/api/auth/logout', { method: 'POST' })
   } finally {
     stopAuthenticatedLoops()
+    resetConfigVersionState()
     currentUser.value = null
     authState.value = 'guest'
     appMode.value = 'workbench'
