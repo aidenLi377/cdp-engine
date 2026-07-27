@@ -4,6 +4,13 @@
       <span class="auth-checking-mark"><i></i><i></i><i></i></span>
     </div>
 
+    <RegisterView
+      v-else-if="authState === 'guest' && inviteToken"
+      :token="inviteToken"
+      @authenticated="handleAuthenticated"
+      @cancel="cancelInviteRegistration"
+    />
+
     <LoginView v-else-if="authState === 'guest'" @authenticated="handleAuthenticated" />
 
     <div v-else class="cdp-engine-container">
@@ -30,6 +37,15 @@
             <el-radio-button value="solutions">方案中心</el-radio-button>
             <el-radio-button value="task-center">任务中台</el-radio-button>
           </el-radio-group>
+          <button
+            v-if="canAccessAdmin"
+            class="app-admin-link"
+            :class="{ active: appMode === 'admin' }"
+            type="button"
+            @click="appMode = 'admin'"
+          >
+            系统管理
+          </button>
         </nav>
 
         <div class="app-shell-account">
@@ -43,6 +59,12 @@
         <NormalMode v-if="appMode === 'workbench'" />
         <SolutionCenter v-else-if="appMode === 'solutions'" />
         <TaskCenter v-else-if="appMode === 'task-center'" />
+          <AdminCenter
+            v-else-if="appMode === 'admin'"
+            :current-user-id="currentUser?.id"
+            :current-user-role="currentUser?.role"
+            @current-user-updated="handleCurrentUserUpdated"
+          />
       </main>
     </div>
   </el-config-provider>
@@ -52,11 +74,13 @@
 import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import LoginView from './components/LoginView.vue'
+import RegisterView from './components/RegisterView.vue'
 import { fetchWithTimeout } from './utils/apiClient.js'
 
 const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
 const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
 const TaskCenter = defineAsyncComponent(() => import('./components/TaskCenter.vue'))
+const AdminCenter = defineAsyncComponent(() => import('./components/AdminCenter.vue'))
 
 const HEALTH_FAILURE_THRESHOLD = 3
 
@@ -64,6 +88,7 @@ const appMode = ref('workbench')
 const backendOnline = ref(true)
 const authState = ref('checking')
 const currentUser = ref(null)
+const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
 let healthCheckInFlight = false
@@ -75,6 +100,10 @@ const userInitial = computed(() => {
   const label = currentUser.value?.displayName || currentUser.value?.username || 'U'
   return String(label).trim().slice(0, 1).toUpperCase()
 })
+
+const canAccessAdmin = computed(() =>
+  ['super_admin', 'config_admin'].includes(currentUser.value?.role),
+)
 
 function markBackendSuccess() {
   consecutiveBackendFailures = 0
@@ -148,7 +177,21 @@ function handleAuthenticated(user) {
   markBackendSuccess()
   currentUser.value = user
   authState.value = 'authenticated'
+  if (inviteToken.value) {
+    window.history.replaceState({}, '', window.location.pathname)
+    inviteToken.value = ''
+  }
   startAuthenticatedLoops()
+}
+
+function handleCurrentUserUpdated(user) {
+  if (currentUser.value?.id !== user?.id) return
+  currentUser.value = { ...currentUser.value, ...user }
+}
+
+function cancelInviteRegistration() {
+  window.history.replaceState({}, '', window.location.pathname)
+  inviteToken.value = ''
 }
 
 function handleAuthRequired() {
@@ -176,6 +219,7 @@ async function logout() {
     currentUser.value = null
     authState.value = 'guest'
     appMode.value = 'workbench'
+    inviteToken.value = ''
   }
 }
 
@@ -226,6 +270,27 @@ onBeforeUnmount(() => {
   padding-left: 12px;
   border-left: 1px solid;
   border-left-color: var(--ui-divider);
+}
+
+.app-admin-link {
+  height: 30px;
+  margin-left: 8px;
+  padding: 0 12px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--ui-divider);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.app-admin-link:hover,
+.app-admin-link.active {
+  color: var(--ui-ink);
+  background: var(--ui-fill);
+  border-color: var(--ui-ink);
 }
 
 .app-shell-avatar {

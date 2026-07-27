@@ -156,12 +156,8 @@ class SolutionStore:
         return self._row_to_dict(row)
 
     def _find_mutable(self, conn, solution_id: str, user_id: str) -> dict:
-        conn.row_factory = self._row_factory
-        row = conn.execute("SELECT * FROM solutions WHERE id = ?", (solution_id,)).fetchone()
-        if row is None:
-            raise SolutionNotFoundError(solution_id)
-        item = self._row_to_dict(row)
-        if item.get("visibility") != "private" or item.get("ownerId") != user_id:
+        item = self._find_accessible(conn, solution_id, user_id)
+        if item.get("visibility") != "private":
             raise SolutionAccessError(solution_id)
         return item
 

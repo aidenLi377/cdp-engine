@@ -18,6 +18,7 @@ from .constants import (
     BRAND_DIM_FILE,
     CATEGORY_DIM_FILE,
     CHANNEL_DIM_FILE,
+    DIMENSION_FILES,
     GOODS_TYPE_DIM_FILE,
     LOGIC_TRIGGER_CANDIDATES,
     PARAMS_FILE,
@@ -33,6 +34,7 @@ from .csv_utils import (
     split_packages,
     unique_preserve_order,
 )
+from .database import get_db
 from .validator import validate_project_config
 
 
@@ -82,8 +84,14 @@ class ConfigEngine:
         "selectedGoodsType",
     )
 
-    def __init__(self, logger: logging.Logger | None = None, validate_on_load: bool = True):
+    def __init__(
+        self,
+        logger: logging.Logger | None = None,
+        validate_on_load: bool = True,
+        db_path: str | None = None,
+    ):
         self.logger = logger or logging.getLogger(__name__)
+        self.db_path = db_path
         self._meta_cache: dict[str, dict[str, Any]] = {}
         self._logic_cache: dict[str, dict[str, list[str]]] = {}
         self.params_df = pd.DataFrame()
@@ -98,6 +106,8 @@ class ConfigEngine:
         self.load_config(validate_on_load=validate_on_load)
 
     def load_config(self, validate_on_load: bool = True) -> None:
+        self._meta_cache.clear()
+        self._logic_cache.clear()
         if validate_on_load:
             validate_project_config()
 
@@ -128,6 +138,26 @@ class ConfigEngine:
         )
 
     def _safe_read(self, filename: str) -> pd.DataFrame:
+        if self.db_path and filename in DIMENSION_FILES:
+            try:
+                with get_db(self.db_path) as conn:
+                    count = conn.execute(
+                        "SELECT COUNT(*) FROM dimension_rows WHERE dimension_file = ?",
+                        (filename,),
+                    ).fetchone()[0]
+                    if count:
+                        rows = conn.execute(
+                            """SELECT published_data AS data FROM dimension_rows
+                               WHERE dimension_file = ? AND is_published = 1
+                               AND published_enabled = 1
+                               ORDER BY package_name, display_name, id""",
+                            (filename,),
+                        ).fetchall()
+                        return pd.DataFrame(
+                            [json.loads(row["data"]) for row in rows]
+                        )
+            except Exception:
+                self.logger.exception("failed to read SQLite dimension %s", filename)
         path = project_path(filename)
         if not os.path.exists(path):
             return pd.DataFrame()
@@ -136,6 +166,9 @@ class ConfigEngine:
             return df
         except Exception:
             return pd.DataFrame()
+
+    def reload_config(self, validate_on_load: bool = True) -> None:
+        self.load_config(validate_on_load=validate_on_load)
 
     def _load_dimension_tables(self) -> None:
         self.id_translator = {}

@@ -20,8 +20,64 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     display_name  TEXT NOT NULL DEFAULT '',
     enabled       INTEGER NOT NULL DEFAULT 1,
+    role          TEXT NOT NULL DEFAULT 'user'
+                  CHECK(role IN ('super_admin', 'config_admin', 'user')),
     created_at    TEXT NOT NULL,
-    last_login_at TEXT
+    last_login_at TEXT,
+    password_changed_at TEXT,
+    updated_at    TEXT,
+    session_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS registration_invites (
+    id            TEXT PRIMARY KEY,
+    token_hash    TEXT NOT NULL UNIQUE,
+    role          TEXT NOT NULL DEFAULT 'user'
+                  CHECK(role IN ('super_admin', 'config_admin', 'user')),
+    created_by    TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    expires_at    TEXT,
+    used_at       TEXT,
+    used_by       TEXT,
+    revoked_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+    id             TEXT PRIMARY KEY,
+    actor_user_id  TEXT NOT NULL,
+    target_user_id TEXT,
+    action         TEXT NOT NULL,
+    details        TEXT NOT NULL DEFAULT '{}',
+    created_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dimension_rows (
+    id              TEXT PRIMARY KEY,
+    dimension_file  TEXT NOT NULL,
+    natural_key     TEXT NOT NULL,
+    package_name    TEXT NOT NULL DEFAULT '',
+    display_name    TEXT NOT NULL DEFAULT '',
+    data            TEXT NOT NULL,
+    enabled         INTEGER NOT NULL DEFAULT 1,
+    published_data  TEXT,
+    published_enabled INTEGER NOT NULL DEFAULT 1,
+    is_published    INTEGER NOT NULL DEFAULT 1,
+    has_changes     INTEGER NOT NULL DEFAULT 0,
+    created_by      TEXT,
+    updated_by      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(dimension_file, natural_key)
+);
+
+CREATE TABLE IF NOT EXISTS config_versions (
+    id              TEXT PRIMARY KEY,
+    version_number  INTEGER NOT NULL UNIQUE,
+    snapshot        TEXT NOT NULL,
+    change_count    INTEGER NOT NULL DEFAULT 0,
+    note            TEXT NOT NULL DEFAULT '',
+    published_by    TEXT NOT NULL,
+    published_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS solutions (
@@ -90,12 +146,36 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 
 POST_MIGRATION_DDL = """
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created
+    ON admin_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_target
+    ON admin_audit_logs(target_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_registration_invites_status
+    ON registration_invites(revoked_at, used_at, expires_at);
+CREATE INDEX IF NOT EXISTS idx_dimension_rows_lookup
+    ON dimension_rows(dimension_file, package_name, enabled, display_name);
+CREATE INDEX IF NOT EXISTS idx_dimension_rows_changes
+    ON dimension_rows(has_changes, dimension_file);
+CREATE INDEX IF NOT EXISTS idx_config_versions_number ON config_versions(version_number);
 CREATE INDEX IF NOT EXISTS idx_solutions_scope ON solutions(visibility, owner_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_folders_scope ON folders(visibility, owner_id, parent_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at);
 """
 
 MIGRATION_COLUMNS = {
+    "users": {
+        "role": "TEXT NOT NULL DEFAULT 'user'",
+        "password_changed_at": "TEXT",
+        "updated_at": "TEXT",
+        "session_version": "INTEGER NOT NULL DEFAULT 1",
+    },
+    "dimension_rows": {
+        "published_data": "TEXT",
+        "published_enabled": "INTEGER NOT NULL DEFAULT 1",
+        "is_published": "INTEGER NOT NULL DEFAULT 1",
+        "has_changes": "INTEGER NOT NULL DEFAULT 0",
+    },
     "solutions": {
         "owner_id": "TEXT",
         "visibility": "TEXT NOT NULL DEFAULT 'public'",
@@ -155,5 +235,13 @@ def init_db(db_path: str | None = None) -> None:
         conn.executescript(DDL)
         for table, columns in MIGRATION_COLUMNS.items():
             _ensure_columns(conn, table, columns)
+        conn.execute(
+            """UPDATE dimension_rows SET published_data = data
+               WHERE published_data IS NULL AND is_published = 1"""
+        )
+        conn.execute(
+            """UPDATE users SET updated_at = created_at
+               WHERE updated_at IS NULL"""
+        )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 1")
+        conn.execute("PRAGMA user_version = 2")

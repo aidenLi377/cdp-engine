@@ -74,8 +74,16 @@ class FolderStore:
         return self._row_to_dict(row)
 
     def _find_mutable(self, conn, folder_id: str, user_id: str) -> dict:
-        item = self._find_folder(conn, folder_id)
-        if item.get("visibility") != "private" or item.get("ownerId") != user_id:
+        conn.row_factory = self._row_factory
+        row = conn.execute(
+            """SELECT * FROM folders
+               WHERE id = ? AND (visibility = 'public' OR owner_id = ?)""",
+            (folder_id, user_id),
+        ).fetchone()
+        if row is None:
+            raise FolderNotFoundError(folder_id)
+        item = self._row_to_dict(row)
+        if item.get("visibility") != "private":
             raise FolderAccessError(folder_id)
         return item
 

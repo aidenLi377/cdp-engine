@@ -68,8 +68,8 @@ async function parseResponseBody(response) {
 }
 
 async function request(path, options = {}) {
-  const { headers, ...fetchOptions } = options
-  const response = await fetchWithTimeout(path, {
+  const { headers, params, ...fetchOptions } = options
+  const response = await fetchWithTimeout(buildUrl(path, params), {
     headers: {
       'Content-Type': 'application/json',
       ...(headers || {}),

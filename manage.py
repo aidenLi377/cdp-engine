@@ -25,6 +25,12 @@ def main() -> int:
     create = subparsers.add_parser("create-user", help="创建登录账号")
     create.add_argument("username")
     create.add_argument("--display-name", default="")
+    create.add_argument(
+        "--role",
+        choices=UserStore.ROLES,
+        default=None,
+        help="角色；首次创建且未指定时自动成为超级管理员",
+    )
 
     reset = subparsers.add_parser("reset-password", help="重置账号密码")
     reset.add_argument("username")
@@ -35,8 +41,13 @@ def main() -> int:
     store = UserStore()
     try:
         if args.command == "create-user":
-            user = store.create_user(args.username, _password("输入密码: "), args.display_name)
-            print(f"已创建用户: {user['username']} ({user['displayName']})")
+            user = store.create_user(
+                args.username,
+                _password("输入密码: "),
+                args.display_name,
+                args.role,
+            )
+            print(f"已创建用户: {user['username']} ({user['displayName']}) [{user['role']}]")
         elif args.command == "reset-password":
             store.reset_password(args.username, _password("输入新密码: "))
             print(f"已重置密码: {args.username}")

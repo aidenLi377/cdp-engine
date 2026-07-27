@@ -201,7 +201,7 @@ class ExistingDatabaseMigrationTests(unittest.TestCase):
                 user_version = conn.execute("PRAGMA user_version").fetchone()[0]
             self.assertEqual(solution, ("public", None))
             self.assertEqual(folder, ("public", None))
-            self.assertEqual(user_version, 1)
+            self.assertEqual(user_version, 2)
 
 
 if __name__ == "__main__":
