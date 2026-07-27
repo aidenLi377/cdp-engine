@@ -625,6 +625,21 @@ def register_routes(
             return error_response("DIMENSION_NOT_FOUND", "维表记录不存在", 404)
         return jsonify(updated)
 
+    @app.route("/api/admin/dimensions/<filename>/<row_id>", methods=["DELETE"])
+    def admin_delete_dimension_row(filename: str, row_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            deleted = dimension_store.delete_row(
+                filename,
+                row_id,
+                g.current_user["id"],
+            )
+        except DimensionNotFoundError:
+            return error_response("DIMENSION_NOT_FOUND", "维表记录不存在", 404)
+        return jsonify(deleted)
+
     @app.route("/api/admin/config/status")
     def admin_config_status():
         permission_error = require_config_admin()
@@ -808,6 +823,26 @@ def register_routes(
             return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能直接修改，请先复制到我的方案", 403)
         except InvalidSolutionStateError:
             return error_response("INVALID_SOLUTION_STATE", "当前方案状态不允许修改", 409)
+        return jsonify(updated)
+
+    @app.route("/api/solutions/<solution_id>/public", methods=["PUT"])
+    def update_public_solution(solution_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "方案数据格式不正确", 400)
+        try:
+            updated = solution_store.update_public_solution(
+                solution_id,
+                payload,
+                g.current_user["id"],
+            )
+        except SolutionNotFoundError:
+            return error_response("SOLUTION_NOT_FOUND", "该方案不存在或已被删除", 404)
+        except SolutionAccessError:
+            return error_response("PUBLIC_SOLUTION_REQUIRED", "只能修改公共方案", 403)
         return jsonify(updated)
 
     @app.route("/api/solutions/<solution_id>/publish", methods=["POST"])

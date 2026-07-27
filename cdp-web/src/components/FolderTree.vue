@@ -46,6 +46,17 @@
         <template v-else>
           <span class="folder-name">{{ folder.name }}</span>
         </template>
+        <button
+          v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
+          type="button"
+          class="folder-batch-badge"
+          :title="`组合应用：${getBatchCount(folder.id)} 个已发布方案`"
+          :aria-label="`${folder.name}可组合应用 ${getBatchCount(folder.id)} 个方案`"
+          @click.stop="openBatchFolder(folder.id)"
+        >
+          <span aria-hidden="true">✦</span>
+          {{ getBatchCount(folder.id) }}
+        </button>
         <span v-if="dragOverFolderId === folder.id" class="folder-drop-hint">释放到此处</span>
       </div>
 
@@ -61,8 +72,11 @@
           :editing-folder-id="editingFolderId"
           :edit-name="editName"
           :read-only="readOnly"
+          :batch-counts="batchCounts"
+          :show-batch-badges="showBatchBadges"
           @toggle-expand="toggleExpand"
           @select-folder="selectFolder"
+          @batch-apply="openBatchFolder"
           @context-menu="onContextMenu"
           @drag-over-folder="onDragOverFolder"
           @drag-leave-folder="onDragLeaveFolder"
@@ -127,9 +141,11 @@ import FolderTreeNode from './FolderTreeNode.vue'
 const props = defineProps({
   folders: { type: Array, default: () => [] },
   readOnly: { type: Boolean, default: false },
+  batchCounts: { type: Object, default: () => ({}) },
+  showBatchBadges: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select-folder', 'folders-changed'])
+const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply'])
 
 const expandedIds = ref(new Set())
 const selectedFolderId = ref(null)
@@ -157,6 +173,15 @@ function toggleExpand(id) {
 function selectFolder(id) {
   selectedFolderId.value = id
   emit('select-folder', id)
+}
+
+function getBatchCount(folderId) {
+  return Number(props.batchCounts?.[folderId] || 0)
+}
+
+function openBatchFolder(folderId) {
+  selectFolder(folderId)
+  emit('batch-apply', folderId)
 }
 
 function startCreate(parentId) {
@@ -328,6 +353,33 @@ defineExpose({ selectedFolderId, selectFolder })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.folder-batch-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 36px;
+  height: 20px;
+  padding: 0 7px;
+  flex: 0 0 auto;
+  color: var(--ui-ink);
+  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+.folder-batch-badge:hover {
+  color: #fff;
+  border-color: #1d1d1f;
+  background: #1d1d1f;
+  transform: translateY(-1px);
+}
+.folder-batch-badge:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 2px;
 }
 .folder-drop-hint {
   font-size: 10px;

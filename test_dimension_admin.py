@@ -131,6 +131,64 @@ class DimensionAdminApiTests(unittest.TestCase):
         response = client.get("/api/admin/dimensions")
         self.assertEqual(response.status_code, 403)
 
+    def test_only_super_admin_can_delete_a_dimension_row(self):
+        config_client = self.login("config", "config-password")
+        root_client = self.login("root", "root-password")
+        filename = "类目维表.csv"
+        created = config_client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={
+                "data": {
+                    "适用的包": "类目公域行为",
+                    "类目名称": "测试类目>待删除",
+                    "cateId": "990000002",
+                }
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        row_id = created.get_json()["id"]
+        self.assertEqual(
+            config_client.post(
+                "/api/admin/config/publish",
+                json={"note": "publish before delete"},
+            ).status_code,
+            201,
+        )
+
+        denied = config_client.delete(
+            f"/api/admin/dimensions/{filename}/{row_id}"
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        staged = root_client.delete(
+            f"/api/admin/dimensions/{filename}/{row_id}"
+        )
+        self.assertEqual(staged.status_code, 200)
+        self.assertTrue(staged.get_json()["deleted"])
+        self.assertTrue(staged.get_json()["hasChanges"])
+
+        pending = root_client.get(
+            f"/api/admin/dimensions/{filename}?q=待删除"
+        ).get_json()["rows"]
+        self.assertTrue(any(row["id"] == row_id and row["deleted"] for row in pending))
+
+        discarded = root_client.post("/api/admin/config/discard")
+        self.assertEqual(discarded.status_code, 200)
+        restored = root_client.get(
+            f"/api/admin/dimensions/{filename}?q=待删除"
+        ).get_json()["rows"]
+        self.assertTrue(any(row["id"] == row_id and not row["deleted"] for row in restored))
+
+        root_client.delete(f"/api/admin/dimensions/{filename}/{row_id}")
+        published = root_client.post(
+            "/api/admin/config/publish",
+            json={"note": "remove test category"},
+        )
+        self.assertEqual(published.status_code, 201)
+        meta = root_client.get("/api/meta/类目公域行为").get_json()
+        leaf_cates = next(item for item in meta["schema"] if item["key"] == "leafCates")
+        self.assertNotIn("测试类目>待删除", leaf_cates["options"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

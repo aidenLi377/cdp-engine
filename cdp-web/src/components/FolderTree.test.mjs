@@ -31,3 +31,11 @@ test('folder rows use a monochrome vector icon instead of a colored emoji', () =
   assert.doesNotMatch(folderTreeVue, /📂/)
   assert.doesNotMatch(folderTreeNodeVue, /📂/)
 })
+
+test('eligible folders can expose a compact combination badge without replacing folder selection', () => {
+  assert.match(folderTreeVue, /class="folder-batch-badge"/)
+  assert.match(folderTreeVue, /getBatchCount\(folder\.id\) >= 2/)
+  assert.match(folderTreeVue, /@click\.stop="openBatchFolder\(folder\.id\)"/)
+  assert.match(folderTreeVue, /emit\('batch-apply', folderId\)/)
+  assert.match(folderTreeNodeVue, /@click\.stop="\$emit\('batch-apply', folder\.id\)"/)
+})

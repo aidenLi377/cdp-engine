@@ -149,7 +149,7 @@ class ConfigEngine:
                         rows = conn.execute(
                             """SELECT published_data AS data FROM dimension_rows
                                WHERE dimension_file = ? AND is_published = 1
-                               AND published_enabled = 1
+                               AND published_enabled = 1 AND published_deleted = 0
                                ORDER BY package_name, display_name, id""",
                             (filename,),
                         ).fetchall()

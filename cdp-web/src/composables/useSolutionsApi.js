@@ -22,6 +22,13 @@ export function useSolutionsApi() {
         signal,
       })
     },
+    updatePublicSolution(id, body, { signal } = {}) {
+      return request(`/api/solutions/${id}/public`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+        signal,
+      })
+    },
     publishSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}/publish`, {
         method: 'POST',

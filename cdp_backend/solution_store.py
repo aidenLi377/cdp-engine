@@ -291,6 +291,33 @@ class SolutionStore:
             self._update_row(conn, updated)
         return updated
 
+    def update_public_solution(
+        self, solution_id: str, payload: dict, user_id: str
+    ) -> dict:
+        """Update a public solution in place for a super administrator."""
+        with get_db(self.db_path) as conn:
+            item = self._find_accessible(conn, solution_id, user_id)
+            if item.get("visibility") != "public":
+                raise SolutionAccessError(solution_id)
+            now = _utc_now()
+            updated = {
+                **item,
+                **self._client_fields(payload),
+                "id": item["id"],
+                "status": item.get("status", "published"),
+                "visibility": "public",
+                "ownerId": item.get("ownerId"),
+                "_version": item.get("_version", 0) + 1,
+                "updatedBy": user_id,
+                "createdAt": item["createdAt"],
+                "updatedAt": now,
+                "publishedAt": now if item.get("status") == "published" else item.get("publishedAt"),
+            }
+            # Public solutions stay outside personal folders.
+            updated["folderId"] = None
+            self._update_row(conn, updated)
+        return updated
+
     def publish(self, solution_id: str, user_id: str) -> dict:
         with get_db(self.db_path) as conn:
             item = self._find_mutable(conn, solution_id, user_id)

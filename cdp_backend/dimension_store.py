@@ -98,6 +98,7 @@ class DimensionStore:
             "enabled": bool(row["enabled"]),
             "published": bool(row["is_published"]),
             "hasChanges": bool(row["has_changes"]),
+            "deleted": bool(row["deleted"]),
             "createdBy": row["created_by"],
             "updatedBy": row["updated_by"],
             "createdAt": row["created_at"],
@@ -166,7 +167,7 @@ class DimensionStore:
                 active = conn.execute(
                     """SELECT COUNT(*) FROM dimension_rows
                        WHERE dimension_file = ? AND is_published = 1
-                       AND published_enabled = 1""",
+                       AND published_enabled = 1 AND published_deleted = 0""",
                     (filename,),
                 ).fetchone()[0]
                 pending = conn.execute(
@@ -218,7 +219,7 @@ class DimensionStore:
             rows = conn.execute(
                 f"""SELECT * FROM dimension_rows
                     WHERE {where}
-                    ORDER BY enabled DESC, package_name, display_name, id
+                    ORDER BY deleted ASC, enabled DESC, package_name, display_name, id
                     LIMIT ? OFFSET ?""",
                 tuple(params + [page_size, (page - 1) * page_size]),
             ).fetchall()
@@ -303,8 +304,9 @@ class DimensionStore:
                 raise DimensionConflictError("修改后会与已有维表记录重复")
             conn.execute(
                 """UPDATE dimension_rows
-                   SET natural_key = ?, package_name = ?, display_name = ?,
-                       data = ?, has_changes = 1, updated_by = ?, updated_at = ?
+                       SET natural_key = ?, package_name = ?, display_name = ?,
+                       data = ?, deleted = 0, has_changes = 1,
+                       updated_by = ?, updated_at = ?
                    WHERE dimension_file = ? AND id = ?""",
                 (
                     natural_key,
@@ -332,6 +334,37 @@ class DimensionStore:
                 raise DimensionNotFoundError(row_id)
         return self.get_row(filename, row_id)
 
+    def delete_row(self, filename: str, row_id: str, user_id: str) -> dict:
+        """Stage a published row for deletion, preserving discard/release semantics."""
+        self._name_column(filename)
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            current = conn.execute(
+                "SELECT * FROM dimension_rows WHERE dimension_file = ? AND id = ?",
+                (filename, row_id),
+            ).fetchone()
+            if current is None:
+                raise DimensionNotFoundError(row_id)
+            if not current["is_published"]:
+                conn.execute("DELETE FROM dimension_rows WHERE id = ?", (row_id,))
+            else:
+                conn.execute(
+                    """UPDATE dimension_rows
+                       SET deleted = 1, enabled = 0, has_changes = 1,
+                           updated_by = ?, updated_at = ?
+                       WHERE dimension_file = ? AND id = ?""",
+                    (user_id, now, filename, row_id),
+                )
+        if not current["is_published"]:
+            return {
+                "id": row_id,
+                "dimensionFile": filename,
+                "deleted": True,
+                "hasChanges": False,
+                "removed": True,
+            }
+        return self.get_row(filename, row_id)
+
     def read_dimension_rows(self, filename: str) -> list[dict]:
         """Return active source-shaped rows for ConfigEngine."""
         self._name_column(filename)
@@ -339,7 +372,7 @@ class DimensionStore:
             rows = conn.execute(
                 """SELECT published_data AS data FROM dimension_rows
                    WHERE dimension_file = ? AND is_published = 1
-                   AND published_enabled = 1
+                   AND published_enabled = 1 AND published_deleted = 0
                    ORDER BY package_name, display_name, id""",
                 (filename,),
             ).fetchall()
@@ -365,7 +398,7 @@ class DimensionStore:
             with get_db(self.db_path) as conn:
                 conn.execute(
                     """UPDATE dimension_rows
-                       SET enabled = 0, has_changes = 1,
+                       SET enabled = 0, deleted = 0, has_changes = 1,
                            updated_by = ?, updated_at = ?
                        WHERE dimension_file = ?""",
                     (user_id, _utc_now(), filename),
@@ -441,14 +474,17 @@ class DimensionStore:
                 """UPDATE dimension_rows
                    SET published_data = data,
                        published_enabled = enabled,
+                       published_deleted = deleted,
                        is_published = 1,
                        has_changes = 0
                    WHERE has_changes = 1"""
             )
             rows = conn.execute(
                 """SELECT id, dimension_file, natural_key, package_name,
-                          display_name, published_data, published_enabled
-                   FROM dimension_rows WHERE is_published = 1
+                          display_name, published_data, published_enabled,
+                          published_deleted
+                   FROM dimension_rows
+                   WHERE is_published = 1 AND published_deleted = 0
                    ORDER BY dimension_file, natural_key, id"""
             ).fetchall()
             snapshot = [
@@ -507,6 +543,7 @@ class DimensionStore:
                     """UPDATE dimension_rows
                        SET natural_key = ?, package_name = ?, display_name = ?,
                            data = published_data, enabled = published_enabled,
+                           deleted = published_deleted,
                            has_changes = 0
                        WHERE id = ?""",
                     (

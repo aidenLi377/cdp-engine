@@ -39,8 +39,11 @@
 
       <FolderTree
         :folders="publishedFolderTree"
+        :batch-counts="publishedBatchCountByFolder"
+        :show-batch-badges="true"
         read-only
         @select-folder="onPublishedFolderSelect"
+        @batch-apply="openBatchPreviewForFolder"
       />
 
       <el-input
@@ -59,7 +62,10 @@
           :key="item.id"
           type="button"
           class="published-solution-item"
-          :class="{ active: currentSolution?.id === item.id && workbenchMode === 'solution-use' }"
+          :class="{
+            active: currentSolution?.id === item.id && workbenchMode === 'solution-use' && !batchMode,
+            'batch-member': batchMode && batchEntries.some(entry => entry.id === item.id),
+          }"
           @click="loadPublishedSolution(item)"
         >
           <div class="solution-list-item-head">
@@ -129,9 +135,16 @@
     <div class="panel-toolbar">
       <div class="workbench-toolbar-copy">
         <div class="display-feature-title">
-          {{ workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台' }}
+          {{
+            batchMode
+              ? `${batchFolderName || '组合方案'} · ${batchEntries.length} 个人群包`
+              : (workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台')
+          }}
         </div>
-        <div v-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
+        <div v-if="batchMode" class="batch-toolbar-caption">
+          参数按名称聚合 · 修改一次同步到所有匹配方案
+        </div>
+        <div v-else-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
           当前内容已偏离原方案结构
         </div>
       </div>
@@ -142,12 +155,13 @@
           :class="{
             'is-free-build': workbenchMode === 'free-build',
             'is-solution-use': workbenchMode === 'solution-use',
+            'is-batch': batchMode,
           }"
           aria-live="polite"
         >
           <span class="workbench-phase-dot"></span>
           <span class="display-body strong">
-            {{ workbenchMode === 'solution-use' ? '方案使用中' : '自由搭建中' }}
+            {{ batchMode ? '组合方案使用中' : (workbenchMode === 'solution-use' ? '方案使用中' : '自由搭建中') }}
           </span>
         </div>
 
@@ -158,13 +172,13 @@
                 class="workbench-toolbar-icon-btn"
                 size="small"
                 text
-                @click="restoreSolutionDefaults"
-                :disabled="!loadedSolutionRecord"
+                @click="restoreActiveDefaults"
+                :disabled="batchMode ? !batchEntries.length : !loadedSolutionRecord"
               >
                 <el-icon><RefreshLeft /></el-icon>
               </el-button>
             </el-tooltip>
-            <el-tooltip content="另存为新方案" placement="top">
+            <el-tooltip v-if="!batchMode" content="另存为新方案" placement="top">
               <el-button
                 class="workbench-toolbar-icon-btn"
                 size="small"
@@ -177,7 +191,7 @@
               </el-button>
             </el-tooltip>
             <el-button
-              v-if="nodeList.length > 0"
+              v-if="nodeList.length > 0 && !batchMode"
               class="workbench-compact-action"
               size="small"
               text
@@ -186,7 +200,7 @@
               {{ allCollapsed ? '展开全部' : '收起全部' }}
             </el-button>
             <el-button
-              v-if="nodeList.length > 0"
+              v-if="nodeList.length > 0 && !batchMode"
               class="workbench-compact-action danger"
               size="small"
               text
@@ -245,6 +259,43 @@
         请先从左侧选择一个已发布方案
       </div>
       <div v-else class="solution-use-area">
+        <div v-if="batchMode" class="batch-compact-rail">
+          <span class="batch-compact-label">人群包</span>
+          <div class="batch-compact-tabs" role="tablist" aria-label="切换人群包">
+            <button
+              v-for="(entry, entryIndex) in batchEntries"
+              :key="entry.id"
+              type="button"
+              role="tab"
+              class="batch-compact-tab"
+              :class="[
+                { active: entryIndex === activeBatchIndex },
+                `status-${entry.automationStatus || 'idle'}`,
+              ]"
+              :aria-selected="entryIndex === activeBatchIndex"
+              :title="`来源方案：${entry.solutionName || '未命名方案'}`"
+              :disabled="databankAutomating"
+              @click="activateBatchEntry(entryIndex)"
+            >
+              <span>{{ String(entryIndex + 1).padStart(2, '0') }}</span>
+              <strong>{{ entry.crowdName || '未命名人群包' }}</strong>
+              <i aria-hidden="true"></i>
+            </button>
+          </div>
+          <span class="batch-compact-meta">{{ batchEntries.length }} 包 · {{ customFieldSections.length }} 参数</span>
+        </div>
+
+        <div
+          v-if="batchMode && customFieldSections.length > 0"
+          class="batch-parameter-heading"
+        >
+          <div>
+            <span class="batch-parameter-eyebrow">组合参数</span>
+            <strong>按名称去重，共 {{ customFieldSections.length }} 项</strong>
+          </div>
+          <span class="batch-parameter-rule">同名参数同步写入 {{ batchEntries.length }} 个人群包</span>
+        </div>
+
         <div v-if="customFieldSections.length > 0" class="cf-cards-bar" ref="cfCardsBarRef">
           <div
             v-for="(section, cfIndex) in cfVisibleSections"
@@ -255,7 +306,7 @@
               'dragging': dragCfIndex === cfIndex,
               'drag-over': dragOverCfIndex === cfIndex && dragCfIndex !== cfIndex,
             }"
-            draggable="true"
+            :draggable="!batchMode"
             @dragstart="onCfDragStart($event, cfIndex)"
             @dragover.prevent="onCfDragOver($event, cfIndex)"
             @dragleave="onCfDragLeave"
@@ -280,6 +331,9 @@
 	                  <span class="display-mono cf-use-card-more">+{{ getCfValueSummaryMeta(section).overflowCount }}</span>
 	                </el-tooltip>
 	              </span>
+                <span v-if="batchMode" class="batch-parameter-scope">
+                  适用于 {{ section.entryCount || 0 }}/{{ batchEntries.length }} 个包
+                </span>
 	            </div>
 	            <span
 	              class="display-mono cf-use-card-count"
@@ -295,7 +349,7 @@
             :title="cfShowAll ? '收起' : '展开更多'"
           >{{ cfShowAll ? '−' : '+' + cfHiddenCount }}</div>
           <el-button
-            v-if="highlightedCfId"
+            v-if="highlightedCfId && !batchMode"
             class="cf-expand-all-btn"
             size="small"
             text
@@ -318,7 +372,7 @@
             >
               <div v-if="index > 0" class="logic-connector">
                 <div class="connector-line"></div>
-                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
+                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" :disabled="batchMode">
                   <el-radio-button label="n">交集</el-radio-button>
                   <el-radio-button label="u">并集</el-radio-button>
                   <el-radio-button label="d">差集</el-radio-button>
@@ -328,6 +382,7 @@
 	              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed, 'node-hydration-error': node._hydrationError }">
 	                <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === index }">
 	                  <span
+                      v-if="!batchMode"
 	                    class="drag-handle"
 	                    draggable="true"
                     @dragstart="onDragStart($event, index)"
@@ -342,7 +397,7 @@
 	                    <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
 	                    <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
 	                  </span>
-	                  <div class="behavior-card-action-group">
+	                  <div v-if="!batchMode" class="behavior-card-action-group">
 	                    <el-tooltip content="复制节点" placement="top">
 	                      <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(index)">
 	                        <el-icon><CopyDocument /></el-icon>
@@ -383,7 +438,13 @@
                   <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
                 </div>
                 <!-- Normal mode: full DynamicForm -->
-                <DynamicForm v-else v-show="!node.collapsed" :node="node" @overflow-split="handleOverflowSplit" />
+                <DynamicForm
+                  v-else
+                  v-show="!node.collapsed"
+                  :node="node"
+                  :readonly="batchMode"
+                  @overflow-split="handleOverflowSplit"
+                />
               </div>
             </div>
           </div>
@@ -398,7 +459,7 @@
         :custom-field="editingCfSection"
         :bound-nodes="editingCfSection?.bindings || []"
         :current-value="editingCfCurrentValue"
-        :node-list="nodeList"
+        :node-list="editingCfNodeList.length ? editingCfNodeList : nodeList"
         @save="onCfDialogSave"
       />
     </div>
@@ -508,11 +569,16 @@
           clearable
           class="intercom-input"
           style="flex:1"
+          :disabled="batchMode"
           @input="onNameManualEdit"
         />
       </div>
 
-      <div v-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
+      <div v-if="batchMode && currentSolution" class="batch-crowd-name-lock">
+        <span class="batch-crowd-name-lock-mark">✓</span>
+        名称来自方案中心，组合执行期间保持锁定
+      </div>
+      <div v-else-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
         来源方案：{{ currentSolution.name || '未命名方案' }}，当前改动仅保留在工作台
       </div>
     </div>
@@ -528,7 +594,9 @@
           </span>
         </div>
         <div class="json-actions">
-          <el-button class="intercom-btn-primary" size="small" @click="copyJson">复制</el-button>
+          <el-button class="intercom-btn-primary" size="small" :disabled="databankAutomating" @click="copyJson">
+            {{ batchMode ? '复制参数' : '复制' }}
+          </el-button>
           <el-dropdown split-button type="default" size="small" class="go-databank-dropdown" @click="goToDataBank" @command="handleDataBankCommand">
             去圈人
             <template #dropdown>
@@ -582,6 +650,198 @@
       <pre v-else class="json-code display-mono" aria-label="JSON 预览">{{ getPreviewJsonText() }}</pre>
     </div>
   </div>
+
+  <el-dialog
+    v-model="batchPreviewVisible"
+    width="620px"
+    class="intercom-dialog batch-composer-dialog"
+    :close-on-click-modal="false"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="batch-dialog-title-row">
+        <span class="batch-dialog-sigil">✦</span>
+        <div>
+          <div class="batch-dialog-kicker">COMPOSE FROM FOLDER</div>
+          <h3>应用方案组合</h3>
+        </div>
+      </div>
+    </template>
+
+    <div class="batch-dialog-summary">
+      <div class="batch-dialog-stat">
+        <strong>{{ batchPreviewSolutions.length }}</strong>
+        <span>个人群包</span>
+      </div>
+      <div class="batch-dialog-stat">
+        <strong>{{ batchPreviewParameterNames.length }}</strong>
+        <span>个去重参数</span>
+      </div>
+      <div class="batch-dialog-stat is-wide">
+        <small>来源文件夹</small>
+        <strong>{{ selectedPublishedFolderName || '当前文件夹' }}</strong>
+      </div>
+    </div>
+
+    <div class="batch-dialog-section-head">
+      <span>即将生成的人群包</span>
+      <small>名称取自方案中心配置</small>
+    </div>
+    <div class="batch-preview-list">
+      <div
+        v-for="(item, index) in batchPreviewSolutions"
+        :key="item.id"
+        class="batch-preview-row"
+      >
+        <span class="batch-preview-index">{{ String(index + 1).padStart(2, '0') }}</span>
+        <div class="batch-preview-copy">
+          <strong>{{ item.defaultCrowdName || '未配置人群包名称' }}</strong>
+          <small>{{ item.name || '未命名方案' }}</small>
+        </div>
+        <span
+          class="batch-preview-health"
+          :class="{ warning: !String(item.defaultCrowdName || '').trim() }"
+        >
+          {{ String(item.defaultCrowdName || '').trim() ? '就绪' : '需配置名称' }}
+        </span>
+      </div>
+    </div>
+
+    <div class="batch-dialog-section-head">
+      <span>按名称聚合的参数</span>
+      <small>同名参数只展示一次</small>
+    </div>
+    <div v-if="batchPreviewParameterNames.length" class="batch-preview-parameter-cloud">
+      <span v-for="name in batchPreviewParameterNames" :key="name">{{ name }}</span>
+    </div>
+    <div v-else class="batch-preview-empty">
+      这些方案暂未配置可聚合的自定义参数，进入后仍可逐包查看详情。
+    </div>
+
+    <template #footer>
+      <div class="batch-dialog-footer">
+        <el-button class="intercom-btn-outlined" @click="batchPreviewVisible = false">取消</el-button>
+        <el-button
+          class="batch-dialog-primary"
+          :loading="batchLoading"
+          :disabled="batchPreviewHasInvalidNames"
+          @click="enterBatchMode"
+        >
+          进入组合工作台
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="batchCopyDialogVisible"
+    width="540px"
+    class="intercom-dialog batch-composer-dialog"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="batch-dialog-title-row">
+        <span class="batch-dialog-sigil is-copy">⌘</span>
+        <div>
+          <div class="batch-dialog-kicker">COPY PACKAGE PARAMETERS</div>
+          <h3>选择要复制的人群包参数</h3>
+        </div>
+      </div>
+    </template>
+
+    <el-radio-group v-model="batchCopyIndex" class="batch-choice-list">
+      <el-radio
+        v-for="(entry, index) in batchEntries"
+        :key="entry.id"
+        :value="index"
+        class="batch-choice-row"
+      >
+        <span class="batch-choice-sequence">{{ String(index + 1).padStart(2, '0') }}</span>
+        <span class="batch-choice-copy">
+          <strong>{{ entry.crowdName || '未命名人群包' }}</strong>
+          <small>来源：{{ entry.solutionName || '未命名方案' }}</small>
+        </span>
+        <span v-if="index === activeBatchIndex" class="batch-choice-current">当前查看</span>
+      </el-radio>
+    </el-radio-group>
+
+    <template #footer>
+      <div class="batch-dialog-footer">
+        <el-button class="intercom-btn-outlined" @click="batchCopyDialogVisible = false">取消</el-button>
+        <el-button
+          class="batch-dialog-primary"
+          :loading="batchCopying"
+          @click="confirmBatchCopy"
+        >
+          复制所选参数
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="batchAutomationDialogVisible"
+    width="560px"
+    class="intercom-dialog batch-composer-dialog"
+    :close-on-click-modal="false"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="batch-dialog-title-row">
+        <span class="batch-dialog-sigil is-run">▶</span>
+        <div>
+          <div class="batch-dialog-kicker">AUTOMATION SCOPE</div>
+          <h3>自动化圈人</h3>
+        </div>
+      </div>
+    </template>
+
+    <el-radio-group
+      v-model="batchAutomationScope"
+      class="batch-automation-scope"
+    >
+      <el-radio value="current" class="batch-automation-option">
+        <span>
+          <strong>仅圈当前人群包</strong>
+          <small>{{ activeBatchEntry?.crowdName || '当前人群包' }}</small>
+        </span>
+      </el-radio>
+      <el-radio value="all" class="batch-automation-option">
+        <span>
+          <strong>圈完全部人群包</strong>
+          <small>按下方顺序依次执行 {{ batchEntries.length }} 个包</small>
+        </span>
+      </el-radio>
+    </el-radio-group>
+
+    <div v-if="batchAutomationScope === 'all'" class="batch-run-queue">
+      <div class="batch-dialog-section-head">
+        <span>执行队列</span>
+        <small>串行执行，失败时暂停</small>
+      </div>
+      <div
+        v-for="(entry, index) in batchEntries"
+        :key="entry.id"
+        class="batch-run-queue-row"
+      >
+        <span>{{ String(index + 1).padStart(2, '0') }}</span>
+        <strong>{{ entry.crowdName || '未命名人群包' }}</strong>
+        <small>{{ getAutomationStatusLabel(entry.automationStatus) }}</small>
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="batch-dialog-footer">
+        <el-button class="intercom-btn-outlined" @click="batchAutomationDialogVisible = false">取消</el-button>
+        <el-button
+          class="batch-dialog-primary"
+          @click="confirmBatchAutomation"
+        >
+          开始自动化圈人
+        </el-button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -611,6 +871,10 @@ import {
   chunkBySecondaryCategory,
 } from '../utils/solutionState.js'
 import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
+import {
+  buildBatchCustomFieldSections as composeBatchCustomFieldSections,
+  collectUniqueCustomFieldNames,
+} from '../utils/solutionBatch.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
@@ -669,12 +933,26 @@ const selectedPublishedFolderId = ref(null)
 const cfEditDialogVisible = ref(false)
 const editingCfSection = ref(null)
 const editingCfCurrentValue = ref(null)
+const editingCfNodeList = ref([])
 const cfCardsBarRef = ref(null)
 const overflowBtnRef = ref(null)
 const cfShowAll = ref(false)
 const cfVisibleCount = ref(10)
 const dragCfIndex = ref(-1)
 const dragOverCfIndex = ref(-1)
+const batchMode = ref(false)
+const batchEntries = ref([])
+const activeBatchIndex = ref(0)
+const batchFolderName = ref('')
+const batchSourceFolderId = ref(null)
+const batchPreviewVisible = ref(false)
+const batchPreviewSolutions = ref([])
+const batchLoading = ref(false)
+const batchCopyDialogVisible = ref(false)
+const batchCopyIndex = ref(0)
+const batchCopying = ref(false)
+const batchAutomationDialogVisible = ref(false)
+const batchAutomationScope = ref('current')
 const derivedSolutionMeta = reactive({
   sourceSolutionId: null,
   sourceSolutionVersion: null,
@@ -699,8 +977,7 @@ provide('solutionCenterContext', {
   onFieldClickForBinding: () => {},
   isFieldHighlighted: (nodeId, fieldKey) => {
     if (!highlightedCfId.value) return false
-    const cfs = currentSolution.value?.customFields || []
-    const cf = cfs.find(c => c.id === highlightedCfId.value)
+    const cf = findActiveCustomFieldByUiId(highlightedCfId.value)
     if (!cf) return false
     return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
   },
@@ -726,14 +1003,39 @@ const filteredPublishedSolutions = computed(() => {
   })
 })
 
+const selectedPublishedFolderName = computed(() =>
+  findFolderNameById(publishedFolderTree.value, selectedPublishedFolderId.value),
+)
+
+const publishedBatchCountByFolder = computed(() => {
+  return publishedSolutions.value.reduce((counts, solution) => {
+    const folderId = solution?.folderId
+    if (!folderId) return counts
+    counts[folderId] = (counts[folderId] || 0) + 1
+    return counts
+  }, {})
+})
+
+const batchPreviewParameterNames = computed(() => {
+  return collectUniqueCustomFieldNames(batchPreviewSolutions.value)
+})
+
+const batchPreviewHasInvalidNames = computed(() =>
+  batchPreviewSolutions.value.some((solution) => !String(solution?.defaultCrowdName || '').trim()),
+)
+
+const activeBatchEntry = computed(() => batchEntries.value[activeBatchIndex.value] || null)
+
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
-const canUndo = computed(() => historyPos.value > 0)
-const canRedo = computed(() => historyPos.value < historyStack.value.length - 1)
+const canUndo = computed(() => !batchMode.value && historyPos.value > 0)
+const canRedo = computed(() => !batchMode.value && historyPos.value < historyStack.value.length - 1)
 const customFieldSections = computed(() =>
-  buildCustomFieldSections(
-    currentSolution.value?.customFields || [],
-    nodeList.value,
-  ),
+  batchMode.value
+    ? buildBatchCustomFieldSections()
+    : buildCustomFieldSections(
+      currentSolution.value?.customFields || [],
+      nodeList.value,
+    ),
 )
 const isDerivedSolutionSession = computed(() => Boolean(derivedSolutionMeta.sourceSolutionId))
 
@@ -745,6 +1047,43 @@ const cfVisibleSections = computed(() => {
 const cfHiddenCount = computed(() => {
   return 0
 })
+
+function findFolderNameById(folders, folderId) {
+  if (!folderId) return ''
+  for (const folder of Array.isArray(folders) ? folders : []) {
+    if (folder?.id === folderId) return String(folder?.name || '').trim()
+    const nested = findFolderNameById(folder?.children || [], folderId)
+    if (nested) return nested
+  }
+  return ''
+}
+
+function buildBatchCustomFieldSections() {
+  return composeBatchCustomFieldSections(
+    batchEntries.value,
+    buildCustomFieldSections,
+  )
+}
+
+function getBatchSectionName(uiId) {
+  const section = customFieldSections.value.find((item) => item.customFieldId === uiId)
+  return String(section?.name || '').trim()
+}
+
+function findActiveCustomFieldByUiId(uiId) {
+  const fields = currentSolution.value?.customFields || []
+  if (!batchMode.value) return fields.find((field) => field.id === uiId)
+  const name = getBatchSectionName(uiId)
+  return fields.find((field) => String(field?.name || '').trim() === name)
+}
+
+function getBindingNode(binding) {
+  if (batchMode.value && binding?.entryId) {
+    const entry = batchEntries.value.find((item) => item.id === binding.entryId)
+    return entry?.nodes?.find((node) => node.id === binding.nodeId)
+  }
+  return nodeList.value.find((node) => node.id === binding?.nodeId)
+}
 
 function resetDerivedSolutionMeta() {
   derivedSolutionMeta.sourceSolutionId = null
@@ -808,6 +1147,7 @@ function updateCfOverflow() {
 }
 
 function onCfDragStart(event, index) {
+  if (batchMode.value) return
   dragCfIndex.value = index
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('text/plain', String(index))
@@ -823,6 +1163,7 @@ function onCfDragLeave() {
 }
 
 function onCfDrop(_event, targetIndex) {
+  if (batchMode.value) return
   const srcIndex = dragCfIndex.value
   dragOverCfIndex.value = -1
   dragCfIndex.value = -1
@@ -877,8 +1218,7 @@ function toggleCollapseMode() {
 
 function getNodeFocusBindings(nodeId) {
   if (!collapsedCfId.value) return []
-  const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === collapsedCfId.value)
+  const cf = findActiveCustomFieldByUiId(collapsedCfId.value)
   if (!cf) return []
   return (cf.bindings || []).filter(b => b.nodeId === nodeId)
 }
@@ -897,7 +1237,7 @@ function getCfValueSummary(section) {
   if (bindings.length === 0) return ''
   const values = bindings
     .map((binding) => {
-      const node = nodeList.value.find(n => n.id === binding.nodeId)
+      const node = getBindingNode(binding)
       const value = node?.formData?.[binding.fieldKey]
       const mode = node?.modeData?.[binding.fieldKey]
       return {
@@ -930,7 +1270,7 @@ function getCfValueSummaryMeta(section) {
 
   const values = bindings
     .map((binding) => {
-      const node = nodeList.value.find(n => n.id === binding.nodeId)
+      const node = getBindingNode(binding)
       const value = node?.formData?.[binding.fieldKey]
       const mode = node?.modeData?.[binding.fieldKey]
       return {
@@ -961,12 +1301,26 @@ function getCfValueSummaryMeta(section) {
 }
 
 function openCfEditDialog(section) {
-
-  editingCfSection.value = section
+  const activeEntryId = activeBatchEntry.value?.id
+  const sectionBindings = section.bindings || []
+  const activeBindings = batchMode.value
+    ? sectionBindings.filter((binding) => binding.entryId === activeEntryId)
+    : sectionBindings
+  const dialogEntryId = activeBindings[0]?.entryId || sectionBindings[0]?.entryId
+  const dialogBindings = batchMode.value
+    ? sectionBindings.filter((binding) => binding.entryId === dialogEntryId)
+    : activeBindings
+  editingCfSection.value = batchMode.value
+    ? { ...section, bindings: dialogBindings }
+    : section
+  editingCfNodeList.value = batchMode.value
+    ? (batchEntries.value.find((entry) => entry.id === dialogEntryId)?.nodes || [])
+    : nodeList.value
   // Read current value from the first bound node
-  const firstBinding = section.bindings?.[0]
+  const firstBinding = dialogBindings[0]
+  editingCfCurrentValue.value = null
   if (firstBinding) {
-    const node = nodeList.value.find(n => n.id === firstBinding.nodeId)
+    const node = getBindingNode(firstBinding)
     const fieldValue = node?.formData?.[firstBinding.fieldKey]
     const modeValue = node?.modeData?.[firstBinding.fieldKey]
     if (section.type?.includes('日期') || section.type?.includes('数值')) {
@@ -979,6 +1333,11 @@ function openCfEditDialog(section) {
 }
 
 function onCfDialogSave({ customFieldId, value }) {
+  if (batchMode.value) {
+    applyBatchCustomFieldValue(editingCfSection.value?.name, value)
+    return
+  }
+
   syncCustomFieldValue(
     nodeList.value,
     customFieldId,
@@ -1001,18 +1360,55 @@ function onCfDialogSave({ customFieldId, value }) {
   }
 }
 
+function applyBatchCustomFieldValue(rawName, value) {
+  const name = String(rawName || '').trim()
+  if (!name) return
+
+  let affectedPackages = 0
+  batchEntries.value.forEach((entry) => {
+    const fields = Array.isArray(entry?.record?.customFields)
+      ? entry.record.customFields
+      : []
+    const matches = fields.filter((field) => String(field?.name || '').trim() === name)
+    if (matches.length === 0) return
+
+    matches.forEach((field) => {
+      syncCustomFieldValue(entry.nodes, field.id, fields, cloneValue(value))
+    })
+    entry.record = {
+      ...entry.record,
+      customFields: fields.map((field) => (
+        String(field?.name || '').trim() === name
+          ? { ...field, defaultValue: cloneValue(value) }
+          : field
+      )),
+    }
+    entry.generatedJson = null
+    affectedPackages += 1
+  })
+
+  const activeEntry = activeBatchEntry.value
+  if (activeEntry) {
+    nodeList.value = activeEntry.nodes
+    currentSolution.value = activeEntry.record
+  }
+  batchEntries.value = [...batchEntries.value]
+  markDerivedParamChange()
+  ElMessage.success(`“${name}”已同步到 ${affectedPackages} 个人群包`)
+}
+
 function isNodeHighlightedForCf(nodeId) {
   if (!highlightedCfId.value) return false
-  const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  const cf = findActiveCustomFieldByUiId(highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId)
 }
 
 function isSummaryRowHighlighted(nodeId, fieldKey) {
   if (!highlightedCfId.value) return false
-  const cfs = currentSolution.value?.customFields || []
-  const cf = cfs.find(c => c.id === highlightedCfId.value)
+  const cf = batchMode.value
+    ? findActiveCustomFieldByUiId(highlightedCfId.value)
+    : (currentSolution.value?.customFields || []).find(c => c.id === highlightedCfId.value)
   if (!cf) return false
   return (cf.bindings || []).some(b => b.nodeId === nodeId && b.fieldKey === fieldKey)
 }
@@ -1057,7 +1453,20 @@ function onDragEnd() {
   dragOverIndex.value = -1
 }
 
+function resetBatchContext() {
+  batchMode.value = false
+  batchEntries.value = []
+  activeBatchIndex.value = 0
+  batchFolderName.value = ''
+  batchSourceFolderId.value = null
+  batchPreviewVisible.value = false
+  batchCopyDialogVisible.value = false
+  batchAutomationDialogVisible.value = false
+  batchAutomationScope.value = 'current'
+}
+
 function resetWorkbenchContext() {
+  resetBatchContext()
   currentSolution.value = null
   loadedSolutionRecord.value = null
   loadedSolutionFieldIds.value = []
@@ -1237,6 +1646,118 @@ function getPublishedSolutionsInFolder() {
   return publishedSolutions.value.filter(s => s.folderId === selectedPublishedFolderId.value)
 }
 
+function openBatchPreview() {
+  const solutions = getPublishedSolutionsInFolder()
+  if (solutions.length < 2) {
+    ElMessage.info('当前文件夹至少需要 2 个已发布方案才能组合应用')
+    return
+  }
+  batchPreviewSolutions.value = solutions.map((solution) => cloneValue(solution))
+  batchPreviewVisible.value = true
+}
+
+function openBatchPreviewForFolder(folderId) {
+  selectedPublishedFolderId.value = folderId
+  openBatchPreview()
+}
+
+function persistActiveBatchEntry() {
+  if (!batchMode.value) return
+  const entry = batchEntries.value[activeBatchIndex.value]
+  if (!entry) return
+  entry.nodes = nodeList.value
+  entry.record = currentSolution.value
+  entry.crowdName = String(crowdNameInput.value || entry.crowdName || '').trim()
+  entry.generatedJson = cloneValue(generatedJson.value)
+}
+
+async function activateBatchEntry(index, options = {}) {
+  const { skipPersist = false, rebuild = true } = options
+  const nextEntry = batchEntries.value[index]
+  if (!batchMode.value || !nextEntry) return
+
+  if (!skipPersist) persistActiveBatchEntry()
+  activeBatchIndex.value = index
+  snapshotPaused.value = true
+  try {
+    currentSolution.value = nextEntry.record
+    loadedSolutionRecord.value = nextEntry.sourceRecord
+    loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(
+      nextEntry.record?.workbenchFieldIds || [],
+      nextEntry.nodes,
+    )
+    derivedSolutionMeta.sourceSolutionId = nextEntry.record?.id || null
+    derivedSolutionMeta.sourceSolutionVersion = nextEntry.record?._version ?? null
+    derivedSolutionMeta.sourceSolutionName = nextEntry.solutionName || ''
+    derivedSolutionMeta.hasStructureChanges = false
+    derivedSolutionMeta.hasParamChanges = false
+    nodeList.value = nextEntry.nodes
+    nodeRefs.value = {}
+    activeNodeIndex.value = 0
+    crowdNameInput.value = nextEntry.crowdName
+    generatedJson.value = nextEntry.generatedJson || {
+      crowdName: nextEntry.crowdName || DEFAULT_CROWD_NAME,
+      list: [],
+      compute: '',
+    }
+    highlightedCfId.value = null
+    collapsedCfId.value = null
+    workbenchMode.value = 'solution-use'
+  } finally {
+    snapshotPaused.value = false
+  }
+
+  await nextTick()
+  if (rebuild) await buildFinalJson()
+}
+
+async function enterBatchMode() {
+  if (batchLoading.value || batchPreviewSolutions.value.length < 2) return
+  const shouldContinue = await confirmReplaceCanvas(
+    '当前工作台已有内容，进入组合工作台后会替换现有状态，是否继续？',
+    '进入组合工作台',
+    '继续组合应用',
+  )
+  if (!shouldContinue) return
+
+  batchLoading.value = true
+  try {
+    const entries = []
+    for (let index = 0; index < batchPreviewSolutions.value.length; index += 1) {
+      const item = batchPreviewSolutions.value[index]
+      const detail = await getSolution(item.id)
+      const hydratedNodes = await hydrateNodes(detail?.nodes || [])
+      const crowdName = String(detail?.defaultCrowdName || '').trim()
+      entries.push({
+        id: detail.id,
+        solutionName: String(detail?.name || '').trim() || '未命名方案',
+        crowdName,
+        record: cloneValue(detail),
+        sourceRecord: cloneValue(detail),
+        nodes: hydratedNodes,
+        sourceNodes: cloneValue(hydratedNodes),
+        generatedJson: null,
+        automationStatus: 'idle',
+      })
+    }
+
+    batchEntries.value = entries
+    activeBatchIndex.value = 0
+    batchFolderName.value = selectedPublishedFolderName.value || '组合方案'
+    batchSourceFolderId.value = selectedPublishedFolderId.value
+    batchMode.value = true
+    batchPreviewVisible.value = false
+    await activateBatchEntry(0, { skipPersist: true })
+    resetHistory()
+    ElMessage.success(`已加载 ${entries.length} 个人群包，参数已按名称聚合`)
+  } catch (error) {
+    resetBatchContext()
+    ElMessage.error(error?.message || '组合方案加载失败，请稍后重试')
+  } finally {
+    batchLoading.value = false
+  }
+}
+
 async function addNode(packageType) {
   loadingPkg.value = packageType
   try {
@@ -1385,15 +1906,19 @@ async function saveAsNewDerivedDraft() {
   }
 }
 
-async function confirmReplaceCanvas() {
+async function confirmReplaceCanvas(
+  message = '当前画布已有内容，加载已发布方案后会替换现有状态，是否继续？',
+  title = '替换当前画布',
+  confirmButtonText = '继续加载',
+) {
   if (nodeList.value.length === 0) return true
 
   try {
     await ElMessageBox.confirm(
-      '当前画布已有内容，加载已发布方案后会替换现有状态，是否继续？',
-      '替换当前画布',
+      message,
+      title,
       {
-        confirmButtonText: '继续加载',
+        confirmButtonText,
         cancelButtonText: '取消',
         type: 'warning',
       },
@@ -1431,10 +1956,17 @@ let loadSolutionAbort = null
 
 async function loadPublishedSolution(item) {
   if (!item?.id) return
-  if (currentSolution.value?.id === item.id && workbenchMode.value === 'solution-use') return
+  if (currentSolution.value?.id === item.id && workbenchMode.value === 'solution-use' && !batchMode.value) return
 
-  const shouldContinue = await confirmReplaceCanvas()
+  const shouldContinue = await confirmReplaceCanvas(
+    batchMode.value
+      ? '当前正在使用组合方案，切换到单个方案后将退出组合工作台，是否继续？'
+      : undefined,
+    batchMode.value ? '退出组合工作台' : undefined,
+    batchMode.value ? '切换到单方案' : undefined,
+  )
   if (!shouldContinue) return
+  if (batchMode.value) resetBatchContext()
 
   if (loadSolutionAbort) {
     loadSolutionAbort.abort()
@@ -1462,6 +1994,25 @@ async function restoreSolutionDefaults() {
   ElMessage.success('已恢复到方案默认值')
 }
 
+async function restoreActiveDefaults() {
+  if (!batchMode.value) {
+    await restoreSolutionDefaults()
+    return
+  }
+
+  const currentIndex = activeBatchIndex.value
+  batchEntries.value = batchEntries.value.map((entry) => ({
+    ...entry,
+    record: cloneValue(entry.sourceRecord),
+    nodes: cloneValue(entry.sourceNodes),
+    crowdName: String(entry.sourceRecord?.defaultCrowdName || '').trim(),
+    generatedJson: null,
+    automationStatus: 'idle',
+  }))
+  await activateBatchEntry(currentIndex, { skipPersist: true })
+  ElMessage.success('已恢复全部人群包的方案默认值')
+}
+
 async function buildFinalJson() {
   jsonBuildAbort?.abort()
   const buildAbort = new AbortController()
@@ -1469,6 +2020,9 @@ async function buildFinalJson() {
 
   if (nodeList.value.length === 0) {
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
+    if (batchMode.value && activeBatchEntry.value) {
+      activeBatchEntry.value.generatedJson = cloneValue(generatedJson.value)
+    }
     if (jsonBuildAbort === buildAbort) jsonBuildAbort = null
     return
   }
@@ -1550,6 +2104,9 @@ async function buildFinalJson() {
     ),
     list,
     compute,
+  }
+  if (batchMode.value && activeBatchEntry.value) {
+    activeBatchEntry.value.generatedJson = cloneValue(generatedJson.value)
   }
   if (jsonBuildAbort === buildAbort) jsonBuildAbort = null
 }
@@ -1645,11 +2202,32 @@ function getPreviewJsonText() {
 }
 
 async function copyJson() {
+  if (batchMode.value) {
+    batchCopyIndex.value = activeBatchIndex.value
+    batchCopyDialogVisible.value = true
+    return
+  }
+
   try {
     await navigator.clipboard.writeText(getGeneratedJsonText())
     ElMessage.success('JSON 已复制到剪贴板')
   } catch {
     ElMessage.error('复制失败，请手动选择后复制')
+  }
+}
+
+async function confirmBatchCopy() {
+  if (batchCopying.value) return
+  batchCopying.value = true
+  try {
+    await activateBatchEntry(Number(batchCopyIndex.value))
+    await navigator.clipboard.writeText(getGeneratedJsonText())
+    batchCopyDialogVisible.value = false
+    ElMessage.success(`已复制“${activeBatchEntry.value?.crowdName || '当前人群包'}”参数`)
+  } catch {
+    ElMessage.error('复制失败，请稍后重试')
+  } finally {
+    batchCopying.value = false
   }
 }
 
@@ -1700,7 +2278,81 @@ function sendMessageToDatabankExtension(jsonText) {
 
 function handleDataBankCommand(command) {
   if (command === 'auto') {
+    if (batchMode.value) {
+      batchAutomationScope.value = 'current'
+      batchAutomationDialogVisible.value = true
+      return
+    }
     void startAutoDataBankFlow()
+  }
+}
+
+function getAutomationStatusLabel(status) {
+  return {
+    idle: '等待执行',
+    running: '执行中',
+    success: '已完成',
+    failed: '执行失败',
+  }[status] || '等待执行'
+}
+
+function confirmBatchAutomation() {
+  batchAutomationDialogVisible.value = false
+  void startBatchAutomationFlow(batchAutomationScope.value)
+}
+
+async function startBatchAutomationFlow(scope = 'current') {
+  if (databankAutomating.value || !batchMode.value) return
+
+  const targetIndexes = scope === 'all'
+    ? batchEntries.value.map((_entry, index) => index)
+    : [activeBatchIndex.value]
+  databankAutomating.value = true
+  const pendingMessage = ElMessage({
+    message: `正在自动化圈人：0 / ${targetIndexes.length}`,
+    type: 'info',
+    duration: 0,
+  })
+
+  let completed = 0
+  try {
+    for (const index of targetIndexes) {
+      const entry = batchEntries.value[index]
+      entry.automationStatus = 'running'
+      batchEntries.value = [...batchEntries.value]
+      await activateBatchEntry(index)
+      pendingMessage.close()
+
+      const currentPendingMessage = ElMessage({
+        message: `正在圈选“${entry.crowdName}” · ${completed + 1}/${targetIndexes.length}`,
+        type: 'info',
+        duration: 0,
+      })
+      try {
+        const result = await sendMessageToDatabankExtension(getGeneratedJsonText())
+        if (!result?.ok) {
+          throw new Error(result?.error || result?.message || '自动化圈人失败')
+        }
+        entry.automationStatus = 'success'
+        completed += 1
+        currentPendingMessage.close()
+      } catch (error) {
+        entry.automationStatus = 'failed'
+        currentPendingMessage.close()
+        batchEntries.value = [...batchEntries.value]
+        throw error
+      }
+      batchEntries.value = [...batchEntries.value]
+    }
+
+    ElMessage.success(`已完成 ${completed} 个人群包的自动化圈人`)
+  } catch (error) {
+    ElMessage.error(
+      `${activeBatchEntry.value?.crowdName || '当前人群包'}执行失败：${error?.message || '请稍后重试'}`,
+    )
+  } finally {
+    pendingMessage.close()
+    databankAutomating.value = false
   }
 }
 
@@ -1751,7 +2403,7 @@ watch(
       await buildFinalJson()
     }, 300)
 
-    if (!snapshotPaused.value) {
+    if (!snapshotPaused.value && !batchMode.value) {
       markDerivedParamChange()
       debouncedSnapshot()
     }

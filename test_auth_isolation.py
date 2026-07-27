@@ -26,8 +26,12 @@ class AuthAndIsolationApiTests(unittest.TestCase):
         users = UserStore(self.db_path)
         self.alice = users.create_user("alice", "alice-password", "Alice")
         self.bob = users.create_user("bob", "bob-password", "Bob")
+        self.root = users.create_user(
+            "root", "root-password", "Root", role="super_admin"
+        )
         self.alice_client = self.app.test_client()
         self.bob_client = self.app.test_client()
+        self.root_client = self.app.test_client()
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -120,6 +124,50 @@ class AuthAndIsolationApiTests(unittest.TestCase):
         self.assertEqual(copied["visibility"], "private")
         self.assertEqual(copied["status"], "draft")
         self.assertIsNone(copied.get("folderId"))
+
+    def test_super_admin_can_update_public_solution_only_through_admin_route(self):
+        self.login(self.alice_client, "alice", "alice-password")
+        self.login(self.bob_client, "bob", "bob-password")
+        self.login(self.root_client, "root", "root-password")
+        source = self.alice_client.post(
+            "/api/solutions/drafts",
+            json={"name": "Shared template", "nodes": []},
+        ).get_json()
+        with get_db(self.db_path) as conn:
+            conn.execute(
+                "UPDATE solutions SET visibility = 'public', owner_id = NULL WHERE id = ?",
+                (source["id"],),
+            )
+
+        ordinary_forbidden = self.bob_client.put(
+            f"/api/solutions/{source['id']}/public",
+            json={"name": "Should not update"},
+        )
+        self.assertEqual(ordinary_forbidden.status_code, 403)
+
+        updated = self.root_client.put(
+            f"/api/solutions/{source['id']}/public",
+            json={"name": "Maintained by root", "nodes": [{"id": "root-node"}]},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.get_json()["name"], "Maintained by root")
+        self.assertEqual(updated.get_json()["visibility"], "public")
+
+        visible_to_users = self.bob_client.get(
+            f"/api/solutions/{source['id']}"
+        ).get_json()
+        self.assertEqual(visible_to_users["name"], "Maintained by root")
+        self.assertEqual(visible_to_users["nodes"], [{"id": "root-node"}])
+
+        private = self.root_client.post(
+            "/api/solutions/drafts", json={"name": "Root private", "nodes": []}
+        ).get_json()
+        private_forbidden = self.root_client.put(
+            f"/api/solutions/{private['id']}/public",
+            json={"name": "Not public"},
+        )
+        self.assertEqual(private_forbidden.status_code, 403)
+        self.assertEqual(private_forbidden.get_json()["code"], "PUBLIC_SOLUTION_REQUIRED")
 
     def test_private_folder_tree_is_isolated(self):
         self.login(self.alice_client, "alice", "alice-password")

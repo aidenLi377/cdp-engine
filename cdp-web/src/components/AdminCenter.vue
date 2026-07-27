@@ -471,7 +471,7 @@
             <div>
               <p class="dimension-file">{{ selectedDimensionFile || '选择维表' }}</p>
               <p class="dimension-description">
-                支持筛选、编辑与停用；停用记录不会再出现在工作台选项中。
+                支持筛选、编辑、停用与删除；删除会先进入待发布，发布后从工作台选项中移除。
               </p>
             </div>
             <button class="admin-primary-button dimension-add" type="button" @click="openCreateRow">
@@ -522,13 +522,15 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in dimensionRows" :key="row.id">
+                <tr v-for="row in dimensionRows" :key="row.id" :class="{ 'dimension-row-deleted': row.deleted }">
                   <td v-for="column in dimensionColumns" :key="column">
                     <span class="dimension-cell" :title="row.data[column]">{{ row.data[column] || '—' }}</span>
                   </td>
                   <td>
-                    <span v-if="row.hasChanges" class="draft-chip">待发布</span>
+                    <span v-if="row.deleted" class="draft-chip dimension-delete-chip">待删除</span>
+                    <span v-else-if="row.hasChanges" class="draft-chip">待发布</span>
                     <button
+                      v-if="!row.deleted"
                       class="user-status-toggle"
                       :class="{ enabled: row.enabled }"
                       type="button"
@@ -536,9 +538,18 @@
                     >
                       <span></span>{{ row.enabled ? '启用中' : '已停用' }}
                     </button>
+                    <span v-else class="dimension-delete-status">发布后移除</span>
                   </td>
                   <td class="admin-table-action">
-                    <button type="button" @click="openEditRow(row)">编辑</button>
+                    <button type="button" :disabled="row.deleted" @click="openEditRow(row)">编辑</button>
+                    <button
+                      v-if="canDeleteDimensions && !row.deleted"
+                      class="dimension-delete-button"
+                      type="button"
+                      @click="deleteDimensionRow(row)"
+                    >
+                      删除
+                    </button>
                   </td>
                 </tr>
                 <tr v-if="!dimensionRows.length">
@@ -639,6 +650,7 @@ const inviteForm = reactive({ role: 'user', expiresDays: 7 })
 let messageTimer = null
 
 const canManageAccounts = computed(() => props.currentUserRole === 'super_admin')
+const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
 const filteredUsers = computed(() => {
   const query = userQuery.value.toLowerCase()
   if (!query) return users.value
@@ -799,6 +811,7 @@ function openCreateRow() {
 }
 
 function openEditRow(row) {
+  if (!row || row.deleted) return
   editingRow.value = row
   Object.keys(dimensionFormData).forEach((key) => delete dimensionFormData[key])
   dimensionColumns.value.forEach((column) => {
@@ -836,6 +849,7 @@ async function saveDimensionRow() {
 }
 
 async function toggleDimensionRow(row) {
+  if (!row || row.deleted) return
   try {
     const updated = await request(
       `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/${row.id}/status`,
@@ -849,6 +863,27 @@ async function toggleDimensionRow(row) {
     showMessage(updated.enabled ? '已加入启用草稿' : '已加入停用草稿')
   } catch (error) {
     showMessage(error.message || '维表状态更新失败', 'error')
+  }
+}
+
+async function deleteDimensionRow(row) {
+  if (!canDeleteDimensions.value || !row || row.deleted) return
+  const name = row.data?.[dimensionColumns.value.find((column) => column !== 'id')] || row.id
+  if (!window.confirm(`确定删除维表记录“${name}”吗？删除会先进入待发布，发布后从工作台移除。`)) return
+  try {
+    const deleted = await request(
+      `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/${row.id}`,
+      { method: 'DELETE' },
+    )
+    if (deleted?.removed) {
+      dimensionRows.value = dimensionRows.value.filter((item) => item.id !== row.id)
+    } else {
+      dimensionRows.value = dimensionRows.value.map((item) => item.id === deleted.id ? deleted : item)
+    }
+    await refreshConfigSummary()
+    showMessage(deleted?.removed ? '未发布记录已删除' : '已加入删除草稿')
+  } catch (error) {
+    showMessage(error.message || '维表记录删除失败', 'error')
   }
 }
 
@@ -1923,6 +1958,34 @@ onMounted(loadData)
   background: color-mix(in srgb, var(--ui-accent) 9%, var(--ui-fill));
   border: 1px solid color-mix(in srgb, var(--ui-accent) 24%, transparent);
   border-radius: 5px;
+}
+
+.dimension-row-deleted td {
+  color: var(--ui-text-tertiary);
+  background: color-mix(in srgb, var(--ui-danger, #ff3b30) 4%, transparent);
+}
+
+.dimension-delete-chip {
+  color: var(--ui-danger, #ff3b30);
+  background: color-mix(in srgb, var(--ui-danger, #ff3b30) 9%, var(--ui-fill));
+  border-color: color-mix(in srgb, var(--ui-danger, #ff3b30) 24%, transparent);
+}
+
+.dimension-delete-status {
+  color: var(--ui-danger, #ff3b30);
+  font-size: 10px;
+}
+
+.dimension-delete-button {
+  margin-left: 10px;
+  color: var(--ui-danger, #ff3b30) !important;
+}
+
+.admin-table-action button:disabled {
+  color: var(--ui-text-tertiary) !important;
+  cursor: not-allowed;
+  opacity: 0.5;
+  text-decoration: none !important;
 }
 
 .dimension-panel {

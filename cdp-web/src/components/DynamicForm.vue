@@ -1,5 +1,5 @@
 <template>
-  <el-form label-position="top" size="large" class="dynamic-form">
+  <el-form label-position="top" size="large" class="dynamic-form" :disabled="props.readonly">
     <template v-for="field in node.schema" :key="field.key">
       <el-form-item
         v-if="isVisible(field, node)"
@@ -206,7 +206,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
 
-const props = defineProps({ node: { type: Object, required: true } })
+const props = defineProps({
+  node: { type: Object, required: true },
+  readonly: { type: Boolean, default: false },
+})
 
 const emit = defineEmits(['overflow-split'])
 

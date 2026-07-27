@@ -129,6 +129,19 @@
                   @click.stop="deleteListedSolution(item)"
                 />
               </el-tooltip>
+              <el-tooltip
+                v-else-if="canManagePublicSolutions"
+                content="编辑公共方案"
+                placement="top"
+              >
+                <el-button
+                  class="solution-list-icon-btn edit-draft"
+                  :icon="EditPen"
+                  circle
+                  aria-label="编辑公共方案"
+                  @click.stop="openSolution(item.id)"
+                />
+              </el-tooltip>
               <el-tooltip v-else content="复制到我的方案" placement="top">
                 <el-button
                   class="solution-list-icon-btn edit-draft"
@@ -163,7 +176,7 @@
             </span>
           </div>
           <div class="display-body-light solution-toolbar-hint">
-            {{ libraryScope === 'public' ? '公共方案只读，可复制到“我的方案”后继续编辑。' : isPublished ? '正式方案只读中，点击“生成编辑草稿”后再修改。' : '当前为草稿，可直接调整节点结构与字段。' }}
+            {{ isPublicAdminSolution ? '超级管理员可直接维护公共方案。' : libraryScope === 'public' ? '公共方案只读，可复制到“我的方案”后继续编辑。' : isPublished ? '正式方案只读中，点击“生成编辑草稿”后再修改。' : '当前为草稿，可直接调整节点结构与字段。' }}
           </div>
         </div>
 
@@ -191,7 +204,7 @@
             </el-tooltip>
           </div>
           <div class="solution-toolbar-icon-actions">
-            <el-tooltip content="保存草稿" placement="bottom">
+            <el-tooltip :content="isPublicAdminSolution ? '保存公共方案' : '保存草稿'" placement="bottom">
               <el-button
                 ref="saveBtnRef"
                 class="solution-toolbar-icon-btn"
@@ -202,7 +215,7 @@
                 <el-icon><Check /></el-icon>
               </el-button>
             </el-tooltip>
-            <el-tooltip content="发布正式方案" placement="bottom">
+            <el-tooltip v-if="!isPublicAdminSolution" content="发布正式方案" placement="bottom">
               <el-button
                 ref="publishBtnRef"
                 class="solution-toolbar-icon-btn publish"
@@ -563,11 +576,19 @@ import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 
+const props = defineProps({
+  currentUserRole: {
+    type: String,
+    default: 'user',
+  },
+})
+
 const {
   listSolutions,
   getSolution,
   createDraft,
   updateDraft,
+  updatePublicSolution,
   publishSolution,
   createEditDraft,
   duplicateSolution,
@@ -648,8 +669,16 @@ provide('solutionCenterContext', reactive({
   isFieldSelectableForBinding,
 }))
 
+const canManagePublicSolutions = computed(() => props.currentUserRole === 'super_admin')
+const isPublicAdminSolution = computed(
+  () => libraryScope.value === 'public' && canManagePublicSolutions.value,
+)
 const isPublished = computed(() => activeSolution.value?.status === 'published')
-const isReadOnly = computed(() => libraryScope.value === 'public' || isPublished.value)
+const isReadOnly = computed(
+  () =>
+    (libraryScope.value === 'public' && !canManagePublicSolutions.value) ||
+    (isPublished.value && !isPublicAdminSolution.value),
+)
 
 const filteredSolutions = computed(() => {
   const keyword = searchKeyword.value.trim().toLowerCase()
@@ -1027,10 +1056,13 @@ async function saveDraft() {
   if (!activeSolution.value || isReadOnly.value) return
   saving.value = true
   try {
-    const updated = await updateDraft(activeSolution.value.id, buildSolutionPayload())
+    const payload = buildSolutionPayload()
+    const updated = isPublicAdminSolution.value
+      ? await updatePublicSolution(activeSolution.value.id, payload)
+      : await updateDraft(activeSolution.value.id, payload)
     await loadSolutions()
     await applySolutionRecord(updated)
-    ElMessage.success('草稿已保存')
+    ElMessage.success(isPublicAdminSolution.value ? '公共方案已保存' : '草稿已保存')
     if (saveBtnRef.value?.$el) {
       saveBtnRef.value.$el.classList.add('success-flash')
       setTimeout(() => saveBtnRef.value.$el.classList.remove('success-flash'), 600)
@@ -1043,7 +1075,7 @@ async function saveDraft() {
 }
 
 async function publishDraft() {
-  if (!activeSolution.value || isReadOnly.value) return
+  if (!activeSolution.value || isReadOnly.value || isPublicAdminSolution.value) return
   publishing.value = true
   try {
     const saved = await updateDraft(activeSolution.value.id, buildSolutionPayload())

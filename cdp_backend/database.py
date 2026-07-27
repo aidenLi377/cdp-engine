@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS dimension_rows (
     published_enabled INTEGER NOT NULL DEFAULT 1,
     is_published    INTEGER NOT NULL DEFAULT 1,
     has_changes     INTEGER NOT NULL DEFAULT 0,
+    deleted         INTEGER NOT NULL DEFAULT 0,
+    published_deleted INTEGER NOT NULL DEFAULT 0,
     created_by      TEXT,
     updated_by      TEXT,
     created_at      TEXT NOT NULL,
@@ -175,6 +177,8 @@ MIGRATION_COLUMNS = {
         "published_enabled": "INTEGER NOT NULL DEFAULT 1",
         "is_published": "INTEGER NOT NULL DEFAULT 1",
         "has_changes": "INTEGER NOT NULL DEFAULT 0",
+        "deleted": "INTEGER NOT NULL DEFAULT 0",
+        "published_deleted": "INTEGER NOT NULL DEFAULT 0",
     },
     "solutions": {
         "owner_id": "TEXT",

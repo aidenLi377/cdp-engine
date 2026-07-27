@@ -57,7 +57,10 @@
 
       <main class="app-shell-main">
         <NormalMode v-if="appMode === 'workbench'" />
-        <SolutionCenter v-else-if="appMode === 'solutions'" />
+        <SolutionCenter
+          v-else-if="appMode === 'solutions'"
+          :current-user-role="currentUser?.role"
+        />
         <TaskCenter v-else-if="appMode === 'task-center'" />
           <AdminCenter
             v-else-if="appMode === 'admin'"
