@@ -646,8 +646,40 @@ body {
   padding-bottom: 10px; margin-bottom: 10px;
   border-bottom: 1px solid rgba(0,0,0,0.05);
 }
-.json-actions { display: flex; gap: 6px; }
+.json-actions { display: flex; align-items: center; gap: 6px; }
 .json-actions .el-button { font-size: 13px; padding: 0 12px !important; height: 32px !important; }
+.databank-engine-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ui-text-secondary, #5f6368);
+  background: var(--ui-fill, #fff);
+  border: 1px solid var(--ui-control-border, #d9d9de);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.databank-engine-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+.databank-engine-button:hover {
+  color: var(--ui-ink, #1d1d1f);
+  border-color: var(--ui-ink, #1d1d1f);
+}
+.databank-engine-button:active { transform: translateY(1px); }
+.databank-engine-button:focus-visible {
+  outline: 2px solid var(--ui-ink, #1d1d1f);
+  outline-offset: 2px;
+}
+.databank-automation-button.el-button { min-width: 88px; }
 .json-tabs { display: flex; gap: 2px; background: rgba(0,0,0,0.04); border-radius: 10px; padding: 3px; }
 .json-tab {
   padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: 450;

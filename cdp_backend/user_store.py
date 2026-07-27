@@ -410,6 +410,14 @@ class UserStore:
             for row in rows
         ]
 
+    def delete_audit_log(self, audit_id: str) -> bool:
+        with get_db(self.db_path) as conn:
+            deleted = conn.execute(
+                "DELETE FROM admin_audit_logs WHERE id = ?",
+                (audit_id,),
+            )
+            return deleted.rowcount > 0
+
     def create_invite(
         self,
         created_by: str,

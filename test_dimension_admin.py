@@ -189,6 +189,35 @@ class DimensionAdminApiTests(unittest.TestCase):
         leaf_cates = next(item for item in meta["schema"] if item["key"] == "leafCates")
         self.assertNotIn("测试类目>待删除", leaf_cates["options"])
 
+    def test_staged_delete_keeps_its_page_position_until_publish(self):
+        client = self.login("root", "root-password")
+        filename = "行为维表.csv"
+        first_page = client.get(
+            f"/api/admin/dimensions/{filename}?page=1&pageSize=5"
+        ).get_json()
+        self.assertGreater(first_page["total"], 5)
+        deleted_row = first_page["rows"][0]
+
+        staged = client.delete(
+            f"/api/admin/dimensions/{filename}/{deleted_row['id']}"
+        )
+        self.assertEqual(staged.status_code, 200)
+        self.assertTrue(staged.get_json()["deleted"])
+
+        second_page = client.get(
+            f"/api/admin/dimensions/{filename}?page=2&pageSize=5"
+        )
+        self.assertEqual(second_page.status_code, 200)
+        refreshed_first_page = client.get(
+            f"/api/admin/dimensions/{filename}?page=1&pageSize=5"
+        ).get_json()
+        refreshed_row = next(
+            row for row in refreshed_first_page["rows"]
+            if row["id"] == deleted_row["id"]
+        )
+        self.assertTrue(refreshed_row["deleted"])
+        self.assertTrue(refreshed_row["hasChanges"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

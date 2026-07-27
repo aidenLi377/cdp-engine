@@ -17,6 +17,20 @@ test('workbench toolbar separates copy, primary action, and secondary actions', 
   assert.doesNotMatch(normalModeVue, /自由搭建当前画布，并可直接存为方案草稿/)
 })
 
+test('data engine is an icon link before copy and automation owns the former action slot', () => {
+  const engineIndex = normalModeVue.indexOf('class="databank-engine-button"')
+  const copyIndex = normalModeVue.indexOf('@click="copyJson"')
+  const automationIndex = normalModeVue.indexOf('@click="handleDataBankCommand(\'auto\')"')
+
+  assert.ok(engineIndex >= 0)
+  assert.ok(engineIndex < copyIndex)
+  assert.ok(copyIndex < automationIndex)
+  assert.match(normalModeVue, /aria-label="打开数据引擎"/)
+  assert.match(normalModeVue, /自动化圈人/)
+  assert.doesNotMatch(normalModeVue, /class="go-databank-dropdown"/)
+  assert.match(css, /\.databank-engine-button \{[^}]*width: 32px;[^}]*height: 32px;/s)
+})
+
 test('save draft is a compact secondary toolbar action', () => {
   assert.match(normalModeVue, /class="workbench-compact-action save-draft"/)
   assert.match(normalModeVue, />\s*存草稿\s*</)

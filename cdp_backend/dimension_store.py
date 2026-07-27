@@ -219,7 +219,10 @@ class DimensionStore:
             rows = conn.execute(
                 f"""SELECT * FROM dimension_rows
                     WHERE {where}
-                    ORDER BY deleted ASC, enabled DESC, package_name, display_name, id
+                    ORDER BY
+                        CASE WHEN is_published = 1 THEN published_deleted ELSE deleted END ASC,
+                        CASE WHEN is_published = 1 THEN published_enabled ELSE enabled END DESC,
+                        package_name, display_name, id
                     LIMIT ? OFFSET ?""",
                 tuple(params + [page_size, (page - 1) * page_size]),
             ).fetchall()

@@ -211,6 +211,7 @@
                 <th>操作者</th>
                 <th>目标</th>
                 <th>时间</th>
+                <th v-if="canDeleteAuditLogs"></th>
               </tr>
             </thead>
             <tbody>
@@ -219,9 +220,14 @@
                 <td>{{ entry.actorDisplayName || entry.actorUsername || '未知账号' }}</td>
                 <td>{{ entry.targetDisplayName || entry.targetUsername || '系统' }}</td>
                 <td class="last-login">{{ formatDate(entry.createdAt) }}</td>
+                <td v-if="canDeleteAuditLogs" class="admin-table-action">
+                  <button type="button" class="audit-delete-button" @click="deleteAuditLog(entry)">
+                    删除
+                  </button>
+                </td>
               </tr>
               <tr v-if="!auditLogs.length">
-                <td colspan="4" class="admin-empty">还没有管理员操作记录</td>
+                <td :colspan="canDeleteAuditLogs ? 5 : 4" class="admin-empty">还没有管理员操作记录</td>
               </tr>
             </tbody>
           </table>
@@ -423,27 +429,35 @@
       <div class="config-release">
         <div class="config-release-status">
           <span class="config-version">V{{ configStatus.currentVersion || 0 }}</span>
-          <span>
+          <span class="config-release-copy">
             <strong>{{ configStatus.pendingChanges || 0 }} 项待发布</strong>
             <small>保存只进入草稿，发布后工作台会自动同步新配置。</small>
           </span>
         </div>
         <div class="config-release-actions">
-          <input v-model.trim="publishNote" placeholder="发布说明（可选）" />
-          <button
-            class="config-discard"
-            type="button"
-            :disabled="!configStatus.pendingChanges || publishing"
-            @click="discardConfig"
-          >放弃草稿</button>
-          <button
-            class="admin-primary-button"
-            type="button"
-            :disabled="!configStatus.pendingChanges || publishing"
-            @click="publishConfig"
-          >
-            {{ publishing ? '发布中…' : '发布配置' }}
-          </button>
+          <label class="config-note-field">
+            <input
+              v-model.trim="publishNote"
+              aria-label="发布说明"
+              placeholder="选填，用于记录本次变更"
+            />
+          </label>
+          <div class="config-release-buttons">
+            <button
+              class="config-discard"
+              type="button"
+              :disabled="!configStatus.pendingChanges || publishing"
+              @click="discardConfig"
+            >放弃草稿</button>
+            <button
+              class="admin-primary-button"
+              type="button"
+              :disabled="!configStatus.pendingChanges || publishing"
+              @click="publishConfig"
+            >
+              {{ publishing ? '发布中…' : '发布配置' }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -484,13 +498,13 @@
               v-model.trim="dimensionQuery"
               type="search"
               placeholder="搜索名称、ID 或包名…"
-              @keyup.enter="loadDimensionRows"
+              @keyup.enter="applyDimensionFilters"
             />
-            <select v-model="dimensionPackage" @change="loadDimensionRows">
+            <select v-model="dimensionPackage" @change="applyDimensionFilters">
               <option value="">全部适用包</option>
               <option v-for="name in dimensionPackages" :key="name" :value="name">{{ name }}</option>
             </select>
-            <button type="button" @click="loadDimensionRows">查询</button>
+            <button type="button" @click="applyDimensionFilters">查询</button>
           </div>
 
           <div v-if="dimensionEditorOpen" class="dimension-editor">
@@ -562,11 +576,22 @@
           </div>
 
           <div class="dimension-pagination">
-            <span>共 {{ dimensionTotal.toLocaleString() }} 条</span>
-            <div>
+            <div class="dimension-pagination-summary">
+              <span>共 {{ dimensionTotal.toLocaleString() }} 条</span>
+              <label>
+                <span>每页</span>
+                <select v-model.number="dimensionPageSize" @change="changeDimensionPageSize">
+                  <option v-for="size in DIMENSION_PAGE_SIZES" :key="size" :value="size">
+                    {{ size }} 条
+                  </option>
+                </select>
+              </label>
+              <span>共 {{ dimensionTotalPages }} 页</span>
+            </div>
+            <div class="dimension-pagination-nav">
               <button type="button" :disabled="dimensionPage <= 1" @click="changeDimensionPage(-1)">上一页</button>
-              <span>第 {{ dimensionPage }} 页</span>
-              <button type="button" :disabled="dimensionPage * dimensionPageSize >= dimensionTotal" @click="changeDimensionPage(1)">下一页</button>
+              <span>第 {{ dimensionTotalPages ? dimensionPage : 0 }} / {{ dimensionTotalPages }} 页</span>
+              <button type="button" :disabled="dimensionPage >= dimensionTotalPages" @click="changeDimensionPage(1)">下一页</button>
             </div>
           </div>
         </div>
@@ -597,6 +622,7 @@ const ROLE_LABELS = {
   config_admin: '配置管理员',
   user: '普通用户',
 }
+const DIMENSION_PAGE_SIZES = [20, 30, 50, 100]
 
 const STATUS_LABELS = {
   active: '可使用',
@@ -619,7 +645,7 @@ const dimensionPackages = ref([])
 const dimensionQuery = ref('')
 const dimensionPackage = ref('')
 const dimensionPage = ref(1)
-const dimensionPageSize = 30
+const dimensionPageSize = ref(30)
 const dimensionTotal = ref(0)
 const dimensionLoading = ref(false)
 const dimensionEditorOpen = ref(false)
@@ -635,6 +661,11 @@ const managedUserData = ref(null)
 const accountDataLoading = ref(false)
 const securityBusy = ref(false)
 const temporaryPassword = ref('')
+const dimensionTotalPages = computed(() => (
+  dimensionTotal.value > 0
+    ? Math.ceil(dimensionTotal.value / dimensionPageSize.value)
+    : 0
+))
 const accountForm = reactive({
   username: '',
   displayName: '',
@@ -651,6 +682,7 @@ let messageTimer = null
 
 const canManageAccounts = computed(() => props.currentUserRole === 'super_admin')
 const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
+const canDeleteAuditLogs = computed(() => props.currentUserRole === 'super_admin')
 const filteredUsers = computed(() => {
   const query = userQuery.value.toLowerCase()
   if (!query) return users.value
@@ -686,6 +718,7 @@ function auditActionLabel(action) {
     USER_DATA_VIEWED: '查看用户数据',
     INVITE_CREATED: '创建邀请',
     INVITE_REVOKED: '撤销邀请',
+    AUDIT_LOG_DELETED: '删除操作记录',
   }[action] || action
 }
 
@@ -770,7 +803,7 @@ async function loadDimensionRows() {
     const result = await request(`/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}`, {
       params: {
         page: dimensionPage.value,
-        pageSize: dimensionPageSize,
+        pageSize: dimensionPageSize.value,
         q: dimensionQuery.value,
         package: dimensionPackage.value,
       },
@@ -797,7 +830,18 @@ function selectDimension(file) {
 }
 
 function changeDimensionPage(delta) {
-  dimensionPage.value = Math.max(1, dimensionPage.value + delta)
+  const maxPage = Math.max(1, dimensionTotalPages.value)
+  dimensionPage.value = Math.min(maxPage, Math.max(1, dimensionPage.value + delta))
+  loadDimensionRows()
+}
+
+function changeDimensionPageSize() {
+  dimensionPage.value = 1
+  loadDimensionRows()
+}
+
+function applyDimensionFilters() {
+  dimensionPage.value = 1
   loadDimensionRows()
 }
 
@@ -1005,6 +1049,22 @@ async function loadAuditLogs() {
     })
   } catch (error) {
     showMessage(error.message || '操作记录加载失败', 'error')
+  }
+}
+
+async function deleteAuditLog(entry) {
+  if (!canDeleteAuditLogs.value || !entry?.id) return
+  const actionLabel = auditActionLabel(entry.action)
+  const targetLabel = entry.targetDisplayName || entry.targetUsername || '系统'
+  if (!window.confirm(`确定删除“${actionLabel} · ${targetLabel}”这条操作记录吗？删除后不可恢复。`)) return
+  try {
+    await request(`/api/admin/audit-logs/${encodeURIComponent(entry.id)}`, {
+      method: 'DELETE',
+    })
+    await loadAuditLogs()
+    showMessage('操作记录已删除')
+  } catch (error) {
+    showMessage(error.message || '操作记录删除失败', 'error')
   }
 }
 
@@ -1242,7 +1302,7 @@ onMounted(loadData)
 
 .admin-panels {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
   gap: 18px;
   max-width: 1380px;
   margin: 0 auto;
@@ -1511,6 +1571,7 @@ onMounted(loadData)
 .user-cell small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 10px; }
 
 .users-table select { width: 106px; height: 30px; padding: 0 7px; font-size: 10px; }
+.users-table { min-width: 610px; }
 
 .user-status-toggle {
   display: inline-flex;
@@ -1586,6 +1647,14 @@ onMounted(loadData)
 
 .audit-table td {
   white-space: nowrap;
+}
+
+.audit-delete-button {
+  color: var(--ui-danger) !important;
+}
+
+.audit-delete-button:hover {
+  color: var(--ui-danger) !important;
 }
 
 .account-dialog-backdrop {
@@ -1999,7 +2068,7 @@ onMounted(loadData)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 28px;
   margin-bottom: 18px;
   padding: 13px 14px;
   background: color-mix(in srgb, var(--ui-accent) 6%, var(--ui-surface));
@@ -2013,6 +2082,13 @@ onMounted(loadData)
   align-items: center;
   gap: 10px;
 }
+
+.config-release-status {
+  align-items: center;
+  min-width: 0;
+}
+
+.config-release-copy { min-width: 0; }
 
 .config-version {
   display: grid;
@@ -2032,6 +2108,15 @@ onMounted(loadData)
 .config-release-status strong { color: var(--ui-ink); font-size: 11px; font-weight: 600; }
 .config-release-status small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 10px; }
 
+.config-release-actions { flex: 0 1 430px; }
+
+.config-note-field {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 170px;
+}
+
 .config-release-actions input {
   width: min(220px, 22vw);
   height: 34px;
@@ -2050,15 +2135,23 @@ onMounted(loadData)
   box-shadow: 0 0 0 3px var(--ui-accent-ring);
 }
 
+.config-release-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .config-release-actions .admin-primary-button { min-width: 90px; height: 34px; }
 
 .config-discard {
-  padding: 5px 2px;
+  height: 34px;
+  padding: 0 10px;
   color: var(--ui-text-secondary);
   font: inherit;
   font-size: 10px;
-  background: transparent;
-  border: 0;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 7px;
   cursor: pointer;
 }
 
@@ -2258,6 +2351,13 @@ onMounted(loadData)
 }
 
 .dimension-table { min-width: 680px; }
+.dimension-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--ui-surface);
+  box-shadow: 0 1px 0 var(--ui-divider);
+}
 .dimension-table td { max-width: 230px; }
 .dimension-cell {
   display: block;
@@ -2276,10 +2376,32 @@ onMounted(loadData)
   font-size: 10px;
 }
 
-.dimension-pagination > div {
+.dimension-pagination-summary,
+.dimension-pagination-nav {
   display: inline-flex;
   align-items: center;
   gap: 9px;
+}
+
+.dimension-pagination-summary label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dimension-pagination-summary select {
+  height: 26px;
+  padding: 0 22px 0 8px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.dimension-pagination-summary select:focus {
+  border-color: var(--ui-ink);
 }
 
 .dimension-pagination button {
@@ -2304,11 +2426,12 @@ onMounted(loadData)
   to { transform: scale(1.1); opacity: 1; }
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1200px) {
   .admin-panels { grid-template-columns: 1fr; }
-  .config-release { align-items: flex-start; flex-direction: column; }
-  .config-release-actions { width: 100%; }
-  .config-release-actions input { width: auto; flex: 1; }
+  .config-release { align-items: center; flex-direction: column; }
+  .config-release-actions { width: 100%; justify-content: center; }
+  .config-note-field { width: auto; flex: 1; }
+  .config-release-actions input { width: 100%; }
 }
 
 @media (max-width: 700px) {
@@ -2324,6 +2447,16 @@ onMounted(loadData)
     padding-bottom: 11px;
     border-right: 0;
     border-bottom: 1px solid var(--ui-divider);
+  }
+  .config-release-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .config-note-field { width: 100%; }
+  .config-release-buttons { justify-content: flex-end; }
+  .dimension-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .dimension-toolbar { align-items: flex-start; flex-direction: column; }
   .dimension-add { align-self: flex-start; }

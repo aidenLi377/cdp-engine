@@ -594,19 +594,30 @@
           </span>
         </div>
         <div class="json-actions">
+          <button
+            class="databank-engine-button"
+            type="button"
+            aria-label="打开数据引擎"
+            title="打开数据引擎"
+            @click="goToDataBank"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <ellipse cx="12" cy="5.5" rx="6.5" ry="2.5" />
+              <path d="M5.5 5.5v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5" />
+              <path d="M5.5 10.5v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5" />
+            </svg>
+          </button>
           <el-button class="intercom-btn-primary" size="small" :disabled="databankAutomating" @click="copyJson">
             {{ batchMode ? '复制参数' : '复制' }}
           </el-button>
-          <el-dropdown split-button type="default" size="small" class="go-databank-dropdown" @click="goToDataBank" @command="handleDataBankCommand">
-            去圈人
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="auto" :disabled="databankAutomating">
-                  {{ databankAutomating ? '自动化执行中...' : '自动化圈人' }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <el-button
+            class="intercom-btn-outlined databank-automation-button"
+            size="small"
+            :disabled="databankAutomating"
+            @click="handleDataBankCommand('auto')"
+          >
+            {{ databankAutomating ? '执行中…' : '自动化圈人' }}
+          </el-button>
         </div>
       </div>
 

@@ -1,7 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { bindRuntimeUsageSections } from './useSolutionRuntime.js'
+import { reactive } from 'vue'
+
+import { bindRuntimeUsageSections, cloneValue } from './useSolutionRuntime.js'
+
+test('cloneValue unwraps nested Vue proxies created by editing structured parameters', () => {
+  const editValue = reactive({
+    days: 17,
+    dateRange: ['2026-07-01', '2026-07-17'],
+  })
+  const emittedPayload = {
+    ...editValue,
+    mode: 'recent',
+  }
+
+  const cloned = cloneValue(emittedPayload)
+
+  assert.deepEqual(cloned, {
+    days: 17,
+    dateRange: ['2026-07-01', '2026-07-17'],
+    mode: 'recent',
+  })
+  assert.notEqual(cloned.dateRange, emittedPayload.dateRange)
+})
 
 test('bindRuntimeUsageSections keeps solution-use sections bound to live runtime node state', () => {
   const runtimeNode = {

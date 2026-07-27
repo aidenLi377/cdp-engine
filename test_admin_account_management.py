@@ -108,6 +108,21 @@ class AdminAccountManagementApiTests(unittest.TestCase):
         self.assertTrue(password_logs)
         self.assertNotIn(temporary_password, str(password_logs))
 
+    def test_only_super_admin_can_delete_audit_logs(self):
+        self.admin_client.get(f"/api/admin/users/{self.target['id']}/data")
+        logs = self.admin_client.get("/api/admin/audit-logs").get_json()
+        self.assertTrue(logs)
+        audit_id = logs[0]["id"]
+
+        denied = self.target_client.delete(f"/api/admin/audit-logs/{audit_id}")
+        self.assertEqual(denied.status_code, 403)
+
+        deleted = self.admin_client.delete(f"/api/admin/audit-logs/{audit_id}")
+        self.assertEqual(deleted.status_code, 200)
+        remaining = self.admin_client.get("/api/admin/audit-logs").get_json()
+        self.assertNotIn(audit_id, {item["id"] for item in remaining})
+        self.assertTrue(any(item["action"] == "AUDIT_LOG_DELETED" for item in remaining))
+
     def test_super_admin_can_read_target_data_but_other_roles_cannot(self):
         created_solution = self.target_client.post(
             "/api/solutions/drafts",

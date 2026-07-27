@@ -472,6 +472,20 @@ def register_routes(
             )
         )
 
+    @app.route("/api/admin/audit-logs/<audit_id>", methods=["DELETE"])
+    def admin_delete_audit_log(audit_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        if not user_store.delete_audit_log(audit_id):
+            return error_response("AUDIT_LOG_NOT_FOUND", "操作记录不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "AUDIT_LOG_DELETED",
+            details={"auditLogId": audit_id},
+        )
+        return jsonify({"deleted": True, "id": audit_id})
+
     @app.route("/api/admin/invites")
     def admin_list_invites():
         permission_error = require_super_admin()

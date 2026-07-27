@@ -1,4 +1,4 @@
-import { markRaw, toRaw } from 'vue'
+import { isRef, markRaw, toRaw } from 'vue'
 import { useCdpShared } from './useCdpShared.js'
 import { cleanWorkbenchFieldIds } from '../utils/solutionState.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
@@ -8,9 +8,51 @@ import {
   refreshConfigVersion,
 } from '../utils/configVersion.js'
 
-function cloneValue(value) {
+function unwrapCloneValue(value, seen = new WeakMap()) {
+  if (isRef(value)) return unwrapCloneValue(value.value, seen)
+
+  const rawValue = toRaw(value)
+  if (rawValue == null || typeof rawValue !== 'object') return rawValue
+  if (seen.has(rawValue)) return seen.get(rawValue)
+
+  if (Array.isArray(rawValue)) {
+    const result = []
+    seen.set(rawValue, result)
+    rawValue.forEach((item) => result.push(unwrapCloneValue(item, seen)))
+    return result
+  }
+
+  if (rawValue instanceof Map) {
+    const result = new Map()
+    seen.set(rawValue, result)
+    rawValue.forEach((item, key) => {
+      result.set(unwrapCloneValue(key, seen), unwrapCloneValue(item, seen))
+    })
+    return result
+  }
+
+  if (rawValue instanceof Set) {
+    const result = new Set()
+    seen.set(rawValue, result)
+    rawValue.forEach((item) => result.add(unwrapCloneValue(item, seen)))
+    return result
+  }
+
+  const isPlainObject = Object.getPrototypeOf(rawValue) === Object.prototype
+    || Object.getPrototypeOf(rawValue) === null
+  if (!isPlainObject) return rawValue
+
+  const result = {}
+  seen.set(rawValue, result)
+  Object.keys(rawValue).forEach((key) => {
+    result[key] = unwrapCloneValue(rawValue[key], seen)
+  })
+  return result
+}
+
+export function cloneValue(value) {
   if (value == null) return value
-  return structuredClone(toRaw(value))
+  return structuredClone(unwrapCloneValue(value))
 }
 
 export function bindRuntimeUsageSections(baseSections, nodes) {
