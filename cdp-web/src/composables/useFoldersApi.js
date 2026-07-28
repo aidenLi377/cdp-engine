@@ -5,10 +5,10 @@ export function useFoldersApi() {
     listFolders(scope = 'mine') {
       return request(buildUrl('/api/folders', { scope }))
     },
-    createFolder(name, parentId) {
+    createFolder(name, parentId, scope = 'mine') {
       return request('/api/folders', {
         method: 'POST',
-        body: JSON.stringify({ name, parentId: parentId || null }),
+        body: JSON.stringify({ name, parentId: parentId || null, scope }),
       })
     },
     updateFolder(id, name) {

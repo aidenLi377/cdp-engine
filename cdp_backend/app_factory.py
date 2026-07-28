@@ -203,6 +203,14 @@ def register_routes(
             return error_response("INVALID_FOLDER", "只能使用自己的个人文件夹", 400)
         return None
 
+    def validate_public_folder(folder_id: str | None, user_id: str):
+        if folder_id is None:
+            return None
+        folder = folder_store.get_folder(folder_id, user_id)
+        if folder is None or folder.get("visibility") != "public":
+            return error_response("INVALID_FOLDER", "公共方案只能使用公共文件夹", 400)
+        return None
+
     def require_super_admin():
         if getattr(g, "current_user", {}).get("role") != "super_admin":
             return error_response("FORBIDDEN", "只有超级管理员可以执行此操作", 403)
@@ -847,6 +855,12 @@ def register_routes(
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return error_response("INVALID_REQUEST", "方案数据格式不正确", 400)
+        if "folderId" in payload:
+            folder_error = validate_public_folder(
+                payload.get("folderId"), g.current_user["id"]
+            )
+            if folder_error is not None:
+                return folder_error
         try:
             updated = solution_store.update_public_solution(
                 solution_id,
@@ -907,6 +921,33 @@ def register_routes(
     def move_solution(solution_id: str):
         payload = request.get_json(silent=True) or {}
         folder_id = payload.get("folderId")
+        solution = solution_store.get_solution(solution_id, g.current_user["id"])
+        if solution is None:
+            return error_response("SOLUTION_NOT_FOUND", "该方案不存在或已被删除", 404)
+        if solution.get("visibility") == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
+            if folder_id is not None:
+                target = folder_store.get_folder(
+                    folder_id, g.current_user["id"]
+                )
+                if target is None or target.get("visibility") != "public":
+                    return error_response(
+                        "INVALID_FOLDER",
+                        "公共方案只能移动到公共文件夹",
+                        400,
+                    )
+            try:
+                updated = solution_store.move_solution(
+                    solution_id,
+                    folder_id,
+                    g.current_user["id"],
+                    allow_public=True,
+                )
+            except SolutionAccessError:
+                return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能移动", 403)
+            return jsonify(updated)
         try:
             if folder_id is not None:
                 target = folder_store.get_folder(folder_id, g.current_user["id"])
@@ -920,6 +961,51 @@ def register_routes(
         except SolutionAccessError:
             return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能移动", 403)
         return jsonify(updated)
+
+    @app.route("/api/solutions/reorder", methods=["PUT"])
+    def reorder_solutions():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "方案排序数据格式不正确", 400)
+        scope = payload.get("scope", "mine")
+        folder_id = payload.get("folderId")
+        ordered_ids = payload.get("orderedIds")
+        if scope not in ("mine", "public"):
+            return error_response("INVALID_SCOPE", "方案库类型不正确", 400)
+        if not isinstance(ordered_ids, list):
+            return error_response("INVALID_SOLUTION_ORDER", "请提供方案排序列表", 400)
+
+        if scope == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
+            folder_error = validate_public_folder(
+                folder_id, g.current_user["id"]
+            )
+        else:
+            folder_error = validate_personal_folder(
+                folder_id, g.current_user["id"]
+            )
+        if folder_error is not None:
+            return folder_error
+
+        try:
+            final_ids = solution_store.reorder_solutions(
+                scope,
+                folder_id,
+                ordered_ids,
+                g.current_user["id"],
+                allow_public=scope == "public",
+            )
+        except SolutionAccessError:
+            return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能排序", 403)
+        except ValueError:
+            return error_response(
+                "INVALID_SOLUTION_ORDER",
+                "排序中包含不属于当前文件夹的方案",
+                400,
+            )
+        return jsonify({"orderedIds": final_ids})
 
     @app.route("/api/solutions/<solution_id>/custom-fields", methods=["PUT"])
     def update_solution_custom_fields(solution_id: str):
@@ -954,8 +1040,17 @@ def register_routes(
         if not name:
             return error_response("FOLDER_NAME_REQUIRED", "文件夹名称不能为空", 400)
         parent_id = payload.get("parentId")
+        scope = payload.get("scope", "mine")
+        if scope not in ("mine", "public"):
+            return error_response("INVALID_SCOPE", "文件夹类型不正确", 400)
+        if scope == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
         try:
-            created = folder_store.create_folder(name, g.current_user["id"], parent_id)
+            created = folder_store.create_folder(
+                name, g.current_user["id"], parent_id, scope=scope
+            )
         except (FolderNotFoundError, FolderAccessError):
             return error_response("INVALID_PARENT_FOLDER", "上级文件夹不存在或不可编辑", 400)
         return jsonify(created), 201
@@ -966,8 +1061,18 @@ def register_routes(
         name = (payload.get("name") or "").strip()
         if not name:
             return error_response("FOLDER_NAME_REQUIRED", "文件夹名称不能为空", 400)
+        folder = folder_store.get_folder(folder_id, g.current_user["id"])
+        if folder is None:
+            return error_response("FOLDER_NOT_FOUND", "该文件夹不存在或已被删除", 404)
+        scope = "public" if folder.get("visibility") == "public" else "mine"
+        if scope == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
         try:
-            updated = folder_store.update_folder(folder_id, name, g.current_user["id"])
+            updated = folder_store.update_folder(
+                folder_id, name, g.current_user["id"], scope=scope
+            )
         except FolderNotFoundError:
             return error_response("FOLDER_NOT_FOUND", "该文件夹不存在或已被删除", 404)
         except FolderAccessError:
@@ -976,8 +1081,18 @@ def register_routes(
 
     @app.route("/api/folders/<folder_id>", methods=["DELETE"])
     def delete_folder(folder_id: str):
+        folder = folder_store.get_folder(folder_id, g.current_user["id"])
+        if folder is None:
+            return error_response("FOLDER_NOT_FOUND", "该文件夹不存在或已被删除", 404)
+        scope = "public" if folder.get("visibility") == "public" else "mine"
+        if scope == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
         try:
-            deleted_ids = folder_store.delete_folder(folder_id, g.current_user["id"])
+            deleted_ids = folder_store.delete_folder(
+                folder_id, g.current_user["id"], scope=scope
+            )
         except FolderNotFoundError:
             return error_response("FOLDER_NOT_FOUND", "该文件夹不存在或已被删除", 404)
         except FolderAccessError:
@@ -988,9 +1103,17 @@ def register_routes(
     def move_folder(folder_id: str):
         payload = request.get_json(silent=True) or {}
         parent_id = payload.get("parentId")
+        folder = folder_store.get_folder(folder_id, g.current_user["id"])
+        if folder is None:
+            return error_response("FOLDER_NOT_FOUND", "该文件夹不存在或已被删除", 404)
+        scope = "public" if folder.get("visibility") == "public" else "mine"
+        if scope == "public":
+            permission_error = require_super_admin()
+            if permission_error is not None:
+                return permission_error
         try:
             updated = folder_store.move_folder(
-                folder_id, parent_id, g.current_user["id"]
+                folder_id, parent_id, g.current_user["id"], scope=scope
             )
         except FolderNotFoundError:
             return error_response("FOLDER_NOT_FOUND", "文件夹不存在或已被删除", 404)

@@ -190,3 +190,21 @@ test('solution cards omit timestamps so metadata stays horizontal', () => {
   assert.match(css, /\.solution-list-meta \{[^}]*display: flex;[^}]*flex-wrap: nowrap;[^}]*overflow: hidden;/s)
   assert.match(css, /\.solution-list-meta span \{[^}]*min-width: 0;[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/s)
 })
+
+test('super admins can manage public solution folders like personal folders', () => {
+  assert.match(solutionCenterVue, /:read-only="libraryScope === 'public' && !canManagePublicSolutions"/)
+  assert.match(solutionCenterVue, /:draggable="libraryScope === 'mine' \|\| isPublicAdminSolution"/)
+  assert.match(solutionCenterVue, /folderId: activeSolution\.value\?\.folderId/)
+  assert.match(solutionCenterVue, /if \(libraryScope\.value === 'public' && !canManagePublicSolutions\.value\) return/)
+  assert.match(solutionCenterVue, /const updated = await moveSolution\(event\.solutionId, event\.targetFolderId\)/)
+})
+
+test('solutions can be reordered inside selected folders and uncategorized', () => {
+  assert.match(solutionCenterVue, /@dragover\.prevent="onSolutionDragOver\(\$event, item\)"/)
+  assert.match(solutionCenterVue, /@drop\.prevent\.stop="onSolutionDrop\(\$event, item\)"/)
+  assert.match(solutionCenterVue, /selectedFolderId\.value === '__uncategorized__'/)
+  assert.match(solutionCenterVue, /const canReorderSolutions = computed/)
+  assert.match(solutionCenterVue, /await reorderSolutions\(/)
+  assert.match(solutionCenterVue, /drag-over-before/)
+  assert.match(solutionCenterVue, /drag-over-after/)
+})

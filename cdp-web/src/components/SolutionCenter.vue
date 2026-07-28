@@ -74,7 +74,7 @@
 
       <FolderTree
         :folders="folderTree"
-        :read-only="libraryScope === 'public'"
+        :read-only="libraryScope === 'public' && !canManagePublicSolutions"
         @select-folder="onFolderSelect"
         @folders-changed="handleFolderChange"
       />
@@ -87,9 +87,21 @@
           role="button"
           tabindex="0"
           class="solution-list-item"
-          :class="{ active: item.id === activeSolution?.id }"
-          :draggable="libraryScope === 'mine'"
+          :class="{
+            active: item.id === activeSolution?.id,
+            'can-drag': libraryScope === 'mine' || isPublicAdminSolution,
+            'is-dragging': draggingSolutionId === item.id,
+            'drag-over-before':
+              dragOverSolutionId === item.id && dragOverPosition === 'before',
+            'drag-over-after':
+              dragOverSolutionId === item.id && dragOverPosition === 'after',
+          }"
+          :draggable="libraryScope === 'mine' || isPublicAdminSolution"
           @dragstart="onSolutionDragStart($event, item)"
+          @dragover.prevent="onSolutionDragOver($event, item)"
+          @dragleave="onSolutionDragLeave($event, item)"
+          @drop.prevent.stop="onSolutionDrop($event, item)"
+          @dragend="onSolutionDragEnd"
           @click="openSolution(item.id)"
           @keydown.enter.prevent="openSolution(item.id)"
           @keydown.space.prevent="openSolution(item.id)"
@@ -574,7 +586,6 @@ import { getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
-import { fetchWithTimeout } from '../utils/apiClient.js'
 
 const props = defineProps({
   currentUserRole: {
@@ -592,6 +603,8 @@ const {
   publishSolution,
   createEditDraft,
   duplicateSolution,
+  moveSolution,
+  reorderSolutions,
   deleteSolution,
 } = useSolutionsApi()
 
@@ -633,6 +646,10 @@ const deleting = ref(false)
 const folderTree = ref([])
 const selectedFolderId = ref(null)
 const loadingFolders = ref(false)
+const draggingSolutionId = ref(null)
+const dragOverSolutionId = ref(null)
+const dragOverPosition = ref('before')
+const reorderingSolutions = ref(false)
 const availablePackages = ref([])
 const pendingPackageType = ref('')
 const addingNode = ref(false)
@@ -678,6 +695,13 @@ const isReadOnly = computed(
   () =>
     (libraryScope.value === 'public' && !canManagePublicSolutions.value) ||
     (isPublished.value && !isPublicAdminSolution.value),
+)
+const canReorderSolutions = computed(
+  () =>
+    (libraryScope.value === 'mine' || isPublicAdminSolution.value) &&
+    Boolean(selectedFolderId.value) &&
+    statusFilter.value === 'all' &&
+    !searchKeyword.value.trim(),
 )
 
 const filteredSolutions = computed(() => {
@@ -823,6 +847,7 @@ function buildSolutionPayload() {
   return {
     name,
     defaultCrowdName,
+    folderId: activeSolution.value?.folderId,
     nodes: serializeNodesForSolution(nodeList.value),
     workbenchFieldIds: [...workbenchFieldIds.value],
     customFields: serializeCustomFieldsForSolution(customFields.value),
@@ -1447,10 +1472,10 @@ async function loadFolders() {
 }
 
 async function handleFolderChange(event) {
-  if (libraryScope.value === 'public') return
+  if (libraryScope.value === 'public' && !canManagePublicSolutions.value) return
   try {
     if (event.action === 'create') {
-      await createFolder(event.name, event.parentId)
+      await createFolder(event.name, event.parentId, libraryScope.value)
       ElMessage.success('文件夹已创建')
     } else if (event.action === 'rename') {
       await updateFolder(event.id, event.name)
@@ -1462,11 +1487,13 @@ async function handleFolderChange(event) {
       await moveFolder(event.id, event.targetParentId)
       ElMessage.success('文件夹已移动')
     } else if (event.action === 'move-solution') {
-      await fetchWithTimeout(`/api/solutions/${event.solutionId}/move`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folderId: event.targetFolderId }),
-      })
+      const updated = await moveSolution(event.solutionId, event.targetFolderId)
+      if (activeSolution.value?.id === event.solutionId) {
+        activeSolution.value = {
+          ...activeSolution.value,
+          folderId: updated?.folderId ?? null,
+        }
+      }
       ElMessage.success('方案已移动')
     }
     await loadFolders()
@@ -1496,10 +1523,106 @@ function getFolderName(folderId) {
   return findIn(folderTree.value) || '未知文件夹'
 }
 
+function selectedSolutionFolderId() {
+  return selectedFolderId.value === '__uncategorized__'
+    ? null
+    : selectedFolderId.value
+}
+
+function resetSolutionDragState() {
+  draggingSolutionId.value = null
+  dragOverSolutionId.value = null
+  dragOverPosition.value = 'before'
+}
+
 function onSolutionDragStart(event, item) {
-  if (libraryScope.value === 'public') return
+  if (libraryScope.value === 'public' && !canManagePublicSolutions.value) return
+  draggingSolutionId.value = item.id
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('text/solution-id', item.id)
+}
+
+function onSolutionDragOver(event, item) {
+  if (!canReorderSolutions.value || reorderingSolutions.value) return
+  const sourceId =
+    draggingSolutionId.value ||
+    event.dataTransfer?.getData('text/solution-id')
+  if (!sourceId || sourceId === item.id) return
+  if ((item.folderId || null) !== selectedSolutionFolderId()) return
+
+  const rect = event.currentTarget.getBoundingClientRect()
+  dragOverSolutionId.value = item.id
+  dragOverPosition.value =
+    event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+}
+
+function onSolutionDragLeave(event, item) {
+  if (event.currentTarget.contains(event.relatedTarget)) return
+  if (dragOverSolutionId.value === item.id) {
+    dragOverSolutionId.value = null
+  }
+}
+
+async function onSolutionDrop(event, targetItem) {
+  if (!canReorderSolutions.value || reorderingSolutions.value) {
+    resetSolutionDragState()
+    return
+  }
+
+  const sourceId =
+    draggingSolutionId.value ||
+    event.dataTransfer?.getData('text/solution-id')
+  const orderedIds = filteredSolutions.value.map((item) => item.id)
+  const sourceIndex = orderedIds.indexOf(sourceId)
+  if (
+    !sourceId ||
+    sourceId === targetItem.id ||
+    sourceIndex < 0 ||
+    (targetItem.folderId || null) !== selectedSolutionFolderId()
+  ) {
+    resetSolutionDragState()
+    return
+  }
+
+  const nextIds = orderedIds.filter((solutionId) => solutionId !== sourceId)
+  const targetIndex = nextIds.indexOf(targetItem.id)
+  const insertIndex =
+    targetIndex + (dragOverPosition.value === 'after' ? 1 : 0)
+  nextIds.splice(insertIndex, 0, sourceId)
+  if (nextIds.every((solutionId, index) => solutionId === orderedIds[index])) {
+    resetSolutionDragState()
+    return
+  }
+
+  const previousSolutions = [...solutions.value]
+  const itemById = new Map(
+    filteredSolutions.value.map((item) => [item.id, item]),
+  )
+  const groupIds = new Set(nextIds)
+  let groupIndex = 0
+  solutions.value = solutions.value.map((item) =>
+    groupIds.has(item.id) ? itemById.get(nextIds[groupIndex++]) : item,
+  )
+  resetSolutionDragState()
+  reorderingSolutions.value = true
+  try {
+    await reorderSolutions(
+      libraryScope.value,
+      selectedSolutionFolderId(),
+      nextIds,
+    )
+    await loadSolutions()
+  } catch (error) {
+    solutions.value = previousSolutions
+    ElMessage.error(error.message || '方案排序失败')
+  } finally {
+    reorderingSolutions.value = false
+  }
+}
+
+function onSolutionDragEnd() {
+  resetSolutionDragState()
 }
 
 onMounted(async () => {
@@ -1511,6 +1634,38 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.solution-list-item.can-drag {
+  cursor: grab;
+}
+
+.solution-list-item.can-drag:active {
+  cursor: grabbing;
+}
+
+.solution-list-item.is-dragging {
+  opacity: 0.45;
+}
+
+.solution-list-item.drag-over-before::before,
+.solution-list-item.drag-over-after::after {
+  position: absolute;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: #1d1d1f;
+  content: '';
+  pointer-events: none;
+}
+
+.solution-list-item.drag-over-before::before {
+  top: -4px;
+}
+
+.solution-list-item.drag-over-after::after {
+  bottom: -4px;
+}
+
 .custom-field-item {
   padding: 10px 12px;
   border: 1px solid #e0dcd6;

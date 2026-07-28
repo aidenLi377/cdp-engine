@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS solutions (
                                 CHECK(status IN ('draft', 'published')),
     source                      TEXT NOT NULL DEFAULT 'manual',
     folder_id                   TEXT,
+    sort_order                  INTEGER,
     default_crowd_name          TEXT DEFAULT '',
     nodes                       TEXT,  -- JSON
     custom_fields               TEXT,  -- JSON
@@ -161,6 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_dimension_rows_changes
     ON dimension_rows(has_changes, dimension_file);
 CREATE INDEX IF NOT EXISTS idx_config_versions_number ON config_versions(version_number);
 CREATE INDEX IF NOT EXISTS idx_solutions_scope ON solutions(visibility, owner_id, updated_at);
+CREATE INDEX IF NOT EXISTS idx_solutions_folder_order
+    ON solutions(visibility, owner_id, folder_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_folders_scope ON folders(visibility, owner_id, parent_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at);
 """
@@ -183,6 +186,7 @@ MIGRATION_COLUMNS = {
     "solutions": {
         "owner_id": "TEXT",
         "visibility": "TEXT NOT NULL DEFAULT 'public'",
+        "sort_order": "INTEGER",
         "created_by": "TEXT",
         "updated_by": "TEXT",
     },
@@ -248,4 +252,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 2")
+        conn.execute("PRAGMA user_version = 3")

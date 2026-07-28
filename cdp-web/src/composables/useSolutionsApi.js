@@ -47,6 +47,24 @@ export function useSolutionsApi() {
         signal,
       })
     },
+    moveSolution(id, folderId, { signal } = {}) {
+      return request(`/api/solutions/${id}/move`, {
+        method: 'PUT',
+        body: JSON.stringify({ folderId: folderId ?? null }),
+        signal,
+      })
+    },
+    reorderSolutions(scope, folderId, orderedIds, { signal } = {}) {
+      return request('/api/solutions/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({
+          scope,
+          folderId: folderId ?? null,
+          orderedIds,
+        }),
+        signal,
+      })
+    },
     deleteSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}`, {
         method: 'DELETE',

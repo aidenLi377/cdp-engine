@@ -16,6 +16,7 @@ _SOLUTION_KEY_MAP = {
     "status": "status",
     "source": "source",
     "folder_id": "folderId",
+    "sort_order": "sortOrder",
     "default_crowd_name": "defaultCrowdName",
     "nodes": "nodes",
     "custom_fields": "customFields",
@@ -116,6 +117,7 @@ class SolutionStore:
             "status": payload.get("status", "draft"),
             "source": payload.get("source", "manual"),
             "folder_id": payload.get("folderId"),
+            "sort_order": payload.get("sortOrder"),
             "default_crowd_name": payload.get("defaultCrowdName", ""),
             "nodes": payload.get("nodes"),
             "custom_fields": payload.get("customFields"),
@@ -178,7 +180,10 @@ class SolutionStore:
         if status is not None:
             clauses.append("status = ?")
             params.append(status)
-        sql = f"SELECT * FROM solutions WHERE {' AND '.join(clauses)} ORDER BY updated_at DESC"
+        sql = f"""SELECT * FROM solutions
+                  WHERE {' AND '.join(clauses)}
+                  ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                           sort_order ASC, updated_at DESC, id ASC"""
         with get_db(self.db_path) as conn:
             conn.row_factory = self._row_factory
             rows = conn.execute(sql, tuple(params)).fetchall()
@@ -215,13 +220,15 @@ class SolutionStore:
         with get_db(self.db_path) as conn:
             conn.execute(
                 """INSERT INTO solutions (
-                    id, name, status, source, folder_id, default_crowd_name,
+                id, name, status, source, folder_id, default_crowd_name,
+                    sort_order,
                     nodes, custom_fields, workbench_field_ids, base_published_id,
                     derived_from_solution_id, derived_from_solution_version,
                     _version, owner_id, visibility, created_by, updated_by,
                     created_at, updated_at, published_at
                 ) VALUES (
-                    :id, :name, :status, :source, :folder_id, :default_crowd_name,
+                :id, :name, :status, :source, :folder_id, :default_crowd_name,
+                    :sort_order,
                     :nodes, :custom_fields, :workbench_field_ids, :base_published_id,
                     :derived_from_solution_id, :derived_from_solution_version,
                     :_version, :owner_id, :visibility, :created_by, :updated_by,
@@ -237,7 +244,8 @@ class SolutionStore:
         conn.execute(
             """UPDATE solutions SET
                 name = :name, status = :status, source = :source,
-                folder_id = :folder_id, default_crowd_name = :default_crowd_name,
+                folder_id = :folder_id, sort_order = :sort_order,
+                default_crowd_name = :default_crowd_name,
                 nodes = :nodes, custom_fields = :custom_fields,
                 workbench_field_ids = :workbench_field_ids,
                 base_published_id = :base_published_id,
@@ -257,12 +265,14 @@ class SolutionStore:
         conn.execute(
             """INSERT INTO solutions (
                 id, name, status, source, folder_id, default_crowd_name,
+                sort_order,
                 nodes, custom_fields, workbench_field_ids, base_published_id,
                 derived_from_solution_id, derived_from_solution_version,
                 _version, owner_id, visibility, created_by, updated_by,
                 created_at, updated_at, published_at
             ) VALUES (
                 :id, :name, :status, :source, :folder_id, :default_crowd_name,
+                :sort_order,
                 :nodes, :custom_fields, :workbench_field_ids, :base_published_id,
                 :derived_from_solution_id, :derived_from_solution_version,
                 :_version, :owner_id, :visibility, :created_by, :updated_by,
@@ -313,8 +323,6 @@ class SolutionStore:
                 "updatedAt": now,
                 "publishedAt": now if item.get("status") == "published" else item.get("publishedAt"),
             }
-            # Public solutions stay outside personal folders.
-            updated["folderId"] = None
             self._update_row(conn, updated)
         return updated
 
@@ -423,18 +431,89 @@ class SolutionStore:
             self._update_row(conn, updated)
         return updated
 
-    def move_solution(self, solution_id: str, folder_id: str | None, user_id: str) -> dict:
+    def move_solution(
+        self,
+        solution_id: str,
+        folder_id: str | None,
+        user_id: str,
+        allow_public: bool = False,
+    ) -> dict:
         with get_db(self.db_path) as conn:
-            item = self._find_mutable(conn, solution_id, user_id)
+            item = (
+                self._find_accessible(conn, solution_id, user_id)
+                if allow_public
+                else self._find_mutable(conn, solution_id, user_id)
+            )
+            if allow_public and item.get("visibility") != "public":
+                raise SolutionAccessError(solution_id)
             updated = {
                 **item,
                 "folderId": folder_id,
+                "sortOrder": (
+                    item.get("sortOrder")
+                    if item.get("folderId") == folder_id
+                    else None
+                ),
                 "_version": item.get("_version", 0) + 1,
                 "updatedBy": user_id,
                 "updatedAt": _utc_now(),
             }
             self._update_row(conn, updated)
         return updated
+
+    def reorder_solutions(
+        self,
+        scope: str,
+        folder_id: str | None,
+        ordered_ids: list[str],
+        user_id: str,
+        allow_public: bool = False,
+    ) -> list[str]:
+        if scope not in {"mine", "public"}:
+            raise ValueError("invalid solution scope")
+        if scope == "public" and not allow_public:
+            raise SolutionAccessError("public solution ordering")
+        if not isinstance(ordered_ids, list) or any(
+            not isinstance(solution_id, str) or not solution_id
+            for solution_id in ordered_ids
+        ):
+            raise ValueError("invalid solution order")
+        if len(set(ordered_ids)) != len(ordered_ids):
+            raise ValueError("duplicate solution ids")
+
+        with get_db(self.db_path) as conn:
+            conn.row_factory = self._row_factory
+            clauses = ["visibility = ?", "folder_id IS ?"]
+            params: list[Any] = [
+                "private" if scope == "mine" else "public",
+                folder_id,
+            ]
+            if scope == "mine":
+                clauses.append("owner_id = ?")
+                params.append(user_id)
+            rows = conn.execute(
+                f"""SELECT id FROM solutions
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                             sort_order ASC, updated_at DESC, id ASC""",
+                tuple(params),
+            ).fetchall()
+            existing_ids = [row["id"] for row in rows]
+            existing_set = set(existing_ids)
+            if any(solution_id not in existing_set for solution_id in ordered_ids):
+                raise ValueError("solution is not in the selected folder")
+
+            final_ids = ordered_ids + [
+                solution_id for solution_id in existing_ids if solution_id not in ordered_ids
+            ]
+            for sort_order, solution_id in enumerate(final_ids):
+                conn.execute(
+                    """UPDATE solutions
+                       SET sort_order = ?, updated_by = ?
+                       WHERE id = ?""",
+                    (sort_order, user_id, solution_id),
+                )
+        return final_ids
 
     def delete_solution(self, solution_id: str, user_id: str) -> bool:
         with get_db(self.db_path) as conn:
@@ -449,7 +528,8 @@ class SolutionStore:
         with get_db(self.db_path) as conn:
             placeholders = ",".join("?" for _ in deleted_folder_ids)
             conn.execute(
-                f"""UPDATE solutions SET folder_id = NULL, updated_by = ?
+                f"""UPDATE solutions SET folder_id = NULL, sort_order = NULL,
+                    updated_by = ?
                     WHERE owner_id = ? AND visibility = 'private'
                     AND folder_id IN ({placeholders})""",
                 (user_id, user_id, *deleted_folder_ids),

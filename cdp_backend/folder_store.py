@@ -73,7 +73,9 @@ class FolderStore:
             raise FolderNotFoundError(folder_id)
         return self._row_to_dict(row)
 
-    def _find_mutable(self, conn, folder_id: str, user_id: str) -> dict:
+    def _find_mutable(
+        self, conn, folder_id: str, user_id: str, allow_public: bool = False
+    ) -> dict:
         conn.row_factory = self._row_factory
         row = conn.execute(
             """SELECT * FROM folders
@@ -83,7 +85,7 @@ class FolderStore:
         if row is None:
             raise FolderNotFoundError(folder_id)
         item = self._row_to_dict(row)
-        if item.get("visibility") != "private":
+        if item.get("visibility") != "private" and not allow_public:
             raise FolderAccessError(folder_id)
         return item
 
@@ -146,14 +148,23 @@ class FolderStore:
                 return None
             return self._row_to_dict(row)
 
-    def create_folder(self, name: str, user_id: str, parent_id: str | None = None) -> dict:
+    def create_folder(
+        self,
+        name: str,
+        user_id: str,
+        parent_id: str | None = None,
+        scope: str = "mine",
+    ) -> dict:
+        if scope not in {"mine", "public"}:
+            raise ValueError("invalid folder scope")
+        is_public = scope == "public"
         now = _utc_now()
         created = {
             "id": self._new_id(),
             "name": name,
             "parentId": parent_id,
-            "ownerId": user_id,
-            "visibility": "private",
+            "ownerId": None if is_public else user_id,
+            "visibility": "public" if is_public else "private",
             "createdBy": user_id,
             "updatedBy": user_id,
             "createdAt": now,
@@ -162,7 +173,11 @@ class FolderStore:
         db_row = self._to_db(created)
         with get_db(self.db_path) as conn:
             if parent_id is not None:
-                self._find_mutable(conn, parent_id, user_id)
+                parent = self._find_mutable(
+                    conn, parent_id, user_id, allow_public=is_public
+                )
+                if (parent.get("visibility") == "public") != is_public:
+                    raise FolderAccessError(parent_id)
             conn.execute(
                 """INSERT INTO folders (
                     id, name, parent_id, owner_id, visibility,
@@ -175,9 +190,18 @@ class FolderStore:
             )
         return created
 
-    def update_folder(self, folder_id: str, name: str, user_id: str) -> dict:
+    def update_folder(
+        self, folder_id: str, name: str, user_id: str, scope: str = "mine"
+    ) -> dict:
+        if scope not in {"mine", "public"}:
+            raise ValueError("invalid folder scope")
+        is_public = scope == "public"
         with get_db(self.db_path) as conn:
-            item = self._find_mutable(conn, folder_id, user_id)
+            item = self._find_mutable(
+                conn, folder_id, user_id, allow_public=is_public
+            )
+            if (item.get("visibility") == "public") != is_public:
+                raise FolderAccessError(folder_id)
             updated = {**item, "name": name, "updatedBy": user_id, "updatedAt": _utc_now()}
             db_row = self._to_db(updated)
             conn.execute(
@@ -187,28 +211,63 @@ class FolderStore:
             )
             return updated
 
-    def delete_folder(self, folder_id: str, user_id: str) -> set[str]:
+    def delete_folder(
+        self, folder_id: str, user_id: str, scope: str = "mine"
+    ) -> set[str]:
+        if scope not in {"mine", "public"}:
+            raise ValueError("invalid folder scope")
+        is_public = scope == "public"
         with get_db(self.db_path) as conn:
-            self._find_mutable(conn, folder_id, user_id)
+            item = self._find_mutable(
+                conn, folder_id, user_id, allow_public=is_public
+            )
+            if (item.get("visibility") == "public") != is_public:
+                raise FolderAccessError(folder_id)
             ids_to_delete = self._collect_subtree_ids(conn, folder_id)
             placeholders = ",".join("?" for _ in ids_to_delete)
-            conn.execute(
-                f"""UPDATE solutions SET folder_id = NULL, updated_by = ?
-                    WHERE owner_id = ? AND visibility = 'private'
-                    AND folder_id IN ({placeholders})""",
-                (user_id, user_id, *ids_to_delete),
-            )
+            if is_public:
+                conn.execute(
+                    f"""UPDATE solutions SET folder_id = NULL, sort_order = NULL,
+                        updated_by = ?
+                        WHERE folder_id IN ({placeholders})""",
+                    (user_id, *ids_to_delete),
+                )
+            else:
+                conn.execute(
+                    f"""UPDATE solutions SET folder_id = NULL, sort_order = NULL,
+                        updated_by = ?
+                        WHERE owner_id = ? AND visibility = 'private'
+                        AND folder_id IN ({placeholders})""",
+                    (user_id, user_id, *ids_to_delete),
+                )
             conn.execute(
                 f"DELETE FROM folders WHERE id IN ({placeholders})",
                 tuple(ids_to_delete),
             )
             return ids_to_delete
 
-    def move_folder(self, folder_id: str, parent_id: str | None, user_id: str) -> dict:
+    def move_folder(
+        self,
+        folder_id: str,
+        parent_id: str | None,
+        user_id: str,
+        scope: str = "mine",
+    ) -> dict:
+        if scope not in {"mine", "public"}:
+            raise ValueError("invalid folder scope")
+        is_public = scope == "public"
         with get_db(self.db_path) as conn:
-            item = self._find_mutable(conn, folder_id, user_id)
+            item = self._find_mutable(
+                conn, folder_id, user_id, allow_public=is_public
+            )
+            if (item.get("visibility") == "public") != is_public:
+                raise FolderAccessError(folder_id)
             if parent_id is not None:
-                self._find_mutable(conn, parent_id, user_id)
+                parent = self._find_mutable(
+                    conn, parent_id, user_id, allow_public=is_public
+                )
+                if parent.get("visibility") != item.get("visibility"):
+                    raise FolderAccessError(parent_id)
                 if parent_id in self._collect_subtree_ids(conn, folder_id):
                     raise ValueError("Cannot move a folder into itself or one of its descendants")
             updated = {

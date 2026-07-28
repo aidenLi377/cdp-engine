@@ -169,6 +169,167 @@ class AuthAndIsolationApiTests(unittest.TestCase):
         self.assertEqual(private_forbidden.status_code, 403)
         self.assertEqual(private_forbidden.get_json()["code"], "PUBLIC_SOLUTION_REQUIRED")
 
+    def test_super_admin_can_manage_public_solution_folders(self):
+        self.login(self.alice_client, "alice", "alice-password")
+        self.login(self.bob_client, "bob", "bob-password")
+        self.login(self.root_client, "root", "root-password")
+
+        public_root_response = self.root_client.post(
+            "/api/folders", json={"name": "Shared root", "scope": "public"}
+        )
+        self.assertEqual(public_root_response.status_code, 201)
+        public_root = public_root_response.get_json()
+        public_child = self.root_client.post(
+            "/api/folders",
+            json={
+                "name": "Shared child",
+                "parentId": public_root["id"],
+                "scope": "public",
+            },
+        ).get_json()
+
+        ordinary_create = self.bob_client.post(
+            "/api/folders", json={"name": "Not allowed", "scope": "public"}
+        )
+        self.assertEqual(ordinary_create.status_code, 403)
+        self.assertEqual(ordinary_create.get_json()["code"], "FORBIDDEN")
+
+        source = self.root_client.post(
+            "/api/solutions/drafts", json={"name": "Shared template", "nodes": []}
+        ).get_json()
+        with get_db(self.db_path) as conn:
+            conn.execute(
+                """UPDATE solutions
+                   SET visibility = 'public', owner_id = NULL, folder_id = ?
+                   WHERE id = ?""",
+                (public_root["id"], source["id"]),
+            )
+
+        saved = self.root_client.put(
+            f"/api/solutions/{source['id']}/public",
+            json={"name": "Maintained by root", "folderId": public_root["id"]},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["folderId"], public_root["id"])
+
+        moved = self.root_client.put(
+            f"/api/solutions/{source['id']}/move",
+            json={"folderId": public_child["id"]},
+        )
+        self.assertEqual(moved.status_code, 200)
+        self.assertEqual(moved.get_json()["folderId"], public_child["id"])
+
+        ordinary_move = self.bob_client.put(
+            f"/api/solutions/{source['id']}/move",
+            json={"folderId": public_root["id"]},
+        )
+        self.assertEqual(ordinary_move.status_code, 403)
+        self.assertEqual(ordinary_move.get_json()["code"], "FORBIDDEN")
+
+        second = self.root_client.post(
+            "/api/solutions/drafts", json={"name": "Second shared template", "nodes": []}
+        ).get_json()
+        with get_db(self.db_path) as conn:
+            conn.execute(
+                """UPDATE solutions
+                   SET visibility = 'public', owner_id = NULL, folder_id = ?
+                   WHERE id = ?""",
+                (public_child["id"], second["id"]),
+            )
+        reordered = self.root_client.put(
+            "/api/solutions/reorder",
+            json={
+                "scope": "public",
+                "folderId": public_child["id"],
+                "orderedIds": [second["id"], source["id"]],
+            },
+        )
+        self.assertEqual(reordered.status_code, 200)
+        public_items = self.root_client.get(
+            f"/api/solutions?scope=public&status=all&folderId={public_child['id']}"
+        ).get_json()
+        self.assertEqual(
+            [item["id"] for item in public_items],
+            [second["id"], source["id"]],
+        )
+
+        ordinary_reorder = self.bob_client.put(
+            "/api/solutions/reorder",
+            json={
+                "scope": "public",
+                "folderId": public_child["id"],
+                "orderedIds": [source["id"], second["id"]],
+            },
+        )
+        self.assertEqual(ordinary_reorder.status_code, 403)
+        self.assertEqual(ordinary_reorder.get_json()["code"], "FORBIDDEN")
+
+        renamed = self.root_client.put(
+            f"/api/folders/{public_root['id']}", json={"name": "Renamed shared root"}
+        )
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.get_json()["name"], "Renamed shared root")
+
+        deleted = self.root_client.delete(f"/api/folders/{public_root['id']}")
+        self.assertEqual(deleted.status_code, 204)
+        self.assertEqual(
+            self.root_client.get(f"/api/solutions/{source['id']}").get_json().get("folderId"),
+            None,
+        )
+
+    def test_personal_solution_order_persists_without_and_inside_a_folder(self):
+        self.login(self.alice_client, "alice", "alice-password")
+        created = [
+            self.alice_client.post(
+                "/api/solutions/drafts",
+                json={"name": f"Draft {index}", "nodes": []},
+            ).get_json()
+            for index in range(3)
+        ]
+
+        uncategorized_order = [created[0]["id"], created[2]["id"], created[1]["id"]]
+        reordered = self.alice_client.put(
+            "/api/solutions/reorder",
+            json={
+                "scope": "mine",
+                "folderId": None,
+                "orderedIds": uncategorized_order,
+            },
+        )
+        self.assertEqual(reordered.status_code, 200)
+        uncategorized_items = self.alice_client.get(
+            "/api/solutions?scope=mine&status=all"
+        ).get_json()
+        self.assertEqual(
+            [item["id"] for item in uncategorized_items],
+            uncategorized_order,
+        )
+
+        folder = self.alice_client.post(
+            "/api/folders", json={"name": "Ordered folder"}
+        ).get_json()
+        for item in created:
+            moved = self.alice_client.put(
+                f"/api/solutions/{item['id']}/move",
+                json={"folderId": folder["id"]},
+            )
+            self.assertEqual(moved.status_code, 200)
+
+        folder_order = [created[1]["id"], created[0]["id"], created[2]["id"]]
+        reordered = self.alice_client.put(
+            "/api/solutions/reorder",
+            json={
+                "scope": "mine",
+                "folderId": folder["id"],
+                "orderedIds": folder_order,
+            },
+        )
+        self.assertEqual(reordered.status_code, 200)
+        folder_items = self.alice_client.get(
+            f"/api/solutions?scope=mine&status=all&folderId={folder['id']}"
+        ).get_json()
+        self.assertEqual([item["id"] for item in folder_items], folder_order)
+
     def test_private_folder_tree_is_isolated(self):
         self.login(self.alice_client, "alice", "alice-password")
         self.login(self.bob_client, "bob", "bob-password")
@@ -249,7 +410,7 @@ class ExistingDatabaseMigrationTests(unittest.TestCase):
                 user_version = conn.execute("PRAGMA user_version").fetchone()[0]
             self.assertEqual(solution, ("public", None))
             self.assertEqual(folder, ("public", None))
-            self.assertEqual(user_version, 2)
+            self.assertEqual(user_version, 3)
 
 
 if __name__ == "__main__":
