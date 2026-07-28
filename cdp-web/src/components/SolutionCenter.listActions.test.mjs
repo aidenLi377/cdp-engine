@@ -191,6 +191,22 @@ test('solution cards omit timestamps so metadata stays horizontal', () => {
   assert.match(css, /\.solution-list-meta span \{[^}]*min-width: 0;[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/s)
 })
 
+test('opening a solution cannot overwrite its list node count with stale runtime nodes', () => {
+  const syncStart = solutionCenterVue.indexOf('function syncActiveToSolutionsList()')
+  const syncEnd = solutionCenterVue.indexOf(
+    'watch([() => activeSolution.value?.name',
+    syncStart,
+  )
+  const syncBlock = solutionCenterVue.slice(syncStart, syncEnd)
+
+  assert.notEqual(syncStart, -1)
+  assert.notEqual(syncEnd, -1)
+  assert.match(syncBlock, /name: activeSolution\.value\.name/)
+  assert.match(syncBlock, /defaultCrowdName: activeSolution\.value\.defaultCrowdName/)
+  assert.doesNotMatch(syncBlock, /\bnodes:|serializeNodesForSolution/)
+  assert.doesNotMatch(syncBlock, /\bcustomFields:|serializeCustomFieldsForSolution/)
+})
+
 test('super admins can manage public solution folders like personal folders', () => {
   assert.match(solutionCenterVue, /:read-only="libraryScope === 'public' && !canManagePublicSolutions"/)
   assert.match(solutionCenterVue, /:draggable="libraryScope === 'mine' \|\| isPublicAdminSolution"/)

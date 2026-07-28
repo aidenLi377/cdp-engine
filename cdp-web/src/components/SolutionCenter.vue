@@ -1421,8 +1421,6 @@ function syncActiveToSolutionsList() {
       ...solutions.value[idx],
       name: activeSolution.value.name,
       defaultCrowdName: activeSolution.value.defaultCrowdName,
-      nodes: serializeNodesForSolution(nodeList.value),
-      customFields: serializeCustomFieldsForSolution(customFields.value),
     }
   }
 }
