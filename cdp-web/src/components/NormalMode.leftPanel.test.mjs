@@ -108,6 +108,10 @@ test('left panel has a lightweight border toggle for switching to solutions', ()
 test('workbench node labels use shared display names instead of hardcoded node indexes', () => {
   assert.match(normalModeVue, /getNodeDisplayName\(node, index\)/)
   assert.match(normalModeVue, /getNodeDisplayName/)
+  assert.match(
+    normalModeVue,
+    /class="summary-node-head"[\s\S]*?getNodeSummaryDisplayName\(node, index\)/,
+  )
   assert.doesNotMatch(normalModeVue, /节点 \{\{ index \+ 1 \}\}/)
 })
 

@@ -6,6 +6,7 @@ import {
   fieldToken,
   getNodeDisplayName,
   getNodeDisplayNameById,
+  getNodeSummaryDisplayName,
   serializeNodesForSolution,
   cleanWorkbenchFieldIds,
   buildUsageSections,
@@ -60,6 +61,21 @@ test('getNodeDisplayName prefers custom node name and falls back to index label'
   assert.equal(getNodeDisplayName({ displayName: '资生堂购买' }, 0), '资生堂购买')
   assert.equal(getNodeDisplayName({ displayName: '   ' }, 1), '节点 2')
   assert.equal(getNodeDisplayName({}, 2), '节点 3')
+})
+
+test('getNodeSummaryDisplayName uses custom name, then component name, then index label', () => {
+  assert.equal(
+    getNodeSummaryDisplayName(
+      { displayName: '资生堂购买', packageType: '类目公域行为' },
+      0,
+    ),
+    '资生堂购买',
+  )
+  assert.equal(
+    getNodeSummaryDisplayName({ displayName: '   ', packageType: '类目公域行为' }, 1),
+    '类目公域行为',
+  )
+  assert.equal(getNodeSummaryDisplayName({}, 2), '节点 3')
 })
 
 test('getNodeDisplayNameById resolves labels from node list', () => {

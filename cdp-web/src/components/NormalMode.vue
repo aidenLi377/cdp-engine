@@ -629,7 +629,7 @@
         <div v-for="(node, index) in nodeList" :key="'s-' + node.id" class="summary-node">
           <div class="summary-node-head">
             <span class="summary-idx">{{ index + 1 }}</span>
-            <span class="display-body strong">{{ getNodeDisplayName(node, index) }}</span>
+            <span class="display-body strong">{{ getNodeSummaryDisplayName(node, index) }}</span>
             <span v-if="index > 0" class="summary-op">
               {{ node.operator === 'n' ? '交集' : node.operator === 'u' ? '并集' : '差集' }}
             </span>
@@ -871,6 +871,7 @@ import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import {
   fieldToken,
   getNodeDisplayName,
+  getNodeSummaryDisplayName,
   serializeNodesForSolution,
   serializeCustomFieldsForSolution,
   buildCustomFieldSections,

@@ -87,6 +87,16 @@ export function getNodeDisplayName(node, index = 0) {
   return `节点 ${index + 1}`
 }
 
+export function getNodeSummaryDisplayName(node, index = 0) {
+  const displayName = String(node?.displayName || '').trim()
+  if (displayName) return displayName
+
+  const packageType = String(node?.packageType || '').trim()
+  if (packageType) return packageType
+
+  return getNodeDisplayName(node, index)
+}
+
 export function getNodeDisplayNameById(nodeList, nodeId) {
   const nodes = Array.isArray(nodeList) ? nodeList : []
   const index = nodes.findIndex((node) => node?.id === nodeId)
