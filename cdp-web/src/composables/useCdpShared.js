@@ -1,6 +1,7 @@
 // 共享 composable — 模块级单例，工作台与动态表单共享同一份缓存
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { getQuickRangeSelectableStart } from '../utils/dateQuickRanges.js'
 
 // ---- 模块级单例 (所有调用者共享) ----
 const schemaCache = ref({})
@@ -309,10 +310,17 @@ function getExactDateRangeHint(node) {
   const isOnlyPurchase = behaviors.includes('购买') && behaviors.length === 1
   const isTwoYears = isCategoryPackage && isOnlyPurchase
   const today = new Date()
-  const minDate = new Date()
-  if (isTwoYears) minDate.setFullYear(minDate.getFullYear() - 2)
-  else minDate.setDate(minDate.getDate() - 366)
-  return `可选范围：${formatDate(minDate)} 至 ${formatDate(today)} (最大跨度366天)`
+  today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  let minDate
+  if (isTwoYears) {
+    minDate = new Date(today)
+    minDate.setFullYear(minDate.getFullYear() - 2)
+  } else {
+    minDate = getQuickRangeSelectableStart(today)
+  }
+  return `可选范围：${formatDate(minDate)} 至 ${formatDate(yesterday)} (最大跨度366天)`
 }
 
 function handleCalendarChange(val, node) {
@@ -336,12 +344,16 @@ function disabledDate(time, node) {
   const isOnlyPurchase = behaviors.includes('购买') && behaviors.length === 1
   const isTwoYears = isCategoryPackage && isOnlyPurchase
   const today = new Date()
-  today.setHours(23, 59, 59, 999)
-  const minDate = new Date()
-  if (isTwoYears) minDate.setFullYear(minDate.getFullYear() - 2)
-  else minDate.setDate(minDate.getDate() - 366)
+  today.setHours(0, 0, 0, 0)
+  let minDate
+  if (isTwoYears) {
+    minDate = new Date(today)
+    minDate.setFullYear(minDate.getFullYear() - 2)
+  } else {
+    minDate = getQuickRangeSelectableStart(today)
+  }
   minDate.setHours(0, 0, 0, 0)
-  if (time.getTime() > today.getTime() || time.getTime() < minDate.getTime()) return true
+  if (time.getTime() >= today.getTime() || time.getTime() < minDate.getTime()) return true
   if (node.selectedFirstDate) {
     const oneDay = 24 * 3600 * 1000
     const diffDays = Math.abs((time.getTime() - node.selectedFirstDate.getTime()) / oneDay)

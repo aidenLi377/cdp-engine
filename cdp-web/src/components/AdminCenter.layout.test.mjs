@@ -38,6 +38,15 @@ test('dimension headers stay visible while the table body scrolls', () => {
   assert.match(adminCenterVue, /dimension-table-wrap/)
 })
 
+test('dimension table uses a structured high-contrast header with explicit action labels', () => {
+  assert.match(adminCenterVue, /class="dimension-header-cell"/)
+  assert.match(adminCenterVue, /class="dimension-header-index"/)
+  assert.match(adminCenterVue, /dimension-key-header': column === '适用的包'/)
+  assert.match(adminCenterVue, /class="dimension-action-header"[\s\S]*?>操作</)
+  assert.match(adminCenterVue, /\.dimension-table thead th \{[^}]*height: 46px;[^}]*background: #202124;/s)
+  assert.match(adminCenterVue, /\.dimension-table-wrap \{[^}]*border-radius: 12px;/s)
+})
+
 test('audit deletion is visible only to super admins and uses the guarded API action', () => {
   assert.match(adminCenterVue, /const canDeleteAuditLogs = computed\(\(\) => props\.currentUserRole === 'super_admin'\)/)
   assert.match(adminCenterVue, /v-if="canDeleteAuditLogs" class="admin-table-action"/)

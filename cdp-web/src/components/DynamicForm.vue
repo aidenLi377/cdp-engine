@@ -181,7 +181,12 @@
           <div class="range-block">
             <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group">
               <el-radio-button label="recent">过去 N 天</el-radio-button>
-              <el-radio-button label="range">固定日期</el-radio-button>
+              <DateQuickRangePopover
+                :disabled="props.readonly"
+                @select="(dateRange) => applyQuickDateRange(node, field, dateRange)"
+              >
+                <el-radio-button label="range">固定日期</el-radio-button>
+              </DateQuickRangePopover>
             </el-radio-group>
             <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs">
               <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" />
@@ -205,6 +210,7 @@ import { inject, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
+import DateQuickRangePopover from './DateQuickRangePopover.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -225,6 +231,12 @@ const {
   collectNodeOverflows,
   countUniqueSecondaryCategories,
 } = useCdpShared()
+
+function applyQuickDateRange(node, field, dateRange) {
+  node.modeData[field.key] = 'range'
+  node.formData[field.key].dateRange = [...dateRange]
+  node.selectedFirstDate = null
+}
 
 function onFieldPaste(node, field, event) {
   const pastedText = event.clipboardData?.getData('text') || ''

@@ -530,9 +530,29 @@
             <table class="admin-table dimension-table">
               <thead>
                 <tr>
-                  <th v-for="column in dimensionColumns" :key="column">{{ column }}</th>
-                  <th>状态</th>
-                  <th></th>
+                  <th
+                    v-for="(column, index) in dimensionColumns"
+                    :key="column"
+                    scope="col"
+                    :class="{ 'dimension-key-header': column === '适用的包' }"
+                  >
+                    <span class="dimension-header-cell">
+                      <span class="dimension-header-index" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+                      <span class="dimension-header-label">{{ column }}</span>
+                    </span>
+                  </th>
+                  <th scope="col" class="dimension-status-header">
+                    <span class="dimension-header-cell">
+                      <span class="dimension-header-index" aria-hidden="true">{{ String(dimensionColumns.length + 1).padStart(2, '0') }}</span>
+                      <span class="dimension-header-label">状态</span>
+                    </span>
+                  </th>
+                  <th scope="col" class="dimension-action-header">
+                    <span class="dimension-header-cell">
+                      <span class="dimension-header-index" aria-hidden="true">{{ String(dimensionColumns.length + 2).padStart(2, '0') }}</span>
+                      <span class="dimension-header-label">操作</span>
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -2346,18 +2366,122 @@ onMounted(loadData)
 .dimension-editor-actions .admin-primary-button { min-width: 92px; }
 
 .dimension-table-wrap {
+  position: relative;
   max-height: 450px;
   overflow: auto;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(29, 29, 31, 0.055);
 }
 
-.dimension-table { min-width: 680px; }
+.dimension-table {
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
 .dimension-table thead th {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: var(--ui-surface);
-  box-shadow: 0 1px 0 var(--ui-divider);
+  min-width: 104px;
+  height: 46px;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.72);
+  font-family: "Avenir Next", "Segoe UI Variable", "PingFang SC", sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  background: #202124;
+  border: 0;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
 }
+
+.dimension-table thead th + th {
+  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.075), 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.dimension-table thead th:first-child {
+  padding-left: 14px;
+  border-top-left-radius: 11px;
+}
+
+.dimension-table thead th:last-child {
+  padding-right: 14px;
+  border-top-right-radius: 11px;
+}
+
+.dimension-header-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  white-space: nowrap;
+}
+
+.dimension-header-index {
+  min-width: 16px;
+  color: rgba(255, 255, 255, 0.34);
+  font: 600 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+}
+
+.dimension-key-header {
+  min-width: 132px !important;
+}
+
+.dimension-key-header .dimension-header-index {
+  color: #ff7657;
+}
+
+.dimension-key-header .dimension-header-label {
+  color: #ffffff;
+}
+
+.dimension-status-header {
+  min-width: 118px !important;
+}
+
+.dimension-action-header {
+  min-width: 92px !important;
+}
+
+.dimension-action-header .dimension-header-cell {
+  justify-content: flex-end;
+}
+
+.dimension-table tbody td {
+  padding: 13px 12px;
+  vertical-align: middle;
+  border-top: 0;
+  border-bottom: 1px solid var(--ui-divider);
+  transition: color 140ms ease, background 140ms ease;
+}
+
+.dimension-table tbody tr:not(.dimension-row-deleted):hover td {
+  color: var(--ui-ink);
+  background: color-mix(in srgb, var(--ui-accent) 2.5%, var(--ui-surface));
+}
+
+.dimension-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.dimension-table tbody td:first-child {
+  padding-left: 14px;
+}
+
+.dimension-table tbody td:last-child {
+  padding-right: 14px;
+}
+
+.dimension-table td.admin-table-action {
+  min-width: 92px;
+  text-align: right;
+}
+
 .dimension-table td { max-width: 230px; }
 .dimension-cell {
   display: block;

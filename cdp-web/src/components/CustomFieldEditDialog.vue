@@ -21,7 +21,9 @@
           <template v-if="isDateType">
             <el-radio-group v-model="editMode" size="small" class="intercom-radio-group" style="margin-bottom:10px">
               <el-radio-button value="recent">过去 N 天</el-radio-button>
-              <el-radio-button value="range">固定日期</el-radio-button>
+              <DateQuickRangePopover @select="applyQuickDateRange">
+                <el-radio-button value="range">固定日期</el-radio-button>
+              </DateQuickRangePopover>
             </el-radio-group>
             <div v-if="editMode === 'recent'" style="display:flex;align-items:center;gap:8px">
               <el-input-number v-model="editValue.days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" />
@@ -129,6 +131,7 @@
 import { computed, ref, watch } from 'vue'
 import { formatCfDisplayValue } from '../utils/display.js'
 import { getNodeDisplayNameById } from '../utils/solutionState.js'
+import DateQuickRangePopover from './DateQuickRangePopover.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -172,6 +175,14 @@ function initEditState() {
     editValue.value = v ?? ''
   }
   writingBack.value = false
+}
+
+function applyQuickDateRange(dateRange) {
+  if (!editValue.value || typeof editValue.value !== 'object') {
+    editValue.value = { days: 30, dateRange: [] }
+  }
+  editMode.value = 'range'
+  editValue.value.dateRange = [...dateRange]
 }
 
 function getNodeLabel(nodeId) {

@@ -31,6 +31,18 @@ test('custom field dialog can resolve persisted node display names', () => {
   assert.match(customFieldDialogVue, /return getNodeDisplayNameById\(props\.nodeList \|\| \[\], nodeId\)/)
 })
 
+test('solution-use date editor exposes quick fixed ranges without changing its saved value contract', () => {
+  const customFieldDialogVue = readFileSync(join(currentDir, 'CustomFieldEditDialog.vue'), 'utf8')
+
+  assert.match(customFieldDialogVue, /import DateQuickRangePopover from '\.\/DateQuickRangePopover\.vue'/)
+  assert.match(
+    customFieldDialogVue,
+    /<DateQuickRangePopover @select="applyQuickDateRange">[\s\S]*?<el-radio-button value="range">固定日期<\/el-radio-button>/,
+  )
+  assert.match(customFieldDialogVue, /function applyQuickDateRange\(dateRange\) \{[\s\S]*?editMode\.value = 'range'[\s\S]*?editValue\.value\.dateRange = \[\.\.\.dateRange\]/)
+  assert.match(customFieldDialogVue, /payload = \{ \.\.\.editValue\.value, mode: editMode\.value \}/)
+})
+
 test('DataBank automation leaves more headroom than the extension bridge timeout', () => {
   assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 70000/)
 })
