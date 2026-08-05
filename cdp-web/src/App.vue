@@ -56,25 +56,34 @@
       </header>
 
       <main class="app-shell-main">
-        <NormalMode v-if="appMode === 'workbench'" />
-        <SolutionCenter
-          v-else-if="appMode === 'solutions'"
-          :current-user-role="currentUser?.role"
-        />
-        <TaskCenter v-else-if="appMode === 'task-center'" />
+        <KeepAlive>
+          <NormalMode
+            v-if="appMode === 'workbench'"
+            :session-owner-id="currentUser?.id"
+          />
+          <SolutionCenter
+            v-else-if="appMode === 'solutions'"
+            :current-user-role="currentUser?.role"
+            :session-owner-id="currentUser?.id"
+          />
+          <TaskCenter
+            v-else-if="appMode === 'task-center'"
+            :session-owner-id="currentUser?.id"
+          />
           <AdminCenter
             v-else-if="appMode === 'admin'"
             :current-user-id="currentUser?.id"
             :current-user-role="currentUser?.role"
             @current-user-updated="handleCurrentUserUpdated"
           />
+        </KeepAlive>
       </main>
     </div>
   </el-config-provider>
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
@@ -83,6 +92,11 @@ import {
   refreshConfigVersion,
   resetConfigVersionState,
 } from './utils/configVersion.js'
+import {
+  clearSessionWorkspace,
+  readSessionWorkspace,
+  writeSessionWorkspace,
+} from './utils/sessionWorkspace.js'
 
 const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
 const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
@@ -90,6 +104,8 @@ const TaskCenter = defineAsyncComponent(() => import('./components/TaskCenter.vu
 const AdminCenter = defineAsyncComponent(() => import('./components/AdminCenter.vue'))
 
 const HEALTH_FAILURE_THRESHOLD = 3
+const APP_MODE_SESSION_KEY = 'app-mode.v1'
+const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center'])
 
 const appMode = ref('workbench')
 const backendOnline = ref(true)
@@ -112,6 +128,22 @@ const userInitial = computed(() => {
 const canAccessAdmin = computed(() =>
   ['super_admin', 'config_admin'].includes(currentUser.value?.role),
 )
+
+function canUseAppMode(mode, user = currentUser.value) {
+  if (STANDARD_APP_MODES.has(mode)) return true
+  return mode === 'admin' && ['super_admin', 'config_admin'].includes(user?.role)
+}
+
+function restoreAppMode(user) {
+  const stored = readSessionWorkspace(APP_MODE_SESSION_KEY, user?.id)
+  appMode.value = canUseAppMode(stored?.mode, user) ? stored.mode : 'workbench'
+}
+
+function clearWorkspaceSession() {
+  window.dispatchEvent(new CustomEvent('cdp:workspace-session-clearing'))
+  clearSessionWorkspace()
+  appMode.value = 'workbench'
+}
 
 function markBackendSuccess() {
   consecutiveBackendFailures = 0
@@ -173,23 +205,27 @@ async function checkSession() {
   if (sessionCheckInFlight) return
   sessionCheckInFlight = true
   try {
+    const previousUserId = currentUser.value?.id
+    const previousAuthState = authState.value
     const response = await fetchWithTimeout('/api/auth/me', { cache: 'no-store' })
     markBackendSuccess()
     if (response.status === 401) {
-      currentUser.value = null
-      authState.value = 'guest'
-      stopAuthenticatedLoops()
+      handleAuthRequired()
       return
     }
     if (!response.ok) throw new Error(`Session check failed with status ${response.status}`)
     const data = await response.json()
     currentUser.value = data.user
     authState.value = 'authenticated'
+    if (previousAuthState !== 'authenticated' || previousUserId !== data.user?.id) {
+      restoreAppMode(data.user)
+    }
   } catch {
     markBackendFailure()
     if (authState.value === 'checking') {
       currentUser.value = null
       authState.value = 'guest'
+      clearWorkspaceSession()
     }
   } finally {
     sessionCheckInFlight = false
@@ -200,6 +236,7 @@ function handleAuthenticated(user) {
   markBackendSuccess()
   currentUser.value = user
   authState.value = 'authenticated'
+  restoreAppMode(user)
   if (inviteToken.value) {
     window.history.replaceState({}, '', window.location.pathname)
     inviteToken.value = ''
@@ -220,6 +257,7 @@ function cancelInviteRegistration() {
 function handleAuthRequired() {
   currentUser.value = null
   authState.value = 'guest'
+  clearWorkspaceSession()
   resetConfigVersionState()
   stopAuthenticatedLoops()
 }
@@ -241,12 +279,22 @@ async function logout() {
   } finally {
     stopAuthenticatedLoops()
     resetConfigVersionState()
+    clearWorkspaceSession()
     currentUser.value = null
     authState.value = 'guest'
-    appMode.value = 'workbench'
     inviteToken.value = ''
   }
 }
+
+watch(appMode, (mode) => {
+  if (authState.value !== 'authenticated' || !currentUser.value?.id) return
+  const safeMode = canUseAppMode(mode) ? mode : 'workbench'
+  if (safeMode !== mode) {
+    appMode.value = safeMode
+    return
+  }
+  writeSessionWorkspace(APP_MODE_SESSION_KEY, currentUser.value.id, { mode: safeMode })
+})
 
 onMounted(async () => {
   window.addEventListener('cdp:auth-required', handleAuthRequired)

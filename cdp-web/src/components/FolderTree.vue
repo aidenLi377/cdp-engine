@@ -47,6 +47,16 @@
           <span class="folder-name">{{ folder.name }}</span>
         </template>
         <button
+          v-if="shareEnabled && editingFolderId !== folder.id"
+          type="button"
+          class="folder-share-action"
+          aria-label="分享方案文件夹"
+          :title="`分享「${folder.name}」`"
+          @click.stop="shareFolder(folder)"
+        >
+          <el-icon><Share /></el-icon>
+        </button>
+        <button
           v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
           type="button"
           class="folder-batch-badge"
@@ -74,9 +84,11 @@
           :read-only="readOnly"
           :batch-counts="batchCounts"
           :show-batch-badges="showBatchBadges"
+          :share-enabled="shareEnabled"
           @toggle-expand="toggleExpand"
           @select-folder="selectFolder"
           @batch-apply="openBatchFolder"
+          @share-folder="shareFolder"
           @context-menu="onContextMenu"
           @drag-over-folder="onDragOverFolder"
           @drag-leave-folder="onDragLeaveFolder"
@@ -136,6 +148,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
+import { Share } from '@element-plus/icons-vue'
 import FolderTreeNode from './FolderTreeNode.vue'
 
 const props = defineProps({
@@ -143,9 +156,10 @@ const props = defineProps({
   readOnly: { type: Boolean, default: false },
   batchCounts: { type: Object, default: () => ({}) },
   showBatchBadges: { type: Boolean, default: false },
+  shareEnabled: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply'])
+const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply', 'share-folder'])
 
 const expandedIds = ref(new Set())
 const selectedFolderId = ref(null)
@@ -182,6 +196,11 @@ function getBatchCount(folderId) {
 function openBatchFolder(folderId) {
   selectFolder(folderId)
   emit('batch-apply', folderId)
+}
+
+function shareFolder(folder) {
+  if (!props.shareEnabled || !folder?.id) return
+  emit('share-folder', folder)
 }
 
 function startCreate(parentId) {
@@ -370,6 +389,36 @@ defineExpose({ selectedFolderId, selectFolder })
   background: #fff;
   cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+.folder-share-action {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--ui-ink-soft, #6e6e73);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(3px);
+  transition: opacity 150ms ease, transform 150ms ease, color 150ms ease, background 150ms ease;
+}
+.folder-tree-row:hover .folder-share-action,
+.folder-tree-row:focus-within .folder-share-action,
+.folder-share-action:focus-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+.folder-share-action:hover {
+  color: #fff;
+  background: #1d1d1f;
+}
+.folder-share-action:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 1px;
 }
 .folder-batch-badge:hover {
   color: #fff;

@@ -133,11 +133,14 @@ test('DataBank crowd automation only clicks the final apply control when explici
   assert.match(databank, /auto_apply_submitted/)
 })
 
-test('DataBank parameter paste waits for stable controls and a confirmed dialog close', () => {
+test('DataBank parameter paste uses a stable live trigger, one retry, and a confirmed dialog close', () => {
   const background = read('background.js')
   const databank = read('databank-automation.js')
 
-  assert.match(background, /PARAM_PAGE_SETTLE_MS/)
+  assert.doesNotMatch(background, /PARAM_PAGE_SETTLE_MS/)
+  assert.match(databank, /PARAM_TRIGGER_STABLE_CHECKS = 2/)
+  assert.match(databank, /PARAM_TRIGGER_CLICK_ATTEMPTS = 2/)
+  assert.match(databank, /const initialTextareaNode = await openImportDialog\(triggerNode, trail\)/)
   assert.match(databank, /stableInteractiveChecks >= 2/)
   assert.match(databank, /PARAM_DIALOG_SETTLE_MS/)
   assert.match(databank, /PARAM_VALUE_SETTLE_MS/)

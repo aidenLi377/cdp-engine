@@ -20,7 +20,8 @@ test('account panel receives more width than invitations without overflowing its
     adminCenterVue,
     /\.admin-panels \{[^}]*grid-template-columns: minmax\(0, 0\.92fr\) minmax\(0, 1\.08fr\);/s,
   )
-  assert.match(adminCenterVue, /\.users-table \{ min-width: 610px; \}/)
+  assert.match(adminCenterVue, /\.users-table \{[^}]*min-width: 0;[^}]*table-layout: fixed;/s)
+  assert.doesNotMatch(adminCenterVue, /\.users-table \{ min-width: 610px; \}/)
 })
 
 test('release controls keep status and note actions vertically centered', () => {

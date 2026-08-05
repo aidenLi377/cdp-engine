@@ -3387,6 +3387,11 @@ body,
   transform: translate3d(calc(var(--app-nav-item-width) * 2), 0, 0);
 }
 
+.app-shell-nav .app-mode-switcher.is-admin::before {
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+}
+
 .app-shell-nav .app-mode-switcher .el-radio-button {
   position: relative;
   z-index: 1;

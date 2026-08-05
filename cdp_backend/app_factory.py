@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import logging
+import io
 import json
+import logging
 import os
+import re
 import sys
+import zipfile
 from datetime import timedelta
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from threading import Lock
 
-from flask import Flask, abort, g, jsonify, request, send_from_directory, session
+from flask import Flask, abort, g, jsonify, request, send_file, send_from_directory, session
 from flask_cors import CORS
 
 from .constants import BASE_DIR, DB_PATH
@@ -20,6 +24,13 @@ from .dimension_store import (
 )
 from .engine import ConfigEngine
 from .folder_store import FolderAccessError, FolderNotFoundError, FolderStore
+from .folder_share_store import (
+    FolderShareAccessError,
+    FolderShareExpiredError,
+    FolderShareNotFoundError,
+    FolderShareStore,
+    InvalidFolderSharePhraseError,
+)
 from .solution_store import (
     InvalidSolutionStateError,
     SolutionAccessError,
@@ -72,6 +83,10 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     app.config["SECRET_KEY"] = secret_key if secret_key else "dev-secret-change-in-production"
     app.config["JSON_AS_ASCII"] = False
     app.config["DB_PATH"] = os.environ.get("CDP_DB_PATH", DB_PATH)
+    app.config["EXTENSION_DIR"] = os.environ.get(
+        "CDP_EXTENSION_DIR",
+        os.path.join(BASE_DIR, "DMP_PluginV2.1-CDP-Merged"),
+    )
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     app.config["SESSION_COOKIE_SECURE"] = production
@@ -84,6 +99,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     db_path = app.config["DB_PATH"]
     solution_store = SolutionStore(db_path)
     folder_store = FolderStore(db_path)
+    folder_share_store = FolderShareStore(db_path)
     task_store = TaskStore(db_path)
     user_store = UserStore(db_path)
     dimension_store = DimensionStore(db_path)
@@ -113,6 +129,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
         production,
         solution_store,
         folder_store,
+        folder_share_store,
         task_store,
         user_store,
         dimension_store,
@@ -126,6 +143,7 @@ def register_routes(
     production: bool,
     solution_store: SolutionStore,
     folder_store: FolderStore,
+    folder_share_store: FolderShareStore,
     task_store: TaskStore,
     user_store: UserStore,
     dimension_store: DimensionStore,
@@ -707,6 +725,43 @@ def register_routes(
     def get_packages():
         return metadata_response(list(engine.packages.keys()))
 
+    @app.route("/api/extension/download")
+    def download_extension():
+        extension_dir = Path(app.config["EXTENSION_DIR"]).resolve()
+        manifest_path = extension_dir / "manifest.json"
+        if not extension_dir.is_dir() or not manifest_path.is_file():
+            app.logger.error("Extension package directory is unavailable: %s", extension_dir)
+            return error_response("EXTENSION_PACKAGE_UNAVAILABLE", "扩展安装包暂不可用", 404)
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            version = str(manifest.get("version") or "latest").strip()
+            if not re.fullmatch(r"\d+(?:\.\d+){1,3}", version):
+                version = "latest"
+        except (AttributeError, OSError, ValueError, TypeError):
+            version = "latest"
+
+        archive_root = f"DMP_PluginV{version}-CDP-Merged"
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for file_path in sorted(extension_dir.rglob("*")):
+                if not file_path.is_file():
+                    continue
+                relative = file_path.relative_to(extension_dir)
+                if any(part in {".git", "__pycache__", "tests"} for part in relative.parts):
+                    continue
+                archive.write(file_path, f"{archive_root}/{relative.as_posix()}")
+        buffer.seek(0)
+
+        response = send_file(
+            buffer,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=f"DMP_PluginV{version}-CDP-Merged.zip",
+        )
+        response.cache_control.no_store = True
+        return response
+
     @app.route("/api/health")
     def health_check():
         return jsonify({"status": "ok"})
@@ -1025,6 +1080,105 @@ def register_routes(
         except SolutionAccessError:
             return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能直接修改，请先复制到我的方案", 403)
         return jsonify(updated)
+
+    @app.route("/api/folders/<folder_id>/share", methods=["POST"])
+    def create_folder_share(folder_id: str):
+        shared_by = (
+            g.current_user.get("displayName")
+            or g.current_user.get("username")
+            or "系统用户"
+        )
+        try:
+            created = folder_share_store.create_share(
+                folder_id,
+                g.current_user["id"],
+                shared_by,
+            )
+        except FolderShareAccessError:
+            return error_response(
+                "PERSONAL_FOLDER_REQUIRED",
+                "只能分享自己账号中的个人方案文件夹",
+                403,
+            )
+        user_store.record_audit(
+            g.current_user["id"],
+            "folder_share_created",
+            details={
+                "folderId": folder_id,
+                "folderName": created["folderName"],
+                "folderCount": created["folderCount"],
+                "solutionCount": created["solutionCount"],
+                "expiresAt": created["expiresAt"],
+            },
+        )
+        return jsonify(created), 201
+
+    @app.route("/api/folder-shares/preview", methods=["POST"])
+    def preview_folder_share():
+        payload = request.get_json(silent=True) or {}
+        try:
+            preview = folder_share_store.preview(payload.get("text"))
+        except InvalidFolderSharePhraseError:
+            return error_response(
+                "INVALID_FOLDER_SHARE_PHRASE",
+                "没有识别到有效的方案文件夹口令",
+                400,
+            )
+        except FolderShareNotFoundError:
+            return error_response(
+                "FOLDER_SHARE_NOT_FOUND",
+                "该方案口令不存在或已失效",
+                404,
+            )
+        except FolderShareExpiredError:
+            return error_response(
+                "FOLDER_SHARE_EXPIRED",
+                "该方案口令已过期，请联系分享人重新生成",
+                410,
+            )
+        return jsonify(preview)
+
+    @app.route("/api/folder-shares/import", methods=["POST"])
+    def import_folder_share():
+        payload = request.get_json(silent=True) or {}
+        try:
+            imported = folder_share_store.import_share(
+                payload.get("text"),
+                g.current_user["id"],
+            )
+        except InvalidFolderSharePhraseError:
+            return error_response(
+                "INVALID_FOLDER_SHARE_PHRASE",
+                "没有识别到有效的方案文件夹口令",
+                400,
+            )
+        except FolderShareNotFoundError:
+            return error_response(
+                "FOLDER_SHARE_NOT_FOUND",
+                "该方案口令不存在或已失效",
+                404,
+            )
+        except FolderShareExpiredError:
+            return error_response(
+                "FOLDER_SHARE_EXPIRED",
+                "该方案口令已过期，请联系分享人重新生成",
+                410,
+            )
+        source_owner_id = imported.pop("sourceOwnerId")
+        share_id = imported.pop("shareId")
+        user_store.record_audit(
+            g.current_user["id"],
+            "folder_share_imported",
+            target_user_id=source_owner_id,
+            details={
+                "shareId": share_id,
+                "folderId": imported["folder"]["id"],
+                "folderName": imported["folder"]["name"],
+                "folderCount": imported["folderCount"],
+                "solutionCount": imported["solutionCount"],
+            },
+        )
+        return jsonify(imported), 201
 
     @app.route("/api/folders")
     def list_folders():

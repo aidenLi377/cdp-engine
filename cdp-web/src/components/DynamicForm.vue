@@ -88,8 +88,8 @@
 
         <template v-else-if="field.Widget_Type === '单选组'">
           <el-radio-group v-model="node.formData[field.key]" @change="field.key === 'title_type' && $event === '任意商品标题关键字' ? node.formData.title = [] : null" class="intercom-radio-group">
-            <el-radio-button label="任意商品标题关键字">任意商品标题关键字</el-radio-button>
-            <el-radio-button label="指定商品标题关键字">指定商品标题关键字</el-radio-button>
+            <el-radio-button value="任意商品标题关键字">任意商品标题关键字</el-radio-button>
+            <el-radio-button value="指定商品标题关键字">指定商品标题关键字</el-radio-button>
           </el-radio-group>
         </template>
 
@@ -158,16 +158,16 @@
 
         <template v-else-if="field.Widget_Type === '复选组'">
           <el-checkbox-group v-model="node.formData[field.key]" class="custom-checkbox-group" @change="handleCheckboxChange(field, $event, node)">
-            <el-checkbox v-for="opt in field.options" :key="opt" :label="opt" :disabled="isCheckboxDisabled(field, opt, node)">{{ opt }}</el-checkbox>
+            <el-checkbox v-for="opt in field.options" :key="opt" :value="opt" :disabled="isCheckboxDisabled(field, opt, node)">{{ opt }}</el-checkbox>
           </el-checkbox-group>
         </template>
 
         <template v-else-if="field.Widget_Type === '数值_切换'">
           <div class="range-block">
             <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group">
-              <el-radio-button label="unlimited">不限</el-radio-button>
-              <el-radio-button label="min">≥ 最小值</el-radio-button>
-              <el-radio-button label="range">自定义区间</el-radio-button>
+              <el-radio-button value="unlimited">不限</el-radio-button>
+              <el-radio-button value="min">≥ 最小值</el-radio-button>
+              <el-radio-button value="range">自定义区间</el-radio-button>
             </el-radio-group>
             <div class="range-inputs" v-if="node.modeData[field.key] !== 'unlimited'">
               <el-input-number v-model="node.formData[field.key].min" :min="0" :controls="false" placeholder="最小值" size="small" class="intercom-input" style="width:140px" />
@@ -180,12 +180,12 @@
         <template v-else-if="field.Widget_Type === '日期_切换'">
           <div class="range-block">
             <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group">
-              <el-radio-button label="recent">过去 N 天</el-radio-button>
+              <el-radio-button value="recent">过去 N 天</el-radio-button>
               <DateQuickRangePopover
                 :disabled="props.readonly"
                 @select="(dateRange) => applyQuickDateRange(node, field, dateRange)"
               >
-                <el-radio-button label="range">固定日期</el-radio-button>
+                <el-radio-button value="range">固定日期</el-radio-button>
               </DateQuickRangePopover>
             </el-radio-group>
             <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs">

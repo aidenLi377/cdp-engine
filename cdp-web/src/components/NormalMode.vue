@@ -33,8 +33,8 @@
         aria-label="选择方案库"
         @change="switchPublishedLibrary"
       >
-        <el-radio-button label="mine">我的方案</el-radio-button>
-        <el-radio-button label="public">公共方案</el-radio-button>
+        <el-radio-button value="mine">我的方案</el-radio-button>
+        <el-radio-button value="public">公共方案</el-radio-button>
       </el-radio-group>
 
       <FolderTree
@@ -167,6 +167,15 @@
 
         <div class="workbench-secondary-actions">
           <template v-if="workbenchMode === 'solution-use'">
+            <el-button
+              v-if="batchMode"
+              class="workbench-compact-action danger"
+              size="small"
+              text
+              @click="clearCanvas"
+            >
+              清空组合
+            </el-button>
             <el-tooltip content="恢复方案默认值" placement="top">
               <el-button
                 class="workbench-toolbar-icon-btn"
@@ -373,9 +382,9 @@
               <div v-if="index > 0" class="logic-connector">
                 <div class="connector-line"></div>
                 <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" :disabled="batchMode">
-                  <el-radio-button label="n">交集</el-radio-button>
-                  <el-radio-button label="u">并集</el-radio-button>
-                  <el-radio-button label="d">差集</el-radio-button>
+                  <el-radio-button value="n">交集</el-radio-button>
+                  <el-radio-button value="u">并集</el-radio-button>
+                  <el-radio-button value="d">差集</el-radio-button>
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
@@ -403,20 +412,15 @@
 	                        <el-icon><CopyDocument /></el-icon>
 	                      </el-button>
 	                    </el-tooltip>
-	                    <el-popconfirm
-	                      title="确定移除这个节点？"
-	                      confirm-button-text="移除"
-	                      cancel-button-text="取消"
-	                      @confirm="removeNode(index)"
-	                    >
-	                      <template #reference>
-	                        <el-tooltip content="移除节点" placement="top">
-	                          <el-button class="behavior-card-icon-btn danger" @click.stop="removeNode(index)">
-	                            <el-icon><Delete /></el-icon>
-	                          </el-button>
-	                        </el-tooltip>
-	                      </template>
-	                    </el-popconfirm>
+	                    <el-tooltip content="移除节点" placement="top">
+	                      <el-button
+	                        class="behavior-card-icon-btn danger"
+	                        aria-label="移除节点"
+	                        @click.stop="removeNode(index)"
+	                      >
+	                        <el-icon><Delete /></el-icon>
+	                      </el-button>
+	                    </el-tooltip>
 	                  </div>
                 </div>
                 <div v-if="node._hydrationError" v-show="!(collapsedCfId || node.collapsed)" class="hydration-error-body">
@@ -484,9 +488,9 @@
             <div v-if="index > 0" class="logic-connector">
               <div class="connector-line"></div>
               <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
-                <el-radio-button label="n">交集 (n)</el-radio-button>
-                <el-radio-button label="u">并集 (u)</el-radio-button>
-                <el-radio-button label="d">差集 (d)</el-radio-button>
+	                <el-radio-button value="n">交集 (n)</el-radio-button>
+	                <el-radio-button value="u">并集 (u)</el-radio-button>
+	                <el-radio-button value="d">差集 (d)</el-radio-button>
               </el-radio-group>
               <div class="connector-line"></div>
             </div>
@@ -514,20 +518,15 @@
 	                      <el-icon><CopyDocument /></el-icon>
 	                    </el-button>
 	                  </el-tooltip>
-	                  <el-popconfirm
-	                    title="确定移除这个节点？"
-	                    confirm-button-text="移除"
-	                    cancel-button-text="取消"
-	                    @confirm="removeNode(index)"
-	                  >
-	                    <template #reference>
-	                      <el-tooltip content="移除节点" placement="top">
-	                        <el-button class="behavior-card-icon-btn danger" @click.stop="removeNode(index)">
-	                          <el-icon><Delete /></el-icon>
-	                        </el-button>
-	                      </el-tooltip>
-	                    </template>
-	                  </el-popconfirm>
+	                  <el-tooltip content="移除节点" placement="top">
+	                    <el-button
+	                      class="behavior-card-icon-btn danger"
+	                      aria-label="移除节点"
+	                      @click.stop="removeNode(index)"
+	                    >
+	                      <el-icon><Delete /></el-icon>
+	                    </el-button>
+	                  </el-tooltip>
 	                </div>
               </div>
               <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
@@ -888,6 +887,16 @@ import {
   collectUniqueCustomFieldNames,
 } from '../utils/solutionBatch.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
+import {
+  readSessionWorkspace,
+  removeSessionWorkspace,
+  writeSessionWorkspace,
+} from '../utils/sessionWorkspace.js'
+import { validateWorkbenchOutput } from '../utils/workbenchValidation.js'
+
+const props = defineProps({
+  sessionOwnerId: { type: String, default: '' },
+})
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'
@@ -899,6 +908,8 @@ const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
 const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
 const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
+const WORKBENCH_SESSION_KEY = 'workbench.v1'
+const WORKBENCH_SESSION_VERSION = 1
 
 const { getArray, isVisible } = useCdpShared()
 const {
@@ -936,6 +947,7 @@ const dragOverIndex = ref(-1)
 const historyStack = ref([])
 const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
+const jsonBuildStatus = ref('empty')
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
@@ -978,6 +990,9 @@ let dragSrcIndex = null
 let saveTimer = null
 let jsonTimer = null
 let jsonBuildAbort = null
+let sessionSaveTimer = null
+let sessionRestorePending = true
+let sessionPersistenceDisabled = false
 
 provide('solutionCenterContext', {
   highlightedCustomFieldId: null,
@@ -2026,12 +2041,16 @@ async function restoreActiveDefaults() {
 }
 
 async function buildFinalJson() {
+  clearTimeout(jsonTimer)
+  jsonTimer = null
   jsonBuildAbort?.abort()
   const buildAbort = new AbortController()
   jsonBuildAbort = buildAbort
+  jsonBuildStatus.value = 'building'
 
   if (nodeList.value.length === 0) {
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
+    jsonBuildStatus.value = 'empty'
     if (batchMode.value && activeBatchEntry.value) {
       activeBatchEntry.value.generatedJson = cloneValue(generatedJson.value)
     }
@@ -2041,6 +2060,7 @@ async function buildFinalJson() {
 
   const list = []
   let compute = '(0)'
+  let generationFailed = false
 
   for (let index = 0; index < nodeList.value.length; index += 1) {
     const node = nodeList.value[index]
@@ -2093,6 +2113,7 @@ async function buildFinalJson() {
         body: JSON.stringify(payload),
         signal: buildAbort.signal,
       })
+      if (!response.ok) throw new Error(`生成接口返回 ${response.status}`)
       const nodeJson = await response.json()
       if (nodeJson?.list?.length > 0) {
         const baseTemplate = nodeJson.list[0]
@@ -2102,9 +2123,12 @@ async function buildFinalJson() {
           compute += `${node.operator}(${index})`
         }
         list.push(baseTemplate)
+      } else {
+        throw new Error('生成接口未返回有效结果')
       }
     } catch (error) {
       if (error.name === 'AbortError') return
+      generationFailed = true
       console.error('JSON 生成失败，请检查后端服务状态', error)
     }
   }
@@ -2120,6 +2144,7 @@ async function buildFinalJson() {
   if (batchMode.value && activeBatchEntry.value) {
     activeBatchEntry.value.generatedJson = cloneValue(generatedJson.value)
   }
+  jsonBuildStatus.value = generationFailed ? 'failed' : 'ready'
   if (jsonBuildAbort === buildAbort) jsonBuildAbort = null
 }
 
@@ -2209,6 +2234,17 @@ function getGeneratedJsonText() {
   return JSON.stringify(generatedJson.value, null, isPureOfficialParityOutput() ? '\t' : 4)
 }
 
+function ensureGeneratedOutputReady(actionLabel = '继续') {
+  const validation = validateWorkbenchOutput({
+    nodes: nodeList.value,
+    generatedJson: generatedJson.value,
+    generationStatus: jsonBuildStatus.value,
+  })
+  if (validation.valid) return true
+  ElMessage.warning(`${actionLabel}前请完成检查：${validation.issues.join('；')}`)
+  return false
+}
+
 function getPreviewJsonText() {
   return JSON.stringify(generatedJson.value, null, 2)
 }
@@ -2219,6 +2255,8 @@ async function copyJson() {
     batchCopyDialogVisible.value = true
     return
   }
+
+  if (!ensureGeneratedOutputReady('复制')) return
 
   try {
     await navigator.clipboard.writeText(getGeneratedJsonText())
@@ -2233,6 +2271,7 @@ async function confirmBatchCopy() {
   batchCopying.value = true
   try {
     await activateBatchEntry(Number(batchCopyIndex.value))
+    if (!ensureGeneratedOutputReady('复制')) return
     await navigator.clipboard.writeText(getGeneratedJsonText())
     batchCopyDialogVisible.value = false
     ElMessage.success(`已复制“${activeBatchEntry.value?.crowdName || '当前人群包'}”参数`)
@@ -2335,6 +2374,12 @@ async function startBatchAutomationFlow(scope = 'current') {
       await activateBatchEntry(index)
       pendingMessage.close()
 
+      if (!ensureGeneratedOutputReady('自动化执行')) {
+        entry.automationStatus = 'failed'
+        batchEntries.value = [...batchEntries.value]
+        throw new Error('生成接口暂未就绪，请稍后重试')
+      }
+
       const currentPendingMessage = ElMessage({
         message: `正在圈选“${entry.crowdName}” · ${completed + 1}/${targetIndexes.length}`,
         type: 'info',
@@ -2370,6 +2415,8 @@ async function startBatchAutomationFlow(scope = 'current') {
 
 async function startAutoDataBankFlow() {
   if (databankAutomating.value) return
+  await buildFinalJson()
+  if (!ensureGeneratedOutputReady('自动化执行')) return
 
   databankAutomating.value = true
   const pendingMessage = ElMessage({
@@ -2394,6 +2441,178 @@ async function startAutoDataBankFlow() {
   }
 }
 
+function serializeBatchEntryForSession(entry, index) {
+  const isActive = index === activeBatchIndex.value
+  const nodes = isActive ? nodeList.value : entry?.nodes
+  const record = isActive ? currentSolution.value : entry?.record
+  const crowdName = isActive ? crowdNameInput.value : entry?.crowdName
+  const entryGeneratedJson = isActive ? generatedJson.value : entry?.generatedJson
+
+  return {
+    ...cloneValue(entry || {}),
+    record: cloneValue(record),
+    sourceRecord: cloneValue(entry?.sourceRecord),
+    crowdName: String(crowdName || '').trim(),
+    nodes: serializeNodesForSolution(nodes),
+    sourceNodes: serializeNodesForSolution(entry?.sourceNodes),
+    generatedJson: cloneValue(entryGeneratedJson),
+  }
+}
+
+function buildWorkbenchSessionPayload() {
+  return {
+    version: WORKBENCH_SESSION_VERSION,
+    savedAt: new Date().toISOString(),
+    workbenchMode: workbenchMode.value,
+    nodeList: serializeNodesForSolution(nodeList.value),
+    crowdNameInput: crowdNameInput.value,
+    currentSolution: cloneValue(currentSolution.value),
+    loadedSolutionRecord: cloneValue(loadedSolutionRecord.value),
+    loadedSolutionFieldIds: [...loadedSolutionFieldIds.value],
+    generatedJson: cloneValue(generatedJson.value),
+    derivedSolutionMeta: cloneValue(toRaw(derivedSolutionMeta)),
+    ui: {
+      jsonViewMode: jsonViewMode.value,
+      publishedLibraryScope: publishedLibraryScope.value,
+      pkgSearch: pkgSearch.value,
+      solutionSearch: solutionSearch.value,
+      leftPanelMode: leftPanelMode.value,
+      activeNodeIndex: activeNodeIndex.value,
+      selectedPublishedFolderId: selectedPublishedFolderId.value,
+      highlightedCfId: highlightedCfId.value,
+      collapsedCfId: collapsedCfId.value,
+    },
+    batch: {
+      enabled: batchMode.value,
+      entries: batchEntries.value.map(serializeBatchEntryForSession),
+      activeIndex: activeBatchIndex.value,
+      folderName: batchFolderName.value,
+      sourceFolderId: batchSourceFolderId.value,
+      automationScope: batchAutomationScope.value,
+    },
+  }
+}
+
+function persistWorkbenchSession() {
+  if (sessionRestorePending || sessionPersistenceDisabled || !props.sessionOwnerId) return
+  writeSessionWorkspace(
+    WORKBENCH_SESSION_KEY,
+    props.sessionOwnerId,
+    buildWorkbenchSessionPayload(),
+  )
+}
+
+function scheduleWorkbenchSessionSave() {
+  if (sessionRestorePending || sessionPersistenceDisabled) return
+  clearTimeout(sessionSaveTimer)
+  sessionSaveTimer = setTimeout(persistWorkbenchSession, 250)
+}
+
+async function restoreWorkbenchSession() {
+  const stored = readSessionWorkspace(WORKBENCH_SESSION_KEY, props.sessionOwnerId)
+  if (!stored) return false
+  if (stored.version !== WORKBENCH_SESSION_VERSION) {
+    removeSessionWorkspace(WORKBENCH_SESSION_KEY)
+    return false
+  }
+
+  snapshotPaused.value = true
+  try {
+    const ui = stored.ui || {}
+    jsonViewMode.value = ['summary', 'json'].includes(ui.jsonViewMode) ? ui.jsonViewMode : 'summary'
+    publishedLibraryScope.value = ['mine', 'public'].includes(ui.publishedLibraryScope)
+      ? ui.publishedLibraryScope
+      : 'mine'
+    pkgSearch.value = String(ui.pkgSearch || '')
+    solutionSearch.value = String(ui.solutionSearch || '')
+    leftPanelMode.value = ['packages', 'solutions'].includes(ui.leftPanelMode)
+      ? ui.leftPanelMode
+      : 'packages'
+    selectedPublishedFolderId.value = ui.selectedPublishedFolderId || null
+    highlightedCfId.value = ui.highlightedCfId || null
+    collapsedCfId.value = ui.collapsedCfId || null
+
+    const savedBatchEntries = Array.isArray(stored.batch?.entries) ? stored.batch.entries : []
+    if (stored.batch?.enabled && savedBatchEntries.length > 0) {
+      const restoredEntries = []
+      for (const entry of savedBatchEntries) {
+        const [nodes, sourceNodes] = await Promise.all([
+          hydrateNodes(entry?.nodes || []),
+          hydrateNodes(entry?.sourceNodes || entry?.nodes || []),
+        ])
+        restoredEntries.push({ ...cloneValue(entry), nodes, sourceNodes })
+      }
+      batchEntries.value = restoredEntries
+      activeBatchIndex.value = Math.min(
+        Math.max(Number(stored.batch.activeIndex) || 0, 0),
+        restoredEntries.length - 1,
+      )
+      batchFolderName.value = String(stored.batch.folderName || '')
+      batchSourceFolderId.value = stored.batch.sourceFolderId || null
+      batchAutomationScope.value = stored.batch.automationScope === 'all' ? 'all' : 'current'
+      batchMode.value = true
+
+      const activeEntry = restoredEntries[activeBatchIndex.value]
+      nodeList.value = activeEntry.nodes
+      currentSolution.value = activeEntry.record || null
+      loadedSolutionRecord.value = activeEntry.sourceRecord || null
+      loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(
+        activeEntry.record?.workbenchFieldIds || [],
+        activeEntry.nodes,
+      )
+      crowdNameInput.value = String(activeEntry.crowdName || '')
+      generatedJson.value = activeEntry.generatedJson || {
+        crowdName: crowdNameInput.value || DEFAULT_CROWD_NAME,
+        list: [],
+        compute: '',
+      }
+      workbenchMode.value = 'solution-use'
+    } else {
+      resetBatchContext()
+      nodeList.value = await hydrateNodes(stored.nodeList || [])
+      currentSolution.value = cloneValue(stored.currentSolution)
+      loadedSolutionRecord.value = cloneValue(stored.loadedSolutionRecord)
+      loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(
+        stored.loadedSolutionFieldIds || [],
+        nodeList.value,
+      )
+      crowdNameInput.value = String(stored.crowdNameInput || '')
+      generatedJson.value = stored.generatedJson || {
+        crowdName: crowdNameInput.value || DEFAULT_CROWD_NAME,
+        list: [],
+        compute: '',
+      }
+      workbenchMode.value = stored.workbenchMode === 'solution-use' ? 'solution-use' : 'free-build'
+    }
+
+    Object.assign(derivedSolutionMeta, {
+      sourceSolutionId: stored.derivedSolutionMeta?.sourceSolutionId || null,
+      sourceSolutionVersion: stored.derivedSolutionMeta?.sourceSolutionVersion ?? null,
+      sourceSolutionName: stored.derivedSolutionMeta?.sourceSolutionName || '',
+      hasStructureChanges: stored.derivedSolutionMeta?.hasStructureChanges === true,
+      hasParamChanges: stored.derivedSolutionMeta?.hasParamChanges === true,
+    })
+    activeNodeIndex.value = Math.min(
+      Math.max(Number(ui.activeNodeIndex) || 0, 0),
+      Math.max(nodeList.value.length - 1, 0),
+    )
+    nodeRefs.value = {}
+    await nextTick()
+    resetHistory()
+    return true
+  } catch {
+    removeSessionWorkspace(WORKBENCH_SESSION_KEY)
+    nodeList.value = []
+    crowdNameInput.value = ''
+    generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
+    resetWorkbenchContext()
+    ElMessage.warning('上次工作台恢复失败，已回到安全的空白状态')
+    return false
+  } finally {
+    snapshotPaused.value = false
+  }
+}
+
 function handleKeydown(event) {
   if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
     event.preventDefault()
@@ -2409,7 +2628,6 @@ watch(
   [nodeList, crowdNameInput],
   ([nextNodes]) => {
     enforceWorkbenchFieldConstraints(nextNodes)
-    jsonBuildAbort?.abort()
     clearTimeout(jsonTimer)
     jsonTimer = setTimeout(async () => {
       await buildFinalJson()
@@ -2419,7 +2637,34 @@ watch(
       markDerivedParamChange()
       debouncedSnapshot()
     }
+    scheduleWorkbenchSessionSave()
   },
+  { deep: true },
+)
+
+watch(
+  [
+    workbenchMode,
+    currentSolution,
+    loadedSolutionRecord,
+    loadedSolutionFieldIds,
+    jsonViewMode,
+    publishedLibraryScope,
+    pkgSearch,
+    solutionSearch,
+    leftPanelMode,
+    activeNodeIndex,
+    selectedPublishedFolderId,
+    highlightedCfId,
+    collapsedCfId,
+    batchMode,
+    batchEntries,
+    activeBatchIndex,
+    batchFolderName,
+    batchSourceFolderId,
+    batchAutomationScope,
+  ],
+  scheduleWorkbenchSessionSave,
   { deep: true },
 )
 
@@ -2470,14 +2715,24 @@ async function handleConfigVersionChanged(event) {
   }
 }
 
+function disableSessionPersistence() {
+  sessionPersistenceDisabled = true
+  clearTimeout(sessionSaveTimer)
+}
+
 onMounted(async () => {
   window.addEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
+  window.addEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
   await Promise.all([loadPackages(), loadPublishedSolutions()])
-  resetHistory()
+  const restored = await restoreWorkbenchSession()
+  sessionRestorePending = false
+  if (!restored) resetHistory()
+  scheduleWorkbenchSessionSave()
   window.addEventListener('keydown', handleKeydown)
+  window.addEventListener('beforeunload', persistWorkbenchSession)
   cfResizeObserver = new ResizeObserver(() => {
     nextTick(() => updateCfOverflow())
   })
@@ -2489,8 +2744,12 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(jsonTimer)
+  clearTimeout(sessionSaveTimer)
+  persistWorkbenchSession()
   jsonBuildAbort?.abort()
   window.removeEventListener('keydown', handleKeydown)
+  window.removeEventListener('beforeunload', persistWorkbenchSession)
+  window.removeEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.removeEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()

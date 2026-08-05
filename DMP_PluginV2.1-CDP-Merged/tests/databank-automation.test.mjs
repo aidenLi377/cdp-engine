@@ -144,6 +144,7 @@ function createContentHarness(options = {}) {
   let frameworkInputAccepted = false
   let rerenderCount = 0
   let triggerClickAt = null
+  let triggerClickCount = 0
 
   const trigger = new FakeElement('span', '参数粘贴')
   const loadingMask = new FakeElement('div')
@@ -232,7 +233,9 @@ function createContentHarness(options = {}) {
   dialogRoot.isConnected = false
 
   trigger.click = () => {
-    triggerClickAt = now
+    triggerClickCount += 1
+    if (triggerClickAt == null) triggerClickAt = now
+    if (triggerClickCount < (options.triggerOpensDialogOnAttempt || 1)) return
     dialogOpen = true
     dialogRoot.isConnected = true
   }
@@ -256,7 +259,15 @@ function createContentHarness(options = {}) {
       return { singleNodeValue: node }
     },
     readyState: 'complete',
-    body: { textContent: '数据引擎 参数配置 参数粘贴', scrollHeight: 900 },
+    body: {
+      get textContent() {
+        const churnSuffix = options.unrelatedDomChurnUntilMs != null && now < options.unrelatedDomChurnUntilMs
+          ? ` ${Math.floor(now / 100)}`
+          : ''
+        return `数据引擎 参数配置 参数粘贴${churnSuffix}`
+      },
+      scrollHeight: 900,
+    },
     documentElement: { scrollHeight: 900 },
     images: [],
     fonts: { status: 'loaded' },
@@ -331,13 +342,14 @@ function createContentHarness(options = {}) {
         frameworkInputAccepted,
         rerenderCount,
         triggerClickAt,
+        triggerClickCount,
         now,
       }
     },
   }
 }
 
-test('content automation waits for the full parameter page to settle before clicking paste', async () => {
+test('content automation clicks shortly after the loading mask clears and the paste trigger is stable', async () => {
   const pageLoadingUntilMs = 2500
   const harness = createContentHarness({ pageLoadingUntilMs })
 
@@ -348,7 +360,32 @@ test('content automation waits for the full parameter page to settle before clic
 
   assert.equal(response.ok, true)
   assert.ok(response.trail.some((entry) => entry.step === 'page_initialized'))
-  assert.ok(harness.getState().triggerClickAt >= pageLoadingUntilMs + 3500)
+  assert.ok(harness.getState().triggerClickAt >= pageLoadingUntilMs)
+  assert.ok(harness.getState().triggerClickAt < pageLoadingUntilMs + 1000)
+})
+
+test('unrelated page text changes do not postpone a ready paste trigger', async () => {
+  const harness = createContentHarness({ unrelatedDomChurnUntilMs: 10000 })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"dynamic-page"}',
+  })
+
+  assert.equal(response.ok, true)
+  assert.ok(harness.getState().triggerClickAt < 1000)
+})
+
+test('content automation retries the live paste trigger once when the dialog does not open', async () => {
+  const harness = createContentHarness({ triggerOpensDialogOnAttempt: 2 })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"retry-paste"}',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(harness.getState().triggerClickCount, 2)
 })
 
 test('crowd push finds Alimama inside the visible dialog and clicks the refreshed live node', () => {

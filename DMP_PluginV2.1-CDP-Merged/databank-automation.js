@@ -21,10 +21,11 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const PARAM_DIALOG_SETTLE_MS = 700;
   const PARAM_VALUE_SETTLE_MS = 900;
   const PARAM_COMPLETION_SETTLE_MS = 1500;
-  const PARAM_PAGE_STABLE_CHECKS = 4;
-  const PARAM_PAGE_POLL_MS = 500;
-  const PARAM_PAGE_FINAL_SETTLE_MS = 2000;
-  const PARAM_PAGE_READY_TIMEOUT_MS = 90000;
+  const PARAM_TRIGGER_STABLE_CHECKS = 2;
+  const PARAM_TRIGGER_POLL_MS = 250;
+  const PARAM_TRIGGER_READY_TIMEOUT_MS = 90000;
+  const PARAM_DIALOG_OPEN_TIMEOUT_MS = 1500;
+  const PARAM_TRIGGER_CLICK_ATTEMPTS = 2;
   const CROWD_DIALOG_POLL_MS = 500;
   const CROWD_DIALOG_FINAL_SETTLE_MS = 2000;
   const CROWD_DIALOG_READY_TIMEOUT_MS = 60000;
@@ -111,64 +112,41 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return hasVisibleLoadingIndicator(document);
   }
 
-  function getParamPageSignature() {
-    if (!window.location.href.includes('databank.tmall.com/#/userDefinedAnalyses')) return '';
-    if (document.readyState && document.readyState !== 'complete') return '';
-    if (document.fonts?.status === 'loading') return '';
-    if (Array.from(document.images || []).some((image) => !image.complete)) return '';
-    if (isParamPageLoading()) return '';
-
+  function getReadyParamTrigger() {
+    if (!window.location.href.includes('databank.tmall.com/#/userDefinedAnalyses')) return null;
+    if (document.readyState && document.readyState !== 'complete') return null;
+    if (isParamPageLoading()) return null;
     const triggerNode = getParamTriggerNode();
-    if (!isNodeInteractive(triggerNode)) return '';
-
-    const allElementCount = document.querySelectorAll('*').length;
-    const visibleControlCount = Array.from(
-      document.querySelectorAll('input, textarea, button, [role="button"]')
-    ).filter(isNodeVisible).length;
-    const bodyTextLength = String(document.body?.textContent || '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .length;
-    const bodyScrollHeight = Number(
-      document.body?.scrollHeight || document.documentElement?.scrollHeight || 0
-    );
-
-    return [allElementCount, visibleControlCount, bodyTextLength, bodyScrollHeight].join('|');
+    return isNodeInteractive(triggerNode) ? triggerNode : null;
   }
 
   async function waitForParamPageInitialized() {
-    const deadline = Date.now() + PARAM_PAGE_READY_TIMEOUT_MS;
-    let previousSignature = '';
+    const deadline = Date.now() + PARAM_TRIGGER_READY_TIMEOUT_MS;
+    let previousTrigger = null;
     let stableChecks = 0;
 
     while (Date.now() < deadline) {
-      const signature = getParamPageSignature();
-      if (!signature) {
-        previousSignature = '';
+      const triggerNode = getReadyParamTrigger();
+      if (!triggerNode) {
+        previousTrigger = null;
         stableChecks = 0;
-        await sleep(PARAM_PAGE_POLL_MS);
+        await sleep(PARAM_TRIGGER_POLL_MS);
         continue;
       }
 
-      if (signature === previousSignature) stableChecks += 1;
+      if (triggerNode === previousTrigger) stableChecks += 1;
       else stableChecks = 1;
-      previousSignature = signature;
+      previousTrigger = triggerNode;
 
-      if (stableChecks >= PARAM_PAGE_STABLE_CHECKS) {
-        await sleep(PARAM_PAGE_FINAL_SETTLE_MS);
-        if (getParamPageSignature() === signature) {
-          console.info('[Databank Automation] parameter page is fully settled');
-          return { step: 'page_initialized', message: '参数页面已完整加载并保持稳定' };
-        }
-        previousSignature = '';
-        stableChecks = 0;
-        continue;
+      if (stableChecks >= PARAM_TRIGGER_STABLE_CHECKS) {
+        console.info('[Databank Automation] parameter paste trigger is ready');
+        return triggerNode;
       }
 
-      await sleep(PARAM_PAGE_POLL_MS);
+      await sleep(PARAM_TRIGGER_POLL_MS);
     }
 
-    throw new Error('等待数据引擎参数页面完整加载超时');
+    throw new Error('等待数据引擎参数粘贴入口就绪超时');
   }
 
   function getVisibleNodeByTextWithin(root, tagName, text) {
@@ -320,6 +298,34 @@ if (!window.__databankAutomationContentScriptLoaded) {
     throw new Error('等待页面元素超时: ' + label);
   }
 
+  async function waitForOptionalLocator(resolveNode, timeoutMs, intervalMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const node = resolveNode();
+      if (node) return node;
+      await sleep(intervalMs);
+    }
+    return null;
+  }
+
+  async function openImportDialog(initialTriggerNode, trail) {
+    let triggerNode = initialTriggerNode;
+    for (let attempt = 1; attempt <= PARAM_TRIGGER_CLICK_ATTEMPTS; attempt += 1) {
+      if (!isNodeInteractive(triggerNode)) triggerNode = await waitForParamPageInitialized();
+      clickNode(triggerNode);
+      trail.push({ step: 'clicked_paste', attempt });
+
+      const textareaNode = await waitForOptionalLocator(
+        () => getVisibleTextareaNode(),
+        PARAM_DIALOG_OPEN_TIMEOUT_MS,
+        100
+      );
+      if (textareaNode) return textareaNode;
+      if (attempt < PARAM_TRIGGER_CLICK_ATTEMPTS) triggerNode = await waitForParamPageInitialized();
+    }
+    throw new Error('点击参数粘贴后未出现导入输入框');
+  }
+
   async function waitForImportDialogClosed(dialogRoot, timeoutMs, intervalMs) {
     if (!dialogRoot) return;
     timeoutMs = timeoutMs || 10000;
@@ -379,7 +385,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   }
 
   function isAutomationPageReady() {
-    return Boolean(getParamPageSignature());
+    return Boolean(getReadyParamTrigger());
   }
 
   function isOnDataHubPage() {
@@ -440,14 +446,9 @@ if (!window.__databankAutomationContentScriptLoaded) {
     const trail = [];
     console.info('[Databank Automation][content] param paste start');
     trail.push(await runPreflightChecks());
-    trail.push(await waitForParamPageInitialized());
-    const triggerNode = await waitForLocator(
-      () => getParamTriggerNode(),
-      '参数粘贴入口', 30000, 300
-    );
-    clickNode(triggerNode);
-    trail.push({ step: 'clicked_paste' });
-    const initialTextareaNode = await waitForLocator(() => getVisibleTextareaNode(), '导入输入框');
+    const triggerNode = await waitForParamPageInitialized();
+    trail.push({ step: 'page_initialized', message: '参数粘贴入口已就绪' });
+    const initialTextareaNode = await openImportDialog(triggerNode, trail);
     await sleep(PARAM_DIALOG_SETTLE_MS);
     inputTextarea(initialTextareaNode, jsonText);
     const textareaNode = await waitForTextareaValue(initialTextareaNode, jsonText);

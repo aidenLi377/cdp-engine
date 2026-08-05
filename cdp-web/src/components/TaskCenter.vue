@@ -3,10 +3,24 @@
     <!-- 左栏：控制台 -->
     <aside class="tc-control-panel">
       <!-- 扩展状态 -->
-      <div class="tc-ext-status" :class="{ connected: extConnected }">
+      <div class="tc-ext-status" :class="[extensionState, { connected: extConnected }]">
         <div class="tc-ext-dot"></div>
-        <span class="tc-ext-label">{{ extConnected ? '扩展已连接' : '扩展未连接' }}</span>
-        <span class="tc-ext-hint" v-if="!extConnected">请加载扩展</span>
+        <span class="tc-ext-label">{{ extensionStatusLabel }}</span>
+        <span class="tc-ext-hint">{{ extensionStatusHint }}</span>
+        <span v-if="extensionVersion && extConnected" class="tc-ext-version">V{{ extensionVersion }}</span>
+        <div class="tc-ext-actions">
+          <button
+            v-if="!extConnected"
+            type="button"
+            :disabled="installingExtension"
+            @click="downloadExtension"
+          >{{ installingExtension ? '下载中…' : '安装扩展' }}</button>
+          <button
+            type="button"
+            :disabled="extensionCheckBusy"
+            @click="checkExtension(true)"
+          >{{ extensionCheckBusy ? '检测中…' : '重新检测' }}</button>
+        </div>
       </div>
 
       <!-- 测试任务（上下排列） -->
@@ -310,7 +324,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import tagDictionary from '../data/dmp_tags_dictionary.json'
 import {
@@ -325,31 +339,69 @@ import {
 } from '../utils/dmpResults.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 import { parseCrowdBatch } from '../utils/crowdBatch.js'
+import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWorkspace.js'
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
+const EXPECTED_EXTENSION_VERSION = '2.2.0'
+const TASK_SESSION_KEY = 'task-center.v1'
+
+const props = defineProps({
+  sessionOwnerId: { type: String, default: '' },
+})
+
+const taskSessionState = readSessionWorkspace(TASK_SESSION_KEY, props.sessionOwnerId) || {}
 
 // -- persistence --
-function loadPersisted(k, def) { try { const v = localStorage.getItem('cdp_task_' + k); return v ? JSON.parse(v) : def } catch { return def } }
-function savePersisted(k, val) { try { localStorage.setItem('cdp_task_' + k, JSON.stringify(val)) } catch { /* */ } }
+function taskStorageKey(key) { return `cdp_task_${props.sessionOwnerId || 'anonymous'}_${key}` }
+function loadPersisted(k, def) {
+  try {
+    const scoped = localStorage.getItem(taskStorageKey(k))
+    return JSON.parse(scoped || JSON.stringify(def))
+  } catch { return def }
+}
+function savePersisted(k, val) {
+  try { localStorage.setItem(taskStorageKey(k), JSON.stringify(val)) } catch { /* */ }
+}
 
 const databankCrowd = ref(loadPersisted('databankCrowd', ''))
 const dmpCrowd = ref(loadPersisted('dmpCrowd', ''))
-const databankBatchMode = ref(false)
-const dmpBatchMode = ref(false)
-const databankBatchText = ref('')
-const dmpBatchText = ref('')
+const databankBatchMode = ref(taskSessionState.databankBatchMode === true)
+const dmpBatchMode = ref(taskSessionState.dmpBatchMode === true)
+const databankBatchText = ref(String(taskSessionState.databankBatchText || ''))
+const dmpBatchText = ref(String(taskSessionState.dmpBatchText || ''))
 const databankBatchEditor = ref(null)
 const dmpBatchEditor = ref(null)
 const databankAutoApply = ref(false)
-const selectedTags = ref(loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
-const tagSearch = ref('')
+databankAutoApply.value = taskSessionState.databankAutoApply === true
+const selectedTags = ref(taskSessionState.selectedTags || loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
+const tagSearch = ref(String(taskSessionState.tagSearch || ''))
 
 watch(databankCrowd, (v) => savePersisted('databankCrowd', v))
 watch(dmpCrowd, (v) => savePersisted('dmpCrowd', v))
 watch(selectedTags, (v) => savePersisted('selectedTags', v), { deep: true })
+watch(
+  [
+    databankBatchMode,
+    dmpBatchMode,
+    databankBatchText,
+    dmpBatchText,
+    databankAutoApply,
+    selectedTags,
+    tagSearch,
+  ],
+  persistTaskSession,
+  { deep: true },
+)
 
 const extConnected = ref(false)
+const extensionState = ref('checking')
+const extensionVersion = ref('')
+const extensionCheckBusy = ref(false)
+const installingExtension = ref(false)
+let extensionEverConnected = false
+let extensionTimer = null
+let taskSessionPersistenceDisabled = false
 const taskRunning = ref(null)
 const activeTask = ref(null)
 const cancelling = ref(false)
@@ -424,8 +476,82 @@ const allDmpTags = computed(() => {
 
 const allRebaseEnabled = computed(() => allDmpTags.value.every((tag) => isRebaseEnabled(tag.tagId)))
 
-const canRunDatabank = computed(() => extConnected.value && databankCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
-const canRunDmp = computed(() => extConnected.value && dmpCrowdNames.value.length > 0 && taskRunning.value === null && selectedTags.value.length > 0)
+const canRunDatabank = computed(() => extConnected.value && databankCrowdNames.value.length > 0 && taskRunning.value === null)
+const canRunDmp = computed(() => extConnected.value && dmpCrowdNames.value.length > 0 && taskRunning.value === null)
+const extensionStatusLabel = computed(() => ({
+  checking: '正在检测扩展',
+  connected: '扩展已连接',
+  'not-installed': '未检测到扩展',
+  disconnected: '扩展连接已中断',
+  'version-mismatch': '扩展版本不兼容',
+  'permission-error': '扩展包下载失败',
+}[extensionState.value] || '扩展未连接'))
+const extensionStatusHint = computed(() => {
+  if (extensionState.value === 'connected') return '任务执行器可用'
+  if (extensionState.value === 'checking') return '请稍候'
+  if (extensionState.value === 'version-mismatch') return `需要 V${EXPECTED_EXTENSION_VERSION} 或更高兼容版本`
+  if (extensionState.value === 'permission-error') return '请确认登录状态和服务连接'
+  return '安装或启用后重新检测'
+})
+
+function isCompatibleExtensionVersion(version) {
+  if (!version) return true
+  const actual = String(version).split('.').map(Number)
+  const expected = EXPECTED_EXTENSION_VERSION.split('.').map(Number)
+  if (actual.some(Number.isNaN) || expected.some(Number.isNaN)) return true
+  return actual[0] === expected[0] && actual[1] >= expected[1]
+}
+
+function persistTaskSession() {
+  if (taskSessionPersistenceDisabled || !props.sessionOwnerId) return
+  writeSessionWorkspace(TASK_SESSION_KEY, props.sessionOwnerId, {
+    databankBatchMode: databankBatchMode.value,
+    dmpBatchMode: dmpBatchMode.value,
+    databankBatchText: databankBatchText.value,
+    dmpBatchText: dmpBatchText.value,
+    databankAutoApply: databankAutoApply.value,
+    selectedTags: [...selectedTags.value],
+    tagSearch: tagSearch.value,
+  })
+}
+
+function disableTaskSessionPersistence() {
+  taskSessionPersistenceDisabled = true
+}
+
+async function downloadExtension() {
+  if (installingExtension.value) return
+  installingExtension.value = true
+  try {
+    const response = await fetchWithTimeout('/api/extension/download', { cache: 'no-store' })
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent('cdp:auth-required'))
+    }
+    if (!response.ok) {
+      let message = '扩展安装包下载失败'
+      try {
+        const data = await response.json()
+        message = data?.message || message
+      } catch { /* keep the safe fallback */ }
+      throw new Error(message)
+    }
+
+    const blobUrl = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `DMP_PluginV${EXPECTED_EXTENSION_VERSION}-CDP-Merged.zip`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    ElMessage.success('扩展包已下载，请解压并在浏览器扩展管理页加载后重新检测')
+  } catch (error) {
+    extensionState.value = 'permission-error'
+    ElMessage.error(error.message || '扩展安装包下载失败')
+  } finally {
+    installingExtension.value = false
+  }
+}
 
 function toggleBatchMode(type) {
   if (taskRunning.value !== null) return
@@ -938,6 +1064,10 @@ async function runDatabank() {
 async function runDmp() {
   if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
   if (!canRunDmp.value) return
+  if (selectedTags.value.length === 0) {
+    ElMessage.warning('请先在特征大盘中选择至少一个已就绪的标签')
+    return
+  }
   const names = [...dmpCrowdNames.value]
   if (dmpBatchMode.value) {
     const confirmed = await confirmBatchRun('dmp', names.length)
@@ -1020,22 +1150,71 @@ async function retryTask() {
   }
 }
 
-async function checkExtension() {
+async function checkExtension(manual = false) {
+  if (extensionCheckBusy.value) return
+  extensionCheckBusy.value = true
+  if (!extConnected.value) extensionState.value = 'checking'
   try {
     const wasConnected = extConnected.value
-    const ok = await new Promise((resolve) => {
-      const t = setTimeout(() => resolve(false), 1200)
-      const h = (e) => { if (e.data?.source === 'databank-extension-bridge' && e.data?.ok) { clearTimeout(t); resolve(true) } }
+    const requestId = `ping_${Date.now()}_${++extRequestId}`
+    const result = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 1200)
+      const h = (e) => {
+        if (
+          e.data?.source === 'databank-extension-bridge'
+          && e.data?.requestId === requestId
+          && e.data?.ok
+        ) {
+          clearTimeout(t)
+          resolve(e.data)
+        }
+      }
       window.addEventListener('message', h, { once: false })
-      window.postMessage({ source: 'cdp-web', type: 'CDP_AUTOMATE_DATABANK', requestId: 'ping', jsonText: '{}' }, window.location.origin)
-      setTimeout(() => { window.removeEventListener('message', h); clearTimeout(t); resolve(false) }, 1300)
+      window.postMessage({ source: 'cdp-web', type: 'CDP_AUTOMATE_DATABANK', requestId, jsonText: '{}' }, window.location.origin)
+      setTimeout(() => { window.removeEventListener('message', h); clearTimeout(t); resolve(null) }, 1300)
     })
-    extConnected.value = ok
-    if (ok && (!wasConnected || !dmpSettingsLoaded.value)) await loadDmpSettings(true)
-  } catch { extConnected.value = false }
+    extensionVersion.value = String(result?.version || '')
+    if (result && isCompatibleExtensionVersion(extensionVersion.value)) {
+      extConnected.value = true
+      extensionEverConnected = true
+      extensionState.value = 'connected'
+      if (!wasConnected || !dmpSettingsLoaded.value) await loadDmpSettings(true)
+      if (manual) ElMessage.success('扩展连接正常')
+      return
+    }
+
+    extConnected.value = false
+    if (result) {
+      extensionState.value = 'version-mismatch'
+      if (manual) ElMessage.warning(`当前扩展版本 V${extensionVersion.value || '未知'} 不兼容，请重新下载安装`)
+    } else {
+      extensionState.value = extensionEverConnected ? 'disconnected' : 'not-installed'
+      if (manual) ElMessage.warning('暂未检测到扩展，请确认已安装并启用')
+    }
+  } catch {
+    extConnected.value = false
+    extensionState.value = extensionEverConnected ? 'disconnected' : 'not-installed'
+    if (manual) ElMessage.warning('扩展检测失败，请稍后重试')
+  } finally {
+    extensionCheckBusy.value = false
+  }
 }
 
-onMounted(async () => { loadHistory(); await checkExtension(); setInterval(checkExtension, 15000) })
+onMounted(async () => {
+  window.addEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
+  window.addEventListener('beforeunload', persistTaskSession)
+  loadHistory()
+  await checkExtension()
+  extensionTimer = setInterval(checkExtension, 15000)
+})
+
+onBeforeUnmount(() => {
+  clearInterval(extensionTimer)
+  extensionTimer = null
+  persistTaskSession()
+  window.removeEventListener('beforeunload', persistTaskSession)
+  window.removeEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
+})
 </script>
 
 <style scoped>
@@ -1062,7 +1241,7 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 }
 
 .tc-ext-status {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
   margin-bottom: 16px; padding: 2px 1px; border: 0; border-radius: 0; font-size: 11px;
   background: transparent;
   transition: all 0.35s ease; flex-shrink: 0;
@@ -1071,7 +1250,20 @@ onMounted(async () => { loadHistory(); await checkExtension(); setInterval(check
 .tc-ext-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: none; flex-shrink: 0; transition: all 0.3s ease; }
 .tc-ext-status.connected .tc-ext-dot { background: #34c759; box-shadow: none; }
 .tc-ext-label { font-weight: 500; color: #171717; }
-.tc-ext-hint { color: #ff3b30; }
+.tc-ext-hint { min-width: 72px; flex: 1 1 auto; color: #ff3b30; }
+.tc-ext-status.connected .tc-ext-hint { color: #6e6e73; }
+.tc-ext-version { color: #86868b; font: 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace; }
+.tc-ext-actions { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+.tc-ext-actions button {
+  height: 24px; padding: 0 8px; color: #1d1d1f; font: inherit; font-size: 9px;
+  background: #fff; border: 1px solid #d2d2d7; border-radius: 999px; cursor: pointer;
+}
+.tc-ext-actions button:hover:not(:disabled) { border-color: #86868b; background: #f5f5f7; }
+.tc-ext-actions button:disabled { cursor: wait; opacity: 0.55; }
+.tc-ext-status.checking .tc-ext-dot { background: #ff9f0a; animation: tc-ext-pulse 850ms ease-in-out infinite alternate; }
+.tc-ext-status.version-mismatch .tc-ext-dot { background: #ff9f0a; }
+
+@keyframes tc-ext-pulse { to { opacity: 0.35; } }
 
 .tc-section-heading { display: flex; align-items: center; gap: 7px; margin: 0 1px 11px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
 .tc-section-marker { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; flex: 0 0 auto; }

@@ -1,4 +1,4 @@
-"""
+r"""
 本地自测脚本。
 
 运行方式:
@@ -140,6 +140,29 @@ class CdpApiTests(unittest.TestCase):
         self.assertLess(response_text.index('"selectionLv1"'), response_text.index('"selectionLv3"'))
         self.assertLess(response_text.index('"selectionLv3"'), response_text.index('"fromPoolId"'))
 
+    def test_generate_category_json_without_optional_brand(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "类目公域行为",
+                "bhv": ["购买"],
+                "leafCates": ["美容护肤/美体/精油>乳液/面霜"],
+                "channel": ["天猫"],
+                "frequency": {"min": "", "max": ""},
+                "price": {"min": "", "max": ""},
+                "itemprice": {"min": "", "max": ""},
+                "time": {
+                    "val": {"start": "20260501", "end": "20260621"},
+                    "min": "range",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(len(data["list"]), 1)
+        self.assertNotIn("stdBrand", data["list"][0]["selectionLv3"]["extraFilters"])
+
     def test_generate_commodity_json(self):
         payload = {
             "_package": "商品行为",
@@ -249,11 +272,14 @@ class CdpApiTests(unittest.TestCase):
 
     def test_route_interface_demo_page(self):
         response = self.client.get("/route-interface-demo")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("text/html", response.content_type)
-        body = response.get_data(as_text=True)
-        self.assertIn("Route vs API", body)
-        self.assertIn("/api/solutions", body)
+        try:
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("text/html", response.content_type)
+            body = response.get_data(as_text=True)
+            self.assertIn("Route vs API", body)
+            self.assertIn("/api/solutions", body)
+        finally:
+            response.close()
 
 
 if __name__ == "__main__":

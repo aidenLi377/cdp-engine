@@ -24,8 +24,8 @@
           class="intercom-radio-group solution-library-switch"
           @change="switchLibraryScope"
         >
-          <el-radio-button label="mine">我的方案</el-radio-button>
-          <el-radio-button label="public">公共方案</el-radio-button>
+          <el-radio-button value="mine">我的方案</el-radio-button>
+          <el-radio-button value="public">公共方案</el-radio-button>
         </el-radio-group>
 
         <el-input
@@ -42,9 +42,9 @@
             class="intercom-radio-group solution-filter-group"
             aria-label="按状态筛选方案"
           >
-            <el-radio-button label="all" @click="handleAllFilterClick">全部</el-radio-button>
-            <el-radio-button label="draft">草稿</el-radio-button>
-            <el-radio-button label="published">已发布</el-radio-button>
+            <el-radio-button value="all" @click="handleAllFilterClick">全部</el-radio-button>
+            <el-radio-button value="draft">草稿</el-radio-button>
+            <el-radio-button value="published">已发布</el-radio-button>
           </el-radio-group>
 
           <div class="solution-sidebar-icon-actions">
@@ -75,9 +75,17 @@
       <FolderTree
         :folders="folderTree"
         :read-only="libraryScope === 'public' && !canManagePublicSolutions"
+        :share-enabled="libraryScope === 'mine'"
         @select-folder="onFolderSelect"
         @folders-changed="handleFolderChange"
+        @share-folder="shareFolder"
       />
+
+      <div v-if="libraryScope === 'mine'" class="solution-paste-hint" role="note">
+        <kbd>Ctrl V</kbd>
+        <span>粘贴方案口令</span>
+        <span class="solution-paste-hint-detail">自动识别并预览</span>
+      </div>
 
       <TransitionGroup name="solution-list" tag="div" class="solution-list">
         <div
@@ -275,9 +283,9 @@
               class="intercom-radio-group"
               :disabled="isReadOnly"
             >
-              <el-radio-button label="n">交集 (n)</el-radio-button>
-              <el-radio-button label="u">并集 (u)</el-radio-button>
-              <el-radio-button label="d">差集 (d)</el-radio-button>
+              <el-radio-button value="n">交集 (n)</el-radio-button>
+              <el-radio-button value="u">并集 (u)</el-radio-button>
+              <el-radio-button value="d">差集 (d)</el-radio-button>
             </el-radio-group>
             <div class="connector-line"></div>
           </div>
@@ -570,11 +578,122 @@
       </div>
     </aside>
 
+    <el-dialog
+      v-model="folderShareDialogVisible"
+      title="分享方案文件夹"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      class="folder-share-dialog"
+    >
+      <div v-if="folderShareResult" class="folder-share-sheet">
+        <div class="folder-share-kicker">7 DAY SNAPSHOT</div>
+        <h3>{{ folderShareResult.folderName }}</h3>
+        <p class="folder-share-lead">
+          口令中保存的是当前文件夹快照。对方导入后会得到一份可独立编辑的个人草稿，之后双方互不影响。
+        </p>
+
+        <div class="folder-share-code-wrap">
+          <span>方案口令</span>
+          <code>{{ folderShareResult.phrase }}</code>
+        </div>
+
+        <dl class="folder-share-stats">
+          <div>
+            <dt>文件夹</dt>
+            <dd>{{ folderShareResult.folderCount }}</dd>
+          </div>
+          <div>
+            <dt>方案</dt>
+            <dd>{{ folderShareResult.solutionCount }}</dd>
+          </div>
+          <div>
+            <dt>有效期至</dt>
+            <dd>{{ formatShareExpiry(folderShareResult.expiresAt) }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <template #footer>
+        <el-button class="intercom-btn-outlined" @click="folderShareDialogVisible = false">
+          关闭
+        </el-button>
+        <el-button class="intercom-btn-primary folder-share-primary-button" @click="copyFolderSharePhrase">
+          复制口令
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="folderShareImportVisible"
+      title="导入方案文件夹"
+      width="500px"
+      append-to-body
+      destroy-on-close
+      :close-on-click-modal="!importingFolderShare"
+      :close-on-press-escape="!importingFolderShare"
+      :show-close="!importingFolderShare"
+      class="folder-share-dialog"
+    >
+      <div v-if="folderSharePreview" class="folder-share-sheet folder-share-preview-sheet">
+        <div class="folder-share-kicker">PASTE DETECTED</div>
+        <h3>{{ folderSharePreview.folderName }}</h3>
+        <p class="folder-share-byline">由 {{ folderSharePreview.sharedBy }} 分享</p>
+
+        <dl class="folder-share-stats">
+          <div>
+            <dt>文件夹</dt>
+            <dd>{{ folderSharePreview.folderCount }}</dd>
+          </div>
+          <div>
+            <dt>方案</dt>
+            <dd>{{ folderSharePreview.solutionCount }}</dd>
+          </div>
+          <div>
+            <dt>有效期至</dt>
+            <dd>{{ formatShareExpiry(folderSharePreview.expiresAt) }}</dd>
+          </div>
+        </dl>
+
+        <div class="folder-share-assurance">
+          <span aria-hidden="true">✓</span>
+          <p>导入后将成为你账号下可独立编辑的个人草稿；原分享者后续修改不会同步到这里。</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button
+          class="intercom-btn-outlined"
+          :disabled="importingFolderShare"
+          @click="folderShareImportVisible = false"
+        >
+          暂不导入
+        </el-button>
+        <el-button
+          class="intercom-btn-primary folder-share-primary-button"
+          :loading="importingFolderShare"
+          @click="confirmFolderShareImport"
+        >
+          导入到我的方案
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, provide, reactive, ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  provide,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, CopyDocument, Delete, EditPen, Plus, RefreshRight, Upload } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -584,13 +703,28 @@ import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits, buildMultiFieldNodeSplits, chunkBySecondaryCategory } from '../utils/solutionState.js'
 import { getCfTypeClass, statusText } from '../utils/display.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
+import { useFolderShareApi } from '../composables/useFolderShareApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
 import FolderTree from './FolderTree.vue'
+import {
+  readSessionWorkspace,
+  removeSessionWorkspace,
+  writeSessionWorkspace,
+} from '../utils/sessionWorkspace.js'
+import { validateSolutionIntegrity } from '../utils/workbenchValidation.js'
+
+const SOLUTION_SESSION_KEY = 'solutions.v1'
+const SOLUTION_SESSION_VERSION = 1
+const FOLDER_SHARE_PATTERN = /CDP-FOLDER-(?:[A-F0-9]{4}-){5}[A-F0-9]{4}/i
 
 const props = defineProps({
   currentUserRole: {
     type: String,
     default: 'user',
+  },
+  sessionOwnerId: {
+    type: String,
+    default: '',
   },
 })
 
@@ -615,6 +749,12 @@ const {
   deleteFolder,
   moveFolder,
 } = useFoldersApi()
+
+const {
+  createFolderShare,
+  previewFolderShare,
+  importFolderShare,
+} = useFolderShareApi()
 
 const { listPackages } = usePackagesApi()
 
@@ -650,12 +790,25 @@ const draggingSolutionId = ref(null)
 const dragOverSolutionId = ref(null)
 const dragOverPosition = ref('before')
 const reorderingSolutions = ref(false)
+const sharingFolderId = ref('')
+const folderShareDialogVisible = ref(false)
+const folderShareResult = ref(null)
+const folderShareImportVisible = ref(false)
+const folderSharePreview = ref(null)
+const folderShareText = ref('')
+const previewingFolderShare = ref(false)
+const importingFolderShare = ref(false)
 const availablePackages = ref([])
 const pendingPackageType = ref('')
 const addingNode = ref(false)
 const lastSavedSnapshot = ref(null)
 const editingNodeId = ref(null)
 const nodeNameOriginalValue = ref('')
+let solutionSessionTimer = null
+let solutionSessionRestorePending = true
+let solutionSessionPersistenceDisabled = false
+let folderSharePasteListening = false
+let folderSharePasteRequestId = 0
 
 const customFields = ref([])
 const filteredCustomFields = computed(() => {
@@ -1101,6 +1254,34 @@ async function saveDraft() {
 
 async function publishDraft() {
   if (!activeSolution.value || isReadOnly.value || isPublicAdminSolution.value) return
+
+  const validation = validateSolutionIntegrity({
+    name: activeSolution.value.name,
+    nodes: nodeList.value,
+  })
+  if (!validation.valid) {
+    await ElMessageBox.alert(
+      validation.issues.join('；'),
+      '方案暂时无法发布',
+      { confirmButtonText: '返回检查', type: 'warning' },
+    )
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `即将发布“${String(activeSolution.value.name || '').trim()}”，包含 ${validation.summary.nodeCount} 个组件、${customFields.value.length} 个自定义字段。发布后将成为正式方案，是否继续？`,
+      '确认发布方案',
+      {
+        confirmButtonText: '确认发布',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
   publishing.value = true
   try {
     const saved = await updateDraft(activeSolution.value.id, buildSolutionPayload())
@@ -1413,6 +1594,90 @@ function isFieldSelectableForBinding(field) {
   return field.Widget_Type === creatingCustomFieldType.value
 }
 
+function buildSolutionSessionPayload() {
+  const activeDraft = activeSolution.value?.status === 'draft'
+    ? {
+        activeSolution: cloneValue(activeSolution.value),
+        nodes: serializeNodesForSolution(nodeList.value),
+        workbenchFieldIds: [...workbenchFieldIds.value],
+        customFields: serializeCustomFieldsForSolution(customFields.value),
+        lastSavedSnapshot: lastSavedSnapshot.value,
+      }
+    : null
+
+  return {
+    version: SOLUTION_SESSION_VERSION,
+    libraryScope: libraryScope.value,
+    statusFilter: statusFilter.value,
+    searchKeyword: searchKeyword.value,
+    selectedFolderId: selectedFolderId.value,
+    activeSolutionId: activeSolution.value?.id || null,
+    activeDraft,
+  }
+}
+
+function persistSolutionSession() {
+  if (
+    solutionSessionRestorePending
+    || solutionSessionPersistenceDisabled
+    || !props.sessionOwnerId
+  ) return
+  writeSessionWorkspace(
+    SOLUTION_SESSION_KEY,
+    props.sessionOwnerId,
+    buildSolutionSessionPayload(),
+  )
+}
+
+function scheduleSolutionSessionSave() {
+  if (solutionSessionRestorePending || solutionSessionPersistenceDisabled) return
+  clearTimeout(solutionSessionTimer)
+  solutionSessionTimer = setTimeout(persistSolutionSession, 250)
+}
+
+async function restoreSolutionSession(stored) {
+  if (!stored) return
+  if (stored.version !== SOLUTION_SESSION_VERSION) {
+    removeSessionWorkspace(SOLUTION_SESSION_KEY)
+    return
+  }
+
+  searchKeyword.value = String(stored.searchKeyword || '')
+  selectedFolderId.value = stored.selectedFolderId || null
+
+  try {
+    if (
+      stored.activeDraft?.activeSolution?.id
+      && stored.activeDraft.activeSolution.id === stored.activeSolutionId
+    ) {
+      activeSolution.value = cloneValue(stored.activeDraft.activeSolution)
+      nodeList.value = await hydrateNodes(stored.activeDraft.nodes || [])
+      workbenchFieldIds.value = normalizeWorkbenchFieldIds(
+        stored.activeDraft.workbenchFieldIds || [],
+        nodeList.value,
+      )
+      customFields.value = cloneValue(stored.activeDraft.customFields || [])
+      activeSolution.value.customFields = cloneValue(customFields.value)
+      lastSavedSnapshot.value = stored.activeDraft.lastSavedSnapshot || null
+      return
+    }
+
+    if (stored.activeSolutionId) {
+      const detail = await getSolution(stored.activeSolutionId)
+      await applySolutionRecord(detail)
+    }
+  } catch {
+    removeSessionWorkspace(SOLUTION_SESSION_KEY)
+    resetActiveSolution()
+    ElMessage.warning('上次方案编辑上下文已失效，已重新载入方案列表')
+  }
+}
+
+function disableSolutionSessionPersistence() {
+  solutionSessionPersistenceDisabled = true
+  clearTimeout(solutionSessionTimer)
+}
+
 function syncActiveToSolutionsList() {
   if (!activeSolution.value) return
   const idx = solutions.value.findIndex(s => s.id === activeSolution.value.id)
@@ -1430,6 +1695,7 @@ watch([() => activeSolution.value?.name, () => activeSolution.value?.defaultCrow
 })
 
 watch(statusFilter, () => {
+  if (solutionSessionRestorePending) return
   loadSolutions()
 })
 
@@ -1458,6 +1724,21 @@ watch(
   { deep: true },
 )
 
+watch(
+  [
+    libraryScope,
+    statusFilter,
+    searchKeyword,
+    selectedFolderId,
+    activeSolution,
+    nodeList,
+    workbenchFieldIds,
+    customFields,
+  ],
+  scheduleSolutionSessionSave,
+  { deep: true },
+)
+
 async function loadFolders() {
   loadingFolders.value = true
   try {
@@ -1467,6 +1748,143 @@ async function loadFolders() {
   } finally {
     loadingFolders.value = false
   }
+}
+
+async function shareFolder(folder) {
+  if (libraryScope.value !== 'mine' || !folder?.id || sharingFolderId.value) return
+
+  sharingFolderId.value = folder.id
+  try {
+    folderShareResult.value = await createFolderShare(folder.id)
+    folderShareDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error(error.message || '方案文件夹分享失败')
+  } finally {
+    sharingFolderId.value = ''
+  }
+}
+
+function buildFolderShareCopyText() {
+  const share = folderShareResult.value
+  if (!share?.phrase) return ''
+  return [
+    `我向你分享了方案文件夹「${share.folderName}」`,
+    share.phrase,
+    '复制整段文字，在方案中心按 Ctrl+V 即可预览并导入。',
+  ].join('\n')
+}
+
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('clipboard unavailable')
+}
+
+async function copyFolderSharePhrase() {
+  const text = buildFolderShareCopyText()
+  if (!text) return
+
+  try {
+    await writeClipboardText(text)
+    ElMessage.success('方案口令已复制，有效期为 7 天')
+  } catch {
+    ElMessage.error('复制失败，请手动选中方案口令复制')
+  }
+}
+
+function isClipboardTextTarget(target) {
+  if (!(target instanceof Element)) return false
+  return Boolean(target.closest('input, textarea, [contenteditable="true"], [role="textbox"]'))
+}
+
+async function handleFolderSharePaste(event) {
+  if (
+    isClipboardTextTarget(event.target) ||
+    folderShareDialogVisible.value ||
+    folderShareImportVisible.value ||
+    previewingFolderShare.value ||
+    importingFolderShare.value
+  ) {
+    return
+  }
+
+  const text = event.clipboardData?.getData('text/plain') || ''
+  if (!FOLDER_SHARE_PATTERN.test(text)) return
+
+  event.preventDefault()
+  const requestId = ++folderSharePasteRequestId
+  previewingFolderShare.value = true
+  folderSharePreview.value = null
+  try {
+    const preview = await previewFolderShare(text)
+    if (!folderSharePasteListening || requestId !== folderSharePasteRequestId) return
+    folderShareText.value = preview?.phrase || text
+    folderSharePreview.value = preview
+    folderShareImportVisible.value = true
+  } catch (error) {
+    ElMessage.warning(error.message || '方案口令无法识别，请确认口令仍在有效期内')
+  } finally {
+    previewingFolderShare.value = false
+  }
+}
+
+function formatShareExpiry(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+async function confirmFolderShareImport() {
+  if (!folderShareText.value || importingFolderShare.value) return
+
+  importingFolderShare.value = true
+  try {
+    const imported = await importFolderShare(folderShareText.value)
+    folderShareImportVisible.value = false
+    if (libraryScope.value === 'mine') {
+      await Promise.all([loadFolders(), loadSolutions()])
+    }
+    const suffix = libraryScope.value === 'mine' ? '' : '，可在“我的方案”中查看'
+    ElMessage.success(`「${imported.folder?.name || folderSharePreview.value?.folderName || '分享文件夹'}」已导入为可独立编辑的个人草稿${suffix}`)
+    folderSharePreview.value = null
+    folderShareText.value = ''
+  } catch (error) {
+    ElMessage.error(error.message || '方案文件夹导入失败')
+  } finally {
+    importingFolderShare.value = false
+  }
+}
+
+function startFolderSharePasteListener() {
+  if (folderSharePasteListening) return
+  window.addEventListener('paste', handleFolderSharePaste)
+  folderSharePasteListening = true
+}
+
+function stopFolderSharePasteListener() {
+  if (!folderSharePasteListening) return
+  window.removeEventListener('paste', handleFolderSharePaste)
+  folderSharePasteListening = false
+  folderSharePasteRequestId += 1
 }
 
 async function handleFolderChange(event) {
@@ -1624,10 +2042,37 @@ function onSolutionDragEnd() {
 }
 
 onMounted(async () => {
+  startFolderSharePasteListener()
+  window.addEventListener('cdp:workspace-session-clearing', disableSolutionSessionPersistence)
+  const stored = readSessionWorkspace(SOLUTION_SESSION_KEY, props.sessionOwnerId)
+  if (stored?.version === SOLUTION_SESSION_VERSION) {
+    libraryScope.value = ['mine', 'public'].includes(stored.libraryScope)
+      ? stored.libraryScope
+      : 'mine'
+    statusFilter.value = ['all', 'draft', 'published'].includes(stored.statusFilter)
+      ? stored.statusFilter
+      : 'all'
+  }
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
   await Promise.all([loadSolutions(), loadAvailablePackages(), loadFolders()])
+  await restoreSolutionSession(stored)
+  solutionSessionRestorePending = false
+  scheduleSolutionSessionSave()
+  window.addEventListener('beforeunload', persistSolutionSession)
+})
+
+onActivated(startFolderSharePasteListener)
+onDeactivated(stopFolderSharePasteListener)
+
+onBeforeUnmount(() => {
+  clearTimeout(solutionSessionTimer)
+  persistSolutionSession()
+  window.removeEventListener('beforeunload', persistSolutionSession)
+  window.removeEventListener('cdp:workspace-session-clearing', disableSolutionSessionPersistence)
+  stopFolderSharePasteListener()
+  openSolutionAbort?.abort()
 })
 </script>
 
@@ -1833,5 +2278,169 @@ onMounted(async () => {
   font-size: 14px !important;
   height: 20px !important;
   padding: 0 4px !important;
+}
+
+.solution-paste-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 6px 10px 2px;
+  padding: 8px 0 10px;
+  border-bottom: 1px solid var(--ui-divider);
+  color: #3a3a3c;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.solution-paste-hint kbd {
+  min-width: 36px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: #1d1d1f;
+  color: #fff;
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.solution-paste-hint-detail {
+  margin-left: auto;
+  color: #8e8e93;
+}
+
+.folder-share-sheet {
+  padding: 2px 2px 0;
+  color: #1d1d1f;
+}
+
+.folder-share-kicker {
+  margin-bottom: 10px;
+  color: var(--ui-accent);
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.folder-share-sheet h3 {
+  margin: 0;
+  color: #1d1d1f;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.folder-share-lead,
+.folder-share-byline {
+  margin: 10px 0 0;
+  color: #6e6e73;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.folder-share-byline {
+  margin-top: 7px;
+}
+
+.folder-share-code-wrap {
+  margin-top: 22px;
+  padding: 14px 16px 15px;
+  border: 1px solid #d2d2d7;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.folder-share-code-wrap > span {
+  display: block;
+  margin-bottom: 8px;
+  color: #8e8e93;
+  font-size: 11px;
+}
+
+.folder-share-code-wrap code {
+  display: block;
+  color: #1d1d1f;
+  font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.folder-share-stats {
+  display: grid;
+  grid-template-columns: 0.8fr 0.8fr 1.4fr;
+  margin: 22px 0 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--ui-divider);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.folder-share-stats > div {
+  min-width: 0;
+  padding: 0 14px;
+  border-right: 1px solid var(--ui-divider);
+}
+
+.folder-share-stats > div:first-child {
+  padding-left: 0;
+}
+
+.folder-share-stats > div:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.folder-share-stats dt {
+  margin-bottom: 7px;
+  color: #8e8e93;
+  font-size: 11px;
+}
+
+.folder-share-stats dd {
+  margin: 0;
+  color: #1d1d1f;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.folder-share-preview-sheet .folder-share-stats {
+  margin-top: 24px;
+}
+
+.folder-share-assurance {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.folder-share-assurance > span {
+  display: grid;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: #1d1d1f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.folder-share-assurance p {
+  margin: 0;
+  color: #3a3a3c;
+  font-size: 12px;
+  line-height: 1.6;
 }
 </style>

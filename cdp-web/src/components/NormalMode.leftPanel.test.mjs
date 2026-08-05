@@ -84,8 +84,8 @@ test('published solution cards stay neutral until selected', () => {
 test('workbench solution picker switches between personal and public libraries', () => {
   assert.match(normalModeVue, /const publishedLibraryScope = ref\('mine'\)/)
   assert.match(normalModeVue, /class="intercom-radio-group solution-library-switch workbench-library-switch"/)
-  assert.match(normalModeVue, /<el-radio-button label="mine">我的方案<\/el-radio-button>/)
-  assert.match(normalModeVue, /<el-radio-button label="public">公共方案<\/el-radio-button>/)
+  assert.match(normalModeVue, /<el-radio-button value="mine">我的方案<\/el-radio-button>/)
+  assert.match(normalModeVue, /<el-radio-button value="public">公共方案<\/el-radio-button>/)
   assert.match(normalModeVue, /@change="switchPublishedLibrary"/)
   assert.match(normalModeVue, /listSolutions\([\s\S]*?'published',[\s\S]*?publishedLibraryScope\.value,[\s\S]*?\)/)
   assert.match(normalModeVue, /listFolders\(publishedLibraryScope\.value\)/)
@@ -126,6 +126,6 @@ test('applying a solution no longer disables package search or component inserti
   assert.doesNotMatch(normalModeVue, /if \(workbenchMode\.value === 'solution-use' \|\| structureLocked\.value\) return/)
 })
 
-test('workbench delete icon is directly clickable instead of hiding behind a popconfirm wrapper', () => {
+test('workbench delete icon keeps its direct click behavior', () => {
   assert.match(normalModeVue, /class="behavior-card-icon-btn danger"[\s\S]*?@click\.stop="removeNode\(index\)"/)
 })

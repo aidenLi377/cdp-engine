@@ -181,6 +181,15 @@ test('background focuses the databank tab during automation so the page is not t
   }))
 })
 
+test('parameter automation focuses before waiting for load and has no duplicate fixed settle delay', () => {
+  const start = BACKGROUND_SCRIPT_SOURCE.indexOf('async function runDatabankParam')
+  const end = BACKGROUND_SCRIPT_SOURCE.indexOf('// Run DataBank crowd search', start)
+  const flow = BACKGROUND_SCRIPT_SOURCE.slice(start, end)
+
+  assert.ok(flow.indexOf('await focusTab(tab)') < flow.indexOf('await waitForTabComplete(tab.id)'))
+  assert.doesNotMatch(flow, /PARAM_PAGE_SETTLE_MS|setTimeout/)
+})
+
 test('background reads and updates shared DMP settings', async () => {
   const harness = createBackgroundHarness()
   const initial = await harness.sendProjectMessage({ type: 'CDP_DMP_GET_SETTINGS', pageUrl: 'http://127.0.0.1:5173/' })

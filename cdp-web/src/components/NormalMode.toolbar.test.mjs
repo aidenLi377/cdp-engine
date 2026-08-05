@@ -62,10 +62,14 @@ test('history snapshots reuse read-only component metadata instead of cloning la
   assert.doesNotMatch(normalModeVue, /structuredClone\(\{\s*nodeList: toRaw\(nodeList\.value\)/s)
 })
 
-test('live JSON generation cancels stale requests when the form changes again', () => {
+test('live JSON generation cancels pending debounce before replacing a stale request', () => {
   assert.match(normalModeVue, /let jsonBuildAbort = null/)
   assert.match(normalModeVue, /signal: buildAbort\.signal/)
-  assert.match(normalModeVue, /jsonBuildAbort\?\.abort\(\)\s*clearTimeout\(jsonTimer\)/)
+  assert.match(
+    normalModeVue,
+    /async function buildFinalJson\(\) \{\s*clearTimeout\(jsonTimer\)\s*jsonTimer = null\s*jsonBuildAbort\?\.abort\(\)/,
+  )
+  assert.equal(normalModeVue.match(/jsonBuildAbort\?\.abort\(\)/g)?.length, 2)
   assert.match(normalModeVue, /if \(error\.name === 'AbortError'\) return/)
 })
 

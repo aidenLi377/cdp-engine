@@ -26,17 +26,19 @@ class IsolatedTestApp:
 def create_authenticated_test_app(
     username: str = "test-user",
     password: str = "test-password",
+    test_config: dict | None = None,
 ) -> IsolatedTestApp:
     temporary_directory = TemporaryDirectory(prefix="cdp-tests-")
     db_path = str(Path(temporary_directory.name) / "test.db")
-    app, engine = create_app(
-        {
-            "TESTING": True,
-            "DB_PATH": db_path,
-            "SECRET_KEY": "test-only-secret",
-            "SESSION_COOKIE_SECURE": False,
-        }
-    )
+    config = {
+        "TESTING": True,
+        "DB_PATH": db_path,
+        "SECRET_KEY": "test-only-secret",
+        "SESSION_COOKIE_SECURE": False,
+    }
+    if test_config:
+        config.update(test_config)
+    app, engine = create_app(config)
     user = UserStore(db_path).create_user(username, password, username)
     client = app.test_client()
     response = client.post(

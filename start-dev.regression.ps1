@@ -12,16 +12,18 @@ if ($markerIndex -lt 0) {
 $functionBlock = $scriptText.Substring(0, $markerIndex)
 Invoke-Expression $functionBlock
 
-$tempPidFile = Join-Path $env:TEMP ('start-dev-regression-{0}.pid' -f [guid]::NewGuid().ToString('N'))
+$stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$null = Get-ListeningProcess -Port 65534
+$stopwatch.Stop()
 
-try {
-    Set-Content -Path $tempPidFile -Value $PID -Encoding ascii
-    if (Test-TrackedProcessAlive -PidFile $tempPidFile) {
-        throw 'Expected a random live PowerShell PID to be rejected, but it was treated as a managed dev process.'
-    }
+if ($stopwatch.Elapsed.TotalSeconds -gt 5) {
+    throw ('Port detection took too long: {0:N2}s' -f $stopwatch.Elapsed.TotalSeconds)
 }
-finally {
-    Remove-Item $tempPidFile -Force -ErrorAction SilentlyContinue
+
+foreach ($unsupportedCommand in @('Get-NetTCPConnection', 'Get-CimInstance')) {
+    if ($scriptText.Contains($unsupportedCommand)) {
+        throw ("start-dev.ps1 still contains unreliable command: {0}" -f $unsupportedCommand)
+    }
 }
 
 Write-Host 'start-dev regression test passed'

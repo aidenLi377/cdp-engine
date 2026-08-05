@@ -121,6 +121,23 @@ CREATE TABLE IF NOT EXISTS folders (
     updated_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS folder_share_tokens (
+    id               TEXT PRIMARY KEY,
+    token_hash       TEXT NOT NULL UNIQUE,
+    source_folder_id TEXT NOT NULL,
+    owner_id         TEXT NOT NULL,
+    shared_by        TEXT NOT NULL DEFAULT '',
+    folder_name      TEXT NOT NULL,
+    folder_count     INTEGER NOT NULL DEFAULT 0,
+    solution_count   INTEGER NOT NULL DEFAULT 0,
+    snapshot         TEXT NOT NULL,
+    created_at       TEXT NOT NULL,
+    expires_at       TEXT NOT NULL,
+    revoked_at       TEXT,
+    import_count     INTEGER NOT NULL DEFAULT 0,
+    last_imported_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS tasks (
     id          TEXT PRIMARY KEY,
     owner_id    TEXT NOT NULL,
@@ -165,6 +182,9 @@ CREATE INDEX IF NOT EXISTS idx_solutions_scope ON solutions(visibility, owner_id
 CREATE INDEX IF NOT EXISTS idx_solutions_folder_order
     ON solutions(visibility, owner_id, folder_id, sort_order);
 CREATE INDEX IF NOT EXISTS idx_folders_scope ON folders(visibility, owner_id, parent_id);
+CREATE INDEX IF NOT EXISTS idx_folder_share_token_hash ON folder_share_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_folder_share_owner_created
+    ON folder_share_tokens(owner_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at);
 """
 

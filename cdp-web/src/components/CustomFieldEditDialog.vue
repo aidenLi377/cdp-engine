@@ -81,7 +81,7 @@
           <!-- 复选组 -->
           <template v-else-if="customField.type === '复选组'">
             <el-checkbox-group v-model="editValue" class="custom-checkbox-group">
-              <el-checkbox v-for="opt in formattedOptions" :key="opt.value" :label="opt.value">{{ opt.label }}</el-checkbox>
+              <el-checkbox v-for="opt in formattedOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox>
             </el-checkbox-group>
           </template>
 

@@ -15,6 +15,12 @@
     'CDP_DMP_UPDATE_SETTINGS',
   ];
   var RESPONSE_SOURCE = 'databank-extension-bridge';
+  var EXTENSION_VERSION = '';
+  try {
+    EXTENSION_VERSION = chrome.runtime.getManifest().version || '';
+  } catch (e) {
+    // Keep compatibility with older or restricted extension runtimes.
+  }
 
   function safeRespond(payload, data) {
     try {
@@ -22,6 +28,7 @@
         source: RESPONSE_SOURCE,
         requestId: payload.requestId,
         ok: !!data.ok,
+        version: EXTENSION_VERSION,
         error: data.error || '',
         step: data.step || '',
         trail: data.trail || [],

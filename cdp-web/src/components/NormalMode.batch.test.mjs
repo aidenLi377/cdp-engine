@@ -23,6 +23,12 @@ test('compact layout is the only combination workbench layout', () => {
   assert.doesNotMatch(normalModeVue, /batch-workbench-band/)
 })
 
+test('combination workbench can be cleared back to the free-build workspace', () => {
+  assert.match(normalModeVue, /v-if="batchMode"[\s\S]*?@click="clearCanvas"[\s\S]*?清空组合/)
+  assert.match(normalModeVue, /function clearCanvas\(\)[\s\S]*?resetWorkbenchContext\(\)/)
+  assert.match(normalModeVue, /function resetWorkbenchContext\(\)[\s\S]*?resetBatchContext\(\)[\s\S]*?workbenchMode\.value = 'free-build'/)
+})
+
 test('batch workbench switches package detail by configured crowd name', () => {
   assert.match(normalModeVue, /class="batch-compact-tabs"/)
   assert.match(normalModeVue, /class="batch-compact-tab"/)

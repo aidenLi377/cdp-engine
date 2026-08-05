@@ -6,6 +6,28 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Normalize-PathEnvironment {
+    $processEnvironment = [System.Environment]::GetEnvironmentVariables([System.EnvironmentVariableTarget]::Process)
+    $pathKeys = @($processEnvironment.Keys | Where-Object { $_ -ieq 'Path' })
+    if ($pathKeys.Count -le 1) {
+        return
+    }
+
+    $uniqueSegments = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $normalizedSegments = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($pathKey in $pathKeys) {
+        foreach ($segment in ([string]$processEnvironment[$pathKey] -split ';')) {
+            $trimmedSegment = $segment.Trim()
+            if ($trimmedSegment -and $uniqueSegments.Add($trimmedSegment)) {
+                $normalizedSegments.Add($trimmedSegment)
+            }
+        }
+    }
+
+    [System.Environment]::SetEnvironmentVariable('PATH', $null, [System.EnvironmentVariableTarget]::Process)
+    [System.Environment]::SetEnvironmentVariable('Path', ($normalizedSegments -join ';'), [System.EnvironmentVariableTarget]::Process)
+}
+
 function Write-Info {
     param([string]$Message)
     Write-Host "[INFO] $Message" -ForegroundColor Cyan
@@ -45,28 +67,39 @@ function Resolve-CommandPath {
 function Get-ListeningProcess {
     param([int]$Port)
 
-    $getNetTcpConnection = Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue
-    if (-not $getNetTcpConnection) {
+    $netstatExe = Join-Path $env:SystemRoot 'System32\netstat.exe'
+    if (-not (Test-Path $netstatExe)) {
         return $null
     }
 
-    $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-        Select-Object -First 1
+    $owningPid = $null
+    foreach ($line in (& $netstatExe -ano -p TCP 2>$null)) {
+        if ($line -notmatch '^\s*TCP\s+(\S+)\s+\S+\s+LISTENING\s+(\d+)\s*$') {
+            continue
+        }
 
-    if (-not $connection) {
+        $localEndpoint = $Matches[1]
+        $candidatePid = [int]$Matches[2]
+        if ($localEndpoint -match (':{0}$' -f $Port)) {
+            $owningPid = $candidatePid
+            break
+        }
+    }
+
+    if (-not $owningPid) {
         return $null
     }
 
     $processName = $null
     try {
-        $processName = (Get-Process -Id $connection.OwningProcess -ErrorAction Stop).ProcessName
+        $processName = (Get-Process -Id $owningPid -ErrorAction Stop).ProcessName
     }
     catch {
     }
 
     return [pscustomobject]@{
         Port        = $Port
-        ProcessId   = $connection.OwningProcess
+        ProcessId   = $owningPid
         ProcessName = $processName
     }
 }
@@ -171,98 +204,6 @@ function Test-HttpAvailable {
     }
 }
 
-function Get-TrackedPid {
-    param([string]$PidFile)
-
-    if (-not (Test-Path $PidFile)) {
-        return $null
-    }
-
-    $pidText = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
-    if (-not $pidText) {
-        return $null
-    }
-
-    $trackedPid = 0
-    if ([int]::TryParse($pidText.Trim(), [ref]$trackedPid)) {
-        return $trackedPid
-    }
-
-    return $null
-}
-
-function Get-ProcessDetails {
-    param([int]$ProcessId)
-
-    if ($ProcessId -le 0) {
-        return $null
-    }
-
-    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
-    if (-not $process) {
-        return $null
-    }
-
-    $commandLine = $null
-    $executablePath = $null
-    try {
-        $cimProcess = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) -ErrorAction Stop
-        $commandLine = $cimProcess.CommandLine
-        $executablePath = $cimProcess.ExecutablePath
-    }
-    catch {
-    }
-
-    return [pscustomobject]@{
-        ProcessId      = $ProcessId
-        ProcessName    = $process.ProcessName
-        CommandLine    = $commandLine
-        ExecutablePath = $executablePath
-    }
-}
-
-function Test-TrackedProcessAlive {
-    param(
-        [string]$PidFile,
-        [string]$ExpectedProcessName,
-        [string[]]$RequiredCommandLinePatterns = @()
-    )
-
-    $trackedPid = Get-TrackedPid -PidFile $PidFile
-    if (-not $trackedPid) {
-        return $false
-    }
-
-    $processDetails = Get-ProcessDetails -ProcessId $trackedPid
-    if (-not $processDetails) {
-        return $false
-    }
-
-    if (-not $ExpectedProcessName -and $RequiredCommandLinePatterns.Count -eq 0) {
-        return $false
-    }
-
-    if ($ExpectedProcessName -and $processDetails.ProcessName -ne $ExpectedProcessName) {
-        return $false
-    }
-
-    foreach ($pattern in $RequiredCommandLinePatterns) {
-        if (-not $pattern) {
-            continue
-        }
-
-        if (-not $processDetails.CommandLine) {
-            return $false
-        }
-
-        if ($processDetails.CommandLine.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
-            return $false
-        }
-    }
-
-    return $true
-}
-
 function Remove-StalePidFile {
     param([string]$PidFile)
 
@@ -363,6 +304,8 @@ $frontendPort = 5173
 $backendHealthUrl = ('http://127.0.0.1:{0}/api/health' -f $backendPort)
 $frontendUrl = ('http://127.0.0.1:{0}/' -f $frontendPort)
 
+Normalize-PathEnvironment
+
 $pythonExe = Resolve-CommandPath -PreferredPath (Join-Path $rootDir '.venv\Scripts\python.exe') -CommandNames @('python.exe', 'python')
 $npmExe = Resolve-CommandPath -PreferredPath $null -CommandNames @('npm.cmd', 'npm')
 $cmdExe = Resolve-CommandPath -PreferredPath (Join-Path $env:SystemRoot 'System32\cmd.exe') -CommandNames @('cmd.exe')
@@ -398,8 +341,8 @@ Write-Info ("Backend Python: {0}" -f $pythonExe)
 Write-Info ("Frontend npm: {0}" -f $npmExe)
 Invoke-BackendPreflight -PythonExe $pythonExe -RootDir $rootDir
 
-$backendRunning = (Test-HttpAvailable -Url $backendHealthUrl) -or (Test-TrackedProcessAlive -PidFile $backendPidFile -ExpectedProcessName 'python' -RequiredCommandLinePatterns @("port=$backendPort", "host='127.0.0.1'"))
-$frontendRunning = (Test-HttpAvailable -Url $frontendUrl) -or (Test-TrackedProcessAlive -PidFile $frontendPidFile -ExpectedProcessName 'cmd' -RequiredCommandLinePatterns @('run dev', "--port $frontendPort"))
+$backendRunning = Test-HttpAvailable -Url $backendHealthUrl
+$frontendRunning = Test-HttpAvailable -Url $frontendUrl
 
 if (-not $backendRunning) {
     Remove-StalePidFile -PidFile $backendPidFile

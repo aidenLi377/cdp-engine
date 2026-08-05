@@ -9,7 +9,6 @@ const DATABANK_PARAM_URL = 'https://databank.tmall.com/#/userDefinedAnalyses';
 const DATABANK_CROWD_URL = 'https://databank.tmall.com/#/customAnalysis';
 const DATABANK_DATAHUB_URL = 'https://databank.tmall.com/#/dataHub';
 const DMP_CROWD_URL = 'https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=';
-const PARAM_PAGE_SETTLE_MS = 2000;
 
 // Message types from frontend (via bridge)
 const MSG_DATABANK_PARAM = 'CDP_AUTOMATE_DATABANK';
@@ -267,11 +266,10 @@ async function runDatabankParam(senderTab, jsonText, sendResponse) {
   let tab = null;
   try {
     tab = await createTab(DATABANK_PARAM_URL);
+    await focusTab(tab);
     await waitForTabComplete(tab.id);
     await ensureScriptInjected(tab.id, ['databank-automation.js']);
-    await focusTab(tab);
     await waitForReady(tab.id, CONTENT_PING);
-    await new Promise((r) => setTimeout(r, PARAM_PAGE_SETTLE_MS));
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK,
       jsonText: jsonText,

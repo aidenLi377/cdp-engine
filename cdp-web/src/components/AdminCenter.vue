@@ -739,6 +739,8 @@ function auditActionLabel(action) {
     INVITE_CREATED: '创建邀请',
     INVITE_REVOKED: '撤销邀请',
     AUDIT_LOG_DELETED: '删除操作记录',
+    folder_share_created: '分享方案文件夹',
+    folder_share_imported: '导入方案文件夹',
   }[action] || action
 }
 
@@ -1590,8 +1592,33 @@ onMounted(loadData)
 .user-cell strong { color: var(--ui-ink); font-size: 11px; font-weight: 600; }
 .user-cell small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 10px; }
 
-.users-table select { width: 106px; height: 30px; padding: 0 7px; font-size: 10px; }
-.users-table { min-width: 610px; }
+.users-table {
+  min-width: 0;
+  table-layout: fixed;
+}
+.users-table th,
+.users-table td {
+  padding-right: 6px;
+  padding-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.users-table th:nth-child(1) { width: 23%; }
+.users-table th:nth-child(2) { width: 20%; }
+.users-table th:nth-child(3) { width: 14%; }
+.users-table th:nth-child(4) { width: 17%; }
+.users-table th:nth-child(5) { width: 19%; }
+.users-table th:nth-child(6) { width: 7%; }
+.users-table select { width: 100%; min-width: 0; height: 30px; padding: 0 7px; font-size: 10px; }
+.users-table .user-cell > span:last-child { min-width: 0; }
+.users-table .user-cell strong,
+.users-table .user-cell small,
+.users-table .account-data-count,
+.users-table .last-login {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .user-status-toggle {
   display: inline-flex;

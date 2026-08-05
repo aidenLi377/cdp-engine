@@ -22,13 +22,24 @@ function Fail {
 function Get-ListeningPids {
     param([int]$Port)
 
-    $getNetTcpConnection = Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue
-    if (-not $getNetTcpConnection) {
+    $netstatExe = Join-Path $env:SystemRoot 'System32\netstat.exe'
+    if (-not (Test-Path $netstatExe)) {
         return @()
     }
 
-    return @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty OwningProcess -Unique)
+    $listeningPids = foreach ($line in (& $netstatExe -ano -p TCP 2>$null)) {
+        if ($line -notmatch '^\s*TCP\s+(\S+)\s+\S+\s+LISTENING\s+(\d+)\s*$') {
+            continue
+        }
+
+        $localEndpoint = $Matches[1]
+        $candidatePid = [int]$Matches[2]
+        if ($localEndpoint -match (':{0}$' -f $Port)) {
+            $candidatePid
+        }
+    }
+
+    return @($listeningPids | Select-Object -Unique)
 }
 
 function Get-TrackedPid {
@@ -63,18 +74,20 @@ function Get-ProcessDetails {
         return $null
     }
 
-    $commandLine = $null
+    $executablePath = $null
+    $startTime = $null
     try {
-        $cimProcess = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $ProcessId) -ErrorAction Stop
-        $commandLine = $cimProcess.CommandLine
+        $executablePath = $process.Path
+        $startTime = $process.StartTime
     }
     catch {
     }
 
     return [pscustomobject]@{
-        ProcessId   = $ProcessId
-        ProcessName = $process.ProcessName
-        CommandLine = $commandLine
+        ProcessId      = $ProcessId
+        ProcessName    = $process.ProcessName
+        ExecutablePath = $executablePath
+        StartTime      = $startTime
     }
 }
 
@@ -82,7 +95,7 @@ function Test-TrackedProcessMatch {
     param(
         [string]$PidFile,
         [string]$ExpectedProcessName,
-        [string[]]$RequiredCommandLinePatterns = @()
+        [string]$ExpectedExecutablePath
     )
 
     $trackedPid = Get-TrackedPid -PidFile $PidFile
@@ -99,18 +112,25 @@ function Test-TrackedProcessMatch {
         return $false
     }
 
-    foreach ($pattern in $RequiredCommandLinePatterns) {
-        if (-not $pattern) {
-            continue
-        }
-
-        if (-not $processDetails.CommandLine) {
+    if ($ExpectedExecutablePath) {
+        if (-not $processDetails.ExecutablePath) {
             return $false
         }
 
-        if ($processDetails.CommandLine.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        $expectedPath = [System.IO.Path]::GetFullPath($ExpectedExecutablePath)
+        $actualPath = [System.IO.Path]::GetFullPath($processDetails.ExecutablePath)
+        if (-not $actualPath.Equals($expectedPath, [System.StringComparison]::OrdinalIgnoreCase)) {
             return $false
         }
+    }
+
+    $pidFileTime = (Get-Item $PidFile -ErrorAction SilentlyContinue).LastWriteTime
+    if (-not $processDetails.StartTime -or -not $pidFileTime) {
+        return $false
+    }
+
+    if ([Math]::Abs(($pidFileTime - $processDetails.StartTime).TotalSeconds) -gt 60) {
+        return $false
     }
 
     return $true
@@ -128,7 +148,12 @@ function Stop-ProcessTree {
         return $false
     }
 
-    & taskkill.exe /PID $TargetPid /T /F | Out-Null
+    $taskkillOutput = & taskkill.exe /PID $TargetPid /T /F 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info ("Could not stop tracked PID {0}: {1}" -f $TargetPid, (($taskkillOutput | Out-String).Trim()))
+        return $false
+    }
+
     return $true
 }
 
@@ -160,35 +185,36 @@ $frontendPort = 5173
 $stoppedLabels = @()
 
 foreach ($entry in @(
-    @{ Label = 'backend'; PidFile = $backendPidFile; ProcessName = 'python'; Patterns = @("port=$backendPort", "host='127.0.0.1'") },
-    @{ Label = 'frontend'; PidFile = $frontendPidFile; ProcessName = 'cmd'; Patterns = @('run dev', "--port $frontendPort") }
+    @{ Label = 'backend'; PidFile = $backendPidFile; ProcessName = 'python'; ExecutablePath = (Join-Path $rootDir '.venv\Scripts\python.exe') },
+    @{ Label = 'frontend'; PidFile = $frontendPidFile; ProcessName = 'cmd'; ExecutablePath = (Join-Path $env:SystemRoot 'System32\cmd.exe') }
 )) {
     if (-not (Test-Path $entry.PidFile)) {
         continue
     }
 
+    $removePidFile = $true
     $targetPidValue = Get-TrackedPid -PidFile $entry.PidFile
-    if ($targetPidValue -and (Test-TrackedProcessMatch -PidFile $entry.PidFile -ExpectedProcessName $entry.ProcessName -RequiredCommandLinePatterns $entry.Patterns)) {
+    if ($targetPidValue -and (Test-TrackedProcessMatch -PidFile $entry.PidFile -ExpectedProcessName $entry.ProcessName -ExpectedExecutablePath $entry.ExecutablePath)) {
         if (Stop-ProcessTree -TargetPid $targetPidValue) {
             $stoppedLabels += $entry.Label
         }
+        else {
+            $removePidFile = $false
+        }
     }
 
-    Remove-Item $entry.PidFile -Force -ErrorAction SilentlyContinue
+    if ($removePidFile) {
+        Remove-Item $entry.PidFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 foreach ($entry in @(
     @{ Label = 'backend'; Port = $backendPort },
     @{ Label = 'frontend'; Port = $frontendPort }
 )) {
-    foreach ($listeningPidValue in (Get-ListeningPids -Port $entry.Port)) {
-        if (Stop-ProcessTree -TargetPid $listeningPidValue) {
-            $stoppedLabels += ('{0} listener' -f $entry.Label)
-        }
-    }
-
     if (-not (Wait-ForPortClosed -Port $entry.Port -TimeoutSeconds 10)) {
-        Fail ("Port {0} is still open after stop attempt." -f $entry.Port)
+        $remainingPids = (Get-ListeningPids -Port $entry.Port) -join ', '
+        Fail ("Port {0} is still open (PID {1}). It was not force-stopped because it could not be safely matched to this project's tracked process." -f $entry.Port, $remainingPids)
     }
 }
 

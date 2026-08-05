@@ -68,6 +68,20 @@ test('task center keeps single run actions and adds batch paste entry points', (
   assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
 })
 
+test('run buttons use task-specific prerequisites and explain missing DMP tags on click', () => {
+  const databankRule = source.match(/const canRunDatabank = computed\([^\r\n]+/)?.[0]
+  const dmpRule = source.match(/const canRunDmp = computed\([^\r\n]+/)?.[0]
+  const runDmp = source.match(/async function runDmp\(\) \{[\s\S]*?\n\}/)?.[0]
+
+  assert.ok(databankRule)
+  assert.ok(dmpRule)
+  assert.ok(runDmp)
+  assert.doesNotMatch(databankRule, /selectedTags/)
+  assert.doesNotMatch(dmpRule, /selectedTags/)
+  assert.match(runDmp, /selectedTags\.value\.length === 0/)
+  assert.match(runDmp, /请先在特征大盘中选择至少一个已就绪的标签/)
+})
+
 test('batch execution has no frontend item cap and keeps one history record per crowd package', () => {
   assert.doesNotMatch(source, /MAX_BATCH|batchLimit|批量上限/)
   assert.doesNotMatch(source, /taskHistory\.value\.length > 50/)
