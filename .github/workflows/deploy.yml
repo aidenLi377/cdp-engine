@@ -71,7 +71,10 @@ jobs:
           cp -R cdp_backend "$release_dir/"
           cp -- *.csv "$release_dir/"
           cp -R "批量圈人模板" "$release_dir/"
+          cp -R DMP_PluginV2.1-CDP-Merged "$release_dir/"
           cp -R cdp-web/dist "$release_dir/cdp-web/"
+
+          test -f "$release_dir/DMP_PluginV2.1-CDP-Merged/manifest.json"
 
           tar -C "$release_dir" -czf "$RUNNER_TEMP/cdp-release.tar.gz" .
 

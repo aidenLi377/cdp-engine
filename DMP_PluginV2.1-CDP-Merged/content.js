@@ -112,35 +112,37 @@ function updateCoverageCount() {
     if (!valueEl || !dotEl) return;
 
     try {
-        const xpath = "/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div/div[1]/div[3]/div[2]/strong";
-        const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        const node = result.singleNodeValue;
-
-        if (node && node.textContent.trim()) {
-            const raw = node.textContent.trim();
-            const numStr = raw.replace(/[^\d.]/g, '');
-            const num = parseInt(numStr, 10);
-
-            if (!isNaN(num) && num > 0) {
-                totalCoverageCount = num;
-                const formatted = num.toLocaleString('zh-CN');
-                if (valueEl.textContent !== formatted) {
-                    valueEl.style.opacity = '0';
-                    setTimeout(() => {
-                        valueEl.textContent = formatted;
-                        valueEl.style.opacity = '1';
-                    }, 150);
-                }
-                dotEl.style.background = '#52c41a';
-                dotEl.style.boxShadow = '0 0 5px rgba(82,196,26,0.5)';
-                return;
-            }
+        let num = globalThis.DmpResultCore?.findCoverageCount?.(document) || null;
+        if (!num) {
+            // Compatibility fallback for separately loaded legacy builds.
+            const xpath = "/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div/div[1]/div[3]/div[2]/strong";
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+            const raw = result.singleNodeValue?.textContent?.trim() || '';
+            num = globalThis.DmpResultCore?.parseCoverageCount?.(raw)
+                || Number.parseInt(raw.replace(/[^\d]/g, ''), 10);
         }
 
+        if (Number.isFinite(num) && num > 0) {
+            totalCoverageCount = num;
+            const formatted = num.toLocaleString('zh-CN');
+            if (valueEl.textContent !== formatted) {
+                valueEl.style.opacity = '0';
+                setTimeout(() => {
+                    valueEl.textContent = formatted;
+                    valueEl.style.opacity = '1';
+                }, 150);
+            }
+            dotEl.style.background = '#52c41a';
+            dotEl.style.boxShadow = '0 0 5px rgba(82,196,26,0.5)';
+            return;
+        }
+
+        totalCoverageCount = 0;
         valueEl.textContent = '--';
         dotEl.style.background = '#e0e0e0';
         dotEl.style.boxShadow = 'none';
     } catch (e) {
+        totalCoverageCount = 0;
         valueEl.textContent = '--';
         dotEl.style.background = '#e0e0e0';
         dotEl.style.boxShadow = 'none';

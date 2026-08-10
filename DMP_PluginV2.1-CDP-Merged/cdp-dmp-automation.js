@@ -149,11 +149,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   function getInitialCrowdListSignature() {
     if (document.readyState !== 'complete' || isCrowdListLoading()) return '';
-    const tbody = document.querySelector('table tbody');
-    if (!tbody) return '';
-    const rows = Array.from(tbody.querySelectorAll('tr')).filter(
-      (row) => row.querySelectorAll('td').length > 0
-    );
+    const rows = getCrowdRows();
     if (rows.length === 0) return '';
     return rows
       .map((row) => (row.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 250))
@@ -196,17 +192,33 @@ if (!window.__dmpAutomationContentScriptLoaded) {
     throw new Error('等待达摩盘人群列表初始化完成超时');
   }
 
-  function findCrowdRowByName(targetName) {
-    const table = document.querySelector('table tbody');
-    if (!table) return -1;
-    const rows = table.querySelectorAll('tr');
-    for (let i = 0; i < rows.length; i++) {
-      const cells = rows[i].querySelectorAll('td');
-      for (const cell of cells) {
-        if ((cell.textContent || '').trim() === targetName) return i;
+  function getCrowdRows() {
+    const rows = [];
+    for (const tbody of Array.from(document.querySelectorAll('table tbody'))) {
+      for (const row of Array.from(tbody.querySelectorAll('tr'))) {
+        if (row.querySelectorAll('td').length > 0 && isVisible(row)) rows.push(row);
       }
     }
-    return -1;
+    return rows;
+  }
+
+  function normalizeCrowdName(value) {
+    if (dmpResultCore?.normalizeCrowdName) return dmpResultCore.normalizeCrowdName(value);
+    return String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function findCrowdRowByName(targetName) {
+    const rows = getCrowdRows();
+    if (dmpResultCore?.findCrowdRowByName) {
+      const matchedRow = dmpResultCore.findCrowdRowByName(rows, targetName);
+      return matchedRow ? rows.indexOf(matchedRow) : -1;
+    }
+    const target = normalizeCrowdName(targetName);
+    return rows.findIndex((row) => normalizeCrowdName(row.textContent) === target);
+  }
+
+  function getCrowdRow(rowIndex) {
+    return getCrowdRows()[rowIndex] || null;
   }
 
   // XPath for crowd ID cell (from requirements doc)
@@ -220,11 +232,8 @@ if (!window.__dmpAutomationContentScriptLoaded) {
   }
 
   function getCrowdIdFromRow(rowIndex) {
-    const table = document.querySelector('table tbody');
-    if (!table) return null;
-    const rows = table.querySelectorAll('tr');
-    if (rowIndex >= rows.length) return null;
-    const row = rows[rowIndex];
+    const row = getCrowdRow(rowIndex);
+    if (!row) return null;
 
     // Method 1: look for divs in the row containing a number (with optional prefix like "ID：")
     const divs = row.querySelectorAll('td div');
@@ -250,24 +259,20 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   // Click the matched row to expand it and reveal sub-rows (画像透视 entry)
   function clickRowToExpand(rowIndex) {
-    const table = document.querySelector('table tbody');
-    if (!table) return false;
-    const rows = table.querySelectorAll('tr');
-    if (rowIndex >= rows.length) return false;
+    const row = getCrowdRow(rowIndex);
+    if (!row) return false;
     // Click the name cell to expand
-    const nameCell = rows[rowIndex].querySelector('td');
+    const nameCell = row.querySelector('td');
     if (nameCell) {
       clickNode(nameCell);
-      expandedCrowdRow = rows[rowIndex];
+      expandedCrowdRow = row;
       return true;
     }
     return false;
   }
 
   function findPortraitLinkInRow(rowIndex) {
-    const table = document.querySelector('table tbody');
-    if (!table) return null;
-    const rows = table.querySelectorAll('tr');
+    const rows = getCrowdRows();
     const start = Math.max(0, rowIndex - 1);
     const end = Math.min(rows.length, rowIndex + 3);
     for (let i = start; i < end; i++) {
@@ -289,6 +294,17 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   // ============= Phase 1: Search + Match + Find Portrait =============
 
+  function setNativeInputValue(input, value) {
+    let prototype = Object.getPrototypeOf(input);
+    let descriptor = null;
+    while (prototype && !descriptor) {
+      descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+      prototype = Object.getPrototypeOf(prototype);
+    }
+    if (descriptor?.set) descriptor.set.call(input, value);
+    else input.value = value;
+  }
+
   async function phase1SearchAndMatch(crowdName) {
     const trail = [];
     activeCrowdName = crowdName;
@@ -309,9 +325,8 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
     // Type search query
     console.info('[DMP Automation] searching crowd:', crowdName);
-    searchInput.value = '';
     searchInput.focus();
-    searchInput.value = crowdName;
+    setNativeInputValue(searchInput, crowdName);
     searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     searchInput.dispatchEvent(new Event('change', { bubbles: true }));
     searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
@@ -320,9 +335,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
     // Wait for results table
     await waitForLocator(() => {
-      const table = document.querySelector('table tbody');
-      if (!table) return null;
-      const rows = table.querySelectorAll('tr');
+      const rows = getCrowdRows();
       return rows.length > 0 ? rows : null;
     }, '搜索结果列表', 20000, 500);
     // Match exact crowd name
@@ -332,7 +345,11 @@ if (!window.__dmpAutomationContentScriptLoaded) {
         const idx = findCrowdRowByName(crowdName);
         if (idx >= 0) return idx;
         const nameNode = getNodeByXpath(DMP_FIRST_NAME_XPATH);
-        if (nameNode && (nameNode.textContent || '').trim() === crowdName) return 0;
+        if (nameNode && normalizeCrowdName(nameNode.textContent) === normalizeCrowdName(crowdName)) {
+          const legacyRow = nameNode.closest?.('tr');
+          const legacyRowIndex = getCrowdRows().indexOf(legacyRow);
+          if (legacyRowIndex >= 0) return legacyRowIndex;
+        }
         await sleep(500);
       }
       return -1;
@@ -372,8 +389,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
         const rowIndex = targetName ? findCrowdRowByName(targetName) : initialRowIndex;
         if (rowIndex < 0) return null;
-        const table = document.querySelector('table tbody');
-        const currentRow = table?.querySelectorAll('tr')?.[rowIndex] || null;
+        const currentRow = getCrowdRow(rowIndex);
         if (currentRow && currentRow !== expandedCrowdRow) clickRowToExpand(rowIndex);
         const portraitLink = findPortraitLinkInRow(rowIndex);
         return isVisible(portraitLink) ? true : null;
@@ -480,16 +496,12 @@ if (!window.__dmpAutomationContentScriptLoaded) {
 
   async function readCoverageCount() {
     try {
-      const countXpath = '/html/body/div[1]/div[3]/div[2]/div/div[2]/div/div[1]/div/div[1]/div[3]/div[2]/strong';
-      const countNode = await waitForLocator(() => {
-        const node = document.evaluate(countXpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-        return node?.textContent?.trim() ? node : null;
-      }, '覆盖人数元素', 20000, 500);
-      const count = Number.parseInt(String(countNode.textContent || '').replace(/[^\d.]/g, ''), 10);
-      if (Number.isFinite(count) && count > 0) {
-        console.info('[DMP Automation] crowdCount:', count);
-        return count;
-      }
+      const count = await waitForLocator(
+        () => dmpResultCore?.findCoverageCount?.(document) || null,
+        '覆盖人数元素', 20000, 500
+      );
+      console.info('[DMP Automation] crowdCount:', count);
+      return count;
     } catch (error) {
       console.warn('[DMP Automation] crowdCount not found:', error?.message || error);
     }

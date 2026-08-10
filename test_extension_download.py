@@ -10,12 +10,24 @@ from tempfile import TemporaryDirectory
 from test_support import create_authenticated_test_app
 
 
+class ExtensionReleaseContractTest(unittest.TestCase):
+    def test_runtime_release_contains_the_downloadable_extension(self):
+        workflow = (Path(__file__).resolve().parent / ".github" / "workflows" / "deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('cp -R DMP_PluginV2.1-CDP-Merged "$release_dir/"', workflow)
+        self.assertIn(
+            'test -f "$release_dir/DMP_PluginV2.1-CDP-Merged/manifest.json"',
+            workflow,
+        )
+
+
 class ExtensionDownloadTest(unittest.TestCase):
     def setUp(self):
         self.extension_temp = TemporaryDirectory(prefix="cdp-extension-")
         extension_dir = Path(self.extension_temp.name)
         (extension_dir / "manifest.json").write_text(
-            json.dumps({"manifest_version": 3, "name": "Test Extension", "version": "2.2.0"}),
+            json.dumps({"manifest_version": 3, "name": "Test Extension", "version": "2.2.1"}),
             encoding="utf-8",
         )
         (extension_dir / "bridge.js").write_text("console.log('bridge')", encoding="utf-8")
@@ -38,14 +50,14 @@ class ExtensionDownloadTest(unittest.TestCase):
         response = self.ctx.client.get("/api/extension/download")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "application/zip")
-        self.assertIn("DMP_PluginV2.2.0-CDP-Merged.zip", response.headers["Content-Disposition"])
+        self.assertIn("DMP_PluginV2.2.1-CDP-Merged.zip", response.headers["Content-Disposition"])
         self.assertIn("no-store", response.headers["Cache-Control"])
 
         with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
             names = set(archive.namelist())
-        self.assertIn("DMP_PluginV2.2.0-CDP-Merged/manifest.json", names)
-        self.assertIn("DMP_PluginV2.2.0-CDP-Merged/bridge.js", names)
-        self.assertNotIn("DMP_PluginV2.2.0-CDP-Merged/tests/ignored.js", names)
+        self.assertIn("DMP_PluginV2.2.1-CDP-Merged/manifest.json", names)
+        self.assertIn("DMP_PluginV2.2.1-CDP-Merged/bridge.js", names)
+        self.assertNotIn("DMP_PluginV2.2.1-CDP-Merged/tests/ignored.js", names)
 
 
 if __name__ == "__main__":

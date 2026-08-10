@@ -343,7 +343,7 @@ import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWor
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
-const EXPECTED_EXTENSION_VERSION = '2.2.0'
+const EXPECTED_EXTENSION_VERSION = '2.2.1'
 const TASK_SESSION_KEY = 'task-center.v1'
 
 const props = defineProps({
@@ -496,10 +496,17 @@ const extensionStatusHint = computed(() => {
 
 function isCompatibleExtensionVersion(version) {
   if (!version) return true
-  const actual = String(version).split('.').map(Number)
-  const expected = EXPECTED_EXTENSION_VERSION.split('.').map(Number)
+  const actual = String(version).split('.').slice(0, 3).map(Number)
+  const expected = EXPECTED_EXTENSION_VERSION.split('.').slice(0, 3).map(Number)
+  while (actual.length < 3) actual.push(0)
+  while (expected.length < 3) expected.push(0)
   if (actual.some(Number.isNaN) || expected.some(Number.isNaN)) return true
-  return actual[0] === expected[0] && actual[1] >= expected[1]
+  if (actual[0] !== expected[0]) return false
+  for (let index = 1; index < 3; index += 1) {
+    if (actual[index] > expected[index]) return true
+    if (actual[index] < expected[index]) return false
+  }
+  return true
 }
 
 function persistTaskSession() {

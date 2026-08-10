@@ -68,6 +68,12 @@ test('task center keeps single run actions and adds batch paste entry points', (
   assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
 })
 
+test('task center requires the fixed extension patch version', () => {
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.1'/)
+  assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
+  assert.match(source, /actual\[index\] < expected\[index\]/)
+})
+
 test('run buttons use task-specific prerequisites and explain missing DMP tags on click', () => {
   const databankRule = source.match(/const canRunDatabank = computed\([^\r\n]+/)?.[0]
   const dmpRule = source.match(/const canRunDmp = computed\([^\r\n]+/)?.[0]

@@ -80,3 +80,16 @@ test('DMP waits for the initial crowd list to fully settle before pressing Enter
   assert.equal((phase1.match(/new KeyboardEvent\('keydown'/g) || []).length, 1)
   assert.equal((phase1.match(/new KeyboardEvent\('keyup'/g) || []).length, 1)
 })
+
+test('DMP search recognizes visible rows across table wrappers and controlled inputs', () => {
+  assert.match(source, /document\.querySelectorAll\('table tbody'\)/)
+  assert.match(source, /dmpResultCore\.findCrowdRowByName\(rows, targetName\)/)
+  assert.match(source, /function setNativeInputValue\(input, value\)/)
+  assert.match(source, /descriptor\.set\.call\(input, value\)/)
+  assert.doesNotMatch(source, /\(cell\.textContent \|\| ''\)\.trim\(\) === targetName/)
+})
+
+test('DMP standalone and batch extraction share the semantic coverage locator', () => {
+  assert.match(source, /dmpResultCore\?\.findCoverageCount\?\.\(document\)/)
+  assert.doesNotMatch(source, /const countXpath =/)
+})
