@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS config_versions (
     published_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS config_audit_logs (
+    id              TEXT PRIMARY KEY,
+    actor_user_id   TEXT NOT NULL,
+    action          TEXT NOT NULL,
+    dimension_file  TEXT,
+    row_id          TEXT,
+    row_name        TEXT NOT NULL DEFAULT '',
+    details         TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS solutions (
     id                          TEXT PRIMARY KEY,
     name                        TEXT NOT NULL DEFAULT '',
@@ -178,6 +189,10 @@ CREATE INDEX IF NOT EXISTS idx_dimension_rows_lookup
 CREATE INDEX IF NOT EXISTS idx_dimension_rows_changes
     ON dimension_rows(has_changes, dimension_file);
 CREATE INDEX IF NOT EXISTS idx_config_versions_number ON config_versions(version_number);
+CREATE INDEX IF NOT EXISTS idx_config_audit_created
+    ON config_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_config_audit_dimension
+    ON config_audit_logs(dimension_file, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_solutions_scope ON solutions(visibility, owner_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder_order
     ON solutions(visibility, owner_id, folder_id, sort_order);
@@ -272,4 +287,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 3")
+        conn.execute("PRAGMA user_version = 4")

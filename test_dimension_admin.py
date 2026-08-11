@@ -131,6 +131,96 @@ class DimensionAdminApiTests(unittest.TestCase):
         response = client.get("/api/admin/dimensions")
         self.assertEqual(response.status_code, 403)
 
+    def test_config_audit_records_field_diffs_actor_and_publish_details(self):
+        client = self.login("config", "config-password")
+        filename = "类目维表.csv"
+        created = client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={
+                "data": {
+                    "适用的包": "类目公域行为",
+                    "类目名称": "测试类目>审计详情",
+                    "cateId": "990000010",
+                    "备注": "首版",
+                }
+            },
+        )
+        self.assertEqual(created.status_code, 201)
+        row_id = created.get_json()["id"]
+
+        updated = client.put(
+            f"/api/admin/dimensions/{filename}/{row_id}",
+            json={
+                "data": {
+                    "适用的包": "类目公域行为",
+                    "类目名称": "测试类目>审计详情",
+                    "cateId": "990000011",
+                }
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        disabled = client.patch(
+            f"/api/admin/dimensions/{filename}/{row_id}/status",
+            json={"enabled": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        published = client.post(
+            "/api/admin/config/publish",
+            json={"note": "验证配置审计详情"},
+        )
+        self.assertEqual(published.status_code, 201)
+
+        response = client.get(
+            "/api/admin/config/audit-logs",
+            query_string={"limit": 30, "dimensionFile": filename},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertGreaterEqual(payload["total"], 3)
+        entries = payload["items"]
+        actions = {entry["action"] for entry in entries}
+        self.assertIn("DIMENSION_ROW_CREATED", actions)
+        self.assertIn("DIMENSION_ROW_UPDATED", actions)
+        self.assertIn("DIMENSION_ROW_STATUS_CHANGED", actions)
+        self.assertIn("CONFIG_PUBLISHED", actions)
+        self.assertTrue(
+            all(entry["actorDisplayName"] == "Config" for entry in entries)
+        )
+
+        edit_entry = next(
+            entry for entry in entries
+            if entry["action"] == "DIMENSION_ROW_UPDATED"
+            and entry["rowId"] == row_id
+        )
+        changes = {change["field"]: change for change in edit_entry["details"]["changes"]}
+        self.assertEqual(changes["cateId"]["before"], "990000010")
+        self.assertEqual(changes["cateId"]["after"], "990000011")
+        self.assertEqual(changes["cateId"]["kind"], "changed")
+        self.assertEqual(changes["备注"]["kind"], "removed")
+        self.assertEqual(changes["备注"]["before"], "首版")
+        self.assertIsNone(changes["备注"]["after"])
+
+        all_entries = client.get(
+            "/api/admin/config/audit-logs",
+            query_string={"limit": 30},
+        ).get_json()["items"]
+        publish_entry = next(
+            entry for entry in all_entries
+            if entry["action"] == "CONFIG_PUBLISHED"
+            and entry["details"].get("note") == "验证配置审计详情"
+        )
+        table = next(
+            item for item in publish_entry["details"]["tables"]
+            if item["dimensionFile"] == filename
+        )
+        published_row = next(item for item in table["rows"] if item["rowId"] == row_id)
+        self.assertEqual(published_row["rowName"], "测试类目>审计详情")
+        self.assertTrue(published_row["changes"])
+
+        regular_client = self.login("normal", "normal-password")
+        denied = regular_client.get("/api/admin/config/audit-logs")
+        self.assertEqual(denied.status_code, 403)
+
     def test_only_super_admin_can_delete_a_dimension_row(self):
         config_client = self.login("config", "config-password")
         root_client = self.login("root", "root-password")
@@ -167,6 +257,21 @@ class DimensionAdminApiTests(unittest.TestCase):
         self.assertTrue(staged.get_json()["deleted"])
         self.assertTrue(staged.get_json()["hasChanges"])
 
+        audit_entries = root_client.get(
+            "/api/admin/config/audit-logs",
+            query_string={"limit": 20, "dimensionFile": filename},
+        ).get_json()["items"]
+        delete_entry = next(
+            entry for entry in audit_entries
+            if entry["action"] == "DIMENSION_ROW_DELETED"
+            and entry["rowId"] == row_id
+        )
+        self.assertEqual(delete_entry["actorDisplayName"], "Root")
+        self.assertTrue(delete_entry["details"]["staged"])
+        self.assertTrue(
+            all(change["kind"] == "removed" for change in delete_entry["details"]["changes"])
+        )
+
         pending = root_client.get(
             f"/api/admin/dimensions/{filename}?q=待删除"
         ).get_json()["rows"]
@@ -174,6 +279,13 @@ class DimensionAdminApiTests(unittest.TestCase):
 
         discarded = root_client.post("/api/admin/config/discard")
         self.assertEqual(discarded.status_code, 200)
+        discard_entries = root_client.get(
+            "/api/admin/config/audit-logs",
+            query_string={"limit": 20},
+        ).get_json()["items"]
+        self.assertTrue(
+            any(entry["action"] == "CONFIG_DRAFT_DISCARDED" for entry in discard_entries)
+        )
         restored = root_client.get(
             f"/api/admin/dimensions/{filename}?q=待删除"
         ).get_json()["rows"]

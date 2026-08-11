@@ -694,6 +694,21 @@ def register_routes(
             return permission_error
         return jsonify(dimension_store.list_versions())
 
+    @app.route("/api/admin/config/audit-logs")
+    def admin_config_audit_logs():
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            limit = int(request.args.get("limit", 60))
+            result = dimension_store.list_config_audit_logs(
+                limit=limit,
+                dimension_file=request.args.get("dimensionFile") or None,
+            )
+        except (TypeError, ValueError, DimensionValidationError) as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify(result)
+
     @app.route("/api/admin/config/publish", methods=["POST"])
     def admin_publish_config():
         nonlocal loaded_config_version
@@ -718,7 +733,7 @@ def register_routes(
         permission_error = require_config_admin()
         if permission_error is not None:
             return permission_error
-        result = dimension_store.discard_changes()
+        result = dimension_store.discard_changes(g.current_user["id"])
         return jsonify(result)
 
     @app.route("/api/packages")

@@ -55,3 +55,18 @@ test('audit deletion is visible only to super admins and uses the guarded API ac
   assert.match(adminCenterVue, /\/api\/admin\/audit-logs\/\$\{encodeURIComponent\(entry\.id\)\}/)
   assert.match(adminCenterVue, /操作记录已删除/)
 })
+
+test('config audit trail exposes immutable expandable field-level details', () => {
+  assert.match(adminCenterVue, /id="config-audit-title">配置修改记录/)
+  assert.match(adminCenterVue, /记录只读，不提供删除入口/)
+  assert.match(adminCenterVue, /\/api\/admin\/config\/audit-logs/)
+  assert.match(adminCenterVue, /expandedConfigAuditId === entry\.id/)
+  assert.match(adminCenterVue, /configAuditGroups\(entry\)/)
+  assert.match(adminCenterVue, />字段<\/span><span>变更<\/span><span>修改前<\/span><span>修改后</)
+  assert.match(adminCenterVue, /configAuditChangeLabel\(change\.kind\)/)
+  assert.match(adminCenterVue, /formatConfigAuditValue\(change\.before\)/)
+  assert.match(adminCenterVue, /formatConfigAuditValue\(change\.after\)/)
+  assert.match(adminCenterVue, /config-audit-kind\.removed/)
+  assert.match(adminCenterVue, /config-audit-diff-row code\.before/)
+  assert.match(adminCenterVue, /config-audit-diff-row code\.after/)
+})

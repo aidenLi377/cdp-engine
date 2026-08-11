@@ -616,6 +616,136 @@
           </div>
         </div>
       </div>
+
+      <section class="config-audit-panel" aria-labelledby="config-audit-title">
+        <div class="config-audit-head">
+          <div>
+            <p class="admin-panel-index">05 / CONFIG CHANGELOG</p>
+            <h3 id="config-audit-title">配置修改记录</h3>
+            <p>按管理员操作留档，展开可查看维表、记录以及每个字段的旧值与新值。</p>
+          </div>
+          <div class="config-audit-tools">
+            <div class="config-audit-scope" aria-label="配置修改记录范围">
+              <button
+                type="button"
+                :class="{ active: configAuditScope === 'all' }"
+                @click="setConfigAuditScope('all')"
+              >全部</button>
+              <button
+                type="button"
+                :class="{ active: configAuditScope === 'current' }"
+                @click="setConfigAuditScope('current')"
+              >当前维表</button>
+            </div>
+            <button
+              class="config-audit-refresh"
+              type="button"
+              :disabled="configAuditLoading"
+              @click="loadConfigAuditLogs()"
+            >{{ configAuditLoading ? '读取中…' : '刷新记录' }}</button>
+          </div>
+        </div>
+
+        <div class="config-audit-summary">
+          <span>{{ configAuditTotal.toLocaleString() }} 条留档</span>
+          <span>当前显示最近 {{ configAuditLogs.length }} 条</span>
+          <span>记录只读，不提供删除入口</span>
+        </div>
+
+        <div class="config-audit-list" :class="{ loading: configAuditLoading }">
+          <article
+            v-for="(entry, index) in configAuditLogs"
+            :key="entry.id"
+            class="config-audit-entry"
+            :class="{ expanded: expandedConfigAuditId === entry.id }"
+          >
+            <button class="config-audit-entry-button" type="button" @click="toggleConfigAudit(entry)">
+              <span class="config-audit-sequence">{{ String(index + 1).padStart(2, '0') }}</span>
+              <span class="config-audit-action" :class="configAuditActionClass(entry.action)">
+                {{ configAuditActionLabel(entry.action) }}
+              </span>
+              <span class="config-audit-identity">
+                <strong>{{ dimensionAuditName(entry.dimensionFile) }}</strong>
+                <small>
+                  {{ entry.rowName || entry.details?.summary || '配置批次' }}
+                  <template v-if="entry.rowId"> · {{ entry.rowId }}</template>
+                </small>
+              </span>
+              <span class="config-audit-actor">
+                <strong>{{ entry.actorDisplayName || entry.actorUsername || '未知管理员' }}</strong>
+                <small>{{ formatDate(entry.createdAt) }}</small>
+              </span>
+              <span class="config-audit-count">{{ configAuditChangeCount(entry) }} 项差异</span>
+              <span class="config-audit-chevron" aria-hidden="true">⌄</span>
+            </button>
+
+            <div v-if="expandedConfigAuditId === entry.id" class="config-audit-detail">
+              <div class="config-audit-detail-intro">
+                <p>{{ entry.details?.summary || configAuditActionLabel(entry.action) }}</p>
+                <small v-if="entry.details?.note">发布说明：{{ entry.details.note }}</small>
+                <small v-if="entry.action === 'DIMENSION_ROWS_IMPORTED'">
+                  导入 {{ entry.details?.total || 0 }} 条，其中新增 {{ entry.details?.created || 0 }} 条、更新 {{ entry.details?.updated || 0 }} 条
+                </small>
+              </div>
+
+              <div v-if="configAuditGroups(entry).length" class="config-audit-groups">
+                <section
+                  v-for="group in configAuditGroups(entry)"
+                  :key="`${entry.id}-${group.dimensionFile}`"
+                  class="config-audit-group"
+                >
+                  <header>
+                    <strong>{{ dimensionAuditName(group.dimensionFile) }}</strong>
+                    <span>{{ group.rows.length }} 条记录</span>
+                  </header>
+
+                  <div
+                    v-for="row in group.rows"
+                    :key="`${entry.id}-${group.dimensionFile}-${row.rowId}`"
+                    class="config-audit-row"
+                  >
+                    <div class="config-audit-row-head">
+                      <span class="config-audit-operation" :class="row.operation">
+                        {{ configAuditOperationLabel(row.operation) }}
+                      </span>
+                      <strong>{{ row.rowName || row.rowId || '未命名记录' }}</strong>
+                      <code v-if="row.rowId">{{ row.rowId }}</code>
+                    </div>
+
+                    <div v-if="row.changes?.length" class="config-audit-diff-table">
+                      <div class="config-audit-diff-head" aria-hidden="true">
+                        <span>字段</span><span>变更</span><span>修改前</span><span>修改后</span>
+                      </div>
+                      <div
+                        v-for="(change, changeIndex) in row.changes"
+                        :key="`${change.field}-${changeIndex}`"
+                        class="config-audit-diff-row"
+                      >
+                        <strong>{{ change.field }}</strong>
+                        <span class="config-audit-kind" :class="change.kind">
+                          {{ configAuditChangeLabel(change.kind) }}
+                        </span>
+                        <code class="before" :title="formatConfigAuditValue(change.before)">
+                          {{ formatConfigAuditValue(change.before) }}
+                        </code>
+                        <code class="after" :title="formatConfigAuditValue(change.after)">
+                          {{ formatConfigAuditValue(change.after) }}
+                        </code>
+                      </div>
+                    </div>
+                    <p v-else class="config-audit-no-diff">该记录没有字段值差异。</p>
+                  </div>
+                </section>
+              </div>
+              <p v-else class="config-audit-no-diff">本次为批量管理动作，逐条字段变化已保留在关联记录中。</p>
+            </div>
+          </article>
+
+          <p v-if="!configAuditLogs.length && !configAuditLoading" class="config-audit-empty">
+            还没有配置修改记录。下一次保存、启停、删除、发布或放弃草稿后会自动出现。
+          </p>
+        </div>
+      </section>
     </section>
   </main>
 </template>
@@ -624,6 +754,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { request } from '../utils/apiClient.js'
 import { adoptConfigVersion } from '../utils/configVersion.js'
+import {
+  configAuditActionLabel,
+  configAuditOperationLabel,
+  configAuditChangeLabel,
+  configAuditGroups,
+  configAuditChangeCount,
+  formatConfigAuditValue,
+} from '../utils/configAudit.js'
 
 const props = defineProps({
   currentUserId: {
@@ -654,6 +792,11 @@ const STATUS_LABELS = {
 const users = ref([])
 const invites = ref([])
 const auditLogs = ref([])
+const configAuditLogs = ref([])
+const configAuditTotal = ref(0)
+const configAuditLoading = ref(false)
+const configAuditScope = ref('all')
+const expandedConfigAuditId = ref('')
 const dimensions = ref([])
 const configStatus = ref({ currentVersion: 0, pendingChanges: 0 })
 const publishNote = ref('')
@@ -785,6 +928,7 @@ async function loadData() {
       selectedDimensionFile.value = dimensions.value[0]?.file || ''
     }
     await loadDimensionRows()
+    await loadConfigAuditLogs({ silent: true })
     if (canManageAccounts.value) {
       const [nextUsers, nextInvites, nextAuditLogs] = await Promise.all([
         request('/api/admin/users', { cache: 'no-store' }),
@@ -849,6 +993,51 @@ function selectDimension(file) {
   dimensionPackage.value = ''
   closeDimensionEditor()
   loadDimensionRows()
+  if (configAuditScope.value === 'current') loadConfigAuditLogs()
+}
+
+async function loadConfigAuditLogs({ silent = false } = {}) {
+  configAuditLoading.value = true
+  try {
+    const result = await request('/api/admin/config/audit-logs', {
+      params: {
+        limit: 60,
+        dimensionFile: configAuditScope.value === 'current' ? selectedDimensionFile.value : '',
+      },
+      cache: 'no-store',
+    })
+    configAuditLogs.value = result.items || []
+    configAuditTotal.value = result.total || 0
+    if (expandedConfigAuditId.value && !configAuditLogs.value.some((entry) => entry.id === expandedConfigAuditId.value)) {
+      expandedConfigAuditId.value = ''
+    }
+  } catch (error) {
+    if (!silent) showMessage(error.message || '配置修改记录加载失败', 'error')
+  } finally {
+    configAuditLoading.value = false
+  }
+}
+
+function setConfigAuditScope(scope) {
+  if (!['all', 'current'].includes(scope) || configAuditScope.value === scope) return
+  configAuditScope.value = scope
+  expandedConfigAuditId.value = ''
+  loadConfigAuditLogs()
+}
+
+function toggleConfigAudit(entry) {
+  expandedConfigAuditId.value = expandedConfigAuditId.value === entry.id ? '' : entry.id
+}
+
+function configAuditActionClass(action) {
+  if (action === 'DIMENSION_ROW_CREATED') return 'created'
+  if (action === 'DIMENSION_ROW_DELETED' || action === 'CONFIG_DRAFT_DISCARDED') return 'removed'
+  if (action === 'CONFIG_PUBLISHED') return 'published'
+  return 'changed'
+}
+
+function dimensionAuditName(file) {
+  return file ? dimensionDisplayName(file) : '多维表配置'
 }
 
 function changeDimensionPage(delta) {
@@ -903,7 +1092,11 @@ async function saveDimensionRow() {
     })
     showMessage(editingRow.value ? '维表记录已更新' : '维表记录已新增')
     closeDimensionEditor()
-    await Promise.all([loadDimensionRows(), refreshConfigSummary()])
+    await Promise.all([
+      loadDimensionRows(),
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
     if (!editingRow.value && saved?.id) {
       dimensionPage.value = 1
     }
@@ -925,7 +1118,10 @@ async function toggleDimensionRow(row) {
       },
     )
     dimensionRows.value = dimensionRows.value.map((item) => item.id === updated.id ? updated : item)
-    await refreshConfigSummary()
+    await Promise.all([
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
     showMessage(updated.enabled ? '已加入启用草稿' : '已加入停用草稿')
   } catch (error) {
     showMessage(error.message || '维表状态更新失败', 'error')
@@ -946,7 +1142,10 @@ async function deleteDimensionRow(row) {
     } else {
       dimensionRows.value = dimensionRows.value.map((item) => item.id === deleted.id ? deleted : item)
     }
-    await refreshConfigSummary()
+    await Promise.all([
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
     showMessage(deleted?.removed ? '未发布记录已删除' : '已加入删除草稿')
   } catch (error) {
     showMessage(error.message || '维表记录删除失败', 'error')
@@ -963,7 +1162,11 @@ async function publishConfig() {
     })
     adoptConfigVersion(version, { notify: true })
     publishNote.value = ''
-    await Promise.all([loadDimensionRows(), refreshConfigSummary()])
+    await Promise.all([
+      loadDimensionRows(),
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
     showMessage(`配置 V${version.version} 已发布并同步，共 ${version.changeCount} 项修改`)
   } catch (error) {
     showMessage(error.message || '配置发布失败', 'error')
@@ -979,7 +1182,11 @@ async function discardConfig() {
   try {
     const result = await request('/api/admin/config/discard', { method: 'POST' })
     closeDimensionEditor()
-    await Promise.all([loadDimensionRows(), refreshConfigSummary()])
+    await Promise.all([
+      loadDimensionRows(),
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
     showMessage(`已放弃 ${result.discarded} 项草稿修改`)
   } catch (error) {
     showMessage(error.message || '放弃草稿失败', 'error')
@@ -2566,6 +2773,342 @@ onMounted(loadData)
 
 .dimension-pagination button:hover:not(:disabled) { color: var(--ui-ink); }
 .dimension-pagination button:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.config-audit-panel {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.config-audit-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.config-audit-head h3 {
+  margin: 4px 0 0;
+  color: var(--ui-ink);
+  font: 600 20px/1.2 "Avenir Next", "Segoe UI Variable", "PingFang SC", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.config-audit-head p:not(.admin-panel-index) {
+  margin: 7px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+
+.config-audit-tools,
+.config-audit-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-audit-scope {
+  gap: 2px;
+  padding: 3px;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 9px;
+}
+
+.config-audit-scope button,
+.config-audit-refresh {
+  height: 29px;
+  padding: 0 10px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.config-audit-scope button.active {
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  box-shadow: 0 1px 4px rgba(29, 29, 31, 0.1);
+}
+
+.config-audit-refresh {
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+}
+
+.config-audit-refresh:hover:not(:disabled) { color: var(--ui-ink); border-color: var(--ui-ink); }
+.config-audit-refresh:disabled { cursor: wait; opacity: 0.5; }
+
+.config-audit-summary {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 17px 0 9px;
+  color: var(--ui-text-tertiary);
+  font: 9px/1.4 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  letter-spacing: 0.03em;
+}
+
+.config-audit-summary span + span::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 16px 2px 0;
+  background: var(--ui-text-tertiary);
+  border-radius: 50%;
+  opacity: 0.45;
+}
+
+.config-audit-list {
+  overflow: hidden;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(29, 29, 31, 0.045);
+  transition: opacity 160ms ease;
+}
+
+.config-audit-list.loading { opacity: 0.58; }
+
+.config-audit-entry + .config-audit-entry {
+  border-top: 1px solid var(--ui-divider);
+}
+
+.config-audit-entry.expanded {
+  background: color-mix(in srgb, var(--ui-fill) 66%, var(--ui-surface));
+}
+
+.config-audit-entry-button {
+  display: grid;
+  grid-template-columns: 28px 76px minmax(210px, 1fr) 170px 76px 18px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 66px;
+  padding: 10px 15px;
+  color: var(--ui-ink);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.config-audit-entry-button:hover { background: color-mix(in srgb, var(--ui-accent) 2.5%, transparent); }
+
+.config-audit-sequence {
+  color: var(--ui-text-tertiary);
+  font: 600 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+}
+
+.config-audit-action,
+.config-audit-operation,
+.config-audit-kind {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border: 1px solid;
+  border-radius: 999px;
+}
+
+.config-audit-action {
+  min-width: 64px;
+  height: 24px;
+  padding: 0 7px;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.config-audit-action.created,
+.config-audit-operation.created,
+.config-audit-kind.added {
+  color: #18794e;
+  background: #edf9f2;
+  border-color: #b7e4c8;
+}
+
+.config-audit-action.changed,
+.config-audit-operation.updated,
+.config-audit-operation.status_changed,
+.config-audit-kind.changed {
+  color: #8a5a00;
+  background: #fff8e8;
+  border-color: #edd9a3;
+}
+
+.config-audit-action.removed,
+.config-audit-operation.deleted,
+.config-audit-kind.removed {
+  color: #b42318;
+  background: #fff1f0;
+  border-color: #f3c1bc;
+}
+
+.config-audit-action.published {
+  color: var(--ui-ink);
+  background: #f0f0f2;
+  border-color: #c9c9cf;
+}
+
+.config-audit-identity,
+.config-audit-actor {
+  min-width: 0;
+}
+
+.config-audit-identity strong,
+.config-audit-identity small,
+.config-audit-actor strong,
+.config-audit-actor small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-audit-identity strong,
+.config-audit-actor strong { font-size: 11px; font-weight: 600; }
+.config-audit-identity small,
+.config-audit-actor small { margin-top: 5px; color: var(--ui-text-tertiary); font-size: 9px; }
+
+.config-audit-count {
+  color: var(--ui-text-secondary);
+  font: 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  text-align: right;
+}
+
+.config-audit-chevron {
+  color: var(--ui-text-tertiary);
+  font-size: 16px;
+  text-align: center;
+  transition: transform 160ms ease;
+}
+
+.config-audit-entry.expanded .config-audit-chevron { transform: rotate(180deg); }
+
+.config-audit-detail {
+  margin: 0 15px 15px 131px;
+  padding: 15px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-radius: 11px;
+  animation: config-audit-reveal 180ms ease-out;
+}
+
+.config-audit-detail-intro {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px 16px;
+  margin-bottom: 12px;
+}
+
+.config-audit-detail-intro p {
+  margin: 0;
+  color: var(--ui-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.config-audit-detail-intro small { color: var(--ui-text-tertiary); font-size: 10px; }
+.config-audit-group + .config-audit-group { margin-top: 15px; }
+
+.config-audit-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1px 8px;
+}
+
+.config-audit-group > header strong { color: var(--ui-ink); font-size: 11px; }
+.config-audit-group > header span { color: var(--ui-text-tertiary); font-size: 9px; }
+
+.config-audit-row {
+  overflow: hidden;
+  border: 1px solid var(--ui-divider);
+  border-radius: 9px;
+}
+
+.config-audit-row + .config-audit-row { margin-top: 8px; }
+
+.config-audit-row-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  padding: 6px 9px;
+  background: var(--ui-fill);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.config-audit-operation {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 8px;
+}
+
+.config-audit-row-head strong { color: var(--ui-ink); font-size: 10px; }
+.config-audit-row-head code { margin-left: auto; color: var(--ui-text-tertiary); font-size: 8px; }
+
+.config-audit-diff-head,
+.config-audit-diff-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) 58px minmax(170px, 1fr) minmax(170px, 1fr);
+  align-items: stretch;
+}
+
+.config-audit-diff-head {
+  color: var(--ui-text-tertiary);
+  font: 8px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.config-audit-diff-head span,
+.config-audit-diff-row > * { padding: 8px 9px; }
+.config-audit-diff-head span + span,
+.config-audit-diff-row > * + * { border-left: 1px solid var(--ui-divider); }
+.config-audit-diff-row + .config-audit-diff-row { border-top: 1px solid var(--ui-divider); }
+.config-audit-diff-row strong { color: var(--ui-ink); font-size: 9px; font-weight: 600; }
+
+.config-audit-kind {
+  align-self: center;
+  justify-self: center;
+  height: 19px;
+  padding: 0 5px !important;
+  font-size: 8px;
+}
+
+.config-audit-diff-row code {
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font: 9px/1.45 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.config-audit-diff-row code.before { background: color-mix(in srgb, #fff1f0 38%, var(--ui-surface)); }
+.config-audit-diff-row code.after { background: color-mix(in srgb, #edf9f2 42%, var(--ui-surface)); }
+
+.config-audit-no-diff,
+.config-audit-empty {
+  margin: 0;
+  padding: 17px;
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+@keyframes config-audit-reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .admin-toast-enter-active,
 .admin-toast-leave-active { transition: opacity 180ms ease, transform 180ms ease; }

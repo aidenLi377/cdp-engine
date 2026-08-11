@@ -109,6 +109,124 @@ class DimensionStore:
     def _row_to_data(cls, row) -> dict:
         return json.loads(row["data"]) if isinstance(row["data"], str) else row["data"]
 
+    @staticmethod
+    def _decode_json_object(value) -> dict:
+        if not value:
+            return {}
+        if isinstance(value, str):
+            return json.loads(value)
+        return dict(value)
+
+    @classmethod
+    def _diff_data(cls, before: dict | None, after: dict | None) -> list[dict]:
+        before = before or {}
+        after = after or {}
+        changes = []
+        for field in sorted(set(before) | set(after)):
+            before_exists = field in before
+            after_exists = field in after
+            before_value = before.get(field)
+            after_value = after.get(field)
+            if before_exists and after_exists and before_value == after_value:
+                continue
+            if not before_exists:
+                kind = "added"
+            elif not after_exists:
+                kind = "removed"
+            else:
+                kind = "changed"
+            changes.append(
+                {
+                    "field": field,
+                    "kind": kind,
+                    "before": before_value if before_exists else None,
+                    "after": after_value if after_exists else None,
+                }
+            )
+        return changes
+
+    @staticmethod
+    def _record_config_audit(
+        conn,
+        *,
+        actor_user_id: str,
+        action: str,
+        details: dict,
+        dimension_file: str | None = None,
+        row_id: str | None = None,
+        row_name: str = "",
+        created_at: str | None = None,
+    ) -> str:
+        audit_id = f"config_audit_{uuid4().hex}"
+        conn.execute(
+            """INSERT INTO config_audit_logs (
+                id, actor_user_id, action, dimension_file,
+                row_id, row_name, details, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                audit_id,
+                actor_user_id,
+                action,
+                dimension_file,
+                row_id,
+                str(row_name or ""),
+                json.dumps(details or {}, ensure_ascii=False),
+                created_at or _utc_now(),
+            ),
+        )
+        return audit_id
+
+    @classmethod
+    def _pending_change_groups(cls, rows) -> list[dict]:
+        grouped: dict[str, list[dict]] = {}
+        for row in rows:
+            filename = row["dimension_file"]
+            before = (
+                cls._decode_json_object(row["published_data"])
+                if row["is_published"]
+                else {}
+            )
+            after = cls._decode_json_object(row["data"])
+            changes = cls._diff_data(before, after)
+            if bool(row["published_enabled"]) != bool(row["enabled"]):
+                changes.append(
+                    {
+                        "field": "启用状态",
+                        "kind": "changed",
+                        "before": "启用" if row["published_enabled"] else "停用",
+                        "after": "启用" if row["enabled"] else "停用",
+                    }
+                )
+            if bool(row["published_deleted"]) != bool(row["deleted"]):
+                changes.append(
+                    {
+                        "field": "记录状态",
+                        "kind": "removed" if row["deleted"] else "added",
+                        "before": "已删除" if row["published_deleted"] else "存在",
+                        "after": "待删除" if row["deleted"] else "恢复",
+                    }
+                )
+            if not row["is_published"]:
+                operation = "created"
+            elif row["deleted"] and not row["published_deleted"]:
+                operation = "deleted"
+            elif bool(row["published_enabled"]) != bool(row["enabled"]):
+                operation = "status_changed"
+            else:
+                operation = "updated"
+            grouped.setdefault(filename, []).append(
+                {
+                    "rowId": row["id"],
+                    "rowName": row["display_name"],
+                    "operation": operation,
+                    "changes": changes,
+                }
+            )
+        return [
+            {"dimensionFile": filename, "rows": grouped[filename]}
+            for filename in sorted(grouped)
+        ]
+
     def seed_from_csv(self) -> None:
         """Import existing CSV rows once, without overwriting admin changes."""
         with get_db(self.db_path) as conn:
@@ -285,6 +403,21 @@ class DimensionStore:
                     now,
                 ),
             )
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="DIMENSION_ROW_CREATED",
+                dimension_file=filename,
+                row_id=row_id,
+                row_name=data[self._name_column(filename)],
+                created_at=now,
+                details={
+                    "summary": "新增维表记录",
+                    "changes": self._diff_data({}, data),
+                    "before": None,
+                    "after": data,
+                },
+            )
         return self.get_row(filename, row_id)
 
     def update_row(self, filename: str, row_id: str, data: dict, user_id: str) -> dict:
@@ -298,6 +431,7 @@ class DimensionStore:
             ).fetchone()
             if current is None:
                 raise DimensionNotFoundError(row_id)
+            current_data = self._row_to_data(current)
             existing = conn.execute(
                 """SELECT id FROM dimension_rows
                    WHERE dimension_file = ? AND natural_key = ? AND id != ?""",
@@ -322,19 +456,63 @@ class DimensionStore:
                     row_id,
                 ),
             )
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="DIMENSION_ROW_UPDATED",
+                dimension_file=filename,
+                row_id=row_id,
+                row_name=data[self._name_column(filename)],
+                created_at=now,
+                details={
+                    "summary": "修改维表字段",
+                    "changes": self._diff_data(current_data, data),
+                    "before": current_data,
+                    "after": data,
+                },
+            )
         return self.get_row(filename, row_id)
 
     def set_enabled(self, filename: str, row_id: str, enabled: bool, user_id: str) -> dict:
         self._name_column(filename)
+        now = _utc_now()
         with get_db(self.db_path) as conn:
+            current = conn.execute(
+                "SELECT * FROM dimension_rows WHERE dimension_file = ? AND id = ?",
+                (filename, row_id),
+            ).fetchone()
+            if current is None:
+                raise DimensionNotFoundError(row_id)
             cursor = conn.execute(
                 """UPDATE dimension_rows
                    SET enabled = ?, has_changes = 1, updated_by = ?, updated_at = ?
                    WHERE dimension_file = ? AND id = ?""",
-                (1 if enabled else 0, user_id, _utc_now(), filename, row_id),
+                (1 if enabled else 0, user_id, now, filename, row_id),
             )
             if cursor.rowcount == 0:
                 raise DimensionNotFoundError(row_id)
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="DIMENSION_ROW_STATUS_CHANGED",
+                dimension_file=filename,
+                row_id=row_id,
+                row_name=current["display_name"],
+                created_at=now,
+                details={
+                    "summary": "修改维表记录状态",
+                    "changes": [
+                        {
+                            "field": "启用状态",
+                            "kind": "changed",
+                            "before": "启用" if current["enabled"] else "停用",
+                            "after": "启用" if enabled else "停用",
+                        }
+                    ],
+                    "before": {"enabled": bool(current["enabled"])},
+                    "after": {"enabled": bool(enabled)},
+                },
+            )
         return self.get_row(filename, row_id)
 
     def delete_row(self, filename: str, row_id: str, user_id: str) -> dict:
@@ -358,6 +536,31 @@ class DimensionStore:
                        WHERE dimension_file = ? AND id = ?""",
                     (user_id, now, filename, row_id),
                 )
+            current_data = self._row_to_data(current)
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="DIMENSION_ROW_DELETED",
+                dimension_file=filename,
+                row_id=row_id,
+                row_name=current["display_name"],
+                created_at=now,
+                details={
+                    "summary": "删除维表记录",
+                    "changes": [
+                        {
+                            "field": field,
+                            "kind": "removed",
+                            "before": value,
+                            "after": None,
+                        }
+                        for field, value in current_data.items()
+                    ],
+                    "before": current_data,
+                    "after": None,
+                    "staged": bool(current["is_published"]),
+                },
+            )
         if not current["is_published"]:
             return {
                 "id": row_id,
@@ -423,7 +626,20 @@ class DimensionStore:
             else:
                 self.create_row(filename, data, user_id)
                 created += 1
-        return {"created": created, "updated": updated, "total": len(normalized_rows)}
+        result = {"created": created, "updated": updated, "total": len(normalized_rows)}
+        with get_db(self.db_path) as conn:
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="DIMENSION_ROWS_IMPORTED",
+                dimension_file=filename,
+                details={
+                    "summary": "批量导入维表记录",
+                    **result,
+                    "replace": bool(replace),
+                },
+            )
+        return result
 
     def get_config_status(self) -> dict:
         with get_db(self.db_path) as conn:
@@ -468,9 +684,10 @@ class DimensionStore:
             raise DimensionValidationError("发布说明不能超过 300 个字符")
         now = _utc_now()
         with get_db(self.db_path) as conn:
-            pending = conn.execute(
-                "SELECT COUNT(*) FROM dimension_rows WHERE has_changes = 1"
-            ).fetchone()[0]
+            pending_rows = conn.execute(
+                "SELECT * FROM dimension_rows WHERE has_changes = 1"
+            ).fetchall()
+            pending = len(pending_rows)
             if pending == 0:
                 raise DimensionValidationError("没有待发布的配置修改")
             conn.execute(
@@ -522,6 +739,19 @@ class DimensionStore:
                     now,
                 ),
             )
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="CONFIG_PUBLISHED",
+                created_at=now,
+                details={
+                    "summary": f"发布配置 V{version_number}",
+                    "version": version_number,
+                    "note": note,
+                    "changeCount": pending,
+                    "tables": self._pending_change_groups(pending_rows),
+                },
+            )
         return {
             "id": version_id,
             "version": version_number,
@@ -531,11 +761,13 @@ class DimensionStore:
             "publishedAt": now,
         }
 
-    def discard_changes(self) -> dict:
+    def discard_changes(self, user_id: str) -> dict:
+        now = _utc_now()
         with get_db(self.db_path) as conn:
             pending_rows = conn.execute(
                 "SELECT * FROM dimension_rows WHERE has_changes = 1"
             ).fetchall()
+            change_groups = self._pending_change_groups(pending_rows)
             for row in pending_rows:
                 if not row["is_published"]:
                     conn.execute("DELETE FROM dimension_rows WHERE id = ?", (row["id"],))
@@ -556,7 +788,70 @@ class DimensionStore:
                         row["id"],
                     ),
                 )
+            if pending_rows:
+                self._record_config_audit(
+                    conn,
+                    actor_user_id=user_id,
+                    action="CONFIG_DRAFT_DISCARDED",
+                    created_at=now,
+                    details={
+                        "summary": "放弃全部待发布修改",
+                        "changeCount": len(pending_rows),
+                        "tables": change_groups,
+                    },
+                )
         return {"discarded": len(pending_rows)}
+
+    def list_config_audit_logs(
+        self,
+        *,
+        limit: int = 60,
+        dimension_file: str | None = None,
+    ) -> dict:
+        limit = min(200, max(1, int(limit)))
+        clauses = []
+        params: list = []
+        if dimension_file:
+            self._name_column(dimension_file)
+            clauses.append("(logs.dimension_file = ? OR logs.details LIKE ?)")
+            params.extend(
+                [dimension_file, f'%"dimensionFile": "{dimension_file}"%']
+            )
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with get_db(self.db_path) as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM config_audit_logs AS logs {where}",
+                tuple(params),
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"""SELECT logs.*,
+                           actor.username AS actor_username,
+                           actor.display_name AS actor_display_name
+                    FROM config_audit_logs AS logs
+                    LEFT JOIN users AS actor ON actor.id = logs.actor_user_id
+                    {where}
+                    ORDER BY logs.created_at DESC, logs.id DESC
+                    LIMIT ?""",
+                tuple(params + [limit]),
+            ).fetchall()
+        return {
+            "items": [
+                {
+                    "id": row["id"],
+                    "actorUserId": row["actor_user_id"],
+                    "actorUsername": row["actor_username"],
+                    "actorDisplayName": row["actor_display_name"],
+                    "action": row["action"],
+                    "dimensionFile": row["dimension_file"],
+                    "rowId": row["row_id"],
+                    "rowName": row["row_name"],
+                    "details": json.loads(row["details"] or "{}"),
+                    "createdAt": row["created_at"],
+                }
+                for row in rows
+            ],
+            "total": total,
+        }
 
     def list_versions(self, limit: int = 20) -> list[dict]:
         limit = min(100, max(1, int(limit)))
