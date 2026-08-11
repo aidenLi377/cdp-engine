@@ -285,7 +285,7 @@
               <el-button size="small" class="tc-history-delete" text @click.stop="deleteHistoryItem(idx)">✕</el-button>
             </div>
             <div class="tc-history-item-detail" v-if="expandedHistory === idx">
-              <div class="tc-history-results" v-if="task.status === 'completed' && task.results && task.results.length">
+              <div class="tc-history-results" v-if="task.results && task.results.length">
                 <div class="tc-history-results-head">
                   <span class="tc-history-results-title">透视结果</span>
                   <span class="tc-history-results-total">覆盖 {{ task.crowdCount ? task.crowdCount.toLocaleString() : '—' }} 人</span>
@@ -340,6 +340,7 @@ import {
 import { fetchWithTimeout } from '../utils/apiClient.js'
 import { parseCrowdBatch } from '../utils/crowdBatch.js'
 import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWorkspace.js'
+import { createTaskProgressPersistence } from '../utils/taskProgressPersistence.js'
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
@@ -749,8 +750,46 @@ async function apiPost(path, body) {
 }
 async function apiPut(path, body) {
   const res = await fetchWithTimeout(path, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  if (!res.ok) throw new Error('更新失败')
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data?.message || data?.error || `更新失败（${res.status}）`)
+  }
   return res.json()
+}
+
+const taskProgressPersistence = createTaskProgressPersistence({
+  write: (taskId, payload) => apiPut(`${API}/${taskId}/progress`, payload),
+})
+
+async function createBackendTaskWithRetry(taskMeta, run) {
+  let lastError = null
+  for (const delayMs of [0, 500]) {
+    if (delayMs > 0) await waitForAbortableDelay(delayMs, run.controller.signal)
+    ensureRunActive(run)
+    try {
+      return await apiPost(API, taskMeta)
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError || new Error('无法创建任务记录')
+}
+
+function enqueueProgressUpdate(taskId, payload) {
+  if (!taskId) return
+  void taskProgressPersistence.enqueue(taskId, payload).catch((error) => {
+    console.warn('[Task Center] progress update failed:', error?.message || error)
+  })
+}
+
+async function saveTerminalTask(taskId, payload, failureMessage) {
+  try {
+    return await taskProgressPersistence.save(taskId, payload)
+  } catch (error) {
+    const persistenceError = new Error(`${failureMessage}：${error?.message || '服务器未确认保存'}`)
+    persistenceError.code = 'TASK_TERMINAL_SAVE_FAILED'
+    throw persistenceError
+  }
 }
 
 async function loadHistory() {
@@ -867,7 +906,7 @@ function updateProgress(phaseIndex, message, run = activeRunContext) {
   const crowdName = activeTask.value.crowdName
   const fullMsg = crowdName ? message.replace('人群包', `「${crowdName}」`) : message
   activeTask.value = { ...activeTask.value, phaseIndex, progress: pct, message: fullMsg, status: 'running' }
-  if (activeTask.value.id) { apiPut(`${API}/${activeTask.value.id}/progress`, { status: 'running', phase: phaseIndex, phaseLabel: fullMsg, progress: pct, message: fullMsg }).catch(() => {}) }
+  enqueueProgressUpdate(activeTask.value.id, { status: 'running', phase: phaseIndex, phaseLabel: fullMsg, progress: pct, message: fullMsg })
 }
 
 function advancePhasesFromTrail(trail, trailToPhase, run) {
@@ -941,10 +980,34 @@ async function executeViaExtension(crowdName, type, options = {}) {
   const autoApply = type === 'databank' && options.autoApply === true
   phases.value = type === 'databank' ? (autoApply ? databankAutoPhases : databankManualPhases) : dmpPhases
   const taskMeta = { name: `${type === 'databank' ? '数据引擎' : '达摩盘'} · ${crowdName}`, type, crowdName, tagIds: orderedSelectedTagIds.value }
-  let backendTask = null; try { backendTask = await apiPost(API, taskMeta) } catch { /* */ }
+  let backendTask = null
+  try {
+    backendTask = await createBackendTaskWithRetry(taskMeta, run)
+  } catch (error) {
+    if (error?.name === 'AbortError' || !isRunActive(run)) return { status: 'cancelled', task: null }
+    const failedMessage = `任务记录创建失败，自动化未启动：${error?.message || '请检查服务连接'}`
+    const failedTask = {
+      id: null,
+      runId: run.id,
+      ...taskMeta,
+      tagCount: selectedTags.value.length,
+      batchIndex: options.batchIndex || null,
+      batchTotal: options.batchTotal || null,
+      status: 'failed',
+      phaseIndex: 0,
+      progress: 0,
+      message: failedMessage,
+      hasResults: false,
+      recordCreationFailed: true,
+    }
+    activeTask.value = failedTask
+    taskHistory.value.unshift({ ...failedTask, time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: null, crowdCount: null })
+    ElMessage.error(failedMessage)
+    return { status: 'failed', task: failedTask }
+  }
   if (!isRunActive(run)) {
     if (backendTask?.id) {
-      apiPut(`${API}/${backendTask.id}/progress`, { status: 'cancelled', phase: 0, phaseLabel: '已终止', progress: 0, message: '用户终止' }).catch(() => {})
+      await taskProgressPersistence.save(backendTask.id, { status: 'cancelled', phase: 0, phaseLabel: '已终止', progress: 0, message: '用户终止' }).catch(() => null)
     }
     return { status: 'cancelled', task: null }
   }
@@ -983,18 +1046,48 @@ async function executeViaExtension(crowdName, type, options = {}) {
     updateProgress(finalPhase, completionMessage, run)
     const hasResults = result?.results && result.results.length > 0
     const orderedResults = hasResults ? normalizeResultRows(result.results) : null
-    activeTask.value = { ...activeTask.value, status: 'completed', hasResults }
     if (hasResults) { taskResults.value = orderedResults; crowdCount.value = result.crowdCount || null }
-    if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'completed', phase: finalPhase, phaseLabel: completionLabel, progress: 100, message: completionMessage, result: hasResults ? orderedResults : result, crowdCount: crowdCount.value }).catch(() => {}) }
+    activeTask.value = { ...activeTask.value, status: 'running', hasResults, message: '执行完成，正在保存任务结果…' }
+    await saveTerminalTask(backendTask.id, {
+      status: 'completed',
+      phase: finalPhase,
+      phaseLabel: completionLabel,
+      progress: 100,
+      message: completionMessage,
+      result: hasResults ? orderedResults : result,
+      crowdCount: crowdCount.value,
+    }, '任务已经执行完成，但结果保存失败')
+    ensureRunActive(run)
+    activeTask.value = { ...activeTask.value, status: 'completed', message: completionMessage, hasResults }
     outcome = 'completed'
   } catch (err) {
     if (err?.name === 'AbortError' || !isRunActive(run)) {
       return { status: 'cancelled', task: null }
     }
     if (activeTask.value?.runId === run.id) {
-      const friendlyMsg = userError(err.message || '执行失败')
-      activeTask.value = { ...activeTask.value, status: 'failed', message: friendlyMsg }
-      if (backendTask?.id) { apiPut(`${API}/${backendTask.id}/progress`, { status: 'failed', phase: activeTask.value.phaseIndex, phaseLabel: friendlyMsg, progress: activeTask.value.progress, message: friendlyMsg }).catch(() => {}) }
+      let friendlyMsg = err?.code === 'TASK_TERMINAL_SAVE_FAILED'
+        ? `${err.message}。结果仍保留在当前页面，请先复制或导出后再重试`
+        : userError(err.message || '执行失败')
+      if (backendTask?.id && err?.code !== 'TASK_TERMINAL_SAVE_FAILED') {
+        try {
+          await taskProgressPersistence.save(backendTask.id, {
+            status: 'failed',
+            phase: activeTask.value.phaseIndex,
+            phaseLabel: friendlyMsg,
+            progress: activeTask.value.progress,
+            message: friendlyMsg,
+          })
+        } catch (saveError) {
+          friendlyMsg += `；失败状态未能保存：${saveError?.message || '服务器无响应'}`
+        }
+      }
+      activeTask.value = {
+        ...activeTask.value,
+        status: 'failed',
+        message: friendlyMsg,
+        persistenceFailed: err?.code === 'TASK_TERMINAL_SAVE_FAILED',
+      }
+      if (err?.code === 'TASK_TERMINAL_SAVE_FAILED') ElMessage.error(friendlyMsg)
     }
   }
 
@@ -1021,7 +1114,7 @@ async function cancelTask() {
   expandedHistory.value = -1
 
   const backendCancellation = task?.id
-    ? apiPut(`${API}/${task.id}/progress`, {
+    ? taskProgressPersistence.save(task.id, {
         status: 'cancelled',
         phase: task.phaseIndex || 0,
         phaseLabel: '已终止',
@@ -1127,6 +1220,15 @@ async function executeBatch(names, type, options = {}, run) {
     if (outcome.status === 'completed') completed += 1
     else if (outcome.status === 'failed') failed += 1
     else if (outcome.status === 'cancelled') break
+
+    if (outcome.task?.persistenceFailed) {
+      ElMessage.error('批量执行已暂停：当前人群包采集完成，但服务器未确认保存。请先复制或导出当前结果后再重试')
+      return
+    }
+    if (outcome.task?.recordCreationFailed) {
+      ElMessage.error('批量执行已暂停：服务器无法创建任务记录，请恢复服务连接后重试')
+      return
+    }
 
     if (isRunActive(run) && index < names.length - 1) {
       try {

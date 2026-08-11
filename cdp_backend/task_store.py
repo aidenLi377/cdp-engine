@@ -27,6 +27,7 @@ _TASK_KEY_MAP = {
 _TASK_COL_MAP = {v: k for k, v in _TASK_KEY_MAP.items()}
 
 _JSON_FIELDS = {"tagIds", "result"}
+_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
 _JSON_COLUMNS = {_TASK_COL_MAP[field] for field in _JSON_FIELDS}
 
 
@@ -144,6 +145,9 @@ class TaskStore:
             if row is None:
                 raise TaskNotFoundError(task_id)
             item = self._row_to_dict(row)
+            requested_status = payload.get("status", item["status"])
+            if item["status"] in _TERMINAL_STATUSES and requested_status != item["status"]:
+                return item
             updated = {
                 **item,
                 "status": payload.get("status", item["status"]),

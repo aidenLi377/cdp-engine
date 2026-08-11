@@ -95,6 +95,25 @@ test('batch execution has no frontend item cap and keeps one history record per 
   assert.match(source, /失败 \$\{failed\} 个/)
 })
 
+test('terminal task results are confirmed by the server before success is shown', () => {
+  const start = source.indexOf('async function executeViaExtension')
+  const end = source.indexOf('async function cancelTask', start)
+  const execution = source.slice(start, end)
+  const saveAt = execution.indexOf('await saveTerminalTask')
+  const completedAt = execution.indexOf("status: 'completed'", saveAt)
+
+  assert.match(source, /createTaskProgressPersistence/)
+  assert.match(source, /enqueueProgressUpdate\(activeTask\.value\.id/)
+  assert.match(source, /createBackendTaskWithRetry/)
+  assert.ok(saveAt >= 0)
+  assert.ok(completedAt > saveAt)
+  assert.match(execution, /结果仍保留在当前页面，请先复制或导出后再重试/)
+  assert.doesNotMatch(execution, /apiPut\(`\$\{API\}\/\$\{backendTask\.id\}\/progress`[\s\S]*?\.catch\(\(\) => \{\}\)/)
+  assert.match(source, /outcome\.task\?\.persistenceFailed/)
+  assert.match(source, /批量执行已暂停：当前人群包采集完成，但服务器未确认保存/)
+  assert.match(source, /v-if="task\.results && task\.results\.length"/)
+})
+
 test('task termination waits for extension acknowledgement and isolates stale runs', () => {
   assert.match(source, /createRunContext/)
   assert.match(source, /new AbortController\(\)/)

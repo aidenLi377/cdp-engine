@@ -80,6 +80,36 @@ class TaskStoreOwnershipTests(unittest.TestCase):
         self.assertTrue(self.store.delete_task(alice_task["id"], self.alice_id))
         self.assertIsNone(self.store.get_task(alice_task["id"], self.alice_id))
 
+    def test_completed_result_survives_reload_and_rejects_stale_running_update(self):
+        task = self.create_task("DMP task", self.alice_id, type="dmp")
+        result = [{"标签名称": "消费人群", "覆盖人数": "12345"}]
+
+        completed = self.store.update_progress(
+            task["id"],
+            {
+                "status": "completed",
+                "phase": 9,
+                "phaseLabel": "任务执行完成",
+                "progress": 100,
+                "message": "任务执行完成",
+                "result": result,
+                "crowdCount": 12345,
+            },
+            self.alice_id,
+        )
+        stale = self.store.update_progress(
+            task["id"],
+            {"status": "running", "phase": 8, "progress": 90},
+            self.alice_id,
+        )
+        reloaded = self.store.get_task(task["id"], self.alice_id)
+
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(stale["status"], "completed")
+        self.assertEqual(reloaded["status"], "completed")
+        self.assertEqual(reloaded["result"], result)
+        self.assertEqual(reloaded["crowdCount"], 12345)
+
 
 if __name__ == "__main__":
     unittest.main()
