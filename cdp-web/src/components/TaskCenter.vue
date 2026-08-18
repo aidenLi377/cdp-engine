@@ -39,31 +39,16 @@
           </div>
           <div class="tc-test-controls">
             <el-input v-if="!databankBatchMode" v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('databank')">
-              已检测 {{ databankBatch.items.length }} 个
-            </button>
-            <button type="button" class="tc-mode-btn" :class="{ active: databankBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('databank')">
-              {{ databankBatchMode ? '单个' : '批量' }}
-            </button>
-            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank">{{ databankBatchMode ? '批量运行' : '运行' }}</el-button>
+            <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ databankBatch.items.length }} 个</span>
+            <TaskBatchPopover
+              v-model="databankBatchDraft"
+              task-label="数据引擎"
+              :run-hint="databankAutoApply ? '自动应用已开启，运行后将逐个提交推送' : '将逐个打开确认页面，批量完成后手动应用'"
+              :disabled="taskRunning !== null"
+              @run="runBatchDraft('databank', $event)"
+            />
+            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank()">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
-          </div>
-          <div v-if="databankBatchMode" class="tc-batch-panel">
-            <textarea
-              ref="databankBatchEditor"
-              v-model="databankBatchText"
-              class="tc-batch-textarea"
-              rows="3"
-              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
-            ></textarea>
-            <div class="tc-batch-stats">
-              <span class="is-valid">检测到 {{ databankBatch.items.length }} 个人群包</span>
-              <span v-if="databankBatch.duplicateCount" class="is-duplicate">已去重 {{ databankBatch.duplicateCount }} 个</span>
-            </div>
-            <div v-if="databankBatch.items.length" class="tc-batch-chips">
-              <span v-for="name in databankBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
-              <span v-if="databankBatch.items.length > 12" class="tc-batch-more">+{{ databankBatch.items.length - 12 }}</span>
-            </div>
           </div>
         </div>
         <div class="tc-test-col">
@@ -72,31 +57,16 @@
           </div>
           <div class="tc-test-controls">
             <el-input v-if="!dmpBatchMode" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <button v-else type="button" class="tc-batch-summary" @click="focusBatchEditor('dmp')">
-              已检测 {{ dmpBatch.items.length }} 个
-            </button>
-            <button type="button" class="tc-mode-btn" :class="{ active: dmpBatchMode }" :disabled="taskRunning !== null" @click="toggleBatchMode('dmp')">
-              {{ dmpBatchMode ? '单个' : '批量' }}
-            </button>
-            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp">{{ dmpBatchMode ? '批量运行' : '运行' }}</el-button>
+            <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ dmpBatch.items.length }} 个</span>
+            <TaskBatchPopover
+              v-model="dmpBatchDraft"
+              task-label="达摩盘"
+              run-hint="将按照名单顺序逐个采集"
+              :disabled="taskRunning !== null"
+              @run="runBatchDraft('dmp', $event)"
+            />
+            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp()">运行</el-button>
             <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
-          </div>
-          <div v-if="dmpBatchMode" class="tc-batch-panel">
-            <textarea
-              ref="dmpBatchEditor"
-              v-model="dmpBatchText"
-              class="tc-batch-textarea"
-              rows="3"
-              placeholder="从 Excel 复制一列人群包名称粘贴到这里&#10;支持换行 / 逗号 / Tab 拆分"
-            ></textarea>
-            <div class="tc-batch-stats">
-              <span class="is-valid">检测到 {{ dmpBatch.items.length }} 个人群包</span>
-              <span v-if="dmpBatch.duplicateCount" class="is-duplicate">已去重 {{ dmpBatch.duplicateCount }} 个</span>
-            </div>
-            <div v-if="dmpBatch.items.length" class="tc-batch-chips">
-              <span v-for="name in dmpBatch.items.slice(0, 12)" :key="name" class="tc-batch-chip">{{ name }}</span>
-              <span v-if="dmpBatch.items.length > 12" class="tc-batch-more">+{{ dmpBatch.items.length - 12 }}</span>
-            </div>
           </div>
         </div>
       </div>
@@ -191,141 +161,134 @@
 
     <!-- 右栏：监控台 -->
     <main class="tc-monitor-panel">
-      <!-- 任务完成摘要栏 -->
-      <section class="tc-done-bar" v-if="activeTask && activeTask.status === 'completed' && activeTask.hasResults">
-        <span class="tc-done-icon">&#10003;</span>
-        <span class="tc-done-name">{{ activeTask.name }}</span>
-        <span class="tc-done-meta" v-if="taskResults && taskResults.length">覆盖 <strong>{{ (crowdCount || 0).toLocaleString() }}</strong> 人 · {{ taskResults.length }} 行</span>
-        <el-button size="small" class="tc-done-retry" text @click="activeTask = null; taskResults = null; crowdCount = null">关闭</el-button>
-      </section>
+      <transition name="tc-toast">
+        <section
+          v-if="completionToastVisible && activeTask && activeTask.hasResults"
+          class="tc-completion-toast"
+          role="status"
+          aria-live="polite"
+          tabindex="0"
+          @mouseenter="pauseCompletionToast('hover')"
+          @mouseleave="resumeCompletionToast('hover')"
+          @focusin="pauseCompletionToast('focus')"
+          @focusout="resumeCompletionToast('focus')"
+        >
+          <span class="tc-toast-check">&#10003;</span>
+          <span class="tc-toast-copy">
+            <strong>采集完成</strong>
+            <span>{{ activeTask.crowdName || activeTask.name }}</span>
+          </span>
+          <span class="tc-toast-meta" v-if="taskResults && taskResults.length">
+            覆盖 {{ (crowdCount || 0).toLocaleString() }} 人 · {{ taskResults.length }} 行
+          </span>
+          <button type="button" class="tc-toast-close" aria-label="关闭成功提示" @click="closeCompletionToast">×</button>
+        </section>
+      </transition>
 
-      <!-- 任务失败栏 -->
-      <section class="tc-fail-bar" v-if="activeTask && activeTask.status === 'failed'">
-        <span class="tc-fail-icon">&#10007;</span>
-        <span class="tc-fail-name">{{ activeTask.name }}</span>
-        <span class="tc-fail-msg">{{ activeTask.message }}</span>
-        <el-button size="small" class="tc-retry-btn" @click="retryTask">重试</el-button>
-      </section>
+      <nav class="tc-monitor-tabs" aria-label="任务中台视图">
+        <button type="button" :class="{ active: monitorView === 'result' }" @click="monitorView = 'result'">本次结果</button>
+        <button type="button" :class="{ active: monitorView === 'history' }" @click="monitorView = 'history'">
+          任务记录 <span>{{ taskHistory.length }}</span>
+        </button>
+        <button type="button" :class="{ active: monitorView === 'comparison' }" @click="monitorView = 'comparison'">
+          横向对比 <span>{{ selectedComparisonTaskKeys.length }}</span>
+        </button>
+      </nav>
 
-      <!-- 进行中进度卡片 -->
-      <section class="tc-progress-card" v-if="activeTask && (activeTask.status === 'running' || activeTask.status === 'pending')">
-        <div class="tc-progress-header">
-          <div class="tc-progress-name">{{ activeTask.name }}</div>
-          <div class="tc-progress-batch" v-if="activeTask.batchTotal">{{ activeTask.batchIndex }}/{{ activeTask.batchTotal }}</div>
-          <div class="tc-progress-phase" :class="activeTask.status">{{ phaseLabel(activeTask.status) }}</div>
-        </div>
-        <div class="tc-phase-bar">
-          <div v-for="(phase, idx) in phases" :key="idx" class="tc-phase-step"
-            :class="{ done: idx < activeTask.phaseIndex, current: idx === activeTask.phaseIndex, pending: idx > activeTask.phaseIndex, failed: activeTask.status === 'failed' && idx === activeTask.phaseIndex }">
-            <div class="tc-phase-dot"><span v-if="idx < activeTask.phaseIndex">&#10003;</span><span v-else-if="activeTask.status === 'failed' && idx === activeTask.phaseIndex">&#10005;</span><span v-else>{{ idx + 1 }}</span></div>
-            <div class="tc-phase-line" v-if="idx < phases.length - 1"></div>
-            <div class="tc-phase-text">{{ phase }}</div>
+      <section v-if="monitorView === 'result'" class="tc-result-view">
+        <!-- 任务失败栏 -->
+        <section class="tc-fail-bar" v-if="activeTask && activeTask.status === 'failed'">
+          <span class="tc-fail-icon">&#10007;</span>
+          <span class="tc-fail-name">{{ activeTask.name }}</span>
+          <span class="tc-fail-msg">{{ activeTask.message }}</span>
+          <el-button size="small" class="tc-retry-btn" @click="retryTask">重试</el-button>
+        </section>
+
+        <!-- 进行中进度卡片 -->
+        <section class="tc-progress-card" v-if="activeTask && (activeTask.status === 'running' || activeTask.status === 'pending')">
+          <div class="tc-progress-header">
+            <div class="tc-progress-name">{{ activeTask.name }}</div>
+            <div class="tc-progress-batch" v-if="activeTask.batchTotal">{{ activeTask.batchIndex }}/{{ activeTask.batchTotal }}</div>
+            <div class="tc-progress-phase" :class="activeTask.status">{{ phaseLabel(activeTask.status) }}</div>
           </div>
-        </div>
-        <div class="tc-progress-meter"><div class="tc-progress-fill" :style="{ width: activeTask.progress + '%' }"></div></div>
-        <div class="tc-progress-desc">
-          <span class="tc-progress-pct">{{ activeTask.progress }}%</span>
-          <span class="tc-progress-msg">{{ activeTask.message }}</span>
-        </div>
-      </section>
-
-      <!-- 提取结果 -->
-      <section class="tc-results-card" v-if="taskResults && taskResults.length">
-        <div class="tc-results-header">
-          <span class="tc-results-title">透视结果</span>
-          <span class="tc-results-total">覆盖 <strong>{{ crowdCount ? crowdCount.toLocaleString() : '—' }}</strong> 人</span>
-          <span class="tc-results-count">{{ taskResults.length }} 行</span>
-          <el-button size="small" class="tc-btn-copy" @click="copyResults">复制</el-button>
-          <el-button size="small" class="tc-btn-csv" @click="exportCsv">导出 CSV</el-button>
-          <el-button size="small" class="tc-results-close" text @click="clearResults">✕</el-button>
-        </div>
-        <div class="tc-results-table-wrap">
-          <table class="tc-results-table">
-            <thead><tr><th v-for="key in resultColumns" :key="key">{{ key }}</th></tr></thead>
-            <tbody>
-              <tr v-for="(row, ri) in normalizedTaskResults" :key="ri" :style="{ animationDelay: ri * 20 + 'ms' }" class="tc-row-enter" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
-                <td v-for="key in resultColumns" :key="key">
-                  <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}</span>
-                  <span v-else-if="key === '标签类型'" class="tc-subcat-tag" :style="subcatStyle(row)">{{ row[key] }}</span>
-                  <div v-else-if="(key === '人群占比' || key === 'Rebase') && row[key] !== '-' && String(row[key]).includes('%')" class="tc-heat-bar" :class="{ pink: key === '人群占比', blue: key === 'Rebase' }">
-                    <div class="tc-heat-fill" :style="{ width: Math.min(parseFloat(row[key]) || 0, 100) + '%' }"></div>
-                    <span class="tc-heat-val">{{ formatPercentageForDisplay(row[key]) }}</span>
-                  </div>
-                  <span v-else-if="key === '标签名称'" :class="['tc-tag-name-cell', tagNameClass(row)]">{{ row[key] }}</span>
-                  <span v-else-if="(key === '覆盖人数' || key === 'Rebase后人数') && row[key] !== '-'" class="tc-count-cell">{{ Number(row[key]).toLocaleString('zh-CN') }}</span>
-                  <span v-else :class="{ 'tc-warn': String(row[key]).includes('⚠️') || String(row[key]).includes('❌') }">{{ row[key] }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="tc-empty-monitor" v-else-if="!activeTask && taskHistory.length === 0">
-        <div class="tc-empty-icon">&#9674;</div>
-        <div class="tc-empty-title">等待任务发起</div>
-        <div class="tc-empty-desc">输入人群包名称并点击运行，任务进度将在此处实时展示。</div>
-      </section>
-
-      <!-- 任务记录 -->
-      <section class="tc-history-card" :class="{ expanded: expandedHistory !== -1 }">
-        <div class="tc-history-header">
-          <span class="tc-history-title">任务记录</span>
-          <el-button size="small" text class="tc-history-clear" @click="clearHistory" v-if="taskHistory.length > 0">清空</el-button>
-        </div>
-        <div class="tc-history-list" v-if="taskHistory.length > 0">
-          <div v-for="(task, idx) in taskHistory" :key="idx" class="tc-history-item" :class="{ expanded: expandedHistory === idx }" @click="expandedHistory = expandedHistory === idx ? -1 : idx">
-            <div class="tc-history-item-main">
-              <div class="tc-history-status-dot" :class="task.status"></div>
-              <div class="tc-history-item-info">
-                <div class="tc-history-item-name">{{ task.name }}</div>
-                <div class="tc-history-item-time">{{ task.time }}</div>
-              </div>
-              <div class="tc-history-item-badge" :class="task.status">{{ statusLabel(task.status) }}</div>
-              <el-button size="small" class="tc-history-delete" text @click.stop="deleteHistoryItem(idx)">✕</el-button>
-            </div>
-            <div class="tc-history-item-detail" v-if="expandedHistory === idx">
-              <div class="tc-history-results" v-if="task.results && task.results.length">
-                <div class="tc-history-results-head">
-                  <span class="tc-history-results-title">透视结果</span>
-                  <span class="tc-history-results-total">覆盖 {{ task.crowdCount ? task.crowdCount.toLocaleString() : '—' }} 人</span>
-                  <span class="tc-history-results-rows">{{ task.results.length }} 行</span>
-                  <el-button size="small" class="tc-btn-copy" @click.stop="copyResultsFrom(task.results)">复制</el-button>
-                  <el-button size="small" class="tc-btn-csv" @click.stop="exportCsvFrom(task.results)">导出</el-button>
-                </div>
-                <div class="tc-history-table-wrap">
-                  <table class="tc-results-table">
-                    <thead><tr><th v-for="key in historyColumns(task.results)" :key="key">{{ key }}</th></tr></thead>
-                    <tbody>
-                      <tr v-for="(row, ri) in normalizeResultRows(task.results)" :key="ri" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
-                        <td v-for="key in historyColumns(task.results)" :key="key">
-                          <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}</span>
-                          <span v-else-if="key === '标签类型'" class="tc-subcat-tag" :style="subcatStyle(row)">{{ row[key] }}</span>
-                          <div v-else-if="(key === '人群占比' || key === 'Rebase') && row[key] !== '-' && String(row[key]).includes('%')" class="tc-heat-bar" :class="{ pink: key === '人群占比', blue: key === 'Rebase' }">
-                            <div class="tc-heat-fill" :style="{ width: Math.min(parseFloat(row[key]) || 0, 100) + '%' }"></div>
-                            <span class="tc-heat-val">{{ formatPercentageForDisplay(row[key]) }}</span>
-                          </div>
-                          <span v-else-if="key === '标签名称'" :class="['tc-tag-name-cell', tagNameClass(row, task.results)]">{{ row[key] }}</span>
-                          <span v-else-if="(key === '覆盖人数' || key === 'Rebase后人数') && row[key] !== '-'" class="tc-count-cell">{{ Number(row[key]).toLocaleString('zh-CN') }}</span>
-                          <span v-else :class="{ 'tc-warn': String(row[key]).includes('⚠️') || String(row[key]).includes('❌') }">{{ row[key] }}</span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          <div class="tc-phase-bar">
+            <div v-for="(phase, idx) in phases" :key="idx" class="tc-phase-step"
+              :class="{ done: idx < activeTask.phaseIndex, current: idx === activeTask.phaseIndex, pending: idx > activeTask.phaseIndex, failed: activeTask.status === 'failed' && idx === activeTask.phaseIndex }">
+              <div class="tc-phase-dot"><span v-if="idx < activeTask.phaseIndex">&#10003;</span><span v-else-if="activeTask.status === 'failed' && idx === activeTask.phaseIndex">&#10005;</span><span v-else>{{ idx + 1 }}</span></div>
+              <div class="tc-phase-line" v-if="idx < phases.length - 1"></div>
+              <div class="tc-phase-text">{{ phase }}</div>
             </div>
           </div>
-        </div>
-        <div class="tc-history-empty" v-else><span>暂无任务记录</span></div>
+          <div class="tc-progress-meter"><div class="tc-progress-fill" :style="{ width: activeTask.progress + '%' }"></div></div>
+          <div class="tc-progress-desc">
+            <span class="tc-progress-pct">{{ activeTask.progress }}%</span>
+            <span class="tc-progress-msg">{{ activeTask.message }}</span>
+          </div>
+        </section>
+
+        <!-- 提取结果 -->
+        <section class="tc-results-card" v-if="taskResults && taskResults.length">
+          <div class="tc-results-header">
+            <span class="tc-results-title">透视结果</span>
+            <span class="tc-results-total">覆盖 <strong>{{ crowdCount ? crowdCount.toLocaleString() : '—' }}</strong> 人</span>
+            <span class="tc-results-count">{{ taskResults.length }} 行</span>
+            <el-button size="small" class="tc-btn-copy" @click="copyResults">复制</el-button>
+            <el-button size="small" class="tc-btn-csv" @click="exportCsv">导出 CSV</el-button>
+            <el-button size="small" class="tc-results-close" text @click="clearResults">✕</el-button>
+          </div>
+          <div class="tc-results-table-wrap">
+            <table class="tc-results-table">
+              <thead><tr><th v-for="key in resultColumns" :key="key">{{ key }}</th></tr></thead>
+              <tbody>
+                <tr v-for="(row, ri) in normalizedTaskResults" :key="ri" :style="{ animationDelay: ri * 20 + 'ms' }" class="tc-row-enter" :class="['tc-row-cat-' + catClass(row['所属大类'])]">
+                  <td v-for="key in resultColumns" :key="key">
+                    <span v-if="key === '所属大类'" :class="['tc-cat-tag', catClass(row[key])]">{{ row[key] }}</span>
+                    <span v-else-if="key === '标签类型'" class="tc-subcat-tag" :style="subcatStyle(row)">{{ row[key] }}</span>
+                    <div v-else-if="(key === '人群占比' || key === 'Rebase') && row[key] !== '-' && String(row[key]).includes('%')" class="tc-heat-bar" :class="{ pink: key === '人群占比', blue: key === 'Rebase' }">
+                      <div class="tc-heat-fill" :style="{ width: Math.min(parseFloat(row[key]) || 0, 100) + '%' }"></div>
+                      <span class="tc-heat-val">{{ formatPercentageForDisplay(row[key]) }}</span>
+                    </div>
+                    <span v-else-if="key === '标签名称'" :class="['tc-tag-name-cell', tagNameClass(row)]">{{ row[key] }}</span>
+                    <span v-else-if="(key === '覆盖人数' || key === 'Rebase后人数') && row[key] !== '-'" class="tc-count-cell">{{ Number(row[key]).toLocaleString('zh-CN') }}</span>
+                    <span v-else :class="{ 'tc-warn': String(row[key]).includes('⚠️') || String(row[key]).includes('❌') }">{{ row[key] }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="tc-empty-monitor" v-else-if="!activeTask">
+          <div class="tc-empty-icon">&#9674;</div>
+          <div class="tc-empty-title">等待任务发起</div>
+          <div class="tc-empty-desc">输入人群包名称并点击运行，任务进度将在此处实时展示。</div>
+          <button v-if="taskHistory.length" type="button" class="tc-empty-history" @click="monitorView = 'history'">查看已有任务记录</button>
+        </section>
       </section>
+
+      <DmpComparisonWorkspace
+        v-else
+        :tasks="taskHistory"
+        :mode="monitorView"
+        v-model:selected-keys="selectedComparisonTaskKeys"
+        v-model:selected-metrics="comparisonMetrics"
+        v-model:history-query="historyQuery"
+        v-model:history-collapsed="comparisonHistoryCollapsed"
+        v-model:label-orders="comparisonLabelOrders"
+        @request-comparison="openComparisonFromHistory"
+        @view-task="viewHistoryTask"
+        @delete-task="deleteHistoryItem"
+        @clear-history="clearHistory"
+      />
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import DmpComparisonWorkspace from './DmpComparisonWorkspace.vue'
+import TaskBatchPopover from './TaskBatchPopover.vue'
 import tagDictionary from '../data/dmp_tags_dictionary.json'
 import {
   DMP_RESULT_COLUMNS,
@@ -337,6 +300,10 @@ import {
   orderTagIdsByDictionary,
   visibleResultColumns,
 } from '../utils/dmpResults.js'
+import {
+  DMP_COMPARISON_METRICS,
+  compareTagNameStructures,
+} from '../utils/dmpComparison.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 import { parseCrowdBatch } from '../utils/crowdBatch.js'
 import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWorkspace.js'
@@ -346,6 +313,8 @@ const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
 const EXPECTED_EXTENSION_VERSION = '2.2.1'
 const TASK_SESSION_KEY = 'task-center.v1'
+const COMPLETION_TOAST_DURATION_MS = 4000
+const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
@@ -367,16 +336,36 @@ function savePersisted(k, val) {
 
 const databankCrowd = ref(loadPersisted('databankCrowd', ''))
 const dmpCrowd = ref(loadPersisted('dmpCrowd', ''))
-const databankBatchMode = ref(taskSessionState.databankBatchMode === true)
-const dmpBatchMode = ref(taskSessionState.dmpBatchMode === true)
+const databankBatchMode = ref(false)
+const dmpBatchMode = ref(false)
 const databankBatchText = ref(String(taskSessionState.databankBatchText || ''))
 const dmpBatchText = ref(String(taskSessionState.dmpBatchText || ''))
-const databankBatchEditor = ref(null)
-const dmpBatchEditor = ref(null)
+const databankBatchDraft = ref(String(taskSessionState.databankBatchDraft ?? databankBatchText.value))
+const dmpBatchDraft = ref(String(taskSessionState.dmpBatchDraft ?? dmpBatchText.value))
 const databankAutoApply = ref(false)
 databankAutoApply.value = taskSessionState.databankAutoApply === true
 const selectedTags = ref(taskSessionState.selectedTags || loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
 const tagSearch = ref(String(taskSessionState.tagSearch || ''))
+const monitorView = ref(MONITOR_VIEWS.has(taskSessionState.monitorView) ? taskSessionState.monitorView : 'result')
+const historyQuery = ref(String(taskSessionState.historyQuery || ''))
+const selectedComparisonTaskKeys = ref(Array.isArray(taskSessionState.selectedComparisonTaskKeys) ? taskSessionState.selectedComparisonTaskKeys.map(String) : [])
+const comparisonHistoryCollapsed = ref(taskSessionState.comparisonHistoryCollapsed === true)
+const comparisonLabelOrders = ref(
+  taskSessionState.comparisonLabelOrders
+    && typeof taskSessionState.comparisonLabelOrders === 'object'
+    && !Array.isArray(taskSessionState.comparisonLabelOrders)
+    ? Object.fromEntries(
+      Object.entries(taskSessionState.comparisonLabelOrders)
+        .filter(([, order]) => Array.isArray(order))
+        .map(([fingerprint, order]) => [fingerprint, order.map(String)]),
+    )
+    : {},
+)
+const comparisonMetrics = ref(
+  DMP_COMPARISON_METRICS.filter((metric) => taskSessionState.comparisonMetrics?.includes(metric)).length
+    ? DMP_COMPARISON_METRICS.filter((metric) => taskSessionState.comparisonMetrics.includes(metric))
+    : ['覆盖人数'],
+)
 
 watch(databankCrowd, (v) => savePersisted('databankCrowd', v))
 watch(dmpCrowd, (v) => savePersisted('dmpCrowd', v))
@@ -387,9 +376,17 @@ watch(
     dmpBatchMode,
     databankBatchText,
     dmpBatchText,
+    databankBatchDraft,
+    dmpBatchDraft,
     databankAutoApply,
     selectedTags,
     tagSearch,
+    monitorView,
+    historyQuery,
+    selectedComparisonTaskKeys,
+    comparisonHistoryCollapsed,
+    comparisonLabelOrders,
+    comparisonMetrics,
   ],
   persistTaskSession,
   { deep: true },
@@ -410,8 +407,10 @@ const taskResults = ref(null)
 const crowdCount = ref(null)
 const taskHistory = ref([])
 const expandedHistory = ref(-1)
+const completionToastVisible = ref(false)
 let activeRunContext = null
 let runSequence = 0
+let completionToastTimer = null
 const dmpSettings = ref(normalizeDmpSettings())
 const dmpSettingsSyncing = ref(false)
 const dmpSettingsLoaded = ref(false)
@@ -517,9 +516,19 @@ function persistTaskSession() {
     dmpBatchMode: dmpBatchMode.value,
     databankBatchText: databankBatchText.value,
     dmpBatchText: dmpBatchText.value,
+    databankBatchDraft: databankBatchDraft.value,
+    dmpBatchDraft: dmpBatchDraft.value,
     databankAutoApply: databankAutoApply.value,
     selectedTags: [...selectedTags.value],
     tagSearch: tagSearch.value,
+    monitorView: monitorView.value,
+    historyQuery: historyQuery.value,
+    selectedComparisonTaskKeys: [...selectedComparisonTaskKeys.value],
+    comparisonHistoryCollapsed: comparisonHistoryCollapsed.value,
+    comparisonLabelOrders: Object.fromEntries(
+      Object.entries(comparisonLabelOrders.value).map(([fingerprint, order]) => [fingerprint, [...order]]),
+    ),
+    comparisonMetrics: [...comparisonMetrics.value],
   })
 }
 
@@ -561,23 +570,140 @@ async function downloadExtension() {
   }
 }
 
-function toggleBatchMode(type) {
+function prepareBatchRun(type, text) {
   if (taskRunning.value !== null) return
-  if (type === 'databank') databankBatchMode.value = !databankBatchMode.value
-  else dmpBatchMode.value = !dmpBatchMode.value
-  if ((type === 'databank' && databankBatchMode.value) || (type === 'dmp' && dmpBatchMode.value)) {
-    focusBatchEditor(type)
+  if (type === 'databank') {
+    databankBatchText.value = text
+    databankBatchDraft.value = text
+    databankBatchMode.value = true
+  } else {
+    dmpBatchText.value = text
+    dmpBatchDraft.value = text
+    dmpBatchMode.value = true
   }
 }
 
-async function focusBatchEditor(type) {
-  await nextTick()
-  const editor = type === 'databank' ? databankBatchEditor.value : dmpBatchEditor.value
-  editor?.focus()
+async function runBatchDraft(type, text) {
+  if (taskRunning.value !== null) return
+  prepareBatchRun(type, text)
+  try {
+    if (type === 'databank') await runDatabank()
+    else await runDmp()
+  } finally {
+    if (type === 'databank') databankBatchMode.value = false
+    else dmpBatchMode.value = false
+  }
 }
 
 function phaseLabel(s) { return { running: '执行中', completed: '已完成', failed: '执行失败' }[s] || s }
 function statusLabel(s) { return { completed: '已完成', failed: '失败', cancelled: '已取消', running: '进行中' }[s] || s }
+
+function historyTaskKey(task, index = 0) {
+  return String(task?.comparisonKey || task?.id || task?.runId || `${task?.type || 'task'}:${task?.name || '未命名'}:${task?.createdAt || task?.time || index}`)
+}
+
+function isComparisonReadyTask(task) {
+  return task?.status === 'completed' && task?.type === 'dmp' && Array.isArray(task?.results) && task.results.length > 0
+}
+
+function reconcileComparisonSelection() {
+  const taskMap = new Map(taskHistory.value.map((task, index) => [historyTaskKey(task, index), task]))
+  const nextKeys = []
+  let baselineTask = null
+  for (const key of selectedComparisonTaskKeys.value) {
+    const task = taskMap.get(String(key))
+    if (!isComparisonReadyTask(task)) continue
+    if (!baselineTask) {
+      baselineTask = task
+      nextKeys.push(String(key))
+      continue
+    }
+    if (compareTagNameStructures(baselineTask.results, task.results).compatible) nextKeys.push(String(key))
+  }
+  if (nextKeys.join('\u0000') !== selectedComparisonTaskKeys.value.join('\u0000')) {
+    selectedComparisonTaskKeys.value = nextKeys
+  }
+}
+
+function openComparisonFromHistory() {
+  comparisonHistoryCollapsed.value = false
+  monitorView.value = 'comparison'
+}
+
+let completionToastRemaining = COMPLETION_TOAST_DURATION_MS
+let completionToastDeadline = 0
+const completionToastPauseReasons = new Set()
+
+function scheduleCompletionToast(duration = completionToastRemaining) {
+  clearTimeout(completionToastTimer)
+  completionToastRemaining = Math.max(0, duration)
+  if (!completionToastVisible.value || completionToastPauseReasons.size > 0) return
+  completionToastDeadline = Date.now() + completionToastRemaining
+  completionToastTimer = setTimeout(closeCompletionToast, completionToastRemaining)
+}
+
+function showCompletionToast() {
+  completionToastVisible.value = true
+  completionToastRemaining = COMPLETION_TOAST_DURATION_MS
+  completionToastPauseReasons.clear()
+  scheduleCompletionToast()
+}
+
+function closeCompletionToast() {
+  clearTimeout(completionToastTimer)
+  completionToastTimer = null
+  completionToastVisible.value = false
+  completionToastRemaining = COMPLETION_TOAST_DURATION_MS
+  completionToastPauseReasons.clear()
+}
+
+function pauseCompletionToast(reason) {
+  if (!completionToastVisible.value) return
+  if (completionToastPauseReasons.size === 0) {
+    completionToastRemaining = Math.max(0, completionToastDeadline - Date.now())
+    clearTimeout(completionToastTimer)
+    completionToastTimer = null
+  }
+  completionToastPauseReasons.add(reason)
+}
+
+function resumeCompletionToast(reason) {
+  completionToastPauseReasons.delete(reason)
+  if (completionToastPauseReasons.size === 0 && completionToastVisible.value) {
+    scheduleCompletionToast(completionToastRemaining || COMPLETION_TOAST_DURATION_MS)
+  }
+}
+
+function viewHistoryTask(task) {
+  closeCompletionToast()
+  monitorView.value = 'result'
+  phases.value = task?.type === 'databank'
+    ? (task?.autoApply ? databankAutoPhases : databankManualPhases)
+    : dmpPhases
+  if (Array.isArray(task?.results) && task.results.length) {
+    activeTask.value = null
+    taskResults.value = normalizeResultRows(task.results)
+    crowdCount.value = task.crowdCount || null
+    return
+  }
+  taskResults.value = null
+  crowdCount.value = null
+  activeTask.value = {
+    ...task,
+    phaseIndex: task?.phaseIndex ?? task?.phase ?? 0,
+    progress: task?.progress ?? 0,
+    hasResults: false,
+  }
+  if (task?.status === 'completed') ElMessage.info(task?.message || '该任务没有可展示的透视结果')
+}
+
+watch(
+  () => `${activeTask.value?.runId || activeTask.value?.id || ''}:${activeTask.value?.status || ''}:${activeTask.value?.hasResults ? 'results' : 'empty'}`,
+  () => {
+    if (activeTask.value?.status === 'completed' && activeTask.value?.hasResults) showCompletionToast()
+    else if (activeTask.value?.status === 'running' || activeTask.value?.status === 'pending') closeCompletionToast()
+  },
+)
 
 function userError(msg) {
   const map = {
@@ -740,7 +866,12 @@ function exportCsvFrom(results) {
   const a = document.createElement('a'); a.href = url; a.download = `dmp_results_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url)
 }
 
-function clearResults() { taskResults.value = null; crowdCount.value = null }
+function clearResults() {
+  closeCompletionToast()
+  activeTask.value = null
+  taskResults.value = null
+  crowdCount.value = null
+}
 
 // -- API --
 async function apiPost(path, body) {
@@ -803,20 +934,24 @@ async function loadHistory() {
         results: t.result || t.results || null,
         crowdCount: t.crowdCount || null,
       }))
+      reconcileComparisonSelection()
     }
   } catch { /* */ }
 }
 async function deleteHistoryItem(idx) {
   const task = taskHistory.value[idx]
   if (!task) return
+  const key = historyTaskKey(task, idx)
   if (task.id) { try { await fetchWithTimeout(`${API}/${task.id}`, { method: 'DELETE' }) } catch { /* */ } }
   taskHistory.value.splice(idx, 1)
+  selectedComparisonTaskKeys.value = selectedComparisonTaskKeys.value.filter((item) => item !== key)
   if (expandedHistory.value === idx) expandedHistory.value = -1
 }
 
 async function clearHistory() {
   try { await Promise.all(taskHistory.value.map(t => fetchWithTimeout(`${API}/${t.id}`, { method: 'DELETE' }).catch(() => {}))) } catch { /* */ }
   taskHistory.value = []; expandedHistory.value = -1
+  selectedComparisonTaskKeys.value = []
 }
 
 // -- Extension --
@@ -1109,6 +1244,7 @@ async function cancelTask() {
   const task = activeTask.value?.runId === run.id ? activeTask.value : null
   if (task) { taskHistory.value.unshift({ ...task, status: 'cancelled', message: '用户取消', time: new Date().toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }), results: null, crowdCount: null }) }
   activeTask.value = null
+  closeCompletionToast()
   taskResults.value = null
   crowdCount.value = null
   expandedHistory.value = -1
@@ -1143,11 +1279,8 @@ async function cancelTask() {
 async function runDatabank() {
   if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
   if (!canRunDatabank.value) return
+  monitorView.value = 'result'
   const names = [...databankCrowdNames.value]
-  if (databankBatchMode.value) {
-    const confirmed = await confirmBatchRun('databank', names.length)
-    if (!confirmed) return
-  }
   taskRunning.value = 'databank'
   const run = createRunContext('databank')
   try {
@@ -1168,11 +1301,8 @@ async function runDmp() {
     ElMessage.warning('请先在特征大盘中选择至少一个已就绪的标签')
     return
   }
+  monitorView.value = 'result'
   const names = [...dmpCrowdNames.value]
-  if (dmpBatchMode.value) {
-    const confirmed = await confirmBatchRun('dmp', names.length)
-    if (!confirmed) return
-  }
   taskRunning.value = 'dmp'
   const run = createRunContext('dmp')
   try {
@@ -1183,24 +1313,6 @@ async function runDmp() {
       activeRunContext = null
       taskRunning.value = null
     }
-  }
-}
-
-async function confirmBatchRun(type, count) {
-  const detail = type === 'databank'
-    ? (databankAutoApply.value
-      ? '已开启自动应用，系统将逐个提交推送。'
-      : '未开启自动应用，系统会保留全部确认页面，批量完成后请逐个点击“应用”。')
-    : '任务将严格按顺序逐个执行。'
-  try {
-    await ElMessageBox.confirm(
-      `目前检测到 ${count} 个人群包，是否批量执行？\n${detail}`,
-      '批量执行确认',
-      { confirmButtonText: '批量执行', cancelButtonText: '取消', type: 'warning' },
-    )
-    return true
-  } catch {
-    return false
   }
 }
 
@@ -1320,6 +1432,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearInterval(extensionTimer)
   extensionTimer = null
+  clearTimeout(completionToastTimer)
+  completionToastTimer = null
   persistTaskSession()
   window.removeEventListener('beforeunload', persistTaskSession)
   window.removeEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
@@ -1390,21 +1504,7 @@ onBeforeUnmount(() => {
 .tc-input-sm :deep(.el-input__wrapper:hover) { background: #fff; }
 .tc-input-sm :deep(.el-input__wrapper.is-focus) { background: #fff; border-color: transparent; box-shadow: inset 0 -1px 0 #1d1d1f !important; }
 .tc-input-sm :deep(.el-input__inner) { font-size: 12px; }
-.tc-mode-btn { height: 32px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent; color: #6e6e73; font-size: 10px; cursor: pointer; flex-shrink: 0; }
-.tc-mode-btn:hover:not(:disabled) { color: #1d1d1f; background: transparent; }
-.tc-mode-btn.active { color: #fff; background: #1d1d1f; }
-.tc-batch-summary { flex: 1; min-width: 0; height: 32px; padding: 0 6px; overflow: hidden; border: 0; border-radius: 0; background: #fff; color: #1d1d1f; font-size: 11px; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: text; }
-.tc-batch-summary:focus-visible { outline: none; box-shadow: inset 0 -1px 0 #1d1d1f; }
-.tc-batch-panel { margin-top: 6px; padding: 8px; border: 0; border-radius: 10px; background: #fff; }
-.tc-batch-textarea { display: block; width: 100%; min-height: 58px; resize: vertical; box-sizing: border-box; padding: 7px 6px; border: 0; border-radius: 0; outline: none; background: #fff; color: #333; font: 11px/1.5 "SF Mono", "Cascadia Code", ui-monospace; transition: background 0.18s ease; }
-.tc-batch-textarea:focus { background: #fff; box-shadow: inset 0 -1px 0 #1d1d1f; }
-.tc-batch-textarea::placeholder { color: #b5b5ba; }
-.tc-batch-stats { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 10px; }
-.tc-batch-stats .is-valid { color: #208a43; font-weight: 600; }
-.tc-batch-stats .is-duplicate { color: #b87300; }
-.tc-batch-chips { display: flex; flex-wrap: wrap; gap: 4px; max-height: 52px; margin-top: 6px; overflow-y: auto; }
-.tc-batch-chip, .tc-batch-more { max-width: 100%; padding: 2px 6px; overflow: hidden; border-radius: 5px; background: rgba(52,199,89,0.07); color: #267a43; font-size: 9px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
-.tc-batch-more { background: rgba(0,0,0,0.04); color: #6e6e73; font-weight: 600; }
+.tc-batch-summary { display: inline-flex; align-items: center; flex: 1; min-width: 0; height: 32px; padding: 0 6px; overflow: hidden; color: #1d1d1f; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 
 .tc-btn-sm { height: 32px !important; padding: 0 14px !important; border-radius: 8px !important; border: none !important; background: #1d1d1f !important; color: #fff !important; font-size: 12px !important; font-weight: 500 !important; flex-shrink: 0; transition: all 0.22s ease !important; }
 .tc-btn-sm:hover:not(:disabled) { background: #333336 !important; transform: translateY(-1px); }
@@ -1475,7 +1575,78 @@ onBeforeUnmount(() => {
 .tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */
-.tc-monitor-panel { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 18px 24px; overflow-y: auto; background: var(--ui-canvas); }
+.tc-monitor-panel { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: 0; padding: 0 18px 14px; overflow: hidden; background: var(--ui-canvas); }
+
+.tc-monitor-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 34px;
+  min-height: 58px;
+  padding: 0 390px 0 10px;
+  border-bottom: 1px solid #e6e9ef;
+  flex: 0 0 auto;
+}
+.tc-monitor-tabs button {
+  position: relative;
+  height: 58px;
+  padding: 0 0 2px;
+  border: 0;
+  background: transparent;
+  color: #6e6e73;
+  font-size: 12px;
+  font-weight: 520;
+  cursor: pointer;
+}
+.tc-monitor-tabs button:hover { color: #1d1d1f; }
+.tc-monitor-tabs button.active { color: #1d1d1f; font-weight: 650; }
+.tc-monitor-tabs button.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: #1d1d1f;
+  content: "";
+}
+.tc-monitor-tabs span { margin-left: 3px; color: #8e8e93; font-size: 10px; font-weight: 500; }
+
+.tc-result-view { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 12px; padding: 16px 0 0; }
+
+.tc-completion-toast {
+  position: absolute;
+  z-index: 30;
+  top: 10px;
+  right: 22px;
+  display: grid;
+  grid-template-columns: 24px minmax(120px, auto) auto 22px;
+  align-items: center;
+  gap: 9px;
+  min-width: 360px;
+  max-width: min(560px, calc(100% - 48px));
+  min-height: 42px;
+  padding: 7px 9px 7px 11px;
+  border: 1px solid rgba(31, 38, 49, 0.08);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(25, 31, 40, 0.12);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+.tc-toast-check { display: inline-grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: #30b85a; color: #fff; font-size: 11px; font-weight: 700; }
+.tc-toast-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.tc-toast-copy strong { color: #1d1d1f; font-size: 10px; font-weight: 650; }
+.tc-toast-copy > span { max-width: 230px; overflow: hidden; color: #6e6e73; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.tc-toast-meta { color: #555960; font-size: 10px; white-space: nowrap; }
+.tc-toast-close { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #a0a4ab; font-size: 15px; cursor: pointer; }
+.tc-toast-close:hover { background: #f4f6f8; color: #1d1d1f; }
+.tc-toast-enter-active,
+.tc-toast-leave-active { transition: opacity 180ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+.tc-toast-enter-from,
+.tc-toast-leave-to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+
+.tc-empty-history { margin-top: 7px; padding: 7px 11px; border: 1px solid #d8dce3; border-radius: 8px; background: #fff; color: #1d1d1f; font-size: 10px; cursor: pointer; }
+.tc-empty-history:hover { border-color: #8e939b; }
 
 /* 完成摘要栏 */
 .tc-done-bar { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: rgba(52,199,89,0.05); border: 1px solid rgba(52,199,89,0.12); border-radius: 12px; flex-shrink: 0; }
@@ -1664,5 +1835,7 @@ onBeforeUnmount(() => {
 @media (max-width: 1120px) {
   .task-center-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tc-control-panel { border-right: 0; border-bottom: 0; }
+  .tc-monitor-tabs { padding-right: 10px; }
+  .tc-completion-toast { top: 64px; }
 }
 </style>

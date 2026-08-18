@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 
 const source = fs.readFileSync(new URL('./TaskCenter.vue', import.meta.url), 'utf8')
+const batchPopoverSource = fs.readFileSync(new URL('./TaskBatchPopover.vue', import.meta.url), 'utf8')
+const comparisonSource = fs.readFileSync(new URL('./DmpComparisonWorkspace.vue', import.meta.url), 'utf8')
 const globalStyles = fs.readFileSync(new URL('../styles/cdp-global.css', import.meta.url), 'utf8')
 
 test('task center synchronizes shared DMP settings through the extension', () => {
@@ -58,10 +60,13 @@ test('DataBank flow supports explicit auto apply while preserving manual confirm
 })
 
 test('task center keeps single run actions and adds batch paste entry points', () => {
-  assert.match(source, /@click="runDatabank">\{\{ databankBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
-  assert.match(source, /@click="runDmp">\{\{ dmpBatchMode \? '批量运行' : '运行' \}\}<\/el-button>/)
+  assert.match(source, /@click="runDatabank\(\)">运行<\/el-button>/)
+  assert.match(source, /@click="runDmp\(\)">运行<\/el-button>/)
+  assert.match(source, /<TaskBatchPopover/)
+  assert.match(source, /@run="runBatchDraft\('databank', \$event\)"/)
+  assert.match(source, /@run="runBatchDraft\('dmp', \$event\)"/)
   assert.match(source, /parseCrowdBatch/)
-  assert.match(source, /目前检测到 \$\{count\} 个人群包，是否批量执行/)
+  assert.doesNotMatch(source, /目前检测到 \$\{count\} 个人群包，是否批量执行/)
   assert.match(source, /keepRunning: true/)
   assert.match(source, /BATCH_EXECUTION_GAP_MS/)
   assert.match(source, /输入人群包名称并点击运行，任务进度将在此处实时展示。/)
@@ -77,7 +82,7 @@ test('task center requires the fixed extension patch version', () => {
 test('run buttons use task-specific prerequisites and explain missing DMP tags on click', () => {
   const databankRule = source.match(/const canRunDatabank = computed\([^\r\n]+/)?.[0]
   const dmpRule = source.match(/const canRunDmp = computed\([^\r\n]+/)?.[0]
-  const runDmp = source.match(/async function runDmp\(\) \{[\s\S]*?\n\}/)?.[0]
+  const runDmp = source.match(/async function runDmp\([^)]*\) \{[\s\S]*?\n\}/)?.[0]
 
   assert.ok(databankRule)
   assert.ok(dmpRule)
@@ -111,7 +116,8 @@ test('terminal task results are confirmed by the server before success is shown'
   assert.doesNotMatch(execution, /apiPut\(`\$\{API\}\/\$\{backendTask\.id\}\/progress`[\s\S]*?\.catch\(\(\) => \{\}\)/)
   assert.match(source, /outcome\.task\?\.persistenceFailed/)
   assert.match(source, /批量执行已暂停：当前人群包采集完成，但服务器未确认保存/)
-  assert.match(source, /v-if="task\.results && task\.results\.length"/)
+  assert.match(comparisonSource, /v-if="hasResults\(entry\.task\)"/)
+  assert.match(comparisonSource, /task\?\.status === 'completed' && task\?\.type === 'dmp' && hasResults\(task\)/)
 })
 
 test('task termination waits for extension acknowledgement and isolates stale runs', () => {
@@ -126,13 +132,37 @@ test('task termination waits for extension acknowledgement and isolates stale ru
   assert.doesNotMatch(source, /crowdName: '__CANCEL__'/)
 })
 
-test('DataBank and DMP launch groups use borderless white controls', () => {
+test('DataBank and DMP launch groups stay compact while batch editing moves to a temporary popover', () => {
   assert.match(source, /\.tc-test-col\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/s)
   assert.match(source, /\.tc-input-sm :deep\(\.el-input__wrapper\)\s*\{[^}]*background:\s*#fff;[^}]*border:\s*0;/s)
-  assert.match(source, /\.tc-mode-btn\s*\{[^}]*border:\s*0;/s)
-  assert.match(source, /\.tc-batch-panel\s*\{[^}]*border:\s*0;[^}]*background:\s*#fff;/s)
+  assert.doesNotMatch(source, /class="tc-batch-panel"|class="tc-batch-textarea"|class="tc-batch-chips"/)
+  assert.match(batchPopoverSource, /placement="right-start"/)
+  assert.match(batchPopoverSource, /popper-class="tc-batch-popover-shell"/)
+  assert.match(batchPopoverSource, /trigger="click"/)
+  assert.match(batchPopoverSource, /class="tc-batch-composer__textarea"/)
+  assert.match(batchPopoverSource, /每行一个，也支持逗号和 Tab/)
+  assert.match(batchPopoverSource, /`运行 \$\{draftBatch\.items\.length\} 个`/)
+  assert.doesNotMatch(batchPopoverSource, /tc-batch-chip|v-for="name/)
   assert.match(globalStyles, /#app \.tc-test-col,[\s\S]*?#app \.tc-tags-card\s*\{[^}]*background:\s*#ffffff\s*!important;[^}]*border:\s*0\s*!important;/)
   assert.match(globalStyles, /#app \.tc-input-sm \.el-input__wrapper,[\s\S]*?#app \.tc-tags-search-input:focus\s*\{[^}]*background:\s*#ffffff\s*!important;[^}]*border:\s*0\s*!important;/)
+})
+
+test('batch popover keeps persistent drafts and starts a batch in one action', () => {
+  assert.match(source, /const databankBatchDraft = ref\(/)
+  assert.match(source, /const dmpBatchDraft = ref\(/)
+  assert.match(source, /databankBatchDraft: databankBatchDraft\.value/)
+  assert.match(source, /dmpBatchDraft: dmpBatchDraft\.value/)
+  assert.match(source, /function prepareBatchRun\(type, text\)/)
+  assert.match(source, /databankBatchText\.value = text[\s\S]*?databankBatchMode\.value = true/)
+  assert.match(source, /dmpBatchText\.value = text[\s\S]*?dmpBatchMode\.value = true/)
+  assert.match(source, /async function runBatchDraft\(type, text\)/)
+  assert.match(source, /await runDatabank\(\)/)
+  assert.match(source, /await runDmp\(\)/)
+  assert.match(source, /finally \{[\s\S]*?databankBatchMode\.value = false[\s\S]*?dmpBatchMode\.value = false/)
+  assert.match(batchPopoverSource, /emit\('update:modelValue', value\)/)
+  assert.match(batchPopoverSource, /emit\('run', props\.modelValue\.trim\(\)\)/)
+  assert.doesNotMatch(batchPopoverSource, /确认名单|切换为单个/)
+  assert.match(batchPopoverSource, /自动应用|runHint/)
 })
 
 test('task center uses compact section markers and focus-only input underlines', () => {
@@ -223,4 +253,83 @@ test('feature panel uses borderless black and white hierarchy', () => {
     source,
     /\.tc-tag-checkbox\s*\{[^}]*accent-color:\s*#171717;/s,
   )
+})
+
+test('completed DMP feedback is a dismissible four-second status toast', () => {
+  assert.match(source, /const COMPLETION_TOAST_DURATION_MS = 4000/)
+  assert.match(source, /class="tc-completion-toast"/)
+  assert.match(source, /role="status"/)
+  assert.match(source, /aria-live="polite"/)
+  assert.match(source, /@mouseenter="pauseCompletionToast\('hover'\)"/)
+  assert.match(source, /@mouseleave="resumeCompletionToast\('hover'\)"/)
+  assert.match(source, /aria-label="关闭成功提示"/)
+  assert.match(source, /completionToastTimer = setTimeout\(closeCompletionToast, completionToastRemaining\)/)
+})
+
+test('comparison workspace keeps identity fields fixed and only exposes optional metrics', () => {
+  assert.match(comparisonSource, />\s*标签名称\s*</)
+  assert.match(comparisonSource, />\s*特征明细\s*</)
+  assert.match(comparisonSource, /v-for="metric in DMP_COMPARISON_METRICS"/)
+  assert.match(comparisonSource, /comparisonToTsv/)
+  assert.match(comparisonSource, /comparisonToCsv/)
+  assert.doesNotMatch(comparisonSource, /所属大类|标签类型/)
+})
+
+test('comparison selection is ordered, accessible, and strictly revalidated after restore', () => {
+  assert.match(comparisonSource, /class="dc-selector"/)
+  assert.match(comparisonSource, /:aria-pressed="selectedOrder\(entry\.key\) > 0"/)
+  assert.match(comparisonSource, /标签名称或标签数量与基准人群包不一致/)
+  assert.match(comparisonSource, /draggable="true"/)
+  assert.match(source, /function reconcileComparisonSelection\(\)/)
+  assert.match(source, /compareTagNameStructures\(baselineTask\.results, task\.results\)\.compatible/)
+})
+
+test('comparison history rail can collapse to release table width and restores per session', () => {
+  assert.match(comparisonSource, /class="dc-history-toggle"/)
+  assert.match(comparisonSource, /:aria-expanded="!historyCollapsed"/)
+  assert.match(comparisonSource, /aria-controls="dmp-task-history"/)
+  assert.match(comparisonSource, /'update:historyCollapsed'/)
+  assert.match(comparisonSource, /\.dc-workspace\.history-collapsed\s*\{[^}]*grid-template-columns:\s*0 minmax\(0, 1fr\);/s)
+  assert.match(source, /v-model:history-collapsed="comparisonHistoryCollapsed"/)
+  assert.match(source, /const comparisonHistoryCollapsed = ref\(taskSessionState\.comparisonHistoryCollapsed === true\)/)
+  assert.match(source, /comparisonHistoryCollapsed: comparisonHistoryCollapsed\.value/)
+})
+
+test('history selection reopens the comparison rail and history view has no instruction panel', () => {
+  assert.match(source, /@request-comparison="openComparisonFromHistory"/)
+  assert.match(source, /function openComparisonFromHistory\(\) \{[\s\S]*?comparisonHistoryCollapsed\.value = false[\s\S]*?monitorView\.value = 'comparison'/)
+  assert.match(comparisonSource, /\.dc-workspace\.is-history\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s)
+  assert.match(comparisonSource, /\.dc-workspace\.is-history \.dc-history-rail\s*\{[^}]*border-right:\s*0;/s)
+  assert.doesNotMatch(comparisonSource, /dc-history-guide|从任务记录开始|圈选后会自动进入横向对比/)
+})
+
+test('full-width history uses structured columns while preserving compact comparison controls', () => {
+  assert.match(comparisonSource, /class="dc-history-columns"[\s\S]*?>人群包<[\s\S]*?>采集时间<[\s\S]*?>数据量<[\s\S]*?>状态<[\s\S]*?>横向对比</)
+  assert.match(comparisonSource, /v-if="mode === 'history'" class="dc-history-time"/)
+  assert.match(comparisonSource, /v-if="mode === 'history'" class="dc-history-size"/)
+  assert.match(comparisonSource, /\.dc-history-columns,\s*\.dc-workspace\.is-history \.dc-history-row\s*\{[^}]*grid-template-columns:[^}]*minmax\(280px, 1\.6fr\)[^}]*minmax\(96px, 0\.55fr\)[^}]*minmax\(72px, 0\.4fr\)[^}]*minmax\(84px, 0\.45fr\)[^}]*minmax\(96px, 0\.5fr\)[^}]*28px;/s)
+  assert.match(comparisonSource, /\.dc-history-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 30px 24px;/s)
+  assert.match(comparisonSource, /\.dc-workspace\.is-history \.dc-history-copy > span\s*\{\s*display:\s*none;/s)
+  assert.match(comparisonSource, /class="dc-selector"[\s\S]*?class="dc-delete"/)
+})
+
+test('label ordering uses a compact six-dot field affordance and a grouped-order drawer', () => {
+  assert.match(comparisonSource, /class="dc-fixed-field dc-label-field"/)
+  assert.match(comparisonSource, /class="dc-label-order-trigger"/)
+  assert.match(comparisonSource, /aria-label="调整标签顺序"/)
+  assert.match(comparisonSource, /id="dmp-label-order-panel"/)
+  assert.match(comparisonSource, />调整标签顺序</)
+  assert.match(comparisonSource, /拖动整组标签，统一调整表格、复制与导出顺序/)
+  assert.doesNotMatch(comparisonSource, />标签排序</)
+})
+
+test('applied label order persists by structure and drives copy and export', () => {
+  assert.match(source, /v-model:label-orders="comparisonLabelOrders"/)
+  assert.match(source, /const comparisonLabelOrders = ref\(/)
+  assert.match(source, /comparisonLabelOrders: Object\.fromEntries/)
+  assert.match(comparisonSource, /buildLabelStructureFingerprint/)
+  assert.match(comparisonSource, /props\.labelOrders\?\.\[labelStructureFingerprint\.value\]/)
+  assert.match(comparisonSource, /emit\('update:labelOrders', nextOrders\)/)
+  assert.match(comparisonSource, /comparisonToTsv\(appliedComparisonMatrix\.value\)/)
+  assert.match(comparisonSource, /comparisonToCsv\(appliedComparisonMatrix\.value\)/)
 })
