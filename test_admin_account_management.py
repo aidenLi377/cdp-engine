@@ -183,6 +183,114 @@ class AdminAccountManagementApiTests(unittest.TestCase):
             404,
         )
 
+    def test_admin_can_promote_exact_private_solution_version_to_public_library(self):
+        created = self.target_client.post(
+            "/api/solutions/drafts",
+            json={
+                "name": "值得沉淀的方案",
+                "nodes": [{"id": "node-1", "name": "高价值人群"}],
+            },
+        ).get_json()
+        public_folder = self.admin_client.post(
+            "/api/folders",
+            json={"name": "优秀方案", "scope": "public"},
+        ).get_json()
+
+        promoted_response = self.admin_client.post(
+            f"/api/admin/users/{self.target['id']}/solutions/{created['id']}/promote",
+            json={"folderId": public_folder["id"]},
+        )
+        self.assertEqual(promoted_response.status_code, 201)
+        promoted = promoted_response.get_json()
+        self.assertEqual(promoted["visibility"], "public")
+        self.assertEqual(promoted["status"], "published")
+        self.assertEqual(promoted["source"], "admin-promoted")
+        self.assertEqual(promoted["folderId"], public_folder["id"])
+        self.assertEqual(promoted["derivedFromSolutionId"], created["id"])
+        self.assertEqual(promoted["nodes"][0]["name"], "高价值人群")
+
+        mine = self.target_client.get("/api/solutions?scope=mine").get_json()
+        public = self.target_client.get("/api/solutions?scope=public").get_json()
+        self.assertIn(created["id"], {item["id"] for item in mine})
+        self.assertIn(promoted["id"], {item["id"] for item in public})
+
+        duplicate = self.admin_client.post(
+            f"/api/admin/users/{self.target['id']}/solutions/{created['id']}/promote",
+            json={},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(duplicate.get_json()["code"], "SOLUTION_ALREADY_PROMOTED")
+
+    def test_admin_can_delete_account_and_private_data(self):
+        self.target_client.post(
+            "/api/solutions/drafts",
+            json={"name": "Delete with account", "nodes": []},
+        )
+        self.target_client.post("/api/tasks", json={"name": "Delete task"})
+
+        deleted = self.admin_client.delete(f"/api/admin/users/{self.target['id']}")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json()["deletedData"]["solutions"], 1)
+        self.assertEqual(deleted.get_json()["deletedData"]["tasks"], 1)
+        self.assertEqual(self.target_client.get("/api/auth/me").status_code, 401)
+        listed_ids = {
+            user["id"] for user in self.admin_client.get("/api/admin/users").get_json()
+        }
+        self.assertNotIn(self.target["id"], listed_ids)
+
+        logs = self.admin_client.get("/api/admin/audit-logs").get_json()
+        deletion = next(item for item in logs if item["action"] == "USER_DELETED")
+        self.assertEqual(deletion["details"]["username"], "target-user")
+
+    def test_admin_cannot_delete_own_account(self):
+        response = self.admin_client.delete(f"/api/admin/users/{self.admin['id']}")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "SELF_DELETE")
+
+    def test_user_can_update_profile_avatar_and_password(self):
+        avatar = "data:image/png;base64,iVBORw0KGgo="
+        updated = self.target_client.patch(
+            "/api/auth/profile",
+            json={
+                "username": "self-renamed",
+                "displayName": "Self Renamed",
+                "avatarUrl": avatar,
+            },
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.get_json()["user"]["username"], "self-renamed")
+        self.assertEqual(updated.get_json()["user"]["avatarUrl"], avatar)
+
+        second_session = self.app.test_client()
+        self._login(second_session, "self-renamed", "target-password")
+        wrong_password = self.target_client.patch(
+            "/api/auth/profile",
+            json={
+                "username": "self-renamed",
+                "displayName": "Self Renamed",
+                "avatarUrl": avatar,
+                "currentPassword": "wrong-password",
+                "newPassword": "next-target-password",
+            },
+        )
+        self.assertEqual(wrong_password.status_code, 400)
+        self.assertEqual(wrong_password.get_json()["code"], "CURRENT_PASSWORD_INVALID")
+
+        changed = self.target_client.patch(
+            "/api/auth/profile",
+            json={
+                "username": "self-renamed",
+                "displayName": "Self Renamed",
+                "avatarUrl": avatar,
+                "currentPassword": "target-password",
+                "newPassword": "next-target-password",
+            },
+        )
+        self.assertEqual(changed.status_code, 200)
+        self.assertEqual(self.target_client.get("/api/auth/me").status_code, 200)
+        self.assertEqual(second_session.get("/api/auth/me").status_code, 401)
+        self._login(self.app.test_client(), "self-renamed", "next-target-password")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

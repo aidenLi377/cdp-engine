@@ -34,11 +34,13 @@ from .folder_share_store import (
 from .solution_store import (
     InvalidSolutionStateError,
     SolutionAccessError,
+    SolutionAlreadyPromotedError,
     SolutionNotFoundError,
     SolutionStore,
 )
 from .task_store import TaskNotFoundError, TaskStore
 from .user_store import (
+    InvalidCurrentPasswordError,
     InviteInvalidError,
     UserAlreadyExistsError,
     UserNotFoundError,
@@ -300,6 +302,41 @@ def register_routes(
             return error_response("AUTH_REQUIRED", "请先登录", 401)
         return jsonify({"user": user})
 
+    @app.route("/api/auth/profile", methods=["PATCH"])
+    def update_current_user_profile():
+        user = user_store.get_user(session.get("user_id"))
+        if (
+            user is None
+            or not user.get("enabled")
+            or session.get("session_version") != user.get("sessionVersion")
+        ):
+            session.clear()
+            return error_response("AUTH_REQUIRED", "请先登录", 401)
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "个人资料格式不正确", 400)
+        try:
+            updated = user_store.update_profile(
+                user["id"],
+                username=payload.get("username", user["username"]),
+                display_name=payload.get("displayName", user["displayName"]),
+                avatar_url=payload.get("avatarUrl", user.get("avatarUrl", "")),
+                current_password=payload.get("currentPassword", ""),
+                new_password=payload.get("newPassword", ""),
+            )
+        except UserAlreadyExistsError:
+            return error_response("USERNAME_EXISTS", "该登录账号已被使用", 409)
+        except InvalidCurrentPasswordError:
+            return error_response("CURRENT_PASSWORD_INVALID", "当前密码不正确", 400)
+        except (ValueError, TypeError) as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        except UserNotFoundError:
+            session.clear()
+            return error_response("AUTH_REQUIRED", "请先登录", 401)
+        session["session_version"] = updated["sessionVersion"]
+        session.permanent = True
+        return jsonify({"user": updated})
+
     @app.route("/api/auth/invite")
     def inspect_invite():
         try:
@@ -411,6 +448,40 @@ def register_routes(
         updated["dataCounts"] = user_store.get_user_data_counts(user_id)
         return jsonify(updated)
 
+    @app.route("/api/admin/users/<user_id>", methods=["DELETE"])
+    def admin_delete_user(user_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        if user_id == g.current_user["id"]:
+            return error_response("SELF_DELETE", "不能注销当前登录的超级管理员", 400)
+        if target["role"] == "super_admin" and target["enabled"]:
+            active_admins = [
+                item
+                for item in user_store.list_users()
+                if item["role"] == "super_admin" and item["enabled"]
+            ]
+            if len(active_admins) <= 1:
+                return error_response("LAST_ADMIN", "至少需要保留一名启用中的超级管理员", 400)
+        try:
+            deleted_counts = user_store.delete_user(user_id)
+        except UserNotFoundError:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "USER_DELETED",
+            target_user_id=user_id,
+            details={
+                "username": target["username"],
+                "displayName": target["displayName"],
+                "deletedData": deleted_counts,
+            },
+        )
+        return jsonify({"deleted": True, "id": user_id, "deletedData": deleted_counts})
+
     @app.route("/api/admin/users/<user_id>/password", methods=["POST"])
     def admin_reset_user_password(user_id: str):
         permission_error = require_super_admin()
@@ -467,10 +538,27 @@ def register_routes(
         target = user_store.get_user(user_id)
         if target is None:
             return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        private_solutions = solution_store.list_solutions(None, "mine", user_id)
+        promotion_map = {
+            (item.get("derivedFromSolutionId"), item.get("derivedFromSolutionVersion")): {
+                "publicSolutionId": item["id"],
+                "publicName": item.get("name", ""),
+                "folderId": item.get("folderId"),
+                "promotedAt": item.get("publishedAt") or item.get("createdAt"),
+            }
+            for item in solution_store.list_solutions(
+                None, "public", g.current_user["id"]
+            )
+            if item.get("source") == "admin-promoted"
+        }
+        for item in private_solutions:
+            item["promotion"] = promotion_map.get(
+                (item["id"], str(item.get("_version", 1)))
+            )
         result = {
             "user": target,
             "counts": user_store.get_user_data_counts(user_id),
-            "solutions": solution_store.list_solutions(None, "mine", user_id),
+            "solutions": private_solutions,
             "folders": folder_store.list_folders("mine", user_id),
             "tasks": task_store.list_tasks(user_id),
         }
@@ -481,6 +569,49 @@ def register_routes(
             details={"counts": result["counts"]},
         )
         return jsonify(result)
+
+    @app.route(
+        "/api/admin/users/<user_id>/solutions/<solution_id>/promote",
+        methods=["POST"],
+    )
+    def admin_promote_user_solution(user_id: str, solution_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "迁移信息格式不正确", 400)
+        folder_id = payload.get("folderId")
+        folder_error = validate_public_folder(folder_id, g.current_user["id"])
+        if folder_error is not None:
+            return folder_error
+        try:
+            promoted = solution_store.promote_private_solution(
+                solution_id,
+                user_id,
+                g.current_user["id"],
+                name=payload.get("name"),
+                folder_id=folder_id,
+            )
+        except SolutionNotFoundError:
+            return error_response("SOLUTION_NOT_FOUND", "该用户的私人方案不存在", 404)
+        except SolutionAlreadyPromotedError:
+            return error_response("SOLUTION_ALREADY_PROMOTED", "该版本已经迁移到公共方案", 409)
+        user_store.record_audit(
+            g.current_user["id"],
+            "USER_SOLUTION_PROMOTED",
+            target_user_id=user_id,
+            details={
+                "sourceSolutionId": solution_id,
+                "publicSolutionId": promoted["id"],
+                "name": promoted["name"],
+                "sourceVersion": promoted["derivedFromSolutionVersion"],
+            },
+        )
+        return jsonify(promoted), 201
 
     @app.route("/api/admin/audit-logs")
     def admin_list_audit_logs():

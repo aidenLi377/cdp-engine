@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import base64
+import binascii
 import hashlib
 import json
+import re
 import secrets
 from uuid import uuid4
 
@@ -29,8 +32,17 @@ class InviteInvalidError(Exception):
     pass
 
 
+class InvalidCurrentPasswordError(Exception):
+    pass
+
+
 class UserStore:
     ROLES = ("super_admin", "config_admin", "user")
+    AVATAR_PATTERN = re.compile(
+        r"^data:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)$",
+        re.IGNORECASE,
+    )
+    AVATAR_MAX_BYTES = 512 * 1024
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path
@@ -67,6 +79,7 @@ class UserStore:
             "id": row["id"],
             "username": row["username"],
             "displayName": row["display_name"] or row["username"],
+            "avatarUrl": row["avatar_url"] or "",
             "enabled": bool(row["enabled"]),
             "role": row["role"] or "user",
             "createdAt": row["created_at"],
@@ -184,6 +197,91 @@ class UserStore:
             updated = dict(row)
             updated["last_login_at"] = now
         return self._public_user(updated)
+
+    @classmethod
+    def _validate_avatar_url(cls, avatar_url: str | None) -> str:
+        normalized = str(avatar_url or "").strip()
+        if not normalized:
+            return ""
+        match = cls.AVATAR_PATTERN.fullmatch(normalized)
+        if match is None:
+            raise ValueError("头像仅支持 PNG、JPG 或 WebP 图片")
+        try:
+            image_bytes = base64.b64decode(match.group(1), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("头像图片数据无效") from exc
+        if not image_bytes:
+            raise ValueError("头像图片数据无效")
+        if len(image_bytes) > cls.AVATAR_MAX_BYTES:
+            raise ValueError("头像大小不能超过 512 KB")
+        return normalized
+
+    def update_profile(
+        self,
+        user_id: str,
+        *,
+        username: str,
+        display_name: str,
+        avatar_url: str,
+        current_password: str = "",
+        new_password: str = "",
+    ) -> dict:
+        username = str(username or "").strip()
+        display_name = str(display_name or "").strip() or username
+        avatar_url = self._validate_avatar_url(avatar_url)
+        if not username:
+            raise ValueError("登录账号不能为空")
+        if len(username) > 80:
+            raise ValueError("登录账号不能超过 80 个字符")
+        if len(display_name) > 80:
+            raise ValueError("显示名称不能超过 80 个字符")
+        if new_password and len(new_password) < 8:
+            raise ValueError("新密码至少需要 8 位")
+
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            current = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if current is None:
+                raise UserNotFoundError(user_id)
+            duplicate = conn.execute(
+                """SELECT id FROM users
+                   WHERE username = ? COLLATE NOCASE AND id != ?""",
+                (username, user_id),
+            ).fetchone()
+            if duplicate is not None:
+                raise UserAlreadyExistsError(username)
+            if new_password and not check_password_hash(
+                current["password_hash"], str(current_password or "")
+            ):
+                raise InvalidCurrentPasswordError(user_id)
+
+            if new_password:
+                conn.execute(
+                    """UPDATE users
+                       SET username = ?, display_name = ?, avatar_url = ?,
+                           password_hash = ?, password_changed_at = ?,
+                           updated_at = ?, session_version = session_version + 1
+                       WHERE id = ?""",
+                    (
+                        username,
+                        display_name,
+                        avatar_url,
+                        generate_password_hash(new_password),
+                        now,
+                        now,
+                        user_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """UPDATE users
+                       SET username = ?, display_name = ?, avatar_url = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (username, display_name, avatar_url, now, user_id),
+                )
+        return self.get_user(user_id)
 
     def reset_password(self, username: str, password: str) -> None:
         with get_db(self.db_path) as conn:
@@ -332,6 +430,45 @@ class UserStore:
                     (user_id,),
                 ).fetchone()[0],
             }
+
+    def delete_user(self, user_id: str) -> dict[str, int]:
+        """Delete an account and all of its private working data atomically."""
+        with get_db(self.db_path) as conn:
+            current = conn.execute(
+                "SELECT id FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if current is None:
+                raise UserNotFoundError(user_id)
+            counts = {
+                "solutions": conn.execute(
+                    "SELECT COUNT(*) FROM solutions WHERE owner_id = ? AND visibility = 'private'",
+                    (user_id,),
+                ).fetchone()[0],
+                "folders": conn.execute(
+                    "SELECT COUNT(*) FROM folders WHERE owner_id = ? AND visibility = 'private'",
+                    (user_id,),
+                ).fetchone()[0],
+                "tasks": conn.execute(
+                    "SELECT COUNT(*) FROM tasks WHERE owner_id = ?", (user_id,)
+                ).fetchone()[0],
+            }
+            conn.execute(
+                "DELETE FROM folder_share_tokens WHERE owner_id = ?", (user_id,)
+            )
+            conn.execute(
+                "DELETE FROM solutions WHERE owner_id = ? AND visibility = 'private'",
+                (user_id,),
+            )
+            conn.execute(
+                "DELETE FROM folders WHERE owner_id = ? AND visibility = 'private'",
+                (user_id,),
+            )
+            conn.execute("DELETE FROM tasks WHERE owner_id = ?", (user_id,))
+            conn.execute(
+                "DELETE FROM registration_invites WHERE created_by = ?", (user_id,)
+            )
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        return counts
 
     def record_audit(
         self,

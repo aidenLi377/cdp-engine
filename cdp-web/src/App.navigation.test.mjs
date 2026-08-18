@@ -74,3 +74,10 @@ test('large top-level modes are loaded on demand', () => {
   assert.match(appVue, /defineAsyncComponent\(\(\) => import\('\.\/components\/SolutionCenter\.vue'\)\)/)
   assert.match(appVue, /defineAsyncComponent\(\(\) => import\('\.\/components\/TaskCenter\.vue'\)\)/)
 })
+
+test('signed-in account opens self-service profile editing with avatar support', () => {
+  assert.match(appVue, /class="app-shell-profile"/)
+  assert.match(appVue, /currentUser\?\.avatarUrl/)
+  assert.match(appVue, /<ProfileDialog/)
+  assert.match(appVue, /@updated="handleProfileUpdated"/)
+})

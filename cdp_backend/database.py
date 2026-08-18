@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     display_name  TEXT NOT NULL DEFAULT '',
+    avatar_url    TEXT NOT NULL DEFAULT '',
     enabled       INTEGER NOT NULL DEFAULT 1,
     role          TEXT NOT NULL DEFAULT 'user'
                   CHECK(role IN ('super_admin', 'config_admin', 'user')),
@@ -206,6 +207,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at
 MIGRATION_COLUMNS = {
     "users": {
         "role": "TEXT NOT NULL DEFAULT 'user'",
+        "avatar_url": "TEXT NOT NULL DEFAULT ''",
         "password_changed_at": "TEXT",
         "updated_at": "TEXT",
         "session_version": "INTEGER NOT NULL DEFAULT 1",
@@ -287,4 +289,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 4")
+        conn.execute("PRAGMA user_version = 5")

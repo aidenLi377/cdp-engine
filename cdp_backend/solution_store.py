@@ -55,6 +55,10 @@ class SolutionAccessError(Exception):
     pass
 
 
+class SolutionAlreadyPromotedError(Exception):
+    pass
+
+
 class SolutionStore:
     CLIENT_EDITABLE_FIELDS = (
         "name",
@@ -409,6 +413,60 @@ class SolutionStore:
             }
             self._insert_row(conn, duplicated)
         return duplicated
+
+    def promote_private_solution(
+        self,
+        solution_id: str,
+        owner_id: str,
+        admin_id: str,
+        *,
+        name: str | None = None,
+        folder_id: str | None = None,
+    ) -> dict:
+        """Copy one exact private-solution version into the public library."""
+        with get_db(self.db_path) as conn:
+            conn.row_factory = self._row_factory
+            row = conn.execute(
+                """SELECT * FROM solutions
+                   WHERE id = ? AND owner_id = ? AND visibility = 'private'""",
+                (solution_id, owner_id),
+            ).fetchone()
+            if row is None:
+                raise SolutionNotFoundError(solution_id)
+            item = self._row_to_dict(row)
+            existing = conn.execute(
+                """SELECT id FROM solutions
+                   WHERE visibility = 'public'
+                     AND derived_from_solution_id = ?
+                     AND derived_from_solution_version = ?
+                   LIMIT 1""",
+                (solution_id, str(item.get("_version", 1))),
+            ).fetchone()
+            if existing is not None:
+                raise SolutionAlreadyPromotedError(existing["id"])
+
+            now = _utc_now()
+            promoted = {
+                **self._client_fields(item),
+                "id": self._new_id(),
+                "name": str(name or item.get("name") or "未命名方案").strip(),
+                "source": "admin-promoted",
+                "status": "published",
+                "folderId": folder_id,
+                "basePublishedId": None,
+                "derivedFromSolutionId": solution_id,
+                "derivedFromSolutionVersion": str(item.get("_version", 1)),
+                "_version": 1,
+                "ownerId": None,
+                "visibility": "public",
+                "createdBy": admin_id,
+                "updatedBy": admin_id,
+                "createdAt": now,
+                "updatedAt": now,
+                "publishedAt": now,
+            }
+            self._insert_row(conn, promoted)
+        return promoted
 
     def update_custom_fields(
         self,

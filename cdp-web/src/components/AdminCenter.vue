@@ -8,7 +8,7 @@
           <em>交给可控的秩序。</em>
         </h1>
         <p class="admin-lede">
-          这里管理邀请、登录账号和配置管理员。每次发放都可追踪，每次变化都可撤回。
+          这里管理邀请、登录账号、用户方案和维表配置。关键查看与变更都会留下记录。
         </p>
       </div>
       <button class="admin-refresh" type="button" :disabled="loading" @click="loadData">
@@ -144,7 +144,10 @@
               <tr v-for="user in filteredUsers" :key="user.id">
                 <td>
                   <div class="user-cell">
-                    <span class="user-avatar">{{ userInitial(user) }}</span>
+                    <span class="user-avatar">
+                      <img v-if="user.avatarUrl" :src="user.avatarUrl" alt="" />
+                      <template v-else>{{ userInitial(user) }}</template>
+                    </span>
                     <span>
                       <strong>{{ user.displayName || user.username }}</strong>
                       <small>{{ user.username }}</small>
@@ -193,46 +196,6 @@
         </div>
       </section>
 
-      <section class="admin-panel audit-panel">
-        <div class="admin-panel-head">
-          <div>
-            <p class="admin-panel-index">03 / AUDIT TRAIL</p>
-            <h2>管理员操作记录</h2>
-          </div>
-          <span class="admin-panel-count">最近 {{ auditLogs.length }} 条</span>
-        </div>
-        <p class="admin-panel-note">账号修改、密码重置、强制退出和数据审计都会留下记录。</p>
-
-        <div class="admin-table-wrap audit-table-wrap">
-          <table class="admin-table audit-table">
-            <thead>
-              <tr>
-                <th>操作</th>
-                <th>操作者</th>
-                <th>目标</th>
-                <th>时间</th>
-                <th v-if="canDeleteAuditLogs"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="entry in auditLogs" :key="entry.id">
-                <td><span class="audit-action">{{ auditActionLabel(entry.action) }}</span></td>
-                <td>{{ entry.actorDisplayName || entry.actorUsername || '未知账号' }}</td>
-                <td>{{ entry.targetDisplayName || entry.targetUsername || '系统' }}</td>
-                <td class="last-login">{{ formatDate(entry.createdAt) }}</td>
-                <td v-if="canDeleteAuditLogs" class="admin-table-action">
-                  <button type="button" class="audit-delete-button" @click="deleteAuditLog(entry)">
-                    删除
-                  </button>
-                </td>
-              </tr>
-              <tr v-if="!auditLogs.length">
-                <td :colspan="canDeleteAuditLogs ? 5 : 4" class="admin-empty">还没有管理员操作记录</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
     </div>
 
     <Teleport to="body">
@@ -250,7 +213,10 @@
         >
           <header class="account-dialog-head">
             <div class="account-dialog-identity">
-              <span class="user-avatar account-dialog-avatar">{{ userInitial(managedUser) }}</span>
+              <span class="user-avatar account-dialog-avatar">
+                <img v-if="managedUser.avatarUrl" :src="managedUser.avatarUrl" alt="" />
+                <template v-else>{{ userInitial(managedUser) }}</template>
+              </span>
               <span>
                 <p class="admin-panel-index">ACCOUNT / {{ managedUser.id.slice(-8).toUpperCase() }}</p>
                 <h2 id="account-dialog-title">{{ managedUser.displayName || managedUser.username }}</h2>
@@ -359,15 +325,28 @@
                 </div>
                 <button type="button" @click="copyTemporaryPassword">复制</button>
               </div>
+
+              <div v-if="managedUser.id !== currentUserId" class="account-delete-zone">
+                <div>
+                  <strong>注销这个账号</strong>
+                  <p>永久删除登录账号，以及名下全部私人方案、文件夹和任务；已迁移的公共方案不受影响。</p>
+                </div>
+                <button
+                  class="account-delete-button"
+                  type="button"
+                  :disabled="deletingAccount"
+                  @click="deleteManagedUser"
+                >{{ deletingAccount ? '正在注销…' : '注销账号' }}</button>
+              </div>
             </section>
 
             <section class="account-dialog-section">
               <div class="account-section-head">
                 <div>
                   <span>03</span>
-                  <h3>用户数据审计</h3>
+                  <h3>用户方案与数据</h3>
                 </div>
-                <small>只读查看，不会混入管理员自己的数据</small>
+                <small>跨用户审查；迁移只复制当前版本到公共方案</small>
               </div>
 
               <div v-if="accountDataLoading" class="account-data-loading">正在读取该账号的数据索引…</div>
@@ -379,12 +358,39 @@
                 </div>
 
                 <div class="account-data-groups">
-                  <details>
+                  <details open>
                     <summary>方案列表 <span>{{ managedUserData.solutions?.length || 0 }}</span></summary>
-                    <ul>
-                      <li v-for="solution in managedUserData.solutions" :key="solution.id">
-                        <strong>{{ solution.name || '未命名方案' }}</strong>
-                        <small>{{ solution.status === 'published' ? '已发布' : '草稿' }} · {{ formatDate(solution.updatedAt) }}</small>
+                    <ul class="managed-solution-list">
+                      <li v-for="solution in managedUserData.solutions" :key="solution.id" class="managed-solution-card">
+                        <div class="managed-solution-head">
+                          <div>
+                            <strong>{{ solution.name || '未命名方案' }}</strong>
+                            <small>
+                              {{ solution.status === 'published' ? '个人已发布' : '个人草稿' }}
+                              · V{{ solution._version || 1 }}
+                              · {{ solution.nodes?.length || 0 }} 个节点
+                              · {{ formatDate(solution.updatedAt) }}
+                            </small>
+                          </div>
+                          <span v-if="solution.promotion" class="solution-promoted-chip">已迁移当前版本</span>
+                        </div>
+                        <div v-if="solution.nodes?.length" class="managed-solution-nodes">
+                          <span v-for="(node, index) in solution.nodes.slice(0, 5)" :key="node.id || index">
+                            {{ solutionNodeLabel(node, index) }}
+                          </span>
+                          <span v-if="solution.nodes.length > 5">＋{{ solution.nodes.length - 5 }}</span>
+                        </div>
+                        <p v-else class="managed-solution-empty">这个方案还没有配置节点</p>
+                        <div class="managed-solution-actions">
+                          <small v-if="solution.promotion">
+                            公共方案：{{ solution.promotion.publicName || solution.name }}
+                          </small>
+                          <small v-else>迁移会复制当前版本，用户的私人原件会保留。</small>
+                          <button
+                            type="button"
+                            @click="openSolutionPreview(solution)"
+                          >查看详情</button>
+                        </div>
                       </li>
                       <li v-if="!managedUserData.solutions?.length" class="account-data-empty">没有私人方案</li>
                     </ul>
@@ -417,10 +423,152 @@
       </div>
     </Teleport>
 
+    <Teleport to="body">
+      <div
+        v-if="previewedSolution"
+        class="solution-preview-backdrop"
+        role="presentation"
+        @click.self="closeSolutionPreview"
+      >
+        <section
+          class="solution-preview-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="solution-preview-title"
+        >
+          <header class="solution-preview-head">
+            <div>
+              <p class="admin-panel-index">SOLUTION / REVIEW</p>
+              <h2 id="solution-preview-title">{{ previewedSolution.name || '未命名方案' }}</h2>
+              <div class="solution-preview-chips">
+                <span>{{ previewedSolution.status === 'published' ? '个人已发布' : '个人草稿' }}</span>
+                <span>V{{ previewedSolution._version || 1 }}</span>
+                <span>{{ previewedSolution.nodes?.length || 0 }} 个节点</span>
+                <span>{{ managedUser?.displayName || managedUser?.username }}</span>
+              </div>
+            </div>
+            <button type="button" aria-label="关闭方案详情" @click="closeSolutionPreview">×</button>
+          </header>
+
+          <div class="solution-preview-scroll">
+            <section class="solution-review-section">
+              <div class="solution-review-title">
+                <span>01</span>
+                <div>
+                  <h3>方案概述</h3>
+                  <small>与工作台右侧摘要一致，只展示实际生效的组件条件</small>
+                </div>
+              </div>
+              <div v-if="solutionPreviewLoading" class="solution-overview-loading">
+                <span></span>
+                正在生成与工作台一致的组件概述…
+              </div>
+              <div v-else-if="previewNodes.length" class="solution-overview-list">
+                <article v-for="(node, index) in previewNodes" :key="node.id || index" class="summary-node">
+                  <header class="summary-node-head">
+                    <span class="summary-idx">{{ index + 1 }}</span>
+                    <span class="solution-overview-node-name">{{ getNodeSummaryDisplayName(node, index) }}</span>
+                    <span v-if="index > 0" class="summary-op">{{ solutionOperatorLabel(node.operator) }}</span>
+                  </header>
+                  <div class="summary-rows">
+                    <div v-for="item in solutionOverviewRows(node)" :key="item.key" class="summary-row">
+                      <span class="summary-label">{{ item.label }}</span>
+                      <span class="summary-val" :title="item.value">{{ item.value }}</span>
+                    </div>
+                    <p v-if="!solutionOverviewRows(node).length" class="solution-overview-empty">
+                      {{ node._hydrationError ? '组件说明暂时无法读取' : '当前组件没有已配置的有效条件' }}
+                    </p>
+                  </div>
+                </article>
+                <div v-if="previewNodes.length > 1" class="summary-compute">
+                  <span>运算链：</span>
+                  <strong>{{ solutionComputeChain(previewNodes) }}</strong>
+                </div>
+              </div>
+              <p v-else class="solution-review-empty">这个方案还没有配置任何组件。</p>
+            </section>
+
+            <section class="solution-review-section">
+              <div class="solution-review-title">
+                <span>02</span>
+                <div>
+                  <h3>自定义字段绑定</h3>
+                  <small>确认使用方案时可以修改什么，以及它会写入哪个组件字段</small>
+                </div>
+              </div>
+              <div v-if="previewedSolution.customFields?.length" class="solution-custom-field-list">
+                <article
+                  v-for="(field, index) in previewedSolution.customFields"
+                  :key="field.id || index"
+                  class="solution-custom-field"
+                >
+                  <header>
+                    <div>
+                      <strong>{{ field.name || field.label || field.displayName || `自定义字段 ${index + 1}` }}</strong>
+                      <small>{{ field.type || '未标注字段类型' }}</small>
+                    </div>
+                    <span>{{ solutionFieldBindings(field).length }} 处绑定</span>
+                  </header>
+                  <ul v-if="solutionFieldBindings(field).length">
+                    <li v-for="(binding, bindingIndex) in solutionFieldBindings(field)" :key="`${field.id || index}-${bindingIndex}`">
+                      <span class="solution-binding-node">
+                        <small>{{ binding.packageType }}</small>
+                        <strong>{{ binding.nodeLabel }}</strong>
+                      </span>
+                      <span class="solution-binding-arrow" aria-hidden="true">→</span>
+                      <span class="solution-binding-field">
+                        <strong>{{ binding.fieldLabel }}</strong>
+                        <small v-if="binding.fieldLabel !== binding.fieldKey">{{ binding.fieldKey }}</small>
+                      </span>
+                    </li>
+                  </ul>
+                  <p v-else>这个自定义字段尚未绑定组件字段</p>
+                </article>
+              </div>
+              <p v-else class="solution-review-empty">这个方案没有配置自定义字段。</p>
+            </section>
+          </div>
+
+          <footer class="solution-promotion-bar">
+            <div v-if="previewedSolution.promotion" class="solution-promotion-complete">
+              <span>✓</span>
+              <div>
+                <strong>当前版本已经迁移</strong>
+                <small>
+                  {{ previewedSolution.promotion.publicName || previewedSolution.name }}
+                  · {{ promotionLocationLabel(previewedSolution.promotion.folderId) }}
+                </small>
+              </div>
+            </div>
+            <template v-else>
+              <label>
+                <span>迁移到公共方案库</span>
+                <select v-model="promotionDestination" :disabled="publicFoldersLoading">
+                  <option value="" disabled>{{ publicFoldersLoading ? '正在读取公共文件夹…' : '请选择目标文件夹' }}</option>
+                  <option value="__root__">公共方案库 / 根目录</option>
+                  <option v-for="folder in flattenedPublicFolders" :key="folder.id" :value="folder.id">
+                    公共方案库 / {{ folder.path }}
+                  </option>
+                </select>
+              </label>
+              <div>
+                <small>迁移将复制当前 V{{ previewedSolution._version || 1 }}，不会修改用户原件。</small>
+                <button
+                  type="button"
+                  :disabled="!promotionDestination || promotingSolutionId === previewedSolution.id"
+                  @click="promoteManagedSolution(previewedSolution)"
+                >{{ promotingSolutionId === previewedSolution.id ? '迁移中…' : '确认迁移到所选文件夹' }}</button>
+              </div>
+            </template>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+
     <section class="admin-panel dimension-panel">
       <div class="admin-panel-head dimension-head">
         <div>
-          <p class="admin-panel-index">04 / DICTIONARIES</p>
+          <p class="admin-panel-index">03 / DICTIONARIES</p>
           <h2>维表配置</h2>
         </div>
         <span class="admin-panel-count">{{ dimensions.length }} 类维表</span>
@@ -620,7 +768,7 @@
       <section class="config-audit-panel" aria-labelledby="config-audit-title">
         <div class="config-audit-head">
           <div>
-            <p class="admin-panel-index">05 / CONFIG CHANGELOG</p>
+            <p class="admin-panel-index">04 / CONFIG CHANGELOG</p>
             <h3 id="config-audit-title">配置修改记录</h3>
             <p>按管理员操作留档，展开可查看维表、记录以及每个字段的旧值与新值。</p>
           </div>
@@ -747,13 +895,73 @@
         </div>
       </section>
     </section>
+
+    <section v-if="canManageAccounts" class="admin-panel audit-panel admin-audit-bottom">
+      <header class="admin-audit-head">
+        <div>
+          <p class="admin-panel-index">05 / AUDIT TRAIL</p>
+          <h2>管理员操作记录</h2>
+          <p class="admin-panel-note">账号修改、密码重置、强制退出和数据审计都会留下记录。</p>
+        </div>
+        <div class="admin-audit-controls">
+          <span class="admin-panel-count">最近 {{ auditLogs.length }} 条</span>
+          <button
+            class="admin-audit-toggle"
+            type="button"
+            :aria-expanded="auditPanelExpanded"
+            aria-controls="admin-audit-records"
+            @click="auditPanelExpanded = !auditPanelExpanded"
+          >
+            {{ auditPanelExpanded ? '收起记录' : '展开记录' }}
+            <span :class="{ expanded: auditPanelExpanded }" aria-hidden="true">⌄</span>
+          </button>
+        </div>
+      </header>
+
+      <Transition name="admin-audit-reveal">
+        <div v-if="auditPanelExpanded" id="admin-audit-records" class="admin-audit-body">
+          <div class="admin-table-wrap audit-table-wrap">
+            <table class="admin-table audit-table">
+              <thead>
+                <tr>
+                  <th>操作</th>
+                  <th>操作者</th>
+                  <th>目标</th>
+                  <th>时间</th>
+                  <th v-if="canDeleteAuditLogs"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="entry in auditLogs" :key="entry.id">
+                  <td><span class="audit-action">{{ auditActionLabel(entry.action) }}</span></td>
+                  <td>{{ entry.actorDisplayName || entry.actorUsername || '未知账号' }}</td>
+                  <td>{{ entry.targetDisplayName || entry.targetUsername || '系统' }}</td>
+                  <td class="last-login">{{ formatDate(entry.createdAt) }}</td>
+                  <td v-if="canDeleteAuditLogs" class="admin-table-action">
+                    <button type="button" class="audit-delete-button" @click="deleteAuditLog(entry)">
+                      删除
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="!auditLogs.length">
+                  <td :colspan="canDeleteAuditLogs ? 5 : 4" class="admin-empty">还没有管理员操作记录</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Transition>
+    </section>
   </main>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useCdpShared } from '../composables/useCdpShared.js'
+import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
 import { request } from '../utils/apiClient.js'
 import { adoptConfigVersion } from '../utils/configVersion.js'
+import { getNodeSummaryDisplayName } from '../utils/solutionState.js'
 import {
   configAuditActionLabel,
   configAuditOperationLabel,
@@ -774,6 +982,8 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['current-user-updated'])
+const { isVisible } = useCdpShared()
+const { hydrateNodes } = useSolutionRuntime()
 
 const ROLE_LABELS = {
   super_admin: '超级管理员',
@@ -792,6 +1002,7 @@ const STATUS_LABELS = {
 const users = ref([])
 const invites = ref([])
 const auditLogs = ref([])
+const auditPanelExpanded = ref(false)
 const configAuditLogs = ref([])
 const configAuditTotal = ref(0)
 const configAuditLoading = ref(false)
@@ -821,8 +1032,16 @@ const busyUserId = ref('')
 const userQuery = ref('')
 const managedUser = ref(null)
 const managedUserData = ref(null)
+const previewedSolution = ref(null)
+const previewNodes = ref([])
+const solutionPreviewLoading = ref(false)
+const publicFolders = ref([])
+const publicFoldersLoading = ref(false)
+const promotionDestination = ref('')
 const accountDataLoading = ref(false)
 const securityBusy = ref(false)
+const deletingAccount = ref(false)
+const promotingSolutionId = ref('')
 const temporaryPassword = ref('')
 const dimensionTotalPages = computed(() => (
   dimensionTotal.value > 0
@@ -842,6 +1061,7 @@ const createdInvite = ref(null)
 const inviteForm = reactive({ role: 'user', expiresDays: 7 })
 
 let messageTimer = null
+let solutionPreviewRequestId = 0
 
 const canManageAccounts = computed(() => props.currentUserRole === 'super_admin')
 const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
@@ -855,6 +1075,7 @@ const filteredUsers = computed(() => {
   )
 })
 const flattenedManagedFolders = computed(() => flattenFolders(managedUserData.value?.folders || []))
+const flattenedPublicFolders = computed(() => flattenFolders(publicFolders.value))
 
 function showMessage(text, type = 'success') {
   message.value = text
@@ -878,6 +1099,8 @@ function auditActionLabel(action) {
     USER_UPDATED: '修改账号',
     USER_PASSWORD_RESET: '重置密码',
     USER_SESSIONS_REVOKED: '强制退出',
+    USER_DELETED: '注销账号',
+    USER_SOLUTION_PROMOTED: '迁移公共方案',
     USER_DATA_VIEWED: '查看用户数据',
     INVITE_CREATED: '创建邀请',
     INVITE_REVOKED: '撤销邀请',
@@ -899,6 +1122,98 @@ function formatDate(value) {
 
 function userInitial(user) {
   return String(user.displayName || user.username || 'U').trim().slice(0, 1).toUpperCase()
+}
+
+function solutionNodeLabel(node, index) {
+  return node?.displayName || node?.name || node?.title || node?.packageType || node?.type || `节点 ${index + 1}`
+}
+
+function solutionOperatorLabel(operator) {
+  if (operator === 'u') return '并集'
+  if (operator === 'd') return '差集'
+  return '交集'
+}
+
+function solutionOverviewRows(node) {
+  const items = []
+  ;(Array.isArray(node?.schema) ? node.schema : []).forEach((field) => {
+    if (!isVisible(field, node)) return
+
+    const key = field.key
+    const value = node.formData?.[key]
+    const mode = node.modeData?.[key]
+    if (value === undefined || value === null || value === '') return
+    if (Array.isArray(value) && value.length === 0) return
+
+    let display = ''
+    if (field.Widget_Type === '数值_切换') {
+      if (mode === 'unlimited') return
+      if (mode === 'min' && value?.min !== null && value?.min !== undefined) {
+        display = `≥${value.min}`
+      } else if (mode === 'range') {
+        display = `${value?.min ?? '?'} - ${value?.max ?? '?'}`
+      }
+    } else if (field.Widget_Type === '日期_切换') {
+      if (mode === 'recent' && value?.days) {
+        display = `过去 ${value.days} 天`
+      } else if (mode === 'range' && Array.isArray(value?.dateRange) && value.dateRange.length === 2) {
+        display = `${value.dateRange[0]} ~ ${value.dateRange[1]}`
+      }
+    } else if (Array.isArray(value)) {
+      display = value.slice(0, 6).join('、')
+      if (value.length > 6) display += ` ...共${value.length}项`
+    } else if (typeof value === 'object') {
+      display = JSON.stringify(value)
+    } else {
+      display = String(value)
+    }
+
+    if (display) {
+      items.push({
+        key,
+        label: field.Label || field.label || key,
+        value: display,
+      })
+    }
+  })
+  return items
+}
+
+function solutionComputeChain(nodes) {
+  return nodes.map((node, index) => (
+    index === 0 ? '1' : `${solutionOperatorLabel(node.operator)} ${index + 1}`
+  )).join(' ')
+}
+
+function solutionFieldBindings(customField) {
+  const sourceNodes = previewedSolution.value?.nodes || []
+  const nodes = previewNodes.value.length ? previewNodes.value : sourceNodes
+  return (Array.isArray(customField?.bindings) ? customField.bindings : []).map((binding) => {
+    const nodeIndex = nodes.findIndex((node) => String(node?.id) === String(binding?.nodeId))
+    const sourceIndex = sourceNodes.findIndex((node) => String(node?.id) === String(binding?.nodeId))
+    const index = nodeIndex >= 0 ? nodeIndex : sourceIndex
+    const node = nodeIndex >= 0 ? nodes[nodeIndex] : sourceNodes[sourceIndex]
+    const schemaField = (Array.isArray(node?.schema) ? node.schema : []).find(
+      (field) => String(field?.key) === String(binding?.fieldKey),
+    )
+    return {
+      nodeLabel: node ? getNodeSummaryDisplayName(node, Math.max(index, 0)) : '组件已不存在',
+      packageType: node?.packageType || '未知组件',
+      fieldKey: binding?.fieldKey || '未知字段',
+      fieldLabel: schemaField?.Label || schemaField?.label || binding?.fieldLabel || binding?.fieldKey || '未知字段',
+    }
+  })
+}
+
+function promotionLocationLabel(folderId) {
+  if (!folderId) return '公共方案库 / 根目录'
+  const folder = flattenedPublicFolders.value.find((item) => item.id === folderId)
+  return folder ? `公共方案库 / ${folder.path}` : '公共方案库 / 文件夹已调整'
+}
+
+function selectedPromotionLocationLabel() {
+  if (promotionDestination.value === '__root__') return '公共方案库 / 根目录'
+  return promotionLocationLabel(promotionDestination.value)
 }
 
 function inviteUrl(invite) {
@@ -1306,24 +1621,60 @@ async function openUserManager(user) {
   accountForm.password = ''
   temporaryPassword.value = ''
   managedUserData.value = null
+  previewedSolution.value = null
+  previewNodes.value = []
+  solutionPreviewLoading.value = false
+  publicFolders.value = []
+  promotionDestination.value = ''
   accountDataLoading.value = true
+  publicFoldersLoading.value = true
   try {
-    managedUserData.value = await request(`/api/admin/users/${user.id}/data`, {
-      cache: 'no-store',
-    })
+    const [userData, publicFolderTree] = await Promise.all([
+      request(`/api/admin/users/${user.id}/data`, { cache: 'no-store' }),
+      request('/api/folders', { params: { scope: 'public' }, cache: 'no-store' }),
+    ])
+    managedUserData.value = userData
+    publicFolders.value = publicFolderTree
     await loadAuditLogs()
   } catch (error) {
     showMessage(error.message || '用户数据审计加载失败', 'error')
   } finally {
     accountDataLoading.value = false
+    publicFoldersLoading.value = false
   }
 }
 
 function closeUserManager() {
+  closeSolutionPreview()
   managedUser.value = null
   managedUserData.value = null
+  publicFolders.value = []
   accountForm.password = ''
   temporaryPassword.value = ''
+}
+
+async function openSolutionPreview(solution) {
+  const requestId = ++solutionPreviewRequestId
+  previewedSolution.value = solution
+  previewNodes.value = []
+  solutionPreviewLoading.value = true
+  promotionDestination.value = ''
+  try {
+    const hydrated = await hydrateNodes(solution?.nodes || [])
+    if (requestId === solutionPreviewRequestId && previewedSolution.value?.id === solution?.id) {
+      previewNodes.value = hydrated
+    }
+  } finally {
+    if (requestId === solutionPreviewRequestId) solutionPreviewLoading.value = false
+  }
+}
+
+function closeSolutionPreview() {
+  solutionPreviewRequestId += 1
+  previewedSolution.value = null
+  previewNodes.value = []
+  solutionPreviewLoading.value = false
+  promotionDestination.value = ''
 }
 
 async function saveManagedUser() {
@@ -1389,6 +1740,64 @@ async function revokeManagedSessions() {
     showMessage(error.message || '强制退出失败', 'error')
   } finally {
     securityBusy.value = false
+  }
+}
+
+async function promoteManagedSolution(solution) {
+  if (!managedUser.value || !solution || solution.promotion) return
+  if (!promotionDestination.value) {
+    showMessage('请先选择公共方案库中的目标文件夹', 'error')
+    return
+  }
+  const folderId = promotionDestination.value === '__root__'
+    ? null
+    : promotionDestination.value
+  const destinationLabel = selectedPromotionLocationLabel()
+  if (!window.confirm(`确定把“${solution.name || '未命名方案'}”的当前 V${solution._version || 1} 复制到“${destinationLabel}”吗？用户的私人原件会保留。`)) return
+  promotingSolutionId.value = solution.id
+  try {
+    const promoted = await request(
+      `/api/admin/users/${managedUser.value.id}/solutions/${solution.id}/promote`,
+      { method: 'POST', body: JSON.stringify({ folderId }) },
+    )
+    solution.promotion = {
+      publicSolutionId: promoted.id,
+      publicName: promoted.name,
+      folderId: promoted.folderId || null,
+      promotedAt: promoted.publishedAt,
+    }
+    await loadAuditLogs()
+    showMessage(`当前版本已复制到${destinationLabel}，用户原件保持不变`)
+  } catch (error) {
+    showMessage(error.message || '方案迁移失败', 'error')
+  } finally {
+    promotingSolutionId.value = ''
+  }
+}
+
+async function deleteManagedUser() {
+  if (!managedUser.value || managedUser.value.id === props.currentUserId) return
+  const username = managedUser.value.username
+  const confirmation = window.prompt(
+    `注销后将永久删除“${managedUser.value.displayName || username}”的账号和私人数据。请输入登录账号 ${username} 确认：`,
+  )
+  if (confirmation !== username) {
+    if (confirmation !== null) showMessage('输入的登录账号不一致，已取消注销', 'error')
+    return
+  }
+  deletingAccount.value = true
+  try {
+    const result = await request(`/api/admin/users/${managedUser.value.id}`, {
+      method: 'DELETE',
+    })
+    users.value = users.value.filter((item) => item.id !== result.id)
+    closeUserManager()
+    await loadAuditLogs()
+    showMessage(`账号已注销，并删除 ${result.deletedData?.solutions || 0} 个私人方案和 ${result.deletedData?.tasks || 0} 条任务`)
+  } catch (error) {
+    showMessage(error.message || '账号注销失败', 'error')
+  } finally {
+    deletingAccount.value = false
   }
 }
 
@@ -1792,6 +2201,13 @@ onMounted(loadData)
   border-radius: 50%;
   font-size: 10px;
   font-weight: 650;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .user-cell strong,
@@ -1885,8 +2301,72 @@ onMounted(loadData)
   color: var(--ui-ink);
 }
 
-.audit-panel {
-  grid-column: 1 / -1;
+.admin-audit-bottom {
+  max-width: 1380px;
+  margin: 18px auto 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.admin-audit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(18px, 2.3vw, 30px);
+}
+
+.admin-audit-head .admin-panel-index { margin-bottom: 7px; }
+
+.admin-audit-head .admin-panel-note {
+  margin: 8px 0 0;
+}
+
+.admin-audit-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.admin-audit-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 104px;
+  height: 34px;
+  padding: 0 13px;
+  color: var(--ui-fill);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--ui-ink);
+  border: 1px solid var(--ui-ink);
+  border-radius: var(--ui-radius-control);
+  cursor: pointer;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.admin-audit-toggle:hover { transform: translateY(-1px); }
+.admin-audit-toggle:focus-visible { outline: 3px solid var(--ui-accent-ring); outline-offset: 2px; }
+
+.admin-audit-toggle span {
+  font-size: 15px;
+  transition: transform 180ms ease;
+}
+
+.admin-audit-toggle span.expanded { transform: rotate(180deg); }
+
+.admin-audit-body {
+  padding: 0 clamp(18px, 2.3vw, 30px) clamp(18px, 2.3vw, 30px);
+  border-top: 1px solid var(--ui-divider);
+}
+
+.admin-audit-body .audit-table-wrap {
+  max-height: 520px;
+  margin-top: 20px;
+  overflow: auto;
 }
 
 .audit-action {
@@ -2196,6 +2676,46 @@ onMounted(loadData)
   cursor: pointer;
 }
 
+.account-delete-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 14px 15px;
+  background: color-mix(in srgb, var(--ui-danger) 5%, var(--ui-surface));
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 22%, var(--ui-divider));
+  border-radius: 11px;
+}
+
+.account-delete-zone strong {
+  color: var(--ui-danger);
+  font-size: 11px;
+}
+
+.account-delete-zone p {
+  max-width: 570px;
+  margin: 5px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.account-delete-button {
+  height: 34px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  color: #fff;
+  font: inherit;
+  font-size: 10px;
+  background: var(--ui-danger);
+  border: 0;
+  border-radius: var(--ui-radius-control);
+  cursor: pointer;
+}
+
+.account-delete-button:disabled { cursor: wait; opacity: 0.55; }
+
 .account-data-loading {
   padding: 28px 0;
   color: var(--ui-text-tertiary);
@@ -2264,6 +2784,357 @@ onMounted(loadData)
   color: var(--ui-text-tertiary);
   font-size: 9px;
 }
+
+.account-data-groups .managed-solution-list {
+  gap: 9px;
+}
+
+.account-data-groups .managed-solution-card {
+  display: block;
+  padding: 11px 0 0;
+}
+
+.managed-solution-head,
+.managed-solution-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.managed-solution-head > div {
+  min-width: 0;
+}
+
+.managed-solution-head strong,
+.managed-solution-head small {
+  display: block;
+}
+
+.managed-solution-head small {
+  margin-top: 5px;
+}
+
+.solution-promoted-chip {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  color: var(--ui-success);
+  font-size: 9px;
+  background: color-mix(in srgb, var(--ui-success) 8%, var(--ui-fill));
+  border: 1px solid color-mix(in srgb, var(--ui-success) 25%, transparent);
+  border-radius: 999px;
+}
+
+.managed-solution-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.managed-solution-nodes span {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 4px 7px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 6px;
+}
+
+.managed-solution-empty {
+  margin: 9px 0 0;
+  color: var(--ui-text-tertiary);
+  font-size: 9px;
+}
+
+.managed-solution-actions {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed var(--ui-divider);
+}
+
+.managed-solution-actions button {
+  height: 29px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  color: #fff;
+  font: inherit;
+  font-size: 9px;
+  background: var(--ui-ink);
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.managed-solution-actions button:disabled {
+  color: var(--ui-text-tertiary);
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  cursor: default;
+}
+
+.solution-preview-backdrop {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(17, 17, 17, 0.34);
+  backdrop-filter: blur(11px);
+}
+
+.solution-preview-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow: hidden;
+  color: var(--ui-ink);
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 22px;
+  box-shadow: 0 32px 110px rgba(0, 0, 0, 0.24);
+}
+
+.solution-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 27px 20px;
+  background: var(--ui-surface);
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.solution-preview-head .admin-panel-index { margin-bottom: 8px; }
+.solution-preview-head h2 { margin: 0; font-size: 25px; font-weight: 560; letter-spacing: -0.045em; }
+
+.solution-preview-head > button {
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  color: var(--ui-text-tertiary);
+  font: inherit;
+  font-size: 23px;
+  line-height: 1;
+  background: transparent;
+  border: 1px solid var(--ui-divider);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.solution-preview-head > button:hover { color: var(--ui-ink); border-color: var(--ui-ink); }
+
+.solution-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 11px;
+}
+
+.solution-preview-chips span {
+  padding: 4px 7px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 999px;
+}
+
+.solution-preview-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.solution-review-section {
+  padding: 24px 27px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.solution-review-title {
+  display: flex;
+  align-items: baseline;
+  gap: 11px;
+  margin-bottom: 17px;
+}
+
+.solution-review-title > span {
+  color: var(--ui-accent);
+  font: 700 10px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
+.solution-review-title h3 { margin: 0; font-size: 16px; font-weight: 560; }
+.solution-review-title small { display: block; margin-top: 4px; color: var(--ui-text-tertiary); font-size: 10px; }
+
+.solution-review-empty { margin: 0; color: var(--ui-text-tertiary); font-size: 10px; }
+
+.solution-overview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 112px;
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-radius: 14px;
+}
+
+.solution-overview-loading span {
+  width: 7px;
+  height: 7px;
+  background: var(--ui-accent);
+  border-radius: 50%;
+  animation: admin-pulse 0.8s ease-in-out infinite alternate;
+}
+
+.solution-overview-list { display: grid; gap: 12px; }
+
+.solution-overview-list .summary-node {
+  margin: 0;
+  background: var(--ui-surface);
+  border-color: var(--ui-divider);
+}
+
+.solution-overview-list .summary-node-head { margin-bottom: 10px; }
+
+.solution-overview-node-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solution-overview-list .summary-label { width: 112px; }
+.solution-overview-list .summary-val { white-space: normal; overflow-wrap: anywhere; }
+
+.solution-overview-empty {
+  margin: 0;
+  padding: 7px 0;
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
+}
+
+.solution-overview-list .summary-compute {
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
+  background: var(--ui-surface);
+  border-color: var(--ui-divider);
+}
+
+.solution-overview-list .summary-compute strong {
+  color: var(--ui-accent);
+  font: 600 10px/1.4 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+}
+
+.solution-custom-field-list { display: grid; gap: 10px; }
+
+.solution-custom-field {
+  padding: 14px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-radius: 12px;
+}
+
+.solution-custom-field > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.solution-custom-field > header strong,
+.solution-custom-field > header small { display: block; }
+.solution-custom-field > header strong { font-size: 11px; font-weight: 600; }
+.solution-custom-field > header small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+
+.solution-custom-field > header > span {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  color: var(--ui-text-secondary);
+  font: 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 999px;
+}
+
+.solution-custom-field ul {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.solution-custom-field li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 8px;
+}
+
+.solution-binding-node,
+.solution-binding-field { min-width: 0; }
+.solution-binding-node strong,
+.solution-binding-node small,
+.solution-binding-field strong,
+.solution-binding-field small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.solution-binding-node strong,
+.solution-binding-field strong { font-size: 10px; font-weight: 580; }
+.solution-binding-node small,
+.solution-binding-field small { margin-bottom: 3px; color: var(--ui-text-tertiary); font: 8px/1.3 "SF Mono", "Cascadia Code", ui-monospace, monospace; }
+
+.solution-binding-arrow {
+  color: var(--ui-accent);
+  font-size: 14px;
+  text-align: center;
+}
+
+.solution-custom-field > p {
+  margin: 11px 0 0;
+  color: var(--ui-text-tertiary);
+  font-size: 9px;
+}
+
+.solution-promotion-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 17px 27px;
+  background: var(--ui-surface);
+  border-top: 1px solid var(--ui-divider);
+  box-shadow: 0 -12px 35px rgba(0, 0, 0, 0.04);
+}
+
+.solution-promotion-bar > label { display: flex; flex: 1; flex-direction: column; gap: 7px; }
+.solution-promotion-bar > label > span { color: var(--ui-text-secondary); font-size: 10px; }
+.solution-promotion-bar select { width: 100%; height: 38px; padding: 0 10px; color: var(--ui-ink); font: inherit; font-size: 10px; background: var(--ui-fill); border: 1px solid var(--ui-control-border); border-radius: var(--ui-radius-control); outline: none; }
+.solution-promotion-bar select:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.solution-promotion-bar > div:not(.solution-promotion-complete) { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; }
+.solution-promotion-bar > div > small { color: var(--ui-text-tertiary); font-size: 9px; }
+.solution-promotion-bar button { height: 38px; padding: 0 15px; color: #fff; font: inherit; font-size: 10px; background: var(--ui-ink); border: 0; border-radius: var(--ui-radius-control); cursor: pointer; }
+.solution-promotion-bar button:disabled { color: var(--ui-text-tertiary); background: var(--ui-fill); border: 1px solid var(--ui-divider); cursor: not-allowed; }
+
+.solution-promotion-complete { display: flex; align-items: center; gap: 10px; }
+.solution-promotion-complete > span { display: grid; place-items: center; width: 30px; height: 30px; color: #fff; font-size: 11px; background: var(--ui-success); border-radius: 50%; }
+.solution-promotion-complete strong,
+.solution-promotion-complete small { display: block; }
+.solution-promotion-complete strong { font-size: 11px; }
+.solution-promotion-complete small { margin-top: 5px; color: var(--ui-text-tertiary); font-size: 9px; }
 
 .account-data-empty {
   display: block !important;
@@ -3115,6 +3986,19 @@ onMounted(loadData)
 .admin-toast-enter-from,
 .admin-toast-leave-to { opacity: 0; transform: translateY(-5px); }
 
+.admin-audit-reveal-enter-active,
+.admin-audit-reveal-leave-active {
+  max-height: 620px;
+  overflow: hidden;
+  transition: max-height 220ms ease, opacity 160ms ease;
+}
+
+.admin-audit-reveal-enter-from,
+.admin-audit-reveal-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
 @keyframes admin-pulse {
   from { transform: scale(0.8); opacity: 0.45; }
   to { transform: scale(1.1); opacity: 1; }
@@ -3164,6 +4048,20 @@ onMounted(loadData)
   .account-security-grid { grid-template-columns: 1fr; }
   .account-save { grid-column: auto; }
   .account-security-grid button { width: 100%; }
+  .account-delete-zone,
+  .managed-solution-actions { align-items: stretch; flex-direction: column; }
+  .account-delete-button,
+  .managed-solution-actions button { width: 100%; }
+  .solution-preview-backdrop { padding: 12px; }
+  .solution-preview-dialog { max-height: calc(100vh - 24px); border-radius: 17px; }
+  .solution-preview-head,
+  .solution-review-section,
+  .solution-promotion-bar { padding-right: 19px; padding-left: 19px; }
+  .solution-promotion-bar { align-items: stretch; flex-direction: column; }
+  .solution-promotion-bar > div:not(.solution-promotion-complete) { align-items: stretch; }
+  .solution-promotion-bar button { width: 100%; }
+  .admin-audit-head { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .admin-audit-controls { justify-content: space-between; width: 100%; }
 }
 
 @media (max-width: 520px) {

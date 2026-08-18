@@ -56,6 +56,18 @@ test('audit deletion is visible only to super admins and uses the guarded API ac
   assert.match(adminCenterVue, /操作记录已删除/)
 })
 
+test('administrator audit trail sits at the page bottom and is collapsed by default', () => {
+  const configAuditIndex = adminCenterVue.indexOf('id="config-audit-title"')
+  const adminAuditIndex = adminCenterVue.indexOf('class="admin-panel audit-panel admin-audit-bottom"')
+
+  assert.ok(configAuditIndex >= 0 && adminAuditIndex > configAuditIndex)
+  assert.match(adminCenterVue, /const auditPanelExpanded = ref\(false\)/)
+  assert.match(adminCenterVue, /:aria-expanded="auditPanelExpanded"/)
+  assert.match(adminCenterVue, /aria-controls="admin-audit-records"/)
+  assert.match(adminCenterVue, /v-if="auditPanelExpanded" id="admin-audit-records"/)
+  assert.match(adminCenterVue, /auditPanelExpanded \? '收起记录' : '展开记录'/)
+})
+
 test('config audit trail exposes immutable expandable field-level details', () => {
   assert.match(adminCenterVue, /id="config-audit-title">配置修改记录/)
   assert.match(adminCenterVue, /记录只读，不提供删除入口/)
@@ -69,4 +81,35 @@ test('config audit trail exposes immutable expandable field-level details', () =
   assert.match(adminCenterVue, /config-audit-kind\.removed/)
   assert.match(adminCenterVue, /config-audit-diff-row code\.before/)
   assert.match(adminCenterVue, /config-audit-diff-row code\.after/)
+})
+
+test('account management reviews user plans as workbench summaries before promotion', () => {
+  assert.match(adminCenterVue, />用户方案与数据</)
+  assert.match(adminCenterVue, /solution\.nodes\.slice\(0, 5\)/)
+  assert.match(adminCenterVue, />查看详情</)
+  assert.match(adminCenterVue, /v-if="previewedSolution"/)
+  assert.match(adminCenterVue, />方案概述</)
+  assert.match(adminCenterVue, /class="summary-node"/)
+  assert.match(adminCenterVue, /getNodeSummaryDisplayName\(node, index\)/)
+  assert.match(adminCenterVue, /solutionOverviewRows\(node\)/)
+  assert.match(adminCenterVue, /await hydrateNodes\(solution\?\.nodes \|\| \[\]\)/)
+  assert.match(adminCenterVue, />自定义字段绑定</)
+  assert.match(adminCenterVue, /solutionFieldBindings\(field\)/)
+  assert.match(adminCenterVue, /binding\.fieldLabel/)
+  assert.match(adminCenterVue, /binding\.fieldKey/)
+  assert.doesNotMatch(adminCenterVue, /solutionParameterEntries/)
+  assert.doesNotMatch(adminCenterVue, />查看完整原始配置</)
+  assert.match(adminCenterVue, /v-model="promotionDestination"/)
+  assert.match(adminCenterVue, />公共方案库 \/ 根目录</)
+  assert.match(adminCenterVue, /!promotionDestination \|\| promotingSolutionId/)
+  assert.match(adminCenterVue, /\/solutions\/\$\{solution\.id\}\/promote/)
+  assert.match(adminCenterVue, /JSON\.stringify\(\{ folderId \}\)/)
+  assert.match(adminCenterVue, /用户的私人原件会保留/)
+})
+
+test('account deletion is explicit and guarded by username confirmation', () => {
+  assert.match(adminCenterVue, />注销这个账号</)
+  assert.match(adminCenterVue, /window\.prompt/)
+  assert.match(adminCenterVue, /confirmation !== username/)
+  assert.match(adminCenterVue, /method: 'DELETE'/)
 })

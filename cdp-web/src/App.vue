@@ -49,8 +49,13 @@
         </nav>
 
         <div class="app-shell-account">
-          <span class="app-shell-avatar">{{ userInitial }}</span>
-          <span class="app-shell-user">{{ currentUser?.displayName || currentUser?.username }}</span>
+          <button class="app-shell-profile" type="button" title="修改个人资料" @click="profileOpen = true">
+            <span class="app-shell-avatar">
+              <img v-if="currentUser?.avatarUrl" :src="currentUser.avatarUrl" alt="" />
+              <template v-else>{{ userInitial }}</template>
+            </span>
+            <span class="app-shell-user">{{ currentUser?.displayName || currentUser?.username }}</span>
+          </button>
           <button class="app-shell-logout" type="button" @click="logout">退出</button>
         </div>
       </header>
@@ -78,6 +83,13 @@
           />
         </KeepAlive>
       </main>
+
+      <ProfileDialog
+        v-if="profileOpen"
+        :user="currentUser"
+        @close="profileOpen = false"
+        @updated="handleProfileUpdated"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -87,6 +99,7 @@ import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch 
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
+import ProfileDialog from './components/ProfileDialog.vue'
 import { fetchWithTimeout } from './utils/apiClient.js'
 import {
   refreshConfigVersion,
@@ -111,6 +124,7 @@ const appMode = ref('workbench')
 const backendOnline = ref(true)
 const authState = ref('checking')
 const currentUser = ref(null)
+const profileOpen = ref(false)
 const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
@@ -249,12 +263,18 @@ function handleCurrentUserUpdated(user) {
   currentUser.value = { ...currentUser.value, ...user }
 }
 
+function handleProfileUpdated(user) {
+  currentUser.value = user
+  profileOpen.value = false
+}
+
 function cancelInviteRegistration() {
   window.history.replaceState({}, '', window.location.pathname)
   inviteToken.value = ''
 }
 
 function handleAuthRequired() {
+  profileOpen.value = false
   currentUser.value = null
   authState.value = 'guest'
   clearWorkspaceSession()
@@ -277,6 +297,7 @@ async function logout() {
   try {
     await fetchWithTimeout('/api/auth/logout', { method: 'POST' })
   } finally {
+    profileOpen.value = false
     stopAuthenticatedLoops()
     resetConfigVersionState()
     clearWorkspaceSession()
@@ -345,6 +366,22 @@ onBeforeUnmount(() => {
   border-left-color: var(--ui-divider);
 }
 
+.app-shell-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 2px 2px;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.app-shell-profile:hover { background: var(--ui-fill); }
+
 .app-admin-link {
   height: 30px;
   margin-left: 8px;
@@ -376,7 +413,10 @@ onBeforeUnmount(() => {
   font-weight: 650;
   background: var(--ui-ink);
   border-radius: 50%;
+  overflow: hidden;
 }
+
+.app-shell-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
 .app-shell-user {
   max-width: 96px;
