@@ -33,15 +33,28 @@
           <el-input
             v-model="editName"
             size="small"
-            class="intercom-input"
-            style="flex:1;min-width:0"
+            class="intercom-input folder-inline-edit-input"
             @keyup.enter="saveEdit(folder.id)"
             @keyup.esc="cancelEdit"
             @click.stop
             ref="editInputRef"
           />
-          <el-button size="small" text @click.stop="saveEdit(folder.id)" style="font-size:11px">确定</el-button>
-          <el-button size="small" text @click.stop="cancelEdit" style="font-size:11px">取消</el-button>
+          <span class="folder-edit-actions">
+            <button
+              type="button"
+              class="folder-edit-action is-confirm"
+              title="确认重命名"
+              aria-label="确认重命名"
+              @click.stop="saveEdit(folder.id)"
+            ><el-icon><Check /></el-icon></button>
+            <button
+              type="button"
+              class="folder-edit-action"
+              title="取消重命名"
+              aria-label="取消重命名"
+              @click.stop="cancelEdit"
+            ><el-icon><Close /></el-icon></button>
+          </span>
         </template>
         <template v-else>
           <span class="folder-name">{{ folder.name }}</span>
@@ -94,6 +107,7 @@
           @drag-leave-folder="onDragLeaveFolder"
           @drop-on-folder="onDropOnFolder"
           @start-edit="startEdit"
+          @update-edit-name="editName = $event"
           @cancel-edit="cancelEdit"
           @save-edit="saveEdit"
         />
@@ -148,7 +162,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
-import { Share } from '@element-plus/icons-vue'
+import { Check, Close, Share } from '@element-plus/icons-vue'
 import FolderTreeNode from './FolderTreeNode.vue'
 
 const props = defineProps({
@@ -166,6 +180,7 @@ const selectedFolderId = ref(null)
 const creatingParentId = ref(undefined)
 const createName = ref('')
 const createInputRef = ref(null)
+const editInputRef = ref(null)
 const editingFolderId = ref(null)
 const editName = ref('')
 const dragOverFolderId = ref(null)
@@ -230,6 +245,11 @@ function startEdit(id, currentName) {
   if (props.readOnly) return
   editingFolderId.value = id
   editName.value = currentName
+  nextTick(() => {
+    const input = Array.isArray(editInputRef.value) ? editInputRef.value[0] : editInputRef.value
+    input?.focus?.()
+    input?.select?.()
+  })
 }
 
 function cancelEdit() {
@@ -284,6 +304,7 @@ function closeContextMenu() {
 
 function contextRename() {
   if (contextMenu.value.folder) {
+    contextMenu.value.visible = false
     startEdit(contextMenu.value.folder.id, contextMenu.value.folder.name)
   }
 }
@@ -372,6 +393,51 @@ defineExpose({ selectedFolderId, selectFolder })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.folder-inline-edit-input {
+  min-width: 0;
+  flex: 1;
+}
+.folder-inline-edit-input :deep(.el-input__wrapper) {
+  min-height: 28px !important;
+  padding: 0 8px !important;
+  border-radius: 7px;
+}
+.folder-inline-edit-input :deep(.el-input__inner) {
+  height: 26px !important;
+  font-size: 12px;
+}
+.folder-edit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.folder-edit-action {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ui-text-secondary);
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+.folder-edit-action:hover {
+  color: var(--ui-ink);
+  border-color: var(--ui-ink);
+}
+.folder-edit-action.is-confirm {
+  color: #fff;
+  background: var(--ui-ink);
+  border-color: var(--ui-ink);
+}
+.folder-edit-action:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 1px;
 }
 .folder-batch-badge {
   display: inline-flex;

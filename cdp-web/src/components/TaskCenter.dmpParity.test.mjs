@@ -21,6 +21,10 @@ test('task center exposes field visibility and per-tag Rebase controls', () => {
   assert.match(source, /DMP_RESULT_COLUMNS/)
 })
 
+test('comparison metric exposes the requested Rabase crowd-share display label', () => {
+  assert.match(comparisonSource, /metric === 'Rebase' \? 'Rabase 人群占比' : metric/)
+})
+
 test('task center enables only ready multi-condition tags with plain status copy', () => {
   assert.match(source, /isConditionalTagReady/)
   assert.match(source, /已就绪/)
@@ -178,10 +182,11 @@ test('task center uses compact section markers and focus-only input underlines',
   assert.match(globalStyles, /#app \.tc-input-sm \.el-input__wrapper\.is-focus,[\s\S]*?#app \.tc-tags-search-input:focus\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f !important;/s)
 })
 
-test('task execution and DMP settings are separated by a quiet fading hairline', () => {
+test('task execution and left-aligned DMP settings are separated by a quiet fading hairline', () => {
   assert.match(source, /\.tc-test-row\s*\{[^}]*position:\s*relative;[^}]*padding:\s*0 0 18px 9px;/s)
   assert.match(source, /\.tc-test-row::after\s*\{[^}]*height:\s*1px;[^}]*linear-gradient\(90deg, rgba\(29,29,31,0\.16\), rgba\(29,29,31,0\.04\) 72%, transparent\)/s)
-  assert.match(source, /\.tc-dmp-tools\s*\{[^}]*padding:\s*0 1px 0 10px;/s)
+  assert.match(source, /\.tc-dmp-tools\s*\{[^}]*justify-content:\s*flex-start;[^}]*padding:\s*0 1px;/s)
+  assert.match(source, /\.tc-dmp-tools-label\s*\{[^}]*margin-right:\s*2px;/s)
 })
 
 test('DMP settings use small rectangular black and white buttons', () => {

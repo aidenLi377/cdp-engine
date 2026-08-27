@@ -32,6 +32,8 @@ FLASK_ENV=production
 SECRET_KEY=$secret_key
 CORS_ORIGINS=https://duruo377.top,https://www.duruo377.top
 CDP_DB_PATH=/srv/cdp/shared/cdp.db
+CDP_BACKUP_DIR=/srv/cdp/backups
+CDP_FEEDBACK_UPLOAD_DIR=/srv/cdp/shared/feedback_uploads
 LOG_DIR=/var/log/cdp
 EOF
 fi

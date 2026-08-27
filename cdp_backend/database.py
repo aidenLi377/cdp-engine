@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at TEXT,
     password_changed_at TEXT,
     updated_at    TEXT,
-    session_version INTEGER NOT NULL DEFAULT 1
+    session_version INTEGER NOT NULL DEFAULT 1,
+    is_system_owner INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS registration_invites (
@@ -168,6 +169,31 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at  TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS feedback (
+    id          TEXT PRIMARY KEY,
+    created_by  TEXT NOT NULL,
+    category    TEXT NOT NULL DEFAULT 'suggestion',
+    message     TEXT NOT NULL,
+    page_path   TEXT NOT NULL DEFAULT '',
+    app_version TEXT NOT NULL DEFAULT '',
+    viewport    TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'new'
+                CHECK(status IN ('new', 'reviewing', 'resolved')),
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback_attachments (
+    id            TEXT PRIMARY KEY,
+    feedback_id   TEXT NOT NULL,
+    stored_name   TEXT NOT NULL UNIQUE,
+    original_name TEXT NOT NULL,
+    mime_type     TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    created_at    TEXT NOT NULL,
+    FOREIGN KEY(feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_solutions_status ON solutions(status);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder ON solutions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_updated ON solutions(updated_at);
@@ -179,6 +205,8 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
 POST_MIGRATION_DDL = """
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_system_owner
+    ON users(is_system_owner) WHERE is_system_owner = 1;
 CREATE INDEX IF NOT EXISTS idx_admin_audit_created
     ON admin_audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_target
@@ -202,6 +230,11 @@ CREATE INDEX IF NOT EXISTS idx_folder_share_token_hash ON folder_share_tokens(to
 CREATE INDEX IF NOT EXISTS idx_folder_share_owner_created
     ON folder_share_tokens(owner_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_created ON tasks(owner_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_status_created
+    ON feedback(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_attachments_feedback
+    ON feedback_attachments(feedback_id, created_at);
 """
 
 MIGRATION_COLUMNS = {
@@ -211,6 +244,7 @@ MIGRATION_COLUMNS = {
         "password_changed_at": "TEXT",
         "updated_at": "TEXT",
         "session_version": "INTEGER NOT NULL DEFAULT 1",
+        "is_system_owner": "INTEGER NOT NULL DEFAULT 0",
     },
     "dimension_rows": {
         "published_data": "TEXT",
@@ -289,4 +323,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 5")
+        conn.execute("PRAGMA user_version = 6")

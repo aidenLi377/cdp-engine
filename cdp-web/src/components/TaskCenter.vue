@@ -1,5 +1,9 @@
 <template>
-  <div class="task-center-page">
+  <div
+    ref="taskCenterPageRef"
+    class="task-center-page"
+    :style="{ '--task-control-width': `${taskControlWidth}px` }"
+  >
     <!-- 左栏：控制台 -->
     <aside class="tc-control-panel">
       <!-- 扩展状态 -->
@@ -157,6 +161,19 @@
           <div class="tc-tags-empty" v-if="!hasFilteredTags">无匹配标签</div>
         </div>
       </section>
+
+      <div
+        class="panel-resize-handle panel-resize-handle--right"
+        :aria-valuenow="taskControlWidth"
+        aria-valuemin="300"
+        aria-valuemax="560"
+        aria-label="调整任务控制栏宽度"
+        aria-orientation="vertical"
+        role="separator"
+        tabindex="0"
+        @pointerdown="startTaskControlResize"
+        @keydown="onTaskControlResizeKeydown"
+      ></div>
     </aside>
 
     <!-- 右栏：监控台 -->
@@ -308,6 +325,7 @@ import { fetchWithTimeout } from '../utils/apiClient.js'
 import { parseCrowdBatch } from '../utils/crowdBatch.js'
 import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWorkspace.js'
 import { createTaskProgressPersistence } from '../utils/taskProgressPersistence.js'
+import { usePanelResize } from '../composables/usePanelResize'
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
@@ -318,6 +336,25 @@ const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
+})
+
+const taskCenterPageRef = ref(null)
+const TASK_MIN_MONITOR_WIDTH = 620
+
+const {
+  width: taskControlWidth,
+  startResize: startTaskControlResize,
+  onResizeKeydown: onTaskControlResizeKeydown,
+} = usePanelResize({
+  panelId: 'task-control',
+  ownerId: props.sessionOwnerId,
+  defaultWidth: 380,
+  minWidth: 300,
+  maxWidth: 560,
+  edge: 'right',
+  applyWidth: width => taskCenterPageRef.value?.style.setProperty('--task-control-width', `${width}px`),
+  getDynamicMaxWidth: () =>
+    (taskCenterPageRef.value?.clientWidth || window.innerWidth) - TASK_MIN_MONITOR_WIDTH,
 })
 
 const taskSessionState = readSessionWorkspace(TASK_SESSION_KEY, props.sessionOwnerId) || {}
@@ -1447,13 +1484,14 @@ onBeforeUnmount(() => {
 
 .task-center-page {
   flex: 1; display: grid;
-  grid-template-columns: 380px minmax(0, 1fr);
+  grid-template-columns: var(--task-control-width, 380px) minmax(0, 1fr);
   height: 100%; min-height: 0; overflow: hidden;
   background: var(--ui-canvas);
 }
 
 /* ---- 左栏 ---- */
 .tc-control-panel {
+  position: relative;
   display: flex; flex-direction: column; gap: 0;
   padding: 18px 18px 14px;
   background: #fff;
@@ -1524,8 +1562,8 @@ onBeforeUnmount(() => {
 .tc-btn-sm.is-cancel { background: #ff3b30 !important; }
 .tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
 
-.tc-dmp-tools { display: flex; align-items: center; gap: 6px; margin-bottom: 18px; padding: 0 1px 0 10px; flex-shrink: 0; }
-.tc-dmp-tools-label { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
+.tc-dmp-tools { display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin-bottom: 18px; padding: 0 1px; flex-shrink: 0; }
+.tc-dmp-tools-label { display: inline-flex; align-items: center; gap: 7px; margin-right: 2px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
 .tc-dmp-tools-label::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
 .tc-settings-btn { min-width: 48px; height: 24px; padding: 0 7px; border: 1px solid #1d1d1f; border-radius: 3px; background: #fff; color: #1d1d1f; font-size: 9px; font-weight: 550; letter-spacing: 0.01em; cursor: pointer; transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease; }
 .tc-settings-btn:hover:not(:disabled) { color: #fff; background: #1d1d1f; transform: translateY(-1px); }
@@ -1835,6 +1873,7 @@ onBeforeUnmount(() => {
 @media (max-width: 1120px) {
   .task-center-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tc-control-panel { border-right: 0; border-bottom: 0; }
+  .panel-resize-handle { display: none; }
   .tc-monitor-tabs { padding-right: 10px; }
   .tc-completion-toast { top: 64px; }
 }

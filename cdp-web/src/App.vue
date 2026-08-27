@@ -49,6 +49,16 @@
         </nav>
 
         <div class="app-shell-account">
+          <button
+            class="app-feedback-link"
+            type="button"
+            title="提交用户反馈"
+            aria-label="提交用户反馈"
+            @click="feedbackOpen = true"
+          >
+            <el-icon><ChatDotRound /></el-icon>
+            <span>反馈</span>
+          </button>
           <button class="app-shell-profile" type="button" title="修改个人资料" @click="profileOpen = true">
             <span class="app-shell-avatar">
               <img v-if="currentUser?.avatarUrl" :src="currentUser.avatarUrl" alt="" />
@@ -79,6 +89,7 @@
             v-else-if="appMode === 'admin'"
             :current-user-id="currentUser?.id"
             :current-user-role="currentUser?.role"
+            :is-system-owner="Boolean(currentUser?.isSystemOwner)"
             @current-user-updated="handleCurrentUserUpdated"
           />
         </KeepAlive>
@@ -90,6 +101,7 @@
         @close="profileOpen = false"
         @updated="handleProfileUpdated"
       />
+      <FeedbackDrawer :open="feedbackOpen" @close="feedbackOpen = false" />
     </div>
   </el-config-provider>
 </template>
@@ -97,9 +109,11 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
+import FeedbackDrawer from './components/FeedbackDrawer.vue'
 import { fetchWithTimeout } from './utils/apiClient.js'
 import {
   refreshConfigVersion,
@@ -125,6 +139,7 @@ const backendOnline = ref(true)
 const authState = ref('checking')
 const currentUser = ref(null)
 const profileOpen = ref(false)
+const feedbackOpen = ref(false)
 const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
@@ -275,6 +290,7 @@ function cancelInviteRegistration() {
 
 function handleAuthRequired() {
   profileOpen.value = false
+  feedbackOpen.value = false
   currentUser.value = null
   authState.value = 'guest'
   clearWorkspaceSession()
@@ -298,6 +314,7 @@ async function logout() {
     await fetchWithTimeout('/api/auth/logout', { method: 'POST' })
   } finally {
     profileOpen.value = false
+    feedbackOpen.value = false
     stopAuthenticatedLoops()
     resetConfigVersionState()
     clearWorkspaceSession()
@@ -364,6 +381,34 @@ onBeforeUnmount(() => {
   padding-left: 12px;
   border-left: 1px solid;
   border-left-color: var(--ui-divider);
+}
+
+.app-feedback-link {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid var(--ui-divider);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.app-feedback-link:hover {
+  color: #fff;
+  background: var(--ui-ink);
+  border-color: var(--ui-ink);
+  transform: translateY(-1px);
+}
+
+.app-feedback-link:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 2px;
 }
 
 .app-shell-profile {

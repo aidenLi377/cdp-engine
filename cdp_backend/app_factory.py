@@ -22,7 +22,13 @@ from .dimension_store import (
     DimensionStore,
     DimensionValidationError,
 )
+from .data_safety import collect_data_safety, create_backup
 from .engine import ConfigEngine
+from .feedback_store import (
+    FeedbackNotFoundError,
+    FeedbackStore,
+    FeedbackValidationError,
+)
 from .folder_store import FolderAccessError, FolderNotFoundError, FolderStore
 from .folder_share_store import (
     FolderShareAccessError,
@@ -95,6 +101,16 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
     if test_config:
         app.config.update(test_config)
+    db_parent = Path(app.config["DB_PATH"]).resolve().parent
+    if not app.config.get("BACKUP_DIR"):
+        default_backup_dir = db_parent.parent / "backups" if production else db_parent / "backups"
+        app.config["BACKUP_DIR"] = os.environ.get(
+            "CDP_BACKUP_DIR", str(default_backup_dir)
+        )
+    if not app.config.get("FEEDBACK_UPLOAD_DIR"):
+        app.config["FEEDBACK_UPLOAD_DIR"] = os.environ.get(
+            "CDP_FEEDBACK_UPLOAD_DIR", str(db_parent / "feedback_uploads")
+        )
 
     # Stores — now backed by SQLite; the old env-var file paths are
     # accepted for backward compatibility but ignored.
@@ -105,6 +121,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     task_store = TaskStore(db_path)
     user_store = UserStore(db_path)
     dimension_store = DimensionStore(db_path)
+    feedback_store = FeedbackStore(db_path, app.config["FEEDBACK_UPLOAD_DIR"])
 
     if production:
         cors_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -135,6 +152,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
         task_store,
         user_store,
         dimension_store,
+        feedback_store,
     )
     return app, engine
 
@@ -149,6 +167,7 @@ def register_routes(
     task_store: TaskStore,
     user_store: UserStore,
     dimension_store: DimensionStore,
+    feedback_store: FeedbackStore,
 ) -> None:
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
@@ -234,6 +253,11 @@ def register_routes(
     def require_super_admin():
         if getattr(g, "current_user", {}).get("role") != "super_admin":
             return error_response("FORBIDDEN", "只有超级管理员可以执行此操作", 403)
+        return None
+
+    def require_system_owner():
+        if not getattr(g, "current_user", {}).get("isSystemOwner"):
+            return error_response("FORBIDDEN", "只有总管理员 admin 可以执行此操作", 403)
         return None
 
     def require_config_admin():
@@ -405,6 +429,27 @@ def register_routes(
             next_role = user_store._validate_role(next_role)
         except ValueError as exc:
             return error_response("INVALID_REQUEST", str(exc), 400)
+        protected_owner_change = target.get("isSystemOwner") and (
+            str(next_username).casefold() != "admin"
+            or not next_enabled
+            or next_role != "super_admin"
+        )
+        if protected_owner_change:
+            return error_response(
+                "SYSTEM_OWNER_PROTECTED",
+                "总管理员 admin 不可改名、停用或降级",
+                400,
+            )
+        role_crosses_super_admin = next_role != target["role"] and "super_admin" in {
+            target["role"],
+            next_role,
+        }
+        if role_crosses_super_admin and not g.current_user.get("isSystemOwner"):
+            return error_response(
+                "SYSTEM_OWNER_REQUIRED",
+                "只有总管理员 admin 可以设置或撤销超级管理员",
+                403,
+            )
         if user_id == g.current_user["id"] and (
             not next_enabled or next_role != "super_admin"
         ):
@@ -456,6 +501,10 @@ def register_routes(
         target = user_store.get_user(user_id)
         if target is None:
             return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        if target.get("isSystemOwner"):
+            return error_response(
+                "SYSTEM_OWNER_PROTECTED", "总管理员 admin 不可注销", 400
+            )
         if user_id == g.current_user["id"]:
             return error_response("SELF_DELETE", "不能注销当前登录的超级管理员", 400)
         if target["role"] == "super_admin" and target["enabled"]:
@@ -490,6 +539,13 @@ def register_routes(
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict):
             return error_response("INVALID_REQUEST", "密码重置信息格式不正确", 400)
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        if target.get("isSystemOwner") and not g.current_user.get("isSystemOwner"):
+            return error_response(
+                "SYSTEM_OWNER_REQUIRED", "只有总管理员 admin 可以管理总管理员账号", 403
+            )
         generate = payload.get("generate", False)
         if not isinstance(generate, bool):
             return error_response("INVALID_REQUEST", "generate 必须是布尔值", 400)
@@ -519,6 +575,13 @@ def register_routes(
         permission_error = require_super_admin()
         if permission_error is not None:
             return permission_error
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        if target.get("isSystemOwner") and not g.current_user.get("isSystemOwner"):
+            return error_response(
+                "SYSTEM_OWNER_REQUIRED", "只有总管理员 admin 可以管理总管理员账号", 403
+            )
         try:
             updated = user_store.revoke_sessions(user_id)
         except UserNotFoundError:
@@ -658,6 +721,12 @@ def register_routes(
         payload = request.get_json(silent=True) or {}
         role = payload.get("role", "user")
         expires_days = payload.get("expiresDays", 7)
+        if role == "super_admin" and not g.current_user.get("isSystemOwner"):
+            return error_response(
+                "SYSTEM_OWNER_REQUIRED",
+                "只有总管理员 admin 可以邀请超级管理员",
+                403,
+            )
         try:
             expires_days = int(expires_days)
             invite = user_store.create_invite(
@@ -693,6 +762,90 @@ def register_routes(
             details={"inviteId": invite["id"], "role": invite["role"]},
         )
         return jsonify(invite)
+
+    @app.route("/api/feedback", methods=["POST"])
+    def create_feedback():
+        try:
+            created = feedback_store.create(
+                g.current_user["id"],
+                category=request.form.get("category", "suggestion"),
+                message=request.form.get("message", ""),
+                page_path=request.form.get("pagePath", ""),
+                app_version=request.form.get("appVersion", ""),
+                viewport=request.form.get("viewport", ""),
+                files=request.files.getlist("images"),
+            )
+        except FeedbackValidationError as exc:
+            return error_response("INVALID_FEEDBACK", str(exc), 400)
+        return jsonify(created), 201
+
+    @app.route("/api/admin/feedback")
+    def admin_list_feedback():
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            limit = int(request.args.get("limit", 100))
+        except (TypeError, ValueError):
+            return error_response("INVALID_REQUEST", "limit 必须是整数", 400)
+        return jsonify(feedback_store.list(limit=limit))
+
+    @app.route("/api/admin/feedback/<feedback_id>", methods=["PATCH"])
+    def admin_update_feedback(feedback_id: str):
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            updated = feedback_store.update_status(feedback_id, payload.get("status"))
+        except FeedbackValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        except FeedbackNotFoundError:
+            return error_response("FEEDBACK_NOT_FOUND", "反馈不存在", 404)
+        return jsonify(updated)
+
+    @app.route("/api/admin/feedback/attachments/<attachment_id>")
+    def admin_feedback_attachment(attachment_id: str):
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            attachment = feedback_store.get_attachment(attachment_id)
+        except FeedbackNotFoundError:
+            return error_response("ATTACHMENT_NOT_FOUND", "反馈图片不存在", 404)
+        if not attachment["path"].is_file():
+            return error_response("ATTACHMENT_NOT_FOUND", "反馈图片文件不存在", 404)
+        return send_file(
+            attachment["path"],
+            mimetype=attachment["mimeType"],
+            download_name=attachment["originalName"],
+            conditional=True,
+        )
+
+    @app.route("/api/admin/data-safety")
+    def admin_data_safety():
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        return jsonify(
+            collect_data_safety(app.config["DB_PATH"], app.config["BACKUP_DIR"])
+        )
+
+    @app.route("/api/admin/data-safety/backup", methods=["POST"])
+    def admin_create_data_backup():
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            backup = create_backup(app.config["DB_PATH"], app.config["BACKUP_DIR"])
+        except (FileNotFoundError, RuntimeError, OSError) as exc:
+            return error_response("BACKUP_FAILED", str(exc), 500)
+        user_store.record_audit(
+            g.current_user["id"],
+            "DATABASE_BACKUP_CREATED",
+            details={"name": backup["name"], "byteSize": backup["byteSize"]},
+        )
+        return jsonify(backup), 201
 
     @app.route("/api/admin/dimensions")
     def admin_list_dimensions():

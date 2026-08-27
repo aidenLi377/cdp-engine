@@ -19,8 +19,19 @@ test('top-level folder rows support inline rename editing just like child rows',
 
 test('context menu rename action starts edit mode instead of being a dead-end', () => {
   assert.match(folderTreeVue, /function contextRename\(\)/)
+  assert.match(folderTreeVue, /contextMenu\.value\.visible = false\s+startEdit\(contextMenu\.value\.folder\.id/)
   assert.match(folderTreeVue, /startEdit\(contextMenu\.value\.folder\.id, contextMenu\.value\.folder\.name\)/)
   assert.match(folderTreeNodeVue, /v-if="editingFolderId === folder\.id"/)
+})
+
+test('folder rename uses compact icon actions and a compact input', () => {
+  for (const source of [folderTreeVue, folderTreeNodeVue]) {
+    assert.match(source, /aria-label="确认重命名"/)
+    assert.match(source, /aria-label="取消重命名"/)
+    assert.match(source, /width: 26px;/)
+    assert.match(source, /height: 26px;/)
+    assert.match(source, /min-height: 28px !important;/)
+  }
 })
 
 test('folder rows use a monochrome vector icon instead of a colored emoji', () => {

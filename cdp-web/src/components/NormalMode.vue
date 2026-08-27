@@ -1,5 +1,9 @@
 <template>
-  <div class="left-panel workbench-left-panel">
+  <div
+    ref="workbenchLeftPanelRef"
+    class="left-panel workbench-left-panel"
+    :style="{ width: `${workbenchLeftWidth}px` }"
+  >
     <button
       type="button"
       class="left-panel-edge-toggle"
@@ -129,6 +133,19 @@
         没有匹配的组件
       </div>
     </section>
+
+    <div
+      class="panel-resize-handle panel-resize-handle--right"
+      :aria-valuenow="workbenchLeftWidth"
+      aria-valuemin="240"
+      aria-valuemax="460"
+      aria-label="调整工作台左侧栏宽度"
+      aria-orientation="vertical"
+      role="separator"
+      tabindex="0"
+      @pointerdown="startWorkbenchLeftResize"
+      @keydown="onWorkbenchLeftResizeKeydown"
+    ></div>
   </div>
 
   <div class="center-panel">
@@ -554,7 +571,24 @@
   </Transition>
   </div>
 
-  <div class="right-panel">
+  <div
+    ref="workbenchRightPanelRef"
+    class="right-panel"
+    :style="{ width: `${workbenchRightWidth}px` }"
+  >
+    <div
+      class="panel-resize-handle panel-resize-handle--left"
+      :aria-valuenow="workbenchRightWidth"
+      aria-valuemin="280"
+      aria-valuemax="480"
+      aria-label="调整工作台右侧栏宽度"
+      aria-orientation="vertical"
+      role="separator"
+      tabindex="0"
+      @pointerdown="startWorkbenchRightResize"
+      @keydown="onWorkbenchRightResizeKeydown"
+    ></div>
+
     <div class="panel-name-area">
       <div class="workbench-name-top">
         <div class="display-body-light name-label-inline">人群包名称</div>
@@ -866,6 +900,7 @@ import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
+import { usePanelResize } from '../composables/usePanelResize'
 import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import {
   fieldToken,
@@ -896,6 +931,54 @@ import { validateWorkbenchOutput } from '../utils/workbenchValidation.js'
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
+})
+
+const workbenchLeftPanelRef = ref(null)
+const workbenchRightPanelRef = ref(null)
+const WORKBENCH_MIN_CENTER_WIDTH = 520
+
+function workbenchContainerWidth() {
+  return workbenchLeftPanelRef.value?.parentElement?.clientWidth || window.innerWidth
+}
+
+function renderedPanelWidth(panelRef, fallback) {
+  return panelRef.value?.getBoundingClientRect().width || fallback
+}
+
+const {
+  width: workbenchLeftWidth,
+  startResize: startWorkbenchLeftResize,
+  onResizeKeydown: onWorkbenchLeftResizeKeydown,
+} = usePanelResize({
+  panelId: 'workbench-left',
+  ownerId: props.sessionOwnerId,
+  defaultWidth: window.innerWidth <= 1120 ? 300 : 280,
+  minWidth: 240,
+  maxWidth: 460,
+  edge: 'right',
+  applyWidth: width => workbenchLeftPanelRef.value?.style.setProperty('width', `${width}px`),
+  getDynamicMaxWidth: () =>
+    workbenchContainerWidth()
+    - renderedPanelWidth(workbenchRightPanelRef, 340)
+    - WORKBENCH_MIN_CENTER_WIDTH,
+})
+
+const {
+  width: workbenchRightWidth,
+  startResize: startWorkbenchRightResize,
+  onResizeKeydown: onWorkbenchRightResizeKeydown,
+} = usePanelResize({
+  panelId: 'workbench-right',
+  ownerId: props.sessionOwnerId,
+  defaultWidth: window.innerWidth <= 1120 ? 320 : 340,
+  minWidth: 280,
+  maxWidth: 480,
+  edge: 'left',
+  applyWidth: width => workbenchRightPanelRef.value?.style.setProperty('width', `${width}px`),
+  getDynamicMaxWidth: () =>
+    workbenchContainerWidth()
+    - renderedPanelWidth(workbenchLeftPanelRef, 280)
+    - WORKBENCH_MIN_CENTER_WIDTH,
 })
 
 const DEFAULT_CROWD_NAME = '未命名人群包'

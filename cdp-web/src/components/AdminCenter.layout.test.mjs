@@ -6,6 +6,28 @@ import { fileURLToPath } from 'node:url'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const adminCenterVue = readFileSync(join(currentDir, 'AdminCenter.vue'), 'utf8')
+const dataSafetyVue = readFileSync(join(currentDir, 'DataSafetyPanel.vue'), 'utf8')
+const feedbackAdminVue = readFileSync(join(currentDir, 'FeedbackAdminPanel.vue'), 'utf8')
+const feedbackDrawerVue = readFileSync(join(currentDir, 'FeedbackDrawer.vue'), 'utf8')
+
+test('system management exposes direct functional sections without a task dashboard', () => {
+  assert.match(adminCenterVue, /id: 'safety'[\s\S]*label: '数据安全'/)
+  assert.match(adminCenterVue, /id: 'users'[\s\S]*label: '用户与权限'/)
+  assert.match(adminCenterVue, /id: 'invites'[\s\S]*label: '邀请管理'/)
+  assert.match(adminCenterVue, /id: 'plans'[\s\S]*label: '用户方案数据'/)
+  assert.match(adminCenterVue, /id: 'config'[\s\S]*label: '维表与配置'/)
+  assert.match(adminCenterVue, /id: 'releases'[\s\S]*label: '配置发布记录'/)
+  assert.match(adminCenterVue, /id: 'logs'[\s\S]*label: '操作日志'/)
+  assert.match(adminCenterVue, /id: 'feedback'[\s\S]*label: '用户反馈'/)
+  assert.match(adminCenterVue, /request\('\/api\/admin\/data-safety'/)
+  assert.match(adminCenterVue, /request\('\/api\/admin\/feedback'/)
+  assert.match(adminCenterVue, /v-if="isSystemOwner && activeSection === 'feedback'"/)
+  assert.doesNotMatch(adminCenterVue, /管理首页|今日待处理|权限提醒/)
+  assert.doesNotMatch(adminCenterVue, /admin · 总管理员|系统总管理员|仅 admin/)
+  assert.doesNotMatch(dataSafetyVue, /ROOT ONLY|总管理员/)
+  assert.doesNotMatch(feedbackAdminVue, /ROOT ONLY|总管理员/)
+  assert.doesNotMatch(feedbackDrawerVue, /ROOT ONLY|总管理员|仅 admin/)
+})
 
 test('dimension pagination exposes page size, item total, and total pages', () => {
   assert.match(adminCenterVue, /const DIMENSION_PAGE_SIZES = \[20, 30, 50, 100\]/)
@@ -15,10 +37,10 @@ test('dimension pagination exposes page size, item total, and total pages', () =
   assert.match(adminCenterVue, /Math\.ceil\(dimensionTotal\.value \/ dimensionPageSize\.value\)/)
 })
 
-test('account panel receives more width than invitations without overflowing its table', () => {
+test('account, invitation, and plan sections use the full content width without overflowing tables', () => {
   assert.match(
     adminCenterVue,
-    /\.admin-panels \{[^}]*grid-template-columns: minmax\(0, 0\.92fr\) minmax\(0, 1\.08fr\);/s,
+    /class="admin-panels single-panel"/,
   )
   assert.match(adminCenterVue, /\.users-table \{[^}]*min-width: 0;[^}]*table-layout: fixed;/s)
   assert.doesNotMatch(adminCenterVue, /\.users-table \{ min-width: 610px; \}/)
@@ -83,9 +105,57 @@ test('config audit trail exposes immutable expandable field-level details', () =
   assert.match(adminCenterVue, /config-audit-diff-row code\.after/)
 })
 
-test('account management reviews user plans as workbench summaries before promotion', () => {
-  assert.match(adminCenterVue, />用户方案与数据</)
-  assert.match(adminCenterVue, /solution\.nodes\.slice\(0, 5\)/)
+test('account and plan management use distinct master-detail surfaces', () => {
+  assert.match(adminCenterVue, /activeSection === 'users'[\s\S]*account-management-surface/)
+  assert.match(adminCenterVue, /@click="selectAccountUser\(user\)"/)
+  assert.match(adminCenterVue, />账号资料</)
+  assert.match(adminCenterVue, />权限范围</)
+  assert.match(adminCenterVue, />登录安全</)
+  assert.match(adminCenterVue, /v-for="permission in permissionRows"/)
+  assert.match(adminCenterVue, /@submit\.prevent="saveManagedUser"/)
+  assert.match(adminCenterVue, /activeSection === 'plans'[\s\S]*plan-management-surface/)
+  assert.match(adminCenterVue, /@click="selectPlanUser\(user\)"/)
+  assert.match(adminCenterVue, /managedSolutionGroups/)
+  assert.match(adminCenterVue, /activePlanTab === 'solutions'/)
+  assert.match(adminCenterVue, /activePlanTab === 'folders'/)
+  assert.match(adminCenterVue, /managedUserData\.tasks/)
+  assert.doesNotMatch(adminCenterVue, /\['users', 'plans'\]\.includes\(activeSection\)/)
+})
+
+test('account permissions use crisp black and white states without grey disabled checkboxes', () => {
+  assert.match(adminCenterVue, /class="permission-access"/)
+  assert.match(adminCenterVue, /<Check v-if="selectedRolePermissions\.includes\(permission\.key\)"/)
+  assert.match(adminCenterVue, /<Close v-else/)
+  assert.doesNotMatch(adminCenterVue, /<input type="checkbox" :checked="selectedRolePermissions/)
+  assert.match(adminCenterVue, /\.role-options \{[^}]*background: #fff;[^}]*border: 1px solid var\(--ui-ink\);/s)
+  assert.match(adminCenterVue, /\.role-options label\.active \{[^}]*color: #fff;[^}]*background: var\(--ui-ink\);/s)
+  assert.match(adminCenterVue, /\.permission-list \{[^}]*background: #fff;[^}]*border: 1px solid var\(--ui-ink\);/s)
+  assert.match(adminCenterVue, /\.settings-fields input,[\s\S]*?background: #fff;/)
+})
+
+test('all system management sections use white surfaces with restrained orange signals', () => {
+  assert.match(adminCenterVue, /System management uses white structure/)
+  assert.match(adminCenterVue, /\.admin-center \{[\s\S]*?--ui-fill: #fff;[\s\S]*?--ui-surface: #fff;/)
+  assert.match(adminCenterVue, /\.admin-navigation nav button\.active \{[\s\S]*?box-shadow: inset 3px 0 0 var\(--ui-accent\);/)
+  assert.match(adminCenterVue, /\.invite-created,[\s\S]*?\.config-release \{[\s\S]*?background: #fff;[\s\S]*?box-shadow: inset 3px 0 0 var\(--ui-accent\);/)
+  assert.match(adminCenterVue, /\.dimension-type\.active \{[\s\S]*?box-shadow: inset 3px 0 0 var\(--ui-accent\);/)
+  assert.match(adminCenterVue, /\.admin-log-switcher \{[\s\S]*?background: #fff;[\s\S]*?border: 1px solid var\(--ui-control-border\);/)
+  assert.match(dataSafetyVue, /\.data-safety-overview \{[^}]*background: #fff;/)
+  assert.match(dataSafetyVue, /<component :is="item\.icon"/)
+  assert.match(dataSafetyVue, /icon: User/)
+  assert.match(dataSafetyVue, /icon: Collection/)
+  assert.match(dataSafetyVue, /icon: FolderOpened/)
+  assert.match(dataSafetyVue, /icon: Tickets/)
+  assert.match(dataSafetyVue, /\.data-count-icon \{[^}]*color: var\(--ui-ink\);[^}]*background: #fff;/)
+  assert.match(dataSafetyVue, /\.data-count-icon::after \{[^}]*background: var\(--safety-orange\);/)
+  assert.match(dataSafetyVue, /\.database-card code \{[^}]*overflow-wrap: anywhere;[^}]*white-space: normal;/)
+  assert.match(feedbackAdminVue, /:class="`feedback-\$\{item\.status\}`"/)
+  assert.match(feedbackAdminVue, /\.feedback-category \{[^}]*color: var\(--ui-accent\);[^}]*background: #fff;/)
+  assert.match(feedbackDrawerVue, /\.feedback-upload-section \{[^}]*background: #fff;/)
+  assert.match(feedbackDrawerVue, /\.feedback-actions button \{[^}]*background: var\(--ui-ink\);[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\);/)
+})
+
+test('user plan review keeps workbench summaries and guarded promotion', () => {
   assert.match(adminCenterVue, />查看详情</)
   assert.match(adminCenterVue, /v-if="previewedSolution"/)
   assert.match(adminCenterVue, />方案概述</)
@@ -108,7 +178,7 @@ test('account management reviews user plans as workbench summaries before promot
 })
 
 test('account deletion is explicit and guarded by username confirmation', () => {
-  assert.match(adminCenterVue, />注销这个账号</)
+  assert.match(adminCenterVue, />注销账号</)
   assert.match(adminCenterVue, /window\.prompt/)
   assert.match(adminCenterVue, /confirmation !== username/)
   assert.match(adminCenterVue, /method: 'DELETE'/)

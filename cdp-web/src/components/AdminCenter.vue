@@ -1,15 +1,43 @@
 <template>
-  <main class="admin-center">
+  <main ref="adminCenterRoot" class="admin-center">
+    <div class="admin-shell">
+      <aside class="admin-navigation" aria-label="系统管理导航">
+        <div class="admin-navigation-title">
+          <span>SYS</span>
+          <div>
+            <strong>系统管理</strong>
+            <small>安全与配置控制台</small>
+          </div>
+        </div>
+        <nav>
+          <button
+            v-for="item in navigationItems"
+            :key="item.id"
+            type="button"
+            :class="{ active: activeSection === item.id }"
+            :aria-current="activeSection === item.id ? 'page' : undefined"
+            @click="activeSection = item.id"
+          >
+            <span>{{ item.index }}</span>
+            {{ item.label }}
+            <i v-if="item.badge">{{ item.badge }}</i>
+          </button>
+        </nav>
+        <div class="admin-navigation-foot">
+          <i :class="{ healthy: databaseHealthy }"></i>
+          <span>
+            <strong>{{ databaseHealthy ? '系统运行正常' : '等待状态检查' }}</strong>
+            <small>配置版本 v{{ configStatus.currentVersion || 0 }}</small>
+          </span>
+        </div>
+      </aside>
+
+      <div class="admin-workspace">
     <header class="admin-hero">
       <div>
-        <p class="admin-eyebrow">SYSTEM / CONTROL ROOM</p>
-        <h1>
-          {{ canManageAccounts ? '把入口和规则，' : '把字典和规则，' }}
-          <em>交给可控的秩序。</em>
-        </h1>
-        <p class="admin-lede">
-          这里管理邀请、登录账号、用户方案和维表配置。关键查看与变更都会留下记录。
-        </p>
+        <p class="admin-eyebrow">SYSTEM / {{ String(activeNavigationIndex).padStart(2, '0') }}</p>
+        <h1>{{ activeNavigationItem?.label || '系统管理' }}</h1>
+        <p class="admin-lede">{{ activeNavigationItem?.description }}</p>
       </div>
       <button class="admin-refresh" type="button" :disabled="loading" @click="loadData">
         <span class="admin-refresh-dot" :class="{ spinning: loading }"></span>
@@ -24,8 +52,12 @@
       </div>
     </transition>
 
-    <div v-if="canManageAccounts" class="admin-panels">
-      <section class="admin-panel invite-panel">
+    <div
+      v-if="canManageAccounts && ['users', 'invites', 'plans'].includes(activeSection)"
+      class="admin-panels single-panel"
+    >
+
+      <section v-if="activeSection === 'invites'" class="admin-panel invite-panel">
         <div class="admin-panel-head">
           <div>
             <p class="admin-panel-index">01 / INVITATIONS</p>
@@ -40,7 +72,7 @@
             <select v-model="inviteForm.role" :disabled="busy">
               <option value="user">普通用户</option>
               <option value="config_admin">配置管理员</option>
-              <option value="super_admin">超级管理员</option>
+              <option v-if="isSystemOwner" value="super_admin">超级管理员</option>
             </select>
           </label>
           <label>
@@ -109,319 +141,233 @@
         </div>
       </section>
 
-      <section class="admin-panel users-panel">
-        <div class="admin-panel-head">
-          <div>
-            <p class="admin-panel-index">02 / ACCESS</p>
-            <h2>系统账号</h2>
+      <section v-if="activeSection === 'users'" class="admin-management-surface account-management-surface">
+        <aside class="management-directory account-directory" aria-label="系统账号列表">
+          <div class="directory-search">
+            <Search aria-hidden="true" />
+            <input v-model.trim="userQuery" type="search" placeholder="搜索姓名或登录账号" aria-label="搜索系统账号" />
           </div>
-          <span class="admin-panel-count">{{ users.length }} 位成员</span>
-        </div>
-        <p class="admin-panel-note">角色决定可以进入哪些管理区域；停用账号会立即阻断后续请求。</p>
 
-        <div class="account-toolbar">
-          <input
-            v-model.trim="userQuery"
-            type="search"
-            placeholder="搜索名称或登录账号"
-            aria-label="搜索系统账号"
-          />
-        </div>
+          <div class="directory-list" role="listbox" aria-label="选择要管理的系统账号">
+            <button
+              v-for="user in filteredUsers"
+              :key="user.id"
+              type="button"
+              class="directory-user"
+              :class="{ active: managedUser?.id === user.id }"
+              :aria-selected="managedUser?.id === user.id"
+              @click="selectAccountUser(user)"
+            >
+              <span class="user-avatar directory-avatar">
+                <img v-if="user.avatarUrl" :src="user.avatarUrl" alt="" />
+                <template v-else>{{ userInitial(user) }}</template>
+              </span>
+              <span class="directory-user-copy">
+                <strong>{{ user.displayName || user.username }}</strong>
+                <small>{{ user.username }}</small>
+              </span>
+              <span class="directory-user-role">{{ roleLabel(user.role) }}</span>
+              <span class="directory-user-status" :class="{ enabled: user.enabled }">
+                <i></i>{{ user.enabled ? '已启用' : '已停用' }}
+              </span>
+            </button>
+            <p v-if="!filteredUsers.length" class="directory-empty">{{ users.length ? '没有匹配的系统账号' : '还没有系统账号' }}</p>
+          </div>
 
-        <div class="admin-table-wrap">
-          <table class="admin-table users-table">
-            <thead>
-              <tr>
-                <th>成员</th>
-                <th>角色</th>
-                <th>状态</th>
-                <th>数据</th>
-                <th>最近登录</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="user in filteredUsers" :key="user.id">
-                <td>
-                  <div class="user-cell">
-                    <span class="user-avatar">
-                      <img v-if="user.avatarUrl" :src="user.avatarUrl" alt="" />
-                      <template v-else>{{ userInitial(user) }}</template>
-                    </span>
-                    <span>
-                      <strong>{{ user.displayName || user.username }}</strong>
-                      <small>{{ user.username }}</small>
-                    </span>
-                  </div>
-                </td>
-                <td>
-                  <select
-                    :value="user.role"
-                    :disabled="user.id === currentUserId || busyUserId === user.id"
-                    @change="changeRole(user, $event)"
-                  >
-                    <option value="user">普通用户</option>
-                    <option value="config_admin">配置管理员</option>
-                    <option value="super_admin">超级管理员</option>
-                  </select>
-                </td>
-                <td>
-                  <button
-                    class="user-status-toggle"
-                    :class="{ enabled: user.enabled }"
-                    type="button"
-                    :disabled="user.id === currentUserId || busyUserId === user.id"
-                    @click="toggleUser(user)"
-                  >
-                    <span></span>{{ user.enabled ? '启用中' : '已停用' }}
-                  </button>
-                </td>
-                <td>
-                  <span class="account-data-count">
-                    {{ user.dataCounts?.solutions || 0 }} 方案 · {{ user.dataCounts?.tasks || 0 }} 任务
-                  </span>
-                </td>
-                <td class="last-login">{{ formatDate(user.lastLoginAt) || '尚未登录' }}</td>
-                <td class="admin-table-action">
-                  <button type="button" @click="openUserManager(user)">管理</button>
-                </td>
-              </tr>
-              <tr v-if="!filteredUsers.length">
-                <td colspan="6" class="admin-empty">
-                  {{ users.length ? '没有匹配的系统账号' : '还没有系统账号' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+          <footer class="directory-footer">
+            <span>共 {{ filteredUsers.length }} 个账号</span>
+            <small>账号创建请使用邀请管理</small>
+          </footer>
+        </aside>
 
-    </div>
-
-    <Teleport to="body">
-      <div
-        v-if="managedUser"
-        class="account-dialog-backdrop"
-        role="presentation"
-        @click.self="closeUserManager"
-      >
-        <section
-          class="account-dialog"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="account-dialog-title"
-        >
-          <header class="account-dialog-head">
-            <div class="account-dialog-identity">
-              <span class="user-avatar account-dialog-avatar">
+        <section v-if="managedUser" class="management-detail account-settings" aria-labelledby="account-settings-title">
+          <header class="management-detail-head">
+            <div class="management-identity">
+              <span class="user-avatar management-avatar">
                 <img v-if="managedUser.avatarUrl" :src="managedUser.avatarUrl" alt="" />
                 <template v-else>{{ userInitial(managedUser) }}</template>
               </span>
-              <span>
-                <p class="admin-panel-index">ACCOUNT / {{ managedUser.id.slice(-8).toUpperCase() }}</p>
-                <h2 id="account-dialog-title">{{ managedUser.displayName || managedUser.username }}</h2>
-                <small>{{ managedUser.username }}</small>
-              </span>
+              <div>
+                <p class="admin-panel-index">ACCOUNT / SETTINGS</p>
+                <h2 id="account-settings-title">{{ managedUser.displayName || managedUser.username }}的账号设置</h2>
+                <small>{{ managedUser.username }} · {{ roleLabel(managedUser.role) }}</small>
+              </div>
             </div>
-            <button class="account-dialog-close" type="button" aria-label="关闭账号管理" @click="closeUserManager">×</button>
+            <span class="account-live-status" :class="{ enabled: managedUser.enabled }"><i></i>{{ managedUser.enabled ? '账号正常' : '账号停用' }}</span>
           </header>
 
-          <div class="account-dialog-scroll">
-            <section class="account-dialog-section">
-              <div class="account-section-head">
-                <div>
-                  <span>01</span>
-                  <h3>账号资料</h3>
-                </div>
-                <small>登录账号和显示名称均可修改</small>
+          <form class="account-settings-form" @submit.prevent="saveManagedUser">
+            <section class="settings-block">
+              <div class="settings-block-title">
+                <span>01</span>
+                <div><h3>账号资料</h3><small>维护显示名称、登录账号和账号状态</small></div>
               </div>
-
-              <form class="account-profile-form" @submit.prevent="saveManagedUser">
-                <label>
-                  <span>显示名称</span>
-                  <input v-model.trim="accountForm.displayName" maxlength="80" required />
-                </label>
-                <label>
-                  <span>登录账号</span>
-                  <input v-model.trim="accountForm.username" maxlength="80" required autocomplete="off" />
-                </label>
-                <label>
-                  <span>角色</span>
-                  <select
-                    v-model="accountForm.role"
-                    :disabled="managedUser.id === currentUserId"
-                  >
-                    <option value="user">普通用户</option>
-                    <option value="config_admin">配置管理员</option>
-                    <option value="super_admin">超级管理员</option>
-                  </select>
-                </label>
-                <label>
+              <div class="settings-fields">
+                <label><span>显示名称</span><input v-model.trim="accountForm.displayName" maxlength="80" required /></label>
+                <label><span>登录账号</span><input v-model.trim="accountForm.username" :disabled="managedUser.isSystemOwner" maxlength="80" required autocomplete="off" /></label>
+                <label class="settings-status-field">
                   <span>账号状态</span>
-                  <select
-                    v-model="accountForm.enabled"
-                    :disabled="managedUser.id === currentUserId"
-                  >
-                    <option :value="true">启用</option>
-                    <option :value="false">停用</option>
+                  <select v-model="accountForm.enabled" :disabled="managedUser.id === currentUserId || managedUser.isSystemOwner">
+                    <option :value="true">启用</option><option :value="false">停用</option>
                   </select>
                 </label>
-                <button class="admin-primary-button account-save" type="submit" :disabled="busyUserId === managedUser.id">
-                  保存账号资料
-                </button>
-              </form>
-
-              <div class="account-meta-grid">
-                <span><small>创建时间</small><strong>{{ formatDate(managedUser.createdAt) }}</strong></span>
-                <span><small>最近登录</small><strong>{{ formatDate(managedUser.lastLoginAt) || '尚未登录' }}</strong></span>
-                <span><small>密码更新</small><strong>{{ formatDate(managedUser.passwordChangedAt) || '历史密码' }}</strong></span>
               </div>
             </section>
 
-            <section class="account-dialog-section">
-              <div class="account-section-head">
-                <div>
-                  <span>02</span>
-                  <h3>登录安全</h3>
-                </div>
-                <small>密码只可重置，原密码永不展示</small>
+            <section class="settings-block permission-settings-block">
+              <div class="settings-block-title">
+                <span>02</span>
+                <div><h3>权限范围</h3><small>权限随角色统一生效，不对单个账号单独拆分</small></div>
               </div>
-
-              <div class="account-security-grid">
-                <label>
-                  <span>设置新密码</span>
-                  <input
-                    v-model="accountForm.password"
-                    type="password"
-                    minlength="8"
-                    autocomplete="new-password"
-                    placeholder="至少 8 位"
-                  />
+              <div class="role-options" role="radiogroup" aria-label="账号角色">
+                <label v-for="role in availableRoleOptions" :key="role.value" :class="{ active: accountForm.role === role.value }">
+                  <input v-model="accountForm.role" type="radio" name="account-role" :value="role.value" :disabled="!canChangeUserRole(managedUser)" />
+                  <span><strong>{{ role.label }}</strong><small>{{ role.description }}</small></span>
                 </label>
-                <button
-                  class="account-secondary-button"
-                  type="button"
-                  :disabled="securityBusy || accountForm.password.length < 8"
-                  @click="resetManagedPassword(false)"
-                >重置为输入密码</button>
-                <button
-                  class="account-secondary-button"
-                  type="button"
-                  :disabled="securityBusy"
-                  @click="resetManagedPassword(true)"
-                >生成临时密码</button>
-                <button
-                  class="account-danger-button"
-                  type="button"
-                  :disabled="securityBusy || managedUser.id === currentUserId"
-                  @click="revokeManagedSessions"
-                >强制退出全部登录</button>
               </div>
-
-              <div v-if="temporaryPassword" class="temporary-password">
-                <div>
-                  <strong>临时密码仅显示一次</strong>
-                  <code>{{ temporaryPassword }}</code>
+              <div class="permission-list">
+                <div v-for="permission in permissionRows" :key="permission.key" class="permission-row">
+                  <component :is="permission.icon" aria-hidden="true" />
+                  <span><strong>{{ permission.label }}</strong><small>{{ permission.description }}</small></span>
+                  <span
+                    class="permission-access"
+                    :class="{ active: selectedRolePermissions.includes(permission.key) }"
+                    role="img"
+                    :aria-label="`${permission.label}${selectedRolePermissions.includes(permission.key) ? '可访问' : '不可访问'}`"
+                  >
+                    <Check v-if="selectedRolePermissions.includes(permission.key)" aria-hidden="true" />
+                    <Close v-else aria-hidden="true" />
+                    {{ selectedRolePermissions.includes(permission.key) ? '可访问' : '不可访问' }}
+                  </span>
                 </div>
+              </div>
+            </section>
+
+            <section class="settings-block security-settings-block">
+              <div class="settings-block-title">
+                <span>03</span>
+                <div><h3>登录安全</h3><small>重置密码后旧登录会失效，原密码始终不可见</small></div>
+              </div>
+              <div class="security-summary">
+                <div><small>最近登录</small><strong>{{ formatDate(managedUser.lastLoginAt) || '尚未登录' }}</strong></div>
+                <div><small>密码更新时间</small><strong>{{ formatDate(managedUser.passwordChangedAt) || '历史密码' }}</strong></div>
+                <div><small>账号创建时间</small><strong>{{ formatDate(managedUser.createdAt) }}</strong></div>
+              </div>
+              <div class="security-actions">
+                <label><span>设置新密码</span><input v-model="accountForm.password" type="password" minlength="8" autocomplete="new-password" placeholder="至少 8 位" /></label>
+                <button type="button" :disabled="securityBusy || accountForm.password.length < 8 || isProtectedSystemOwner(managedUser)" @click="resetManagedPassword(false)">重置密码</button>
+                <button type="button" :disabled="securityBusy || isProtectedSystemOwner(managedUser)" @click="resetManagedPassword(true)">生成临时密码</button>
+                <button class="danger" type="button" :disabled="securityBusy || managedUser.id === currentUserId || isProtectedSystemOwner(managedUser)" @click="revokeManagedSessions">强制退出全部设备</button>
+              </div>
+              <div v-if="temporaryPassword" class="temporary-password">
+                <div><strong>临时密码仅显示一次</strong><code>{{ temporaryPassword }}</code></div>
                 <button type="button" @click="copyTemporaryPassword">复制</button>
               </div>
-
-              <div v-if="managedUser.id !== currentUserId" class="account-delete-zone">
-                <div>
-                  <strong>注销这个账号</strong>
-                  <p>永久删除登录账号，以及名下全部私人方案、文件夹和任务；已迁移的公共方案不受影响。</p>
-                </div>
-                <button
-                  class="account-delete-button"
-                  type="button"
-                  :disabled="deletingAccount"
-                  @click="deleteManagedUser"
-                >{{ deletingAccount ? '正在注销…' : '注销账号' }}</button>
-              </div>
             </section>
 
-            <section class="account-dialog-section">
-              <div class="account-section-head">
-                <div>
-                  <span>03</span>
-                  <h3>用户方案与数据</h3>
-                </div>
-                <small>跨用户审查；迁移只复制当前版本到公共方案</small>
-              </div>
+            <div v-if="managedUser.id !== currentUserId && !managedUser.isSystemOwner" class="inline-delete-zone">
+              <div><strong>注销账号</strong><p>将永久删除该账号及其私人方案、文件夹和任务，公共方案不受影响。</p></div>
+              <button type="button" :disabled="deletingAccount" @click="deleteManagedUser">{{ deletingAccount ? '正在注销…' : '注销账号' }}</button>
+            </div>
 
-              <div v-if="accountDataLoading" class="account-data-loading">正在读取该账号的数据索引…</div>
-              <template v-else-if="managedUserData">
-                <div class="account-stat-grid">
-                  <span><strong>{{ managedUserData.counts?.solutions || 0 }}</strong><small>私人方案</small></span>
-                  <span><strong>{{ managedUserData.counts?.folders || 0 }}</strong><small>私人文件夹</small></span>
-                  <span><strong>{{ managedUserData.counts?.tasks || 0 }}</strong><small>任务记录</small></span>
-                </div>
-
-                <div class="account-data-groups">
-                  <details open>
-                    <summary>方案列表 <span>{{ managedUserData.solutions?.length || 0 }}</span></summary>
-                    <ul class="managed-solution-list">
-                      <li v-for="solution in managedUserData.solutions" :key="solution.id" class="managed-solution-card">
-                        <div class="managed-solution-head">
-                          <div>
-                            <strong>{{ solution.name || '未命名方案' }}</strong>
-                            <small>
-                              {{ solution.status === 'published' ? '个人已发布' : '个人草稿' }}
-                              · V{{ solution._version || 1 }}
-                              · {{ solution.nodes?.length || 0 }} 个节点
-                              · {{ formatDate(solution.updatedAt) }}
-                            </small>
-                          </div>
-                          <span v-if="solution.promotion" class="solution-promoted-chip">已迁移当前版本</span>
-                        </div>
-                        <div v-if="solution.nodes?.length" class="managed-solution-nodes">
-                          <span v-for="(node, index) in solution.nodes.slice(0, 5)" :key="node.id || index">
-                            {{ solutionNodeLabel(node, index) }}
-                          </span>
-                          <span v-if="solution.nodes.length > 5">＋{{ solution.nodes.length - 5 }}</span>
-                        </div>
-                        <p v-else class="managed-solution-empty">这个方案还没有配置节点</p>
-                        <div class="managed-solution-actions">
-                          <small v-if="solution.promotion">
-                            公共方案：{{ solution.promotion.publicName || solution.name }}
-                          </small>
-                          <small v-else>迁移会复制当前版本，用户的私人原件会保留。</small>
-                          <button
-                            type="button"
-                            @click="openSolutionPreview(solution)"
-                          >查看详情</button>
-                        </div>
-                      </li>
-                      <li v-if="!managedUserData.solutions?.length" class="account-data-empty">没有私人方案</li>
-                    </ul>
-                  </details>
-                  <details>
-                    <summary>文件夹列表 <span>{{ flattenedManagedFolders.length }}</span></summary>
-                    <ul>
-                      <li v-for="folder in flattenedManagedFolders" :key="folder.id">
-                        <strong>{{ folder.path }}</strong>
-                        <small>{{ formatDate(folder.updatedAt) }}</small>
-                      </li>
-                      <li v-if="!flattenedManagedFolders.length" class="account-data-empty">没有私人文件夹</li>
-                    </ul>
-                  </details>
-                  <details>
-                    <summary>任务记录 <span>{{ managedUserData.tasks?.length || 0 }}</span></summary>
-                    <ul>
-                      <li v-for="task in managedUserData.tasks" :key="task.id">
-                        <strong>{{ task.name || '未命名任务' }}</strong>
-                        <small>{{ task.status }} · {{ formatDate(task.updatedAt) }}</small>
-                      </li>
-                      <li v-if="!managedUserData.tasks?.length" class="account-data-empty">没有任务记录</li>
-                    </ul>
-                  </details>
-                </div>
-              </template>
-            </section>
-          </div>
+            <footer class="account-settings-footer">
+              <button type="button" @click="resetAccountForm">取消修改</button>
+              <button class="primary" type="submit" :disabled="busyUserId === managedUser.id">{{ busyUserId === managedUser.id ? '保存中…' : '保存账号设置' }}</button>
+            </footer>
+          </form>
         </section>
-      </div>
-    </Teleport>
+        <div v-else class="management-detail-empty">请选择一个系统账号</div>
+      </section>
+
+      <section v-if="activeSection === 'plans'" class="admin-management-surface plan-management-surface">
+        <aside class="management-directory plan-user-directory" aria-label="用户方案数据账号列表">
+          <div class="directory-search">
+            <Search aria-hidden="true" />
+            <input v-model.trim="userQuery" type="search" placeholder="搜索用户名称或账号" aria-label="搜索用户方案数据" />
+          </div>
+          <div class="directory-column-head"><span>用户</span><span>方案 / 文件夹 / 任务</span></div>
+          <div class="directory-list" role="listbox" aria-label="选择要查看方案数据的用户">
+            <button
+              v-for="user in pagedPlanUsers"
+              :key="user.id"
+              type="button"
+              class="directory-user plan-directory-user"
+              :class="{ active: managedUser?.id === user.id }"
+              :aria-selected="managedUser?.id === user.id"
+              @click="selectPlanUser(user)"
+            >
+              <span class="user-avatar directory-avatar"><img v-if="user.avatarUrl" :src="user.avatarUrl" alt="" /><template v-else>{{ userInitial(user) }}</template></span>
+              <span class="directory-user-copy"><strong>{{ user.displayName || user.username }}</strong><small>{{ user.username }}</small></span>
+              <span class="plan-user-counts">{{ user.dataCounts?.solutions || 0 }} / {{ user.dataCounts?.folders || 0 }} / {{ user.dataCounts?.tasks || 0 }}</span>
+            </button>
+            <p v-if="!filteredUsers.length" class="directory-empty">{{ users.length ? '没有匹配的用户' : '还没有用户数据' }}</p>
+          </div>
+          <footer class="directory-footer plan-directory-footer">
+            <span>共 {{ filteredUsers.length }} 位用户</span>
+            <div v-if="planUserTotalPages > 1" class="directory-pagination">
+              <button type="button" :disabled="planUserPage <= 1" @click="planUserPage -= 1">‹</button>
+              <button v-for="page in planUserTotalPages" :key="page" type="button" :class="{ active: planUserPage === page }" @click="planUserPage = page">{{ page }}</button>
+              <button type="button" :disabled="planUserPage >= planUserTotalPages" @click="planUserPage += 1">›</button>
+            </div>
+          </footer>
+        </aside>
+
+        <section v-if="managedUser" class="management-detail plan-data-detail" aria-labelledby="plan-data-title">
+          <header class="plan-data-head">
+            <div class="management-identity">
+              <span class="user-avatar management-avatar"><img v-if="managedUser.avatarUrl" :src="managedUser.avatarUrl" alt="" /><template v-else>{{ userInitial(managedUser) }}</template></span>
+              <div><p class="admin-panel-index">USER / DATA</p><h2 id="plan-data-title">{{ managedUser.displayName || managedUser.username }}的方案数据</h2><small>{{ managedUser.username }}</small></div>
+            </div>
+            <div class="plan-count-summary">
+              <span><strong>{{ managedUserData?.counts?.solutions || 0 }}</strong>个方案</span>
+              <span><strong>{{ managedUserData?.counts?.folders || 0 }}</strong>个文件夹</span>
+              <span><strong>{{ managedUserData?.counts?.tasks || 0 }}</strong>条任务</span>
+            </div>
+          </header>
+
+          <nav class="plan-data-tabs" aria-label="用户数据分类">
+            <button v-for="tab in planDataTabs" :key="tab.id" type="button" :class="{ active: activePlanTab === tab.id }" @click="activePlanTab = tab.id">{{ tab.label }}<span>{{ tab.count }}</span></button>
+          </nav>
+
+          <div v-if="accountDataLoading" class="plan-data-loading"><span></span>正在读取该用户的数据索引…</div>
+          <template v-else-if="managedUserData">
+            <div v-if="activePlanTab === 'solutions'" class="plan-solution-view">
+              <div class="plan-table-head"><span>方案名称</span><span>版本</span><span>状态</span><span>最近更新</span><span>操作</span></div>
+              <section v-for="group in managedSolutionGroups" :key="group.id" class="plan-folder-group">
+                <button class="plan-folder-head" type="button" :aria-expanded="isPlanGroupOpen(group.id)" @click="togglePlanGroup(group.id)">
+                  <ArrowDown :class="{ collapsed: !isPlanGroupOpen(group.id) }" aria-hidden="true" />
+                  <Folder aria-hidden="true" />
+                  <strong>{{ group.name }}</strong><small>{{ group.solutions.length }} 个方案</small>
+                </button>
+                <div v-if="isPlanGroupOpen(group.id)" class="plan-folder-rows">
+                  <article v-for="solution in group.solutions" :key="solution.id" class="plan-solution-row">
+                    <div><Document aria-hidden="true" /><span><strong>{{ solution.name || '未命名方案' }}</strong><small>{{ solution.nodes?.length || 0 }} 个组件条件</small></span></div>
+                    <span>V{{ solution._version || 1 }}</span>
+                    <span class="plan-status" :class="{ published: solution.status === 'published' }">{{ solution.status === 'published' ? '已发布' : '草稿' }}</span>
+                    <time>{{ formatDate(solution.updatedAt) || '—' }}</time>
+                    <div class="plan-row-actions"><button type="button" @click="openSolutionPreview(solution)">查看详情</button><button type="button" :disabled="Boolean(solution.promotion)" @click="openSolutionPreview(solution)">{{ solution.promotion ? '已复制到公共库' : '复制到公共方案库' }}</button></div>
+                  </article>
+                </div>
+              </section>
+              <p v-if="!managedSolutionGroups.length" class="plan-data-empty">该用户还没有个人方案</p>
+              <footer v-else class="plan-data-total">共 {{ managedUserData.solutions?.length || 0 }} 个方案</footer>
+            </div>
+
+            <div v-else-if="activePlanTab === 'folders'" class="plan-simple-list">
+              <article v-for="folder in flattenedManagedFolders" :key="folder.id"><Folder aria-hidden="true" /><span><strong>{{ folder.path }}</strong><small>私人方案文件夹</small></span><time>{{ formatDate(folder.updatedAt) || '—' }}</time></article>
+              <p v-if="!flattenedManagedFolders.length" class="plan-data-empty">该用户还没有私人文件夹</p>
+            </div>
+
+            <div v-else class="plan-simple-list task-data-list">
+              <article v-for="task in managedUserData.tasks" :key="task.id"><Operation aria-hidden="true" /><span><strong>{{ task.name || '未命名任务' }}</strong><small>{{ task.phaseLabel || task.type || '任务记录' }}</small></span><span class="task-status">{{ task.status }}</span><time>{{ formatDate(task.updatedAt) || '—' }}</time></article>
+              <p v-if="!managedUserData.tasks?.length" class="plan-data-empty">该用户还没有任务记录</p>
+            </div>
+          </template>
+        </section>
+        <div v-else class="management-detail-empty">请选择一个用户查看方案数据</div>
+      </section>
+
+    </div>
 
     <Teleport to="body">
       <div
@@ -565,7 +511,16 @@
       </div>
     </Teleport>
 
-    <section class="admin-panel dimension-panel">
+    <div v-if="isSystemOwner && activeSection === 'safety'" class="admin-section-stack">
+      <DataSafetyPanel />
+    </div>
+
+    <section
+      v-if="['config', 'releases'].includes(activeSection)"
+      class="admin-panel dimension-panel"
+      :class="{ 'release-history-panel': activeSection === 'releases' }"
+    >
+      <template v-if="activeSection === 'config'">
       <div class="admin-panel-head dimension-head">
         <div>
           <p class="admin-panel-index">03 / DICTIONARIES</p>
@@ -764,8 +719,9 @@
           </div>
         </div>
       </div>
+      </template>
 
-      <section class="config-audit-panel" aria-labelledby="config-audit-title">
+      <section v-if="activeSection === 'releases'" class="config-audit-panel" aria-labelledby="config-audit-title">
         <div class="config-audit-head">
           <div>
             <p class="admin-panel-index">04 / CONFIG CHANGELOG</p>
@@ -896,11 +852,12 @@
       </section>
     </section>
 
-    <section v-if="canManageAccounts" class="admin-panel audit-panel admin-audit-bottom">
+    <div v-if="canManageAccounts && activeSection === 'logs'" class="admin-section-stack">
+    <section class="admin-panel audit-panel admin-audit-bottom">
       <header class="admin-audit-head">
         <div>
           <p class="admin-panel-index">05 / AUDIT TRAIL</p>
-          <h2>管理员操作记录</h2>
+          <h2>管理操作记录</h2>
           <p class="admin-panel-note">账号修改、密码重置、强制退出和数据审计都会留下记录。</p>
         </div>
         <div class="admin-audit-controls">
@@ -944,7 +901,7 @@
                   </td>
                 </tr>
                 <tr v-if="!auditLogs.length">
-                  <td :colspan="canDeleteAuditLogs ? 5 : 4" class="admin-empty">还没有管理员操作记录</td>
+                  <td :colspan="canDeleteAuditLogs ? 5 : 4" class="admin-empty">还没有管理操作记录</td>
                 </tr>
               </tbody>
             </table>
@@ -952,11 +909,32 @@
         </div>
       </Transition>
     </section>
+    </div>
+
+    <div v-if="isSystemOwner && activeSection === 'feedback'" class="admin-section-stack">
+      <FeedbackAdminPanel />
+    </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import {
+  ArrowDown,
+  Check,
+  Collection,
+  Close,
+  Document,
+  Folder,
+  Monitor,
+  Operation,
+  Search,
+  Setting,
+} from '@element-plus/icons-vue'
+import DataSafetyPanel from './DataSafetyPanel.vue'
+import FeedbackAdminPanel from './FeedbackAdminPanel.vue'
 import { useCdpShared } from '../composables/useCdpShared.js'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
 import { request } from '../utils/apiClient.js'
@@ -980,6 +958,10 @@ const props = defineProps({
     type: String,
     default: 'user',
   },
+  isSystemOwner: {
+    type: Boolean,
+    default: false,
+  },
 })
 const emit = defineEmits(['current-user-updated'])
 const { isVisible } = useCdpShared()
@@ -991,6 +973,24 @@ const ROLE_LABELS = {
   user: '普通用户',
 }
 const DIMENSION_PAGE_SIZES = [20, 30, 50, 100]
+const PLAN_USER_PAGE_SIZE = 8
+const ROLE_OPTIONS = [
+  { value: 'user', label: '普通用户', description: '使用工作台、方案中心和任务中台' },
+  { value: 'config_admin', label: '配置管理员', description: '在普通用户能力上维护维表与配置' },
+  { value: 'super_admin', label: '超级管理员', description: '管理系统账号、用户数据与配置' },
+]
+const ROLE_PERMISSIONS = {
+  user: ['workspace', 'plans', 'tasks'],
+  config_admin: ['workspace', 'plans', 'tasks', 'dimensions'],
+  super_admin: ['workspace', 'plans', 'tasks', 'system', 'dimensions'],
+}
+const PERMISSION_ROWS = [
+  { key: 'workspace', label: '工作台', description: '访问任务执行与基础功能', icon: Monitor },
+  { key: 'plans', label: '方案中心', description: '访问个人方案与公共方案', icon: Collection },
+  { key: 'tasks', label: '任务中台', description: '访问任务执行、查看与管理任务', icon: Operation },
+  { key: 'system', label: '系统管理', description: '管理账号、邀请、用户数据与日志', icon: Setting },
+  { key: 'dimensions', label: '维表与配置', description: '维护维表并发布配置版本', icon: Document },
+]
 
 const STATUS_LABELS = {
   active: '可使用',
@@ -1002,6 +1002,16 @@ const STATUS_LABELS = {
 const users = ref([])
 const invites = ref([])
 const auditLogs = ref([])
+const adminCenterRoot = ref(null)
+const activeSection = ref(
+  props.isSystemOwner
+    ? 'safety'
+    : props.currentUserRole === 'super_admin'
+      ? 'users'
+      : 'config',
+)
+const dataSafetySnapshot = ref(null)
+const feedbackItems = ref([])
 const auditPanelExpanded = ref(false)
 const configAuditLogs = ref([])
 const configAuditTotal = ref(0)
@@ -1030,6 +1040,9 @@ const loading = ref(false)
 const busy = ref(false)
 const busyUserId = ref('')
 const userQuery = ref('')
+const planUserPage = ref(1)
+const activePlanTab = ref('solutions')
+const collapsedPlanGroups = ref(new Set())
 const managedUser = ref(null)
 const managedUserData = ref(null)
 const previewedSolution = ref(null)
@@ -1062,10 +1075,79 @@ const inviteForm = reactive({ role: 'user', expiresDays: 7 })
 
 let messageTimer = null
 let solutionPreviewRequestId = 0
+let userDataRequestId = 0
 
 const canManageAccounts = computed(() => props.currentUserRole === 'super_admin')
 const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
 const canDeleteAuditLogs = computed(() => props.currentUserRole === 'super_admin')
+const databaseHealthy = computed(() => Boolean(dataSafetySnapshot.value?.database?.healthy))
+const pendingFeedbackCount = computed(() => feedbackItems.value.filter((item) => item.status === 'new').length)
+const navigationItems = computed(() => {
+  const items = [
+    ...(props.isSystemOwner ? [{
+      id: 'safety',
+      label: '数据安全',
+      description: '检查生产数据库完整性、核对核心数据量，并创建经过校验的备份。',
+    }] : []),
+    ...(canManageAccounts.value ? [
+      {
+        id: 'users',
+        label: '用户与权限',
+        description: '维护登录账号、角色权限、账号状态和登录安全。',
+      },
+      {
+        id: 'invites',
+        label: '邀请管理',
+        description: '生成一次性邀请、分配初始角色，并管理邀请有效期。',
+      },
+      {
+        id: 'plans',
+        label: '用户方案数据',
+        description: '查看每位用户的个人方案、文件夹与任务记录，必要时复制到公共方案库。',
+      },
+    ] : []),
+    {
+      id: 'config',
+      label: '维表与配置',
+      description: '新增、编辑、启停维表记录，并安全发布工作台配置。',
+      badge: configStatus.value.pendingChanges || '',
+    },
+    {
+      id: 'releases',
+      label: '配置发布记录',
+      description: '审阅配置变更、发布批次及每个字段修改前后的差异。',
+    },
+    ...(canManageAccounts.value ? [{
+      id: 'logs',
+      label: '操作日志',
+      description: '追溯账号、权限、数据和配置管理中的关键操作。',
+    }] : []),
+    ...(props.isSystemOwner ? [{
+      id: 'feedback',
+      label: '用户反馈',
+      description: '查看用户提交的问题、建议和图片附件，并更新处理状态。',
+      badge: pendingFeedbackCount.value || '',
+    }] : []),
+  ]
+  return items.map((item, index) => ({
+    ...item,
+    index: String(index + 1).padStart(2, '0'),
+  }))
+})
+const activeNavigationItem = computed(() => navigationItems.value.find((item) => item.id === activeSection.value) || navigationItems.value[0])
+const activeNavigationIndex = computed(() => navigationItems.value.findIndex((item) => item.id === activeSection.value) + 1)
+
+watch(activeSection, (section) => {
+  window.requestAnimationFrame(() => {
+    adminCenterRoot.value?.scrollTo({ top: 0, behavior: 'auto' })
+  })
+  closeSolutionPreview()
+  const current = users.value.find((user) => user.id === managedUser.value?.id) || users.value[0]
+  if (!current) return
+  if (section === 'users') selectAccountUser(current)
+  if (section === 'plans') selectPlanUser(current)
+})
+
 const filteredUsers = computed(() => {
   const query = userQuery.value.toLowerCase()
   if (!query) return users.value
@@ -1076,6 +1158,40 @@ const filteredUsers = computed(() => {
 })
 const flattenedManagedFolders = computed(() => flattenFolders(managedUserData.value?.folders || []))
 const flattenedPublicFolders = computed(() => flattenFolders(publicFolders.value))
+const planUserTotalPages = computed(() => Math.max(1, Math.ceil(filteredUsers.value.length / PLAN_USER_PAGE_SIZE)))
+const pagedPlanUsers = computed(() => {
+  const start = (planUserPage.value - 1) * PLAN_USER_PAGE_SIZE
+  return filteredUsers.value.slice(start, start + PLAN_USER_PAGE_SIZE)
+})
+const availableRoleOptions = computed(() => ROLE_OPTIONS.filter((role) => (
+  role.value !== 'super_admin' || props.isSystemOwner || accountForm.role === 'super_admin'
+)))
+const permissionRows = computed(() => PERMISSION_ROWS)
+const selectedRolePermissions = computed(() => ROLE_PERMISSIONS[accountForm.role] || ROLE_PERMISSIONS.user)
+const planDataTabs = computed(() => [
+  { id: 'solutions', label: '个人方案', count: managedUserData.value?.counts?.solutions || 0 },
+  { id: 'folders', label: '方案文件夹', count: managedUserData.value?.counts?.folders || 0 },
+  { id: 'tasks', label: '任务记录', count: managedUserData.value?.counts?.tasks || 0 },
+])
+const managedSolutionGroups = computed(() => {
+  const solutions = Array.isArray(managedUserData.value?.solutions) ? managedUserData.value.solutions : []
+  const folders = flattenedManagedFolders.value
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  const groups = folders
+    .map((folder) => ({
+      id: folder.id,
+      name: folder.path,
+      solutions: solutions.filter((solution) => solution.folderId === folder.id),
+    }))
+    .filter((group) => group.solutions.length)
+  const uncategorized = solutions.filter((solution) => !solution.folderId || !folderIds.has(solution.folderId))
+  if (uncategorized.length) groups.push({ id: '__uncategorized__', name: '未分类', solutions: uncategorized })
+  return groups
+})
+
+watch(userQuery, () => {
+  planUserPage.value = 1
+})
 
 function showMessage(text, type = 'success') {
   message.value = text
@@ -1088,6 +1204,25 @@ function showMessage(text, type = 'success') {
 
 function roleLabel(role) {
   return ROLE_LABELS[role] || '普通用户'
+}
+
+function syncFeedbackSummary(event) {
+  const item = event?.detail
+  if (!item?.id) return
+  const exists = feedbackItems.value.some((entry) => entry.id === item.id)
+  feedbackItems.value = exists
+    ? feedbackItems.value.map((entry) => entry.id === item.id ? { ...entry, ...item } : entry)
+    : [item, ...feedbackItems.value]
+}
+
+function canChangeUserRole(user) {
+  if (!user || user.id === props.currentUserId || user.isSystemOwner) return false
+  if (user.role === 'super_admin' && !props.isSystemOwner) return false
+  return true
+}
+
+function isProtectedSystemOwner(user) {
+  return Boolean(user?.isSystemOwner && !props.isSystemOwner)
 }
 
 function statusLabel(status) {
@@ -1104,6 +1239,7 @@ function auditActionLabel(action) {
     USER_DATA_VIEWED: '查看用户数据',
     INVITE_CREATED: '创建邀请',
     INVITE_REVOKED: '撤销邀请',
+    DATABASE_BACKUP_CREATED: '创建数据库备份',
     AUDIT_LOG_DELETED: '删除操作记录',
     folder_share_created: '分享方案文件夹',
     folder_share_imported: '导入方案文件夹',
@@ -1256,6 +1392,20 @@ async function loadData() {
       users.value = nextUsers || []
       invites.value = nextInvites || []
       auditLogs.value = nextAuditLogs || []
+      const preferredUser = users.value.find((user) => user.id === managedUser.value?.id) || users.value[0]
+      if (preferredUser && activeSection.value === 'users') selectAccountUser(preferredUser)
+      if (preferredUser && activeSection.value === 'plans') await selectPlanUser(preferredUser)
+      if (props.isSystemOwner) {
+        const [nextSafetySnapshot, nextFeedbackItems] = await Promise.all([
+          request('/api/admin/data-safety', { cache: 'no-store' }),
+          request('/api/admin/feedback', {
+            params: { limit: 100 },
+            cache: 'no-store',
+          }),
+        ])
+        dataSafetySnapshot.value = nextSafetySnapshot || null
+        feedbackItems.value = nextFeedbackItems || []
+      }
     }
   } catch (error) {
     showMessage(error.message || '管理数据加载失败', 'error')
@@ -1612,13 +1762,32 @@ async function deleteAuditLog(entry) {
   }
 }
 
-async function openUserManager(user) {
-  managedUser.value = { ...user }
-  accountForm.username = user.username
-  accountForm.displayName = user.displayName || user.username
-  accountForm.role = user.role
-  accountForm.enabled = user.enabled
+function syncAccountForm(user) {
+  accountForm.username = user?.username || ''
+  accountForm.displayName = user?.displayName || user?.username || ''
+  accountForm.role = user?.role || 'user'
+  accountForm.enabled = user?.enabled !== false
   accountForm.password = ''
+}
+
+function selectAccountUser(user) {
+  if (!user) return
+  userDataRequestId += 1
+  managedUser.value = { ...user }
+  syncAccountForm(user)
+  temporaryPassword.value = ''
+  managedUserData.value = null
+  accountDataLoading.value = false
+  publicFoldersLoading.value = false
+  activePlanTab.value = 'solutions'
+  closeSolutionPreview()
+}
+
+async function selectPlanUser(user) {
+  if (!user) return
+  const requestId = ++userDataRequestId
+  managedUser.value = { ...user }
+  syncAccountForm(user)
   temporaryPassword.value = ''
   managedUserData.value = null
   previewedSolution.value = null
@@ -1633,18 +1802,45 @@ async function openUserManager(user) {
       request(`/api/admin/users/${user.id}/data`, { cache: 'no-store' }),
       request('/api/folders', { params: { scope: 'public' }, cache: 'no-store' }),
     ])
+    if (requestId !== userDataRequestId || managedUser.value?.id !== user.id) return
     managedUserData.value = userData
     publicFolders.value = publicFolderTree
     await loadAuditLogs()
   } catch (error) {
+    if (requestId !== userDataRequestId) return
     showMessage(error.message || '用户数据审计加载失败', 'error')
   } finally {
-    accountDataLoading.value = false
-    publicFoldersLoading.value = false
+    if (requestId === userDataRequestId) {
+      accountDataLoading.value = false
+      publicFoldersLoading.value = false
+    }
   }
 }
 
+async function openUserManager(user) {
+  if (activeSection.value === 'plans') return selectPlanUser(user)
+  selectAccountUser(user)
+}
+
+function resetAccountForm() {
+  if (!managedUser.value) return
+  syncAccountForm(managedUser.value)
+  temporaryPassword.value = ''
+}
+
+function isPlanGroupOpen(groupId) {
+  return !collapsedPlanGroups.value.has(groupId)
+}
+
+function togglePlanGroup(groupId) {
+  const next = new Set(collapsedPlanGroups.value)
+  if (next.has(groupId)) next.delete(groupId)
+  else next.add(groupId)
+  collapsedPlanGroups.value = next
+}
+
 function closeUserManager() {
+  userDataRequestId += 1
   closeSolutionPreview()
   managedUser.value = null
   managedUserData.value = null
@@ -1792,6 +1988,9 @@ async function deleteManagedUser() {
     })
     users.value = users.value.filter((item) => item.id !== result.id)
     closeUserManager()
+    const nextUser = users.value[0]
+    if (nextUser && activeSection.value === 'plans') await selectPlanUser(nextUser)
+    else if (nextUser) selectAccountUser(nextUser)
     await loadAuditLogs()
     showMessage(`账号已注销，并删除 ${result.deletedData?.solutions || 0} 个私人方案和 ${result.deletedData?.tasks || 0} 条任务`)
   } catch (error) {
@@ -1810,7 +2009,15 @@ async function copyTemporaryPassword() {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  window.addEventListener('cdp:feedback-submitted', syncFeedbackSummary)
+  window.addEventListener('cdp:feedback-status-updated', syncFeedbackSummary)
+  loadData()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('cdp:feedback-submitted', syncFeedbackSummary)
+  window.removeEventListener('cdp:feedback-status-updated', syncFeedbackSummary)
+})
 </script>
 
 <style scoped>
@@ -1945,6 +2152,8 @@ onMounted(loadData)
   max-width: 1380px;
   margin: 0 auto;
 }
+
+.admin-panels.single-panel { grid-template-columns: minmax(0, 1fr); }
 
 .admin-panel {
   min-width: 0;
@@ -2214,6 +2423,20 @@ onMounted(loadData)
 .user-cell small { display: block; }
 .user-cell strong { color: var(--ui-ink); font-size: 11px; font-weight: 600; }
 .user-cell small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 10px; }
+.system-owner-badge {
+  display: inline-flex;
+  height: 18px;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 6px;
+  color: #fff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  vertical-align: 1px;
+  background: var(--ui-ink);
+  border-radius: 999px;
+}
 
 .users-table {
   min-width: 0;
@@ -3651,6 +3874,12 @@ onMounted(loadData)
   border-top: 1px solid var(--ui-divider);
 }
 
+.release-history-panel .config-audit-panel {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .config-audit-head {
   display: flex;
   align-items: flex-end;
@@ -3993,6 +4222,322 @@ onMounted(loadData)
   transition: max-height 220ms ease, opacity 160ms ease;
 }
 
+.admin-management-surface {
+  display: grid;
+  grid-template-columns: minmax(315px, 360px) minmax(0, 1fr);
+  min-height: 650px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--ui-divider);
+  border-radius: 16px;
+  animation: admin-view-enter 220ms ease-out both;
+}
+
+.management-directory {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  background: #fff;
+  border-right: 1px solid var(--ui-divider);
+}
+
+.directory-search {
+  position: relative;
+  padding: 18px 18px 14px;
+}
+
+.directory-search > svg {
+  position: absolute;
+  top: 29px;
+  left: 31px;
+  width: 14px;
+  height: 14px;
+  color: var(--ui-text-tertiary);
+  pointer-events: none;
+}
+
+.directory-search input {
+  width: 100%;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 36px;
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 11px;
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 9px;
+  outline: none;
+}
+
+.directory-search input:focus {
+  border-color: var(--ui-ink);
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.06);
+}
+
+.directory-column-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 0 20px 11px;
+  color: var(--ui-text-tertiary);
+  font-size: 9px;
+}
+
+.directory-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  border-top: 1px solid var(--ui-divider);
+  scrollbar-width: thin;
+}
+
+.directory-user {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 86px 62px;
+  width: 100%;
+  min-height: 66px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: var(--ui-ink);
+  font: inherit;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid var(--ui-divider);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+
+.directory-user::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: transparent;
+  content: "";
+}
+
+.directory-user:hover { background: #fff; box-shadow: inset 0 0 0 1px var(--ui-divider); }
+.directory-user.active { background: #fff; box-shadow: inset 0 0 0 1px var(--ui-ink); }
+.directory-user.active::before { background: var(--ui-ink); }
+
+.directory-avatar {
+  width: 34px;
+  height: 34px;
+  font-size: 10px;
+}
+
+.directory-user-copy { min-width: 0; }
+.directory-user-copy strong,
+.directory-user-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-user-copy strong { font-size: 11px; font-weight: 620; }
+.directory-user-copy small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+.directory-user-role { overflow: hidden; color: var(--ui-text-secondary); font-size: 9px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.directory-user-status { display: inline-flex; align-items: center; justify-content: flex-end; gap: 5px; color: var(--ui-text-tertiary); font-size: 9px; white-space: nowrap; }
+.directory-user-status i,
+.account-live-status i { width: 6px; height: 6px; flex: 0 0 auto; background: #b6b6b3; border-radius: 50%; }
+.directory-user-status.enabled,
+.account-live-status.enabled { color: var(--ui-success); }
+.directory-user-status.enabled i,
+.account-live-status.enabled i { background: var(--ui-success); }
+
+.directory-empty,
+.management-detail-empty {
+  margin: 0;
+  color: var(--ui-text-tertiary);
+  font-size: 11px;
+  text-align: center;
+}
+.directory-empty { padding: 42px 20px; }
+.management-detail-empty { display: grid; place-items: center; min-height: 650px; background: #fff; }
+
+.directory-footer {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 18px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+  border-top: 1px solid var(--ui-divider);
+}
+.directory-footer small { color: var(--ui-text-tertiary); font-size: 8px; }
+
+.management-detail {
+  min-width: 0;
+  background: #fff;
+}
+
+.management-detail-head,
+.plan-data-head {
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 17px 24px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.management-identity { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.management-avatar { width: 40px; height: 40px; flex: 0 0 auto; font-size: 12px; }
+.management-identity > div { min-width: 0; }
+.management-identity .admin-panel-index { margin-bottom: 5px; font-size: 7px; }
+.management-identity h2 { margin: 0; overflow: hidden; font-size: 17px; font-weight: 650; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
+.management-identity small { display: block; margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+.account-live-status { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 9px; color: var(--ui-text-tertiary); font-size: 9px; background: #fff; border: 1px solid var(--ui-divider); border-radius: 999px; }
+
+.account-settings-form { display: flex; min-height: 560px; flex-direction: column; }
+.settings-block { padding: 20px 24px; border-bottom: 1px solid var(--ui-divider); }
+.settings-block-title { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 16px; }
+.settings-block-title > span { padding-top: 3px; color: var(--ui-accent); font: 700 9px/1 "SF Mono", "Cascadia Code", monospace; }
+.settings-block-title h3 { margin: 0; font-size: 13px; font-weight: 650; }
+.settings-block-title small { display: block; margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+
+.settings-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 150px; gap: 12px; }
+.settings-fields label,
+.security-actions label { display: flex; min-width: 0; flex-direction: column; gap: 7px; }
+.settings-fields label > span,
+.security-actions label > span { color: var(--ui-text-secondary); font-size: 9px; }
+.settings-fields input,
+.settings-fields select,
+.security-actions input {
+  width: 100%;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 10px;
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 8px;
+  outline: none;
+}
+.settings-fields input:focus,
+.settings-fields select:focus,
+.security-actions input:focus { border-color: var(--ui-ink); box-shadow: 0 0 0 3px rgba(17, 17, 17, .06); }
+.settings-fields input:disabled,
+.settings-fields select:disabled { color: var(--ui-text-tertiary); cursor: not-allowed; }
+
+.role-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; overflow: hidden; background: #fff; border: 1px solid var(--ui-ink); border-radius: 10px; }
+.role-options label { display: flex; min-width: 0; min-height: 56px; align-items: flex-start; gap: 9px; padding: 11px 13px; color: var(--ui-ink); background: #fff; border-left: 1px solid var(--ui-ink); cursor: pointer; transition: color 150ms ease, background 150ms ease; }
+.role-options label:first-child { border-left: 0; }
+.role-options label:hover:not(.active) { box-shadow: inset 0 -2px 0 var(--ui-ink); }
+.role-options label.active { color: #fff; background: var(--ui-ink); }
+.role-options input { margin: 2px 0 0; accent-color: var(--ui-ink); }
+.role-options label.active input { accent-color: #fff; }
+.role-options strong,
+.role-options small { display: block; }
+.role-options strong { font-size: 10px; font-weight: 650; }
+.role-options small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 8px; line-height: 1.45; }
+.role-options label.active small { color: rgba(255, 255, 255, .66); }
+
+.permission-list { display: grid; margin-top: 13px; background: #fff; border: 1px solid var(--ui-ink); border-radius: 10px; }
+.permission-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; min-height: 45px; align-items: center; gap: 10px; padding: 7px 12px; background: #fff; border-top: 1px solid var(--ui-divider); }
+.permission-row:first-child { border-top: 0; }
+.permission-row > svg { width: 15px; height: 15px; color: var(--ui-text-secondary); }
+.permission-row strong,
+.permission-row small { display: block; }
+.permission-row strong { font-size: 10px; font-weight: 600; }
+.permission-row small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 8px; }
+.permission-access { display: inline-flex; min-width: 58px; align-items: center; justify-content: flex-end; gap: 5px; color: var(--ui-text-secondary); font-size: 8px; font-weight: 550; }
+.permission-access svg { width: 13px; height: 13px; color: var(--ui-ink); }
+.permission-access.active { color: var(--ui-ink); font-weight: 650; }
+.permission-access:not(.active) svg { color: var(--ui-text-tertiary); }
+
+.security-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; background: #fff; border: 1px solid var(--ui-ink); border-radius: 9px; }
+.security-summary > div { min-width: 0; padding: 10px 12px; border-left: 1px solid var(--ui-divider); }
+.security-summary > div:first-child { border-left: 0; }
+.security-summary small,
+.security-summary strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.security-summary small { color: var(--ui-text-tertiary); font-size: 8px; }
+.security-summary strong { margin-top: 5px; color: var(--ui-text-secondary); font-size: 9px; font-weight: 550; }
+.security-actions { display: grid; grid-template-columns: minmax(170px, 1fr) auto auto auto; align-items: end; gap: 8px; margin-top: 12px; }
+.security-actions button { height: 36px; padding: 0 11px; color: var(--ui-ink); font: inherit; font-size: 9px; background: #fff; border: 1px solid var(--ui-control-border); border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.security-actions button:hover:not(:disabled) { border-color: var(--ui-ink); }
+.security-actions button.danger { color: var(--ui-danger); border-color: color-mix(in srgb, var(--ui-danger) 30%, var(--ui-control-border)); }
+.security-actions button:disabled { cursor: not-allowed; opacity: .45; }
+
+.inline-delete-zone { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 17px 24px 0; padding: 12px 14px; background: color-mix(in srgb, var(--ui-danger) 4%, #fff); border: 1px solid color-mix(in srgb, var(--ui-danger) 18%, var(--ui-divider)); border-radius: 9px; }
+.inline-delete-zone strong { color: var(--ui-danger); font-size: 10px; }
+.inline-delete-zone p { margin: 4px 0 0; color: var(--ui-text-tertiary); font-size: 8px; }
+.inline-delete-zone button { height: 32px; flex: 0 0 auto; padding: 0 11px; color: var(--ui-danger); font: inherit; font-size: 9px; background: #fff; border: 1px solid color-mix(in srgb, var(--ui-danger) 30%, var(--ui-divider)); border-radius: 8px; cursor: pointer; }
+
+.account-settings-footer { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin-top: auto; padding: 17px 24px; border-top: 1px solid var(--ui-divider); }
+.account-settings-footer button { min-width: 92px; height: 36px; padding: 0 14px; color: var(--ui-text-secondary); font: inherit; font-size: 10px; background: #fff; border: 1px solid var(--ui-control-border); border-radius: 8px; cursor: pointer; }
+.account-settings-footer button.primary { min-width: 120px; color: #fff; font-weight: 600; background: var(--ui-ink); border-color: var(--ui-ink); }
+.account-settings-footer button:disabled { cursor: wait; opacity: .5; }
+
+.plan-directory-user { grid-template-columns: 38px minmax(0, 1fr) auto; }
+.plan-user-counts { color: var(--ui-text-secondary); font: 9px/1 "SF Mono", "Cascadia Code", monospace; white-space: nowrap; }
+.plan-directory-footer { min-height: 62px; }
+.directory-pagination { display: flex; align-items: center; gap: 4px; }
+.directory-pagination button { width: 25px; height: 25px; padding: 0; color: var(--ui-text-secondary); font: inherit; font-size: 9px; background: #fff; border: 1px solid var(--ui-divider); border-radius: 7px; cursor: pointer; }
+.directory-pagination button.active { color: #fff; background: var(--ui-ink); border-color: var(--ui-ink); }
+.directory-pagination button:disabled { cursor: default; opacity: .35; }
+
+.plan-data-head { min-height: 96px; }
+.plan-count-summary { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.plan-count-summary span { padding: 7px 9px; color: var(--ui-text-tertiary); font-size: 8px; background: #fff; border: 1px solid var(--ui-divider); border-radius: 8px; }
+.plan-count-summary strong { margin-right: 3px; color: var(--ui-ink); font-size: 11px; }
+.plan-data-tabs { display: flex; gap: 5px; padding: 11px 20px; border-bottom: 1px solid var(--ui-divider); }
+.plan-data-tabs button { height: 32px; padding: 0 12px; color: var(--ui-text-secondary); font: inherit; font-size: 9px; background: transparent; border: 0; border-radius: 8px; cursor: pointer; }
+.plan-data-tabs button:hover { color: var(--ui-ink); background: #fff; box-shadow: inset 0 0 0 1px var(--ui-ink); }
+.plan-data-tabs button.active { color: #fff; background: var(--ui-ink); }
+.plan-data-tabs span { margin-left: 6px; opacity: .65; }
+
+.plan-data-loading { display: flex; min-height: 420px; align-items: center; justify-content: center; gap: 9px; color: var(--ui-text-tertiary); font-size: 10px; }
+.plan-data-loading span { width: 7px; height: 7px; background: var(--ui-accent); border-radius: 50%; animation: admin-pulse .8s ease-in-out infinite alternate; }
+.plan-solution-view { padding: 0 20px 18px; }
+.plan-table-head,
+.plan-solution-row { display: grid; grid-template-columns: minmax(220px, 1.6fr) 58px 70px 130px minmax(205px, auto); align-items: center; gap: 12px; }
+.plan-table-head { min-height: 42px; padding: 0 12px; color: var(--ui-text-tertiary); font-size: 8px; border-bottom: 1px solid var(--ui-divider); }
+.plan-folder-group { border-bottom: 1px solid var(--ui-divider); }
+.plan-folder-head { display: flex; width: 100%; min-height: 47px; align-items: center; gap: 9px; padding: 0 8px; color: var(--ui-ink); font: inherit; text-align: left; background: #fff; border: 0; cursor: pointer; }
+.plan-folder-head:hover { background: #fafaf9; }
+.plan-folder-head svg { width: 15px; height: 15px; color: var(--ui-text-secondary); }
+.plan-folder-head svg:first-child { width: 13px; transition: transform 160ms ease; }
+.plan-folder-head svg.collapsed { transform: rotate(-90deg); }
+.plan-folder-head strong { font-size: 11px; font-weight: 650; }
+.plan-folder-head small { color: var(--ui-text-tertiary); font-size: 8px; }
+.plan-folder-rows { padding-left: 30px; }
+.plan-solution-row { min-height: 58px; padding: 8px 10px; border-top: 1px solid var(--ui-divider); }
+.plan-solution-row > div:first-child { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.plan-solution-row > div:first-child > svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-tertiary); }
+.plan-solution-row strong,
+.plan-solution-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-solution-row strong { font-size: 10px; font-weight: 560; }
+.plan-solution-row small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 8px; }
+.plan-solution-row > span,
+.plan-solution-row time { color: var(--ui-text-secondary); font-size: 9px; }
+.plan-solution-row .plan-status { color: var(--ui-text-tertiary); }
+.plan-solution-row .plan-status.published { color: var(--ui-success); font-weight: 600; }
+.plan-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.plan-row-actions button { height: 27px; padding: 0 8px; color: var(--ui-text-secondary); font: inherit; font-size: 8px; background: #fff; border: 1px solid var(--ui-divider); border-radius: 7px; cursor: pointer; white-space: nowrap; }
+.plan-row-actions button:first-child { color: var(--ui-ink); }
+.plan-row-actions button:hover:not(:disabled) { border-color: var(--ui-ink); }
+.plan-row-actions button:disabled { color: var(--ui-success); cursor: default; opacity: .7; }
+.plan-data-total { padding: 15px 10px 0; color: var(--ui-text-secondary); font-size: 9px; }
+.plan-data-empty { margin: 0; padding: 54px 20px; color: var(--ui-text-tertiary); font-size: 10px; text-align: center; }
+
+.plan-simple-list { padding: 0 20px 18px; }
+.plan-simple-list article { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; min-height: 58px; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--ui-divider); }
+.plan-simple-list article > svg { width: 15px; height: 15px; color: var(--ui-text-tertiary); }
+.plan-simple-list strong,
+.plan-simple-list small { display: block; }
+.plan-simple-list strong { font-size: 10px; font-weight: 600; }
+.plan-simple-list small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 8px; }
+.plan-simple-list time,
+.task-status { color: var(--ui-text-secondary); font-size: 9px; }
+.task-data-list article { grid-template-columns: 24px minmax(0, 1fr) 80px auto; }
+
 .admin-audit-reveal-enter-from,
 .admin-audit-reveal-leave-to {
   max-height: 0;
@@ -4004,7 +4549,367 @@ onMounted(loadData)
   to { transform: scale(1.1); opacity: 1; }
 }
 
+/* Functional system-management shell, organized by real administration tasks. */
+.admin-center {
+  padding: 0;
+  background: #fff;
+}
+
+.admin-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.admin-navigation {
+  position: sticky;
+  top: 0;
+  display: flex;
+  height: 100%;
+  min-height: 690px;
+  flex-direction: column;
+  align-self: start;
+  padding: 24px 16px 20px;
+  box-sizing: border-box;
+  background: #fff;
+  border-right: 1px solid var(--ui-divider);
+}
+
+.admin-navigation-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 7px 24px;
+}
+
+.admin-navigation-title > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #fff;
+  font: 700 9px/1 "SF Mono", "Cascadia Code", monospace;
+  letter-spacing: .08em;
+  background: var(--ui-ink);
+  border-radius: 10px;
+}
+
+.admin-navigation-title strong,
+.admin-navigation-title small { display: block; }
+.admin-navigation-title strong { font-size: 13px; font-weight: 650; letter-spacing: -.02em; }
+.admin-navigation-title small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 9px; }
+
+.admin-navigation nav { display: grid; gap: 5px; }
+.admin-navigation nav button {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 11px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 520;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.admin-navigation nav button:hover { color: var(--ui-ink); background: #f6f6f5; transform: translateX(2px); }
+.admin-navigation nav button.active { color: var(--ui-ink); font-weight: 650; background: #f0f0ef; }
+.admin-navigation nav button > span { color: #aaa9a6; font: 700 8px/1 "SF Mono", "Cascadia Code", monospace; letter-spacing: .06em; }
+.admin-navigation nav button.active > span { color: var(--ui-accent); }
+.admin-navigation nav button > i {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0 4px;
+  color: #fff;
+  font-size: 8px;
+  font-style: normal;
+  background: var(--ui-accent);
+  border-radius: 999px;
+}
+
+.admin-navigation-foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: auto;
+  padding: 14px 10px 0;
+  border-top: 1px solid var(--ui-divider);
+}
+.admin-navigation-foot > i { width: 7px; height: 7px; flex: 0 0 auto; background: #c9c9c7; border-radius: 50%; box-shadow: 0 0 0 4px #f1f1ef; }
+.admin-navigation-foot > i.healthy { background: var(--ui-success); box-shadow: 0 0 0 4px #e9f7ed; }
+.admin-navigation-foot strong,
+.admin-navigation-foot small { display: block; }
+.admin-navigation-foot strong { font-size: 9px; font-weight: 600; }
+.admin-navigation-foot small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 8px; }
+
+.admin-workspace {
+  min-width: 0;
+  padding: 30px clamp(24px, 3vw, 48px) 60px;
+  box-sizing: border-box;
+}
+
+.admin-hero,
+.admin-message,
+.admin-panels,
+.dimension-panel,
+.admin-audit-bottom,
+.admin-dashboard,
+.admin-section-stack {
+  width: 100%;
+  max-width: 1450px;
+  box-sizing: border-box;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.admin-hero { align-items: center; margin-bottom: 24px; }
+.admin-eyebrow { margin-bottom: 7px; font-size: 8px; }
+.admin-hero h1 { font-size: clamp(27px, 3vw, 37px); font-weight: 650; letter-spacing: -.045em; }
+.admin-lede { margin-top: 8px; font-size: 11px; line-height: 1.6; }
+.admin-refresh { height: 32px; padding: 0 12px; font-size: 10px; background: #fff; }
+
+.admin-dashboard { animation: admin-view-enter 240ms ease-out both; }
+.admin-health-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.25fr minmax(170px, .9fr);
+  min-height: 70px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--ui-divider);
+  border-radius: 13px;
+}
+
+.admin-health-strip > div {
+  display: grid;
+  grid-template-columns: 32px minmax(0, auto) 1fr;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: 10px;
+  padding: 14px 18px;
+  border-right: 1px solid var(--ui-divider);
+}
+.admin-health-strip small { align-self: end; color: var(--ui-text-tertiary); font-size: 8px; }
+.admin-health-strip strong { align-self: start; margin-top: 3px; font-size: 10px; font-weight: 650; }
+.admin-health-strip strong.healthy { color: var(--ui-success); }
+.admin-health-strip time { align-self: center; justify-self: end; padding: 0 18px; color: var(--ui-text-tertiary); font-size: 9px; }
+.health-icon { grid-row: 1 / 3; align-self: center; width: 28px; height: 28px; background: #f4f4f2; border: 1px solid #ececea; border-radius: 9px; }
+.health-icon::before,
+.health-icon::after { display: block; margin: auto; content: ""; }
+.health-icon.database::before { width: 12px; height: 6px; margin-top: 7px; border: 1.5px solid var(--ui-success); border-radius: 50%; }
+.health-icon.database::after { width: 12px; height: 7px; margin-top: -1px; border: 1.5px solid var(--ui-success); border-top: 0; border-radius: 0 0 7px 7px; }
+.health-icon.release::before { width: 11px; height: 12px; margin-top: 7px; border: 1.5px solid var(--ui-ink); border-radius: 2px; }
+.health-icon.release::after { width: 5px; height: 1px; margin-top: -8px; background: var(--ui-ink); box-shadow: 0 4px var(--ui-ink); }
+.health-icon.link::before { width: 13px; height: 7px; margin-top: 9px; border: 1.5px solid var(--ui-accent); border-radius: 999px; transform: rotate(-28deg); }
+
+.admin-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.72fr) minmax(280px, .85fr); gap: 18px; margin-top: 18px; }
+.admin-task-board,
+.admin-permission-card,
+.admin-recent-activity {
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--ui-divider);
+  border-radius: 14px;
+}
+.admin-task-board > header,
+.admin-recent-activity > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 19px 21px 16px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+.admin-task-board h2,
+.admin-permission-card h2,
+.admin-recent-activity h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.035em; }
+.admin-task-board .admin-panel-index,
+.admin-permission-card .admin-panel-index,
+.admin-recent-activity .admin-panel-index { margin-bottom: 5px; font-size: 7px; }
+.admin-task-board > header > span { color: var(--ui-text-tertiary); font-size: 9px; }
+.admin-task-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  width: 100%;
+  min-height: 76px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 21px;
+  color: var(--ui-ink);
+  font: inherit;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-top: 1px solid var(--ui-divider);
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.admin-task-board > header + .admin-task-row { border-top: 0; }
+.admin-task-row:hover { background: #faf9f7; }
+.admin-task-mark { display: grid; width: 34px; height: 34px; place-items: center; color: var(--ui-accent); font: 700 8px/1 "SF Mono", monospace; background: #fff4ef; border-radius: 11px; }
+.admin-task-copy strong,
+.admin-task-copy small { display: block; }
+.admin-task-copy strong { font-size: 11px; font-weight: 650; }
+.admin-task-copy strong i { margin-left: 7px; padding: 3px 7px; color: var(--ui-text-secondary); font-size: 8px; font-style: normal; font-weight: 500; background: #f2f2f0; border-radius: 999px; }
+.admin-task-copy small { margin-top: 6px; color: var(--ui-text-tertiary); font-size: 9px; }
+.admin-task-action { display: inline-flex; align-items: center; gap: 7px; color: var(--ui-text-secondary); font-size: 9px; }
+.admin-task-action > i { width: 5px; height: 5px; background: var(--ui-accent); border-radius: 50%; }
+.admin-task-action b { color: var(--ui-text-tertiary); font-size: 16px; font-weight: 400; }
+.admin-task-empty { margin: 0; padding: 28px 21px; color: var(--ui-text-tertiary); font-size: 10px; text-align: center; }
+
+.admin-permission-card { padding: 20px 21px; }
+.admin-owner-identity { display: flex; align-items: center; gap: 12px; margin: 20px 0 17px; padding: 15px; background: #f7f7f5; border: 1px solid #eeeeeb; border-radius: 11px; }
+.admin-owner-identity > span { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; color: #fff; font-size: 12px; font-weight: 700; background: var(--ui-ink); border-radius: 50%; }
+.admin-owner-identity small,
+.admin-owner-identity strong,
+.admin-owner-identity em { display: block; }
+.admin-owner-identity small { color: var(--ui-text-tertiary); font-size: 8px; }
+.admin-owner-identity strong { display: inline; margin-top: 3px; font-size: 17px; letter-spacing: -.03em; }
+.admin-owner-identity em { display: inline; margin-left: 6px; color: var(--ui-text-secondary); font-size: 8px; font-style: normal; }
+.admin-permission-card ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.admin-permission-card li { display: flex; align-items: flex-start; gap: 8px; color: var(--ui-text-secondary); font-size: 9px; line-height: 1.5; }
+.admin-permission-card li i { display: grid; width: 16px; height: 16px; flex: 0 0 auto; place-items: center; color: var(--ui-success); font-size: 8px; font-style: normal; border: 1px solid #d9eee0; border-radius: 50%; }
+.admin-permission-card > button { width: 100%; height: 35px; margin-top: 21px; color: #fff; font: inherit; font-size: 10px; font-weight: 600; background: var(--ui-ink); border: 0; border-radius: 9px; cursor: pointer; }
+.admin-permission-card > button:hover { background: #313133; }
+
+.admin-recent-activity { margin-top: 18px; }
+.admin-recent-activity > header > button { color: var(--ui-text-secondary); font: inherit; font-size: 9px; background: none; border: 0; cursor: pointer; }
+.admin-activity-head,
+.admin-activity-row { display: grid; grid-template-columns: 190px 150px minmax(0, 1fr) 80px; align-items: center; min-height: 40px; padding: 0 21px; }
+.admin-activity-head { color: var(--ui-text-tertiary); font-size: 8px; background: #fafaf9; }
+.admin-activity-row { font-size: 9px; border-top: 1px solid var(--ui-divider); }
+.admin-activity-row time { color: var(--ui-text-secondary); }
+.admin-activity-row strong { font-weight: 550; }
+.activity-success { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-success); }
+.activity-success i { width: 6px; height: 6px; background: var(--ui-success); border-radius: 50%; }
+
+.admin-quick-links { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 18px; overflow: hidden; background: #fff; border: 1px solid var(--ui-divider); border-radius: 12px; }
+.admin-quick-links button { display: flex; min-height: 50px; align-items: center; justify-content: center; gap: 12px; color: var(--ui-text-secondary); font: inherit; font-size: 9px; background: #fff; border: 0; border-left: 1px solid var(--ui-divider); cursor: pointer; }
+.admin-quick-links button:first-child { border-left: 0; }
+.admin-quick-links button:hover { color: var(--ui-ink); background: #fafaf9; }
+.admin-quick-links span { font-size: 15px; }
+
+.admin-section-stack { display: grid; gap: 18px; animation: admin-view-enter 220ms ease-out both; }
+.admin-log-switcher { display: inline-flex; width: fit-content; padding: 3px; background: #eeeef0; border-radius: 10px; }
+.admin-log-switcher button { height: 32px; padding: 0 13px; color: var(--ui-text-secondary); font: inherit; font-size: 10px; background: transparent; border: 0; border-radius: 8px; cursor: pointer; }
+.admin-log-switcher button.active { color: #fff; background: var(--ui-ink); }
+.admin-log-switcher span { margin-left: 4px; opacity: .7; }
+.admin-audit-bottom { margin-top: 0; }
+
+/* System management uses white structure and reserves orange for navigation and state signals. */
+.admin-center {
+  --ui-fill: #fff;
+  --ui-surface: #fff;
+}
+
+.admin-navigation nav button:hover,
+.admin-navigation nav button.active {
+  background: #fff;
+  transform: none;
+}
+
+.admin-navigation nav button:hover {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--ui-accent) 42%, transparent);
+}
+
+.admin-navigation nav button.active {
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.invite-created,
+.config-release {
+  background: #fff;
+  border-color: var(--ui-divider);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.role-chip,
+.audit-action,
+.config-version,
+.dimension-filters input,
+.dimension-filters select,
+.dimension-filters > button,
+.dimension-editor,
+.dimension-fields input,
+.dimension-table-wrap,
+.dimension-pagination-summary select,
+.config-release-actions input,
+.config-discard,
+.config-audit-list,
+.config-audit-detail,
+.config-audit-row-head,
+.admin-owner-identity,
+.admin-activity-head,
+.admin-task-copy strong i,
+.health-icon {
+  background: #fff;
+}
+
+.dimension-type:hover,
+.dimension-type.active {
+  background: #fff;
+}
+
+.dimension-type.active {
+  border-color: var(--ui-divider);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.config-audit-scope,
+.admin-log-switcher {
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+}
+
+.config-audit-scope button.active {
+  color: #fff;
+  background: var(--ui-ink);
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+
+.config-audit-entry.expanded,
+.config-audit-entry-button:hover,
+.admin-task-row:hover,
+.admin-quick-links button:hover,
+.plan-folder-head:hover {
+  background: #fff;
+}
+
+.config-audit-entry.expanded,
+.plan-folder-head:hover {
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+
+.admin-task-mark {
+  color: var(--ui-accent);
+  background: #fff;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 35%, var(--ui-divider));
+}
+
+@keyframes admin-view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (max-width: 1200px) {
+  .admin-shell { grid-template-columns: 198px minmax(0, 1fr); }
+  .admin-workspace { padding-right: 24px; padding-left: 24px; }
+  .admin-management-surface { grid-template-columns: minmax(275px, 310px) minmax(0, 1fr); }
+  .settings-fields { grid-template-columns: 1fr 1fr; }
+  .settings-status-field { grid-column: 1 / -1; }
+  .security-actions { grid-template-columns: 1fr 1fr; }
+  .security-actions label { grid-column: 1 / -1; }
+  .plan-table-head,
+  .plan-solution-row { grid-template-columns: minmax(180px, 1.5fr) 48px 62px 100px minmax(170px, auto); gap: 8px; }
+  .admin-dashboard-grid { grid-template-columns: 1fr; }
+  .admin-health-strip { grid-template-columns: repeat(3, 1fr); }
+  .admin-health-strip time { grid-column: 1 / -1; justify-self: stretch; padding: 9px 18px; text-align: right; border-top: 1px solid var(--ui-divider); }
   .admin-panels { grid-template-columns: 1fr; }
   .config-release { align-items: center; flex-direction: column; }
   .config-release-actions { width: 100%; justify-content: center; }
@@ -4013,8 +4918,42 @@ onMounted(loadData)
 }
 
 @media (max-width: 700px) {
+  .admin-shell { display: block; }
+  .admin-navigation { position: static; min-height: 0; height: auto; padding: 12px 15px; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+  .admin-navigation-title,
+  .admin-navigation-foot { display: none; }
+  .admin-navigation nav { display: flex; overflow-x: auto; scrollbar-width: none; }
+  .admin-navigation nav::-webkit-scrollbar { display: none; }
+  .admin-navigation nav button { display: flex; min-width: max-content; min-height: 35px; gap: 7px; padding: 0 10px; }
+  .admin-workspace { padding: 22px 15px 45px; }
+  .admin-health-strip { grid-template-columns: 1fr; }
+  .admin-health-strip > div { border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+  .admin-health-strip time { grid-column: auto; text-align: left; }
+  .admin-activity-head,
+  .admin-activity-row { grid-template-columns: 1fr 1fr; gap: 5px 14px; padding-top: 9px; padding-bottom: 9px; }
+  .admin-activity-head { display: none; }
+  .admin-quick-links { grid-template-columns: 1fr; }
+  .admin-quick-links button { border-top: 1px solid var(--ui-divider); border-left: 0; }
+  .admin-quick-links button:first-child { border-top: 0; }
   .admin-hero { align-items: flex-start; flex-direction: column; }
   .admin-refresh { align-self: flex-start; }
+  .admin-management-surface { grid-template-columns: 1fr; min-height: 0; }
+  .management-directory { max-height: 340px; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+  .management-detail-empty { min-height: 240px; }
+  .management-detail-head,
+  .plan-data-head { align-items: flex-start; flex-direction: column; }
+  .role-options,
+  .security-summary { grid-template-columns: 1fr; }
+  .security-summary > div { border-top: 1px solid var(--ui-divider); border-left: 0; }
+  .security-summary > div:first-child { border-top: 0; }
+  .inline-delete-zone { align-items: flex-start; flex-direction: column; }
+  .plan-count-summary { flex-wrap: wrap; }
+  .plan-table-head { display: none; }
+  .plan-folder-rows { padding-left: 0; }
+  .plan-solution-row { grid-template-columns: 1fr auto auto; }
+  .plan-solution-row > div:first-child { grid-column: 1 / -1; }
+  .plan-solution-row time { justify-self: end; }
+  .plan-row-actions { grid-column: 1 / -1; justify-content: flex-start; }
   .invite-form { grid-template-columns: 1fr 0.75fr; }
   .admin-primary-button { grid-column: 1 / -1; }
   .dimension-layout { grid-template-columns: 1fr; }
@@ -4065,7 +5004,7 @@ onMounted(loadData)
 }
 
 @media (max-width: 520px) {
-  .admin-center { padding: 26px 15px 50px; }
+  .admin-center { padding: 0; }
   .admin-hero h1 { font-size: 32px; }
   .invite-form { grid-template-columns: 1fr; }
   .admin-primary-button { grid-column: auto; }
@@ -4079,5 +5018,19 @@ onMounted(loadData)
   .account-toolbar { justify-content: stretch; }
   .account-toolbar input { width: 100%; }
   .temporary-password { align-items: flex-start; flex-direction: column; }
+  .directory-user { grid-template-columns: 34px minmax(0, 1fr) auto; }
+  .directory-user-role { display: none; }
+  .settings-fields,
+  .security-actions { grid-template-columns: 1fr; }
+  .settings-status-field,
+  .security-actions label { grid-column: auto; }
+  .security-actions button { width: 100%; }
+  .account-settings-footer { align-items: stretch; flex-direction: column; }
+  .account-settings-footer button { width: 100%; }
+  .plan-data-tabs { overflow-x: auto; }
+  .plan-data-tabs button { flex: 0 0 auto; }
+  .task-data-list article { grid-template-columns: 24px minmax(0, 1fr); }
+  .task-status,
+  .task-data-list time { grid-column: 2; }
 }
 </style>

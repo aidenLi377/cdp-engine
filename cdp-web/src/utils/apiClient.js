@@ -69,9 +69,10 @@ async function parseResponseBody(response) {
 
 async function request(path, options = {}) {
   const { headers, params, ...fetchOptions } = options
+  const hasFormDataBody = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData
   const response = await fetchWithTimeout(buildUrl(path, params), {
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasFormDataBody ? {} : { 'Content-Type': 'application/json' }),
       ...(headers || {}),
     },
     ...fetchOptions,

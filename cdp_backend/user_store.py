@@ -57,8 +57,19 @@ class UserStore:
         return normalized
 
     def _ensure_bootstrap_admin(self) -> None:
-        """Give a legacy database a usable first administrator."""
+        """Keep the reserved ``admin`` account as the single system owner."""
         with get_db(self.db_path) as conn:
+            system_owner = conn.execute(
+                "SELECT id FROM users WHERE username = 'admin' COLLATE NOCASE LIMIT 1"
+            ).fetchone()
+            if system_owner is not None:
+                conn.execute("UPDATE users SET is_system_owner = 0 WHERE id != ?", (system_owner["id"],))
+                conn.execute(
+                    """UPDATE users
+                       SET is_system_owner = 1, role = 'super_admin', enabled = 1
+                       WHERE id = ?""",
+                    (system_owner["id"],),
+                )
             has_admin = conn.execute(
                 "SELECT 1 FROM users WHERE role = 'super_admin' LIMIT 1"
             ).fetchone()
@@ -87,6 +98,7 @@ class UserStore:
             "passwordChangedAt": row["password_changed_at"],
             "updatedAt": row["updated_at"] or row["created_at"],
             "sessionVersion": int(row["session_version"] or 1),
+            "isSystemOwner": bool(row["is_system_owner"]),
         }
 
     @staticmethod
@@ -140,10 +152,13 @@ class UserStore:
 
         now = _utc_now()
         user_id = f"user_{uuid4().hex}"
+        is_system_owner = username.casefold() == "admin"
         with get_db(self.db_path) as conn:
             existing_count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             assigned_role = (
-                self._validate_role(role)
+                "super_admin"
+                if is_system_owner
+                else self._validate_role(role)
                 if role is not None
                 else ("super_admin" if existing_count == 0 else "user")
             )
@@ -156,8 +171,8 @@ class UserStore:
                 """INSERT INTO users (
                     id, username, password_hash, display_name, enabled,
                     role, created_at, last_login_at, password_changed_at,
-                    updated_at, session_version
-                ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, 1)""",
+                    updated_at, session_version, is_system_owner
+                ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL, ?, ?, 1, ?)""",
                 (
                     user_id,
                     username,
@@ -167,6 +182,7 @@ class UserStore:
                     now,
                     now,
                     now,
+                    1 if is_system_owner else 0,
                 ),
             )
         return self.get_user(user_id)
@@ -245,6 +261,8 @@ class UserStore:
             ).fetchone()
             if current is None:
                 raise UserNotFoundError(user_id)
+            if current["is_system_owner"] and username.casefold() != "admin":
+                raise ValueError("总管理员 admin 的登录账号不可修改")
             duplicate = conn.execute(
                 """SELECT id FROM users
                    WHERE username = ? COLLATE NOCASE AND id != ?""",
@@ -320,6 +338,10 @@ class UserStore:
             ).fetchone()
             if current is None:
                 raise UserNotFoundError(user_id)
+            if current["is_system_owner"] and (
+                username.casefold() != "admin" or not enabled or role != "super_admin"
+            ):
+                raise ValueError("总管理员 admin 不可改名、停用或降级")
             duplicate = conn.execute(
                 """SELECT id FROM users
                    WHERE username = ? COLLATE NOCASE AND id != ?""",
@@ -643,6 +665,8 @@ class UserStore:
             raise InviteInvalidError("邀请链接无效")
         if not username or not password:
             raise ValueError("用户名和密码不能为空")
+        if username.casefold() == "admin":
+            raise ValueError("admin 为系统保留账号，请通过管理命令创建")
         if len(username) > 80:
             raise ValueError("用户名不能超过 80 个字符")
         if len(password) < 8:

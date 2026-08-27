@@ -31,9 +31,17 @@ class AdminAccountManagementApiTests(unittest.TestCase):
             "Target User",
             role="user",
         )
+        self.owner = store.create_user(
+            "admin",
+            "owner-password",
+            "System Owner",
+            role="user",
+        )
         self.admin_client = self.app.test_client()
+        self.owner_client = self.app.test_client()
         self.target_client = self.app.test_client()
         self._login(self.admin_client, "root-admin", "root-password")
+        self._login(self.owner_client, "admin", "owner-password")
         self._login(self.target_client, "target-user", "target-password")
 
     def tearDown(self):
@@ -290,6 +298,56 @@ class AdminAccountManagementApiTests(unittest.TestCase):
         self.assertEqual(self.target_client.get("/api/auth/me").status_code, 200)
         self.assertEqual(second_session.get("/api/auth/me").status_code, 401)
         self._login(self.app.test_client(), "self-renamed", "next-target-password")
+
+    def test_only_system_owner_can_grant_or_revoke_super_admin(self):
+        denied = self.admin_client.patch(
+            f"/api/admin/users/{self.target['id']}",
+            json={"role": "super_admin", "enabled": True},
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.get_json()["code"], "SYSTEM_OWNER_REQUIRED")
+
+        promoted = self.owner_client.patch(
+            f"/api/admin/users/{self.target['id']}",
+            json={"role": "super_admin", "enabled": True},
+        )
+        self.assertEqual(promoted.status_code, 200)
+        self.assertEqual(promoted.get_json()["role"], "super_admin")
+
+        revoked = self.owner_client.patch(
+            f"/api/admin/users/{self.target['id']}",
+            json={"role": "user", "enabled": True},
+        )
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(revoked.get_json()["role"], "user")
+
+    def test_system_owner_is_exposed_and_protected(self):
+        me = self.owner_client.get("/api/auth/me").get_json()["user"]
+        self.assertTrue(me["isSystemOwner"])
+        self.assertEqual(me["username"], "admin")
+        self.assertEqual(me["role"], "super_admin")
+
+        changed = self.owner_client.patch(
+            f"/api/admin/users/{self.owner['id']}",
+            json={"username": "renamed-admin", "enabled": True, "role": "super_admin"},
+        )
+        self.assertEqual(changed.status_code, 400)
+        self.assertEqual(changed.get_json()["code"], "SYSTEM_OWNER_PROTECTED")
+        deleted = self.owner_client.delete(f"/api/admin/users/{self.owner['id']}")
+        self.assertEqual(deleted.status_code, 400)
+        self.assertEqual(deleted.get_json()["code"], "SYSTEM_OWNER_PROTECTED")
+
+    def test_data_safety_status_and_manual_backup_are_owner_only(self):
+        self.assertEqual(self.admin_client.get("/api/admin/data-safety").status_code, 403)
+        status = self.owner_client.get("/api/admin/data-safety")
+        self.assertEqual(status.status_code, 200)
+        self.assertTrue(status.get_json()["database"]["healthy"])
+
+        backup = self.owner_client.post("/api/admin/data-safety/backup")
+        self.assertEqual(backup.status_code, 201)
+        payload = backup.get_json()
+        self.assertTrue(payload["verified"])
+        self.assertTrue(Path(payload["path"]).is_file())
 
 
 if __name__ == "__main__":

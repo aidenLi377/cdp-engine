@@ -176,7 +176,7 @@
               :aria-pressed="selectedMetrics.includes(metric)"
               @click="toggleMetric(metric)"
             >
-              {{ metric }}
+              {{ metric === 'Rebase' ? 'Rabase 人群占比' : metric }}
               <span v-if="selectedMetrics.includes(metric)" aria-hidden="true">✓</span>
             </button>
           </div>

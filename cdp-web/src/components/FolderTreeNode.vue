@@ -26,17 +26,31 @@
 
       <template v-if="editingFolderId === folder.id">
         <el-input
-          v-model="localEditName"
+          :model-value="editName"
           size="small"
-          class="intercom-input"
-          style="flex:1;min-width:0"
+          class="intercom-input folder-inline-edit-input"
+          @update:model-value="$emit('update-edit-name', $event)"
           @keyup.enter="$emit('save-edit', folder.id)"
           @keyup.esc="$emit('cancel-edit')"
           @click.stop
           ref="editInputRef"
         />
-        <el-button size="small" text @click.stop="$emit('save-edit', folder.id)" style="font-size:11px">确定</el-button>
-        <el-button size="small" text @click.stop="$emit('cancel-edit')" style="font-size:11px">取消</el-button>
+        <span class="folder-edit-actions">
+          <button
+            type="button"
+            class="folder-edit-action is-confirm"
+            title="确认重命名"
+            aria-label="确认重命名"
+            @click.stop="$emit('save-edit', folder.id)"
+          ><el-icon><Check /></el-icon></button>
+          <button
+            type="button"
+            class="folder-edit-action"
+            title="取消重命名"
+            aria-label="取消重命名"
+            @click.stop="$emit('cancel-edit')"
+          ><el-icon><Close /></el-icon></button>
+        </span>
       </template>
       <template v-else>
         <span class="folder-name">{{ folder.name }}</span>
@@ -91,6 +105,7 @@
         @drag-leave-folder="$emit('drag-leave-folder')"
         @drop-on-folder="(ev, id) => $emit('drop-on-folder', ev, id)"
         @start-edit="(id, name) => $emit('start-edit', id, name)"
+        @update-edit-name="(value) => $emit('update-edit-name', value)"
         @cancel-edit="$emit('cancel-edit')"
         @save-edit="(id) => $emit('save-edit', id)"
       />
@@ -100,9 +115,9 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
-import { Share } from '@element-plus/icons-vue'
+import { Check, Close, Share } from '@element-plus/icons-vue'
 
 const props = defineProps({
   folder: { type: Object, required: true },
@@ -122,17 +137,19 @@ const emit = defineEmits([
   'toggle-expand', 'select-folder', 'context-menu',
   'drag-over-folder', 'drag-leave-folder', 'drop-on-folder',
   'start-edit', 'cancel-edit', 'save-edit',
+  'update-edit-name',
   'batch-apply',
   'share-folder',
 ])
 
-const localEditName = ref(props.editName)
 const editInputRef = ref(null)
 
-watch(() => props.editName, (val) => { localEditName.value = val })
 watch(() => props.editingFolderId, (val) => {
   if (val === props.folder.id) {
-    localEditName.value = props.editName
+    nextTick(() => {
+      editInputRef.value?.focus?.()
+      editInputRef.value?.select?.()
+    })
   }
 })
 
@@ -189,6 +206,51 @@ function onDragStart(event, folder) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.folder-inline-edit-input {
+  min-width: 0;
+  flex: 1;
+}
+.folder-inline-edit-input :deep(.el-input__wrapper) {
+  min-height: 28px !important;
+  padding: 0 8px !important;
+  border-radius: 7px;
+}
+.folder-inline-edit-input :deep(.el-input__inner) {
+  height: 26px !important;
+  font-size: 12px;
+}
+.folder-edit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.folder-edit-action {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--ui-text-secondary);
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+.folder-edit-action:hover {
+  color: var(--ui-ink);
+  border-color: var(--ui-ink);
+}
+.folder-edit-action.is-confirm {
+  color: #fff;
+  background: var(--ui-ink);
+  border-color: var(--ui-ink);
+}
+.folder-edit-action:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 1px;
 }
 .folder-batch-badge {
   display: inline-flex;

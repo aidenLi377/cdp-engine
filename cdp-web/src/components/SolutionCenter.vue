@@ -1,5 +1,12 @@
 <template>
-  <div class="solution-center-page">
+  <div
+    ref="solutionPageRef"
+    class="solution-center-page"
+    :style="{
+      '--solution-sidebar-width': `${solutionSidebarWidth}px`,
+      '--solution-settings-width': `${solutionSettingsWidth}px`,
+    }"
+  >
     <aside class="solution-sidebar">
       <div class="solution-sidebar-head">
         <div>
@@ -184,6 +191,19 @@
           当前筛选下没有方案
         </div>
       </TransitionGroup>
+
+      <div
+        class="panel-resize-handle panel-resize-handle--right"
+        :aria-valuenow="solutionSidebarWidth"
+        aria-valuemin="260"
+        aria-valuemax="460"
+        aria-label="调整方案列表宽度"
+        aria-orientation="vertical"
+        role="separator"
+        tabindex="0"
+        @pointerdown="startSolutionSidebarResize"
+        @keydown="onSolutionSidebarResizeKeydown"
+      ></div>
     </aside>
 
     <section class="solution-editor">
@@ -380,6 +400,19 @@
     </section>
 
     <aside class="solution-settings">
+      <div
+        class="panel-resize-handle panel-resize-handle--left"
+        :aria-valuenow="solutionSettingsWidth"
+        aria-valuemin="280"
+        aria-valuemax="480"
+        aria-label="调整方案设置区宽度"
+        aria-orientation="vertical"
+        role="separator"
+        tabindex="0"
+        @pointerdown="startSolutionSettingsResize"
+        @keydown="onSolutionSettingsResizeKeydown"
+      ></div>
+
       <div v-if="activeSolution" class="solution-settings-scroll">
         <div class="panel-name-area solution-settings-card">
           <div class="display-body-light name-label-inline">方案名称</div>
@@ -712,6 +745,7 @@ import {
   writeSessionWorkspace,
 } from '../utils/sessionWorkspace.js'
 import { validateSolutionIntegrity } from '../utils/workbenchValidation.js'
+import { usePanelResize } from '../composables/usePanelResize'
 
 const SOLUTION_SESSION_KEY = 'solutions.v1'
 const SOLUTION_SESSION_VERSION = 1
@@ -726,6 +760,46 @@ const props = defineProps({
     type: String,
     default: '',
   },
+})
+
+const solutionPageRef = ref(null)
+const SOLUTION_MIN_EDITOR_WIDTH = 520
+const compactSolutionLayout = window.innerWidth <= 1440
+
+function solutionPageWidth() {
+  return solutionPageRef.value?.clientWidth || window.innerWidth
+}
+
+const {
+  width: solutionSidebarWidth,
+  startResize: startSolutionSidebarResize,
+  onResizeKeydown: onSolutionSidebarResizeKeydown,
+} = usePanelResize({
+  panelId: 'solution-sidebar',
+  ownerId: props.sessionOwnerId,
+  defaultWidth: compactSolutionLayout ? 280 : 320,
+  minWidth: 260,
+  maxWidth: 460,
+  edge: 'right',
+  applyWidth: width => solutionPageRef.value?.style.setProperty('--solution-sidebar-width', `${width}px`),
+  getDynamicMaxWidth: () =>
+    solutionPageWidth() - solutionSettingsWidth.value - SOLUTION_MIN_EDITOR_WIDTH,
+})
+
+const {
+  width: solutionSettingsWidth,
+  startResize: startSolutionSettingsResize,
+  onResizeKeydown: onSolutionSettingsResizeKeydown,
+} = usePanelResize({
+  panelId: 'solution-settings',
+  ownerId: props.sessionOwnerId,
+  defaultWidth: compactSolutionLayout ? 320 : 360,
+  minWidth: 280,
+  maxWidth: 480,
+  edge: 'left',
+  applyWidth: width => solutionPageRef.value?.style.setProperty('--solution-settings-width', `${width}px`),
+  getDynamicMaxWidth: () =>
+    solutionPageWidth() - solutionSidebarWidth.value - SOLUTION_MIN_EDITOR_WIDTH,
 })
 
 const {
@@ -2283,24 +2357,24 @@ onBeforeUnmount(() => {
 .solution-paste-hint {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin: 6px 10px 2px;
-  padding: 8px 0 10px;
+  gap: 5px;
+  margin: 4px 10px 1px;
+  padding: 5px 0 7px;
   border-bottom: 1px solid var(--ui-divider);
-  color: #3a3a3c;
-  font-size: 11px;
+  color: #6e6e73;
+  font-size: 10px;
   line-height: 1;
 }
 
 .solution-paste-hint kbd {
-  min-width: 36px;
-  padding: 4px 6px;
+  min-width: 31px;
+  padding: 3px 5px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: #1d1d1f;
   color: #fff;
   font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 650;
   text-align: center;
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.18);
@@ -2308,7 +2382,8 @@ onBeforeUnmount(() => {
 
 .solution-paste-hint-detail {
   margin-left: auto;
-  color: #8e8e93;
+  color: #a1a1a6;
+  font-size: 9px;
 }
 
 .folder-share-sheet {

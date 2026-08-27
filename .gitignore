@@ -21,6 +21,14 @@ cdp-web/dist/
 # Local agent configuration and generated artifacts
 .claude/settings.local.json
 .superpowers/
+.workbuddy/
+
+# Local account-provisioning exports (may contain initial passwords)
+批量注册账号*.xlsx
+
+# Local design review and presentation artifacts (not runtime inputs)
+deliverables/
+design-qa.md
 
 # IDE
 .vscode/

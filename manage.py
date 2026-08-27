@@ -29,7 +29,7 @@ def main() -> int:
         "--role",
         choices=UserStore.ROLES,
         default=None,
-        help="角色；首次创建且未指定时自动成为超级管理员",
+        help="角色；账号名 admin 固定为总管理员，首次创建的其他账号默认成为超级管理员",
     )
 
     reset = subparsers.add_parser("reset-password", help="重置账号密码")

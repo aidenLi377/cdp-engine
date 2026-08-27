@@ -24,7 +24,11 @@ class InvitationRegistrationApiTests(unittest.TestCase):
         self.admin = users.create_user(
             "root", "root-password", "Root", role="super_admin"
         )
+        self.owner = users.create_user(
+            "admin", "owner-password", "System Owner", role="super_admin"
+        )
         self.admin_client = self.app.test_client()
+        self.owner_client = self.app.test_client()
 
     def tearDown(self):
         self.temporary_directory.cleanup()
@@ -83,6 +87,29 @@ class InvitationRegistrationApiTests(unittest.TestCase):
         )
         response = client.post("/api/admin/invites", json={"role": "user"})
         self.assertEqual(response.status_code, 403)
+
+    def test_only_system_owner_can_create_super_admin_invite(self):
+        self.admin_client.post(
+            "/api/auth/login",
+            json={"username": "root", "password": "root-password"},
+        )
+        denied = self.admin_client.post(
+            "/api/admin/invites",
+            json={"role": "super_admin", "expiresDays": 7},
+        )
+        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(denied.get_json()["code"], "SYSTEM_OWNER_REQUIRED")
+
+        self.owner_client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "owner-password"},
+        )
+        created = self.owner_client.post(
+            "/api/admin/invites",
+            json={"role": "super_admin", "expiresDays": 7},
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.get_json()["role"], "super_admin")
 
 
 if __name__ == "__main__":
