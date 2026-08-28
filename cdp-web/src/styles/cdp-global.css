@@ -637,6 +637,56 @@ body {
   gap: 16px;
 }
 
+/* Announcement library tabs: compact editorial navigation, not browser-default buttons. */
+.announcement-center .announcement-center__tabs {
+  display: flex;
+  gap: 22px;
+  margin-top: 18px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--ui-divider);
+  border-radius: 0;
+}
+
+.announcement-center .announcement-center__tabs > button {
+  position: relative;
+  display: inline-flex;
+  width: auto;
+  height: 35px;
+  appearance: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 1px;
+  color: var(--ui-text-tertiary);
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.announcement-center .announcement-center__tabs > button::after {
+  position: absolute;
+  right: 50%;
+  bottom: -1px;
+  left: 50%;
+  height: 2px;
+  content: '';
+  background: var(--ui-accent);
+  border-radius: 2px 2px 0 0;
+  transition: right 160ms ease, left 160ms ease;
+}
+
+.announcement-center .announcement-center__tabs > button:hover { color: var(--ui-ink); background: transparent; border: 0; box-shadow: none; }
+.announcement-center .announcement-center__tabs > button.active { color: var(--ui-ink); font-weight: 620; background: transparent; border: 0; box-shadow: none; }
+.announcement-center .announcement-center__tabs > button.active::after { right: 0; left: 0; }
+.announcement-center .announcement-center__tabs > button > span { min-width: 12px; color: var(--ui-text-tertiary); font: 700 8px/1 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; }
+
 /* The divider itself is the resize affordance: no extra button or label. */
 .panel-resize-handle {
   position: absolute;
@@ -3448,7 +3498,8 @@ body,
   transform: translate3d(calc(var(--app-nav-item-width) * 2), 0, 0);
 }
 
-.app-shell-nav .app-mode-switcher.is-admin::before {
+.app-shell-nav .app-mode-switcher.is-admin::before,
+.app-shell-nav .app-mode-switcher.is-announcements::before {
   opacity: 0;
   transform: translate3d(0, 0, 0);
 }

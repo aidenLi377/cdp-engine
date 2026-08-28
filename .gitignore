@@ -29,6 +29,7 @@ cdp-web/dist/
 # Local design review and presentation artifacts (not runtime inputs)
 deliverables/
 design-qa.md
+qa-artifacts/
 
 # IDE
 .vscode/

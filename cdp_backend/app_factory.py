@@ -15,6 +15,11 @@ from threading import Lock
 from flask import Flask, abort, g, jsonify, request, send_file, send_from_directory, session
 from flask_cors import CORS
 
+from .announcement_store import (
+    AnnouncementNotFoundError,
+    AnnouncementStore,
+    AnnouncementValidationError,
+)
 from .constants import BASE_DIR, DB_PATH
 from .dimension_store import (
     DimensionConflictError,
@@ -111,6 +116,10 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
         app.config["FEEDBACK_UPLOAD_DIR"] = os.environ.get(
             "CDP_FEEDBACK_UPLOAD_DIR", str(db_parent / "feedback_uploads")
         )
+    if not app.config.get("ANNOUNCEMENT_UPLOAD_DIR"):
+        app.config["ANNOUNCEMENT_UPLOAD_DIR"] = os.environ.get(
+            "CDP_ANNOUNCEMENT_UPLOAD_DIR", str(db_parent / "announcement_uploads")
+        )
 
     # Stores — now backed by SQLite; the old env-var file paths are
     # accepted for backward compatibility but ignored.
@@ -122,6 +131,9 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     user_store = UserStore(db_path)
     dimension_store = DimensionStore(db_path)
     feedback_store = FeedbackStore(db_path, app.config["FEEDBACK_UPLOAD_DIR"])
+    announcement_store = AnnouncementStore(
+        db_path, app.config["ANNOUNCEMENT_UPLOAD_DIR"]
+    )
 
     if production:
         cors_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -153,6 +165,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
         user_store,
         dimension_store,
         feedback_store,
+        announcement_store,
     )
     return app, engine
 
@@ -168,6 +181,7 @@ def register_routes(
     user_store: UserStore,
     dimension_store: DimensionStore,
     feedback_store: FeedbackStore,
+    announcement_store: AnnouncementStore,
 ) -> None:
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
@@ -821,6 +835,189 @@ def register_routes(
             download_name=attachment["originalName"],
             conditional=True,
         )
+
+    @app.route("/api/announcements")
+    def list_announcements():
+        try:
+            limit = int(request.args.get("limit", 50))
+        except (TypeError, ValueError):
+            return error_response("INVALID_REQUEST", "limit 必须是整数", 400)
+        return jsonify(
+            announcement_store.list_published(g.current_user["id"], limit=limit)
+        )
+
+    @app.route("/api/announcements/<announcement_id>")
+    def get_announcement(announcement_id: str):
+        try:
+            item = announcement_store.get_published(
+                announcement_id, g.current_user["id"]
+            )
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        return jsonify(item)
+
+    @app.route("/api/announcements/<announcement_id>/read", methods=["POST"])
+    def mark_announcement_read(announcement_id: str):
+        try:
+            state = announcement_store.mark_read(
+                announcement_id, g.current_user["id"]
+            )
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        return jsonify(state)
+
+    @app.route("/api/announcements/read-all", methods=["POST"])
+    def mark_all_announcements_read():
+        return jsonify(announcement_store.mark_all_read(g.current_user["id"]))
+
+    @app.route("/api/announcement-assets/<asset_id>")
+    def announcement_asset(asset_id: str):
+        allow_unpublished = g.current_user.get("role") == "super_admin"
+        try:
+            asset = announcement_store.get_asset(
+                asset_id, allow_unpublished=allow_unpublished
+            )
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_ASSET_NOT_FOUND", "公告媒体不存在", 404)
+        if not asset["path"].is_file():
+            return error_response("ANNOUNCEMENT_ASSET_NOT_FOUND", "公告媒体文件不存在", 404)
+        return send_file(
+            asset["path"],
+            mimetype=asset["mimeType"],
+            download_name=asset["originalName"],
+            conditional=True,
+        )
+
+    @app.route("/api/admin/announcements")
+    def admin_list_announcements():
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            limit = int(request.args.get("limit", 100))
+        except (TypeError, ValueError):
+            return error_response("INVALID_REQUEST", "limit 必须是整数", 400)
+        return jsonify(announcement_store.list_admin(limit=limit))
+
+    @app.route("/api/admin/announcements", methods=["POST"])
+    def admin_create_announcement():
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "公告内容格式不正确", 400)
+        try:
+            item = announcement_store.create(g.current_user["id"], payload)
+        except AnnouncementValidationError as exc:
+            return error_response("INVALID_ANNOUNCEMENT", str(exc), 400)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_CREATED",
+            details={"announcementId": item["id"], "version": item["version"]},
+        )
+        return jsonify(item), 201
+
+    @app.route("/api/admin/announcements/<announcement_id>", methods=["PATCH"])
+    def admin_update_announcement(announcement_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "公告内容格式不正确", 400)
+        try:
+            item = announcement_store.update(
+                announcement_id, g.current_user["id"], payload
+            )
+        except AnnouncementValidationError as exc:
+            return error_response("INVALID_ANNOUNCEMENT", str(exc), 400)
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_UPDATED",
+            details={"announcementId": item["id"], "version": item["version"]},
+        )
+        return jsonify(item)
+
+    @app.route("/api/admin/announcements/assets", methods=["POST"])
+    def admin_upload_announcement_asset():
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            asset = announcement_store.upload_asset(
+                g.current_user["id"], request.files.get("file") or request.files.get("image")
+            )
+        except AnnouncementValidationError as exc:
+            return error_response("INVALID_ANNOUNCEMENT_ASSET", str(exc), 400)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_ASSET_UPLOADED",
+            details={"assetId": asset["id"], "originalName": asset["originalName"]},
+        )
+        return jsonify(asset), 201
+
+    @app.route(
+        "/api/admin/announcements/<announcement_id>/publish", methods=["POST"]
+    )
+    def admin_publish_announcement(announcement_id: str):
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            item = announcement_store.publish(
+                announcement_id, g.current_user["id"]
+            )
+        except AnnouncementValidationError as exc:
+            return error_response("INVALID_ANNOUNCEMENT", str(exc), 400)
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_PUBLISHED",
+            details={"announcementId": item["id"], "version": item["version"]},
+        )
+        return jsonify(item)
+
+    @app.route(
+        "/api/admin/announcements/<announcement_id>/unpublish", methods=["POST"]
+    )
+    def admin_unpublish_announcement(announcement_id: str):
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            item = announcement_store.unpublish(
+                announcement_id, g.current_user["id"]
+            )
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_UNPUBLISHED",
+            details={"announcementId": item["id"], "version": item["version"]},
+        )
+        return jsonify(item)
+
+    @app.route("/api/admin/announcements/<announcement_id>", methods=["DELETE"])
+    def admin_delete_announcement(announcement_id: str):
+        permission_error = require_system_owner()
+        if permission_error is not None:
+            return permission_error
+        try:
+            result = announcement_store.delete(announcement_id)
+        except AnnouncementValidationError as exc:
+            return error_response("INVALID_ANNOUNCEMENT", str(exc), 400)
+        except AnnouncementNotFoundError:
+            return error_response("ANNOUNCEMENT_NOT_FOUND", "公告不存在", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "ANNOUNCEMENT_DELETED",
+            details={"announcementId": announcement_id},
+        )
+        return jsonify(result)
 
     @app.route("/api/admin/data-safety")
     def admin_data_safety():

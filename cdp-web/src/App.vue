@@ -50,6 +50,20 @@
 
         <div class="app-shell-account">
           <button
+            class="app-announcement-link"
+            :class="{ active: appMode === 'announcements' }"
+            type="button"
+            title="查看更新公告"
+            aria-label="查看更新公告"
+            @click="openAnnouncementCenter()"
+          >
+            <span class="app-announcement-icon">
+              <el-icon><Bell /></el-icon>
+              <i v-if="announcementUnreadCount" aria-hidden="true"></i>
+            </span>
+            <span>公告</span>
+          </button>
+          <button
             class="app-feedback-link"
             type="button"
             title="提交用户反馈"
@@ -92,6 +106,12 @@
             :is-system-owner="Boolean(currentUser?.isSystemOwner)"
             @current-user-updated="handleCurrentUserUpdated"
           />
+          <AnnouncementCenter
+            v-else-if="appMode === 'announcements'"
+            :initial-id="selectedAnnouncementId"
+            @close="closeAnnouncementCenter"
+            @read-updated="handleAnnouncementRead"
+          />
         </KeepAlive>
       </main>
 
@@ -109,12 +129,12 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { Bell, ChatDotRound } from '@element-plus/icons-vue'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import FeedbackDrawer from './components/FeedbackDrawer.vue'
-import { fetchWithTimeout } from './utils/apiClient.js'
+import { fetchWithTimeout, request } from './utils/apiClient.js'
 import {
   refreshConfigVersion,
   resetConfigVersionState,
@@ -129,10 +149,11 @@ const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vu
 const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
 const TaskCenter = defineAsyncComponent(() => import('./components/TaskCenter.vue'))
 const AdminCenter = defineAsyncComponent(() => import('./components/AdminCenter.vue'))
+const AnnouncementCenter = defineAsyncComponent(() => import('./components/AnnouncementCenter.vue'))
 
 const HEALTH_FAILURE_THRESHOLD = 3
 const APP_MODE_SESSION_KEY = 'app-mode.v1'
-const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center'])
+const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center', 'announcements'])
 
 const appMode = ref('workbench')
 const backendOnline = ref(true)
@@ -140,12 +161,16 @@ const authState = ref('checking')
 const currentUser = ref(null)
 const profileOpen = ref(false)
 const feedbackOpen = ref(false)
+const announcementUnreadCount = ref(0)
+const selectedAnnouncementId = ref('')
+const announcementReturnMode = ref('workbench')
 const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
 let healthCheckInFlight = false
 let sessionCheckInFlight = false
 let configVersionCheckInFlight = false
+let announcementCheckInFlight = false
 let isDisposed = false
 let consecutiveBackendFailures = 0
 
@@ -248,6 +273,7 @@ async function checkSession() {
     authState.value = 'authenticated'
     if (previousAuthState !== 'authenticated' || previousUserId !== data.user?.id) {
       restoreAppMode(data.user)
+      void refreshAnnouncementState()
     }
   } catch {
     markBackendFailure()
@@ -266,6 +292,7 @@ function handleAuthenticated(user) {
   currentUser.value = user
   authState.value = 'authenticated'
   restoreAppMode(user)
+  void refreshAnnouncementState()
   if (inviteToken.value) {
     window.history.replaceState({}, '', window.location.pathname)
     inviteToken.value = ''
@@ -283,6 +310,38 @@ function handleProfileUpdated(user) {
   profileOpen.value = false
 }
 
+async function refreshAnnouncementState() {
+  if (announcementCheckInFlight || authState.value !== 'authenticated') return
+  announcementCheckInFlight = true
+  try {
+    const items = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
+    announcementUnreadCount.value = items.filter((item) => !item.readAt).length
+  } catch {
+    // 公告读取失败不应阻断用户进入核心工作区。
+  } finally {
+    announcementCheckInFlight = false
+  }
+}
+
+function openAnnouncementCenter(id = '') {
+  if (appMode.value !== 'announcements') announcementReturnMode.value = appMode.value
+  selectedAnnouncementId.value = typeof id === 'string' ? id : ''
+  announcementUnreadCount.value = 0
+  appMode.value = 'announcements'
+}
+
+function closeAnnouncementCenter() {
+  const nextMode = canUseAppMode(announcementReturnMode.value) && announcementReturnMode.value !== 'announcements'
+    ? announcementReturnMode.value
+    : 'workbench'
+  appMode.value = nextMode
+}
+
+function handleAnnouncementRead(state) {
+  if (state?.all) announcementUnreadCount.value = 0
+  void refreshAnnouncementState()
+}
+
 function cancelInviteRegistration() {
   window.history.replaceState({}, '', window.location.pathname)
   inviteToken.value = ''
@@ -291,6 +350,7 @@ function cancelInviteRegistration() {
 function handleAuthRequired() {
   profileOpen.value = false
   feedbackOpen.value = false
+  announcementUnreadCount.value = 0
   currentUser.value = null
   authState.value = 'guest'
   clearWorkspaceSession()
@@ -315,6 +375,7 @@ async function logout() {
   } finally {
     profileOpen.value = false
     feedbackOpen.value = false
+    announcementUnreadCount.value = 0
     stopAuthenticatedLoops()
     resetConfigVersionState()
     clearWorkspaceSession()
@@ -336,6 +397,7 @@ watch(appMode, (mode) => {
 
 onMounted(async () => {
   window.addEventListener('cdp:auth-required', handleAuthRequired)
+  window.addEventListener('cdp:announcements-changed', refreshAnnouncementState)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await checkSession()
   if (!isDisposed && authState.value === 'authenticated') startAuthenticatedLoops()
@@ -344,6 +406,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   isDisposed = true
   window.removeEventListener('cdp:auth-required', handleAuthRequired)
+  window.removeEventListener('cdp:announcements-changed', refreshAnnouncementState)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopAuthenticatedLoops()
 })
@@ -383,7 +446,8 @@ onBeforeUnmount(() => {
   border-left-color: var(--ui-divider);
 }
 
-.app-feedback-link {
+.app-feedback-link,
+.app-announcement-link {
   display: inline-flex;
   height: 28px;
   align-items: center;
@@ -399,16 +463,35 @@ onBeforeUnmount(() => {
   transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.app-feedback-link:hover {
+.app-feedback-link:hover,
+.app-announcement-link:hover,
+.app-announcement-link.active {
   color: #fff;
   background: var(--ui-ink);
   border-color: var(--ui-ink);
   transform: translateY(-1px);
 }
 
-.app-feedback-link:focus-visible {
+.app-feedback-link:focus-visible,
+.app-announcement-link:focus-visible {
   outline: 2px solid var(--ui-accent-ring);
   outline-offset: 2px;
+}
+
+.app-announcement-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-announcement-icon i {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  width: 6px;
+  height: 6px;
+  background: var(--ui-accent);
+  border: 1px solid #fff;
+  border-radius: 50%;
 }
 
 .app-shell-profile {

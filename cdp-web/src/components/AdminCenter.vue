@@ -911,6 +911,10 @@
     </section>
     </div>
 
+    <div v-if="canManageAccounts && activeSection === 'announcements'" class="admin-section-stack">
+      <AnnouncementAdminPanel :is-system-owner="isSystemOwner" />
+    </div>
+
     <div v-if="isSystemOwner && activeSection === 'feedback'" class="admin-section-stack">
       <FeedbackAdminPanel />
     </div>
@@ -935,6 +939,7 @@ import {
 } from '@element-plus/icons-vue'
 import DataSafetyPanel from './DataSafetyPanel.vue'
 import FeedbackAdminPanel from './FeedbackAdminPanel.vue'
+import AnnouncementAdminPanel from './AnnouncementAdminPanel.vue'
 import { useCdpShared } from '../composables/useCdpShared.js'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
 import { request } from '../utils/apiClient.js'
@@ -1118,6 +1123,11 @@ const navigationItems = computed(() => {
       description: '审阅配置变更、发布批次及每个字段修改前后的差异。',
     },
     ...(canManageAccounts.value ? [{
+      id: 'announcements',
+      label: '公告与教程',
+      description: '自由编排文字、图片与视频内容，并控制公告和教程的发布与撤回。',
+    }] : []),
+    ...(canManageAccounts.value ? [{
       id: 'logs',
       label: '操作日志',
       description: '追溯账号、权限、数据和配置管理中的关键操作。',
@@ -1241,6 +1251,12 @@ function auditActionLabel(action) {
     INVITE_REVOKED: '撤销邀请',
     DATABASE_BACKUP_CREATED: '创建数据库备份',
     AUDIT_LOG_DELETED: '删除操作记录',
+    ANNOUNCEMENT_CREATED: '创建公告草稿',
+    ANNOUNCEMENT_UPDATED: '修改公告草稿',
+    ANNOUNCEMENT_ASSET_UPLOADED: '上传公告图片',
+    ANNOUNCEMENT_PUBLISHED: '发布更新公告',
+    ANNOUNCEMENT_UNPUBLISHED: '撤回更新公告',
+    ANNOUNCEMENT_DELETED: '删除公告草稿',
     folder_share_created: '分享方案文件夹',
     folder_share_imported: '导入方案文件夹',
   }[action] || action

@@ -194,6 +194,45 @@ CREATE TABLE IF NOT EXISTS feedback_attachments (
     FOREIGN KEY(feedback_id) REFERENCES feedback(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+    id            TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL DEFAULT 'announcement'
+                  CHECK(kind IN ('announcement', 'tutorial')),
+    version       TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    summary       TEXT NOT NULL DEFAULT '',
+    highlights    TEXT NOT NULL DEFAULT '[]',
+    content       TEXT NOT NULL DEFAULT '[]',
+    status        TEXT NOT NULL DEFAULT 'draft'
+                  CHECK(status IN ('draft', 'published')),
+    popup_enabled INTEGER NOT NULL DEFAULT 1,
+    created_by    TEXT NOT NULL,
+    updated_by    TEXT NOT NULL,
+    published_by  TEXT,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    published_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS announcement_assets (
+    id            TEXT PRIMARY KEY,
+    stored_name   TEXT NOT NULL UNIQUE,
+    original_name TEXT NOT NULL,
+    mime_type     TEXT NOT NULL,
+    byte_size     INTEGER NOT NULL,
+    uploaded_by   TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS announcement_reads (
+    announcement_id TEXT NOT NULL,
+    user_id          TEXT NOT NULL,
+    read_at          TEXT,
+    dismissed_at     TEXT,
+    PRIMARY KEY(announcement_id, user_id),
+    FOREIGN KEY(announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_solutions_status ON solutions(status);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder ON solutions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_updated ON solutions(updated_at);
@@ -235,6 +274,14 @@ CREATE INDEX IF NOT EXISTS idx_feedback_status_created
     ON feedback(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_attachments_feedback
     ON feedback_attachments(feedback_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_announcements_status_published
+    ON announcements(status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_announcements_kind_status_published
+    ON announcements(kind, status, published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_announcement_reads_user
+    ON announcement_reads(user_id, read_at, dismissed_at);
+CREATE INDEX IF NOT EXISTS idx_announcement_assets_created
+    ON announcement_assets(created_at DESC);
 """
 
 MIGRATION_COLUMNS = {
@@ -269,6 +316,9 @@ MIGRATION_COLUMNS = {
     },
     "tasks": {
         "owner_id": "TEXT",
+    },
+    "announcements": {
+        "kind": "TEXT NOT NULL DEFAULT 'announcement'",
     },
 }
 
@@ -323,4 +373,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 6")
+        conn.execute("PRAGMA user_version = 8")
