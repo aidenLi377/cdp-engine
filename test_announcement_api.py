@@ -96,7 +96,7 @@ class AnnouncementApiTests(unittest.TestCase):
         self.assertEqual(created.status_code, 201)
         return created.get_json(), asset, image, video_asset, video
 
-    def test_full_publish_media_and_read_all_flow(self):
+    def test_full_publish_media_and_individual_read_flow(self):
         draft, asset, image, video_asset, video = self._create_draft()
 
         self.assertEqual(self.user_client.get("/api/admin/announcements").status_code, 403)
@@ -135,10 +135,10 @@ class AnnouncementApiTests(unittest.TestCase):
         self.assertEqual(fetched_video.data, video)
         fetched_video.close()
 
-        marked_all = self.user_client.post("/api/announcements/read-all")
-        self.assertEqual(marked_all.status_code, 200)
-        self.assertEqual(marked_all.get_json()["count"], 1)
-        self.assertEqual(marked_all.get_json()["unreadCount"], 0)
+        marked = self.user_client.post(f"/api/announcements/{draft['id']}/read")
+        self.assertEqual(marked.status_code, 200)
+        self.assertEqual(marked.get_json()["id"], draft["id"])
+        self.assertIsNotNone(marked.get_json()["readAt"])
         self.assertIsNotNone(self.user_client.get("/api/announcements").get_json()[0]["readAt"])
         self.assertIsNone(self.other_client.get("/api/announcements").get_json()[0]["readAt"])
 

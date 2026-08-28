@@ -114,12 +114,28 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 }
 
-async function acknowledgeAll() {
+async function markAnnouncementRead(id) {
+  const previous = items.value.find((item) => item.id === id)
+  if (!previous || previous.readAt) return
+
+  const optimisticReadAt = new Date().toISOString()
+  items.value = items.value.map((item) => item.id === id ? { ...item, readAt: optimisticReadAt } : item)
+  emit('read-updated', {
+    id,
+    readAt: optimisticReadAt,
+    unreadCount: items.value.filter((item) => !item.readAt).length,
+  })
+
   try {
-    const state = await request('/api/announcements/read-all', { method: 'POST' })
-    emit('read-updated', { ...state, all: true })
+    const state = await request(`/api/announcements/${encodeURIComponent(id)}/read`, { method: 'POST' })
+    items.value = items.value.map((item) => item.id === id ? { ...item, readAt: state.readAt } : item)
   } catch {
-    // 阅读状态同步失败不阻断正文浏览；下次进入会自动重试。
+    items.value = items.value.map((item) => item.id === id ? previous : item)
+    emit('read-updated', {
+      id,
+      readAt: null,
+      unreadCount: items.value.filter((item) => !item.readAt).length,
+    })
   }
 }
 
@@ -156,6 +172,7 @@ async function selectAnnouncement(id) {
     const nextDetail = await request(`/api/announcements/${encodeURIComponent(id)}`, { cache: 'no-store' })
     if (requestId !== detailRequestId) return
     detail.value = nextDetail
+    void markAnnouncementRead(id)
   } catch (error) {
     if (requestId === detailRequestId) errorMessage.value = error.message || '正文读取失败'
   } finally {
@@ -176,10 +193,7 @@ function activateKind(kind) {
 
 function enter(preferredId = props.initialId) {
   if (enterInFlight) return enterInFlight
-  enterInFlight = (async () => {
-    await acknowledgeAll()
-    await loadItems(preferredId)
-  })().finally(() => {
+  enterInFlight = loadItems(preferredId).finally(() => {
     enterInFlight = null
   })
   return enterInFlight

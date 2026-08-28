@@ -59,7 +59,7 @@
           >
             <span class="app-announcement-icon">
               <el-icon><Bell /></el-icon>
-              <i v-if="announcementUnreadCount" aria-hidden="true"></i>
+              <i v-if="announcementUnreadCount > 0" aria-hidden="true"></i>
             </span>
             <span>公告</span>
           </button>
@@ -171,6 +171,7 @@ let healthCheckInFlight = false
 let sessionCheckInFlight = false
 let configVersionCheckInFlight = false
 let announcementCheckInFlight = false
+let announcementStateRevision = 0
 let isDisposed = false
 let consecutiveBackendFailures = 0
 
@@ -313,9 +314,12 @@ function handleProfileUpdated(user) {
 async function refreshAnnouncementState() {
   if (announcementCheckInFlight || authState.value !== 'authenticated') return
   announcementCheckInFlight = true
+  const requestedRevision = announcementStateRevision
   try {
     const items = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
-    announcementUnreadCount.value = items.filter((item) => !item.readAt).length
+    if (requestedRevision === announcementStateRevision) {
+      announcementUnreadCount.value = items.filter((item) => !item.readAt).length
+    }
   } catch {
     // 公告读取失败不应阻断用户进入核心工作区。
   } finally {
@@ -326,7 +330,6 @@ async function refreshAnnouncementState() {
 function openAnnouncementCenter(id = '') {
   if (appMode.value !== 'announcements') announcementReturnMode.value = appMode.value
   selectedAnnouncementId.value = typeof id === 'string' ? id : ''
-  announcementUnreadCount.value = 0
   appMode.value = 'announcements'
 }
 
@@ -338,7 +341,11 @@ function closeAnnouncementCenter() {
 }
 
 function handleAnnouncementRead(state) {
-  if (state?.all) announcementUnreadCount.value = 0
+  announcementStateRevision += 1
+  if (Number.isInteger(state?.unreadCount)) {
+    announcementUnreadCount.value = Math.max(0, state.unreadCount)
+    return
+  }
   void refreshAnnouncementState()
 }
 

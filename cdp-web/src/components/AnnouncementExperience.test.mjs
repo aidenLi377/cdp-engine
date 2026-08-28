@@ -16,7 +16,8 @@ const articleVue = readFileSync(join(currentDir, 'AnnouncementArticle.vue'), 'ut
 
 test('signed-in users have a compact unread-aware announcement entry without a login popup', () => {
   assert.match(appVue, /class="app-announcement-link"/)
-  assert.match(appVue, /announcementUnreadCount/)
+  assert.match(appVue, /v-if="announcementUnreadCount > 0"/)
+  assert.match(appVue, /announcementUnreadCount\.value = Math\.max\(0, state\.unreadCount\)/)
   assert.doesNotMatch(appVue, /AnnouncementModal|latest-popup|dismissAnnouncementPopup/)
 })
 
@@ -25,10 +26,12 @@ test('browser tab uses the X-Data name and supplied brand icon', () => {
   assert.match(indexHtml, /href="\/x-data-icon-03\.png"/)
 })
 
-test('announcement center acknowledges all unread content and separates updates from tutorials', () => {
+test('announcement center marks only the opened item as read and separates updates from tutorials', () => {
   assert.match(centerVue, /request\('\/api\/announcements'/)
   assert.match(centerVue, /\/api\/announcements\/\$\{encodeURIComponent\(id\)\}/)
-  assert.match(centerVue, /\/api\/announcements\/read-all/)
+  assert.match(centerVue, /\/api\/announcements\/\$\{encodeURIComponent\(id\)\}\/read/)
+  assert.match(centerVue, /unreadCount: items\.value\.filter\(\(item\) => !item\.readAt\)\.length/)
+  assert.doesNotMatch(centerVue, /\/api\/announcements\/read-all/)
   assert.match(centerVue, /更新公告/)
   assert.match(centerVue, /新手教程/)
   assert.match(centerVue, /aria-label="公告与新手教程"/)
