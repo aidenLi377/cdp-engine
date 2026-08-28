@@ -17,6 +17,9 @@ const articleVue = readFileSync(join(currentDir, 'AnnouncementArticle.vue'), 'ut
 test('signed-in users have a compact unread-aware announcement entry without a login popup', () => {
   assert.match(appVue, /class="app-announcement-link"/)
   assert.match(appVue, /v-if="announcementUnreadCount > 0"/)
+  assert.match(appVue, /class="app-announcement-unread-dot"/)
+  assert.match(appVue, /\.app-announcement-unread-dot\s*\{/)
+  assert.doesNotMatch(appVue, /\.app-announcement-icon i\s*\{/)
   assert.match(appVue, /announcementUnreadCount\.value = Math\.max\(0, state\.unreadCount\)/)
   assert.doesNotMatch(appVue, /AnnouncementModal|latest-popup|dismissAnnouncementPopup/)
 })

@@ -59,7 +59,11 @@
           >
             <span class="app-announcement-icon">
               <el-icon><Bell /></el-icon>
-              <i v-if="announcementUnreadCount > 0" aria-hidden="true"></i>
+              <i
+                v-if="announcementUnreadCount > 0"
+                class="app-announcement-unread-dot"
+                aria-hidden="true"
+              ></i>
             </span>
             <span>公告</span>
           </button>
@@ -490,7 +494,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
 }
 
-.app-announcement-icon i {
+.app-announcement-unread-dot {
   position: absolute;
   top: -4px;
   right: -5px;
