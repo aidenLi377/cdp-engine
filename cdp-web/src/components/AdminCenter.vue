@@ -591,9 +591,20 @@
                 支持筛选、编辑、停用与删除；删除会先进入待发布，发布后从工作台选项中移除。
               </p>
             </div>
-            <button class="admin-primary-button dimension-add" type="button" @click="openCreateRow">
-              <span>＋</span>新增记录
-            </button>
+            <div class="dimension-toolbar-actions">
+              <button
+                v-if="canImportDimensions"
+                class="dimension-import-trigger"
+                type="button"
+                @click="openDimensionImport"
+              >
+                <Upload aria-hidden="true" />
+                批量导入
+              </button>
+              <button class="admin-primary-button dimension-add" type="button" @click="openCreateRow">
+                <span>＋</span>新增记录
+              </button>
+            </div>
           </div>
 
           <div class="dimension-filters">
@@ -789,6 +800,7 @@
                 <small v-if="entry.details?.note">发布说明：{{ entry.details.note }}</small>
                 <small v-if="entry.action === 'DIMENSION_ROWS_IMPORTED'">
                   导入 {{ entry.details?.total || 0 }} 条，其中新增 {{ entry.details?.created || 0 }} 条、更新 {{ entry.details?.updated || 0 }} 条
+                  <template v-if="entry.details?.skipped">，自动跳过 {{ entry.details.skipped }} 条重复记录</template>
                 </small>
               </div>
 
@@ -920,6 +932,216 @@
     </div>
       </div>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="dimensionImportOpen"
+        class="dimension-import-backdrop"
+        @click.self="closeDimensionImport"
+      >
+        <section
+          class="dimension-import-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="dimension-import-title"
+        >
+          <header class="dimension-import-head">
+            <div>
+              <p class="admin-panel-index">BATCH / XLSX</p>
+              <h2 id="dimension-import-title">批量导入{{ dimensionDisplayName(selectedDimensionFile) }}维表</h2>
+              <p>先核对表头、数据格式和影响范围，确认后才会写入待发布草稿。</p>
+            </div>
+            <button type="button" aria-label="关闭批量导入" :disabled="dimensionImportBusy" @click="closeDimensionImport">×</button>
+          </header>
+
+          <div v-if="dimensionImportComplete" class="dimension-import-complete">
+            <span aria-hidden="true">✓</span>
+            <p class="admin-panel-index">IMPORT READY</p>
+            <h3>{{ dimensionImportComplete.rowCount.toLocaleString() }} 行数据已导入草稿</h3>
+            <p>
+              新增 {{ dimensionImportComplete.created.toLocaleString() }} 行，自动跳过
+              {{ (dimensionImportComplete.skipped || 0).toLocaleString() }} 行重复数据；尚未影响工作台线上配置。
+            </p>
+            <div>
+              <button class="admin-primary-button" type="button" @click="closeDimensionImport">返回维表</button>
+            </div>
+          </div>
+
+          <template v-else>
+            <div class="dimension-import-body">
+              <section class="dimension-import-target">
+                <div>
+                  <small>目标维表</small>
+                  <strong>{{ selectedDimensionFile }}</strong>
+                </div>
+                <p><span></span>导入后进入待发布，需通过“发布配置”才会同步到工作台。</p>
+              </section>
+
+              <section class="dimension-import-schema" aria-label="Excel 表头要求">
+                <div>
+                  <strong>表头必须完全一致</strong>
+                  <small>名称与列顺序都不能增删或调整</small>
+                </div>
+                <ol>
+                  <li v-for="(column, index) in dimensionImportExpectedColumns" :key="column">
+                    <span>{{ String(index + 1).padStart(2, '0') }}</span>{{ column }}
+                  </li>
+                </ol>
+              </section>
+
+              <input
+                ref="dimensionImportFileInput"
+                class="dimension-import-file-input"
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                @change="handleDimensionImportFile"
+              />
+              <button
+                class="dimension-import-dropzone"
+                :class="{ dragging: dimensionImportDragging, loading: dimensionImportBusy }"
+                type="button"
+                :disabled="dimensionImportBusy"
+                @click="chooseDimensionImportFile"
+                @dragenter.prevent="dimensionImportDragging = true"
+                @dragover.prevent="dimensionImportDragging = true"
+                @dragleave.prevent="dimensionImportDragging = false"
+                @drop.prevent="dropDimensionImportFile"
+              >
+                <span class="dimension-import-file-mark" aria-hidden="true">XLSX</span>
+                <span>
+                  <strong>{{ dimensionImportBusy ? '正在核对文件…' : (dimensionImportFileName || '选择或拖入 Excel 文件') }}</strong>
+                  <small>{{ dimensionImportFileName ? '点击可重新选择文件' : '读取第一个工作表 · 最多 20,000 行、10 MB' }}</small>
+                </span>
+                <i>{{ dimensionImportBusy ? '核对中' : '选择文件' }}</i>
+              </button>
+
+              <template v-if="dimensionImportPreview">
+                <section class="dimension-import-review" :class="{ invalid: !dimensionImportPreview.valid }">
+                  <header>
+                    <div>
+                      <p class="admin-panel-index">PRE-FLIGHT CHECK</p>
+                      <h3>
+                        {{ !dimensionImportPreview.valid
+                          ? `发现 ${dimensionImportPreview.errorCount || 1} 个问题`
+                          : dimensionImportPreview.created > 0
+                            ? '数据核对通过'
+                            : '没有可导入的新记录' }}
+                      </h3>
+                    </div>
+                    <span :class="{ passed: dimensionImportPreview.valid && dimensionImportPreview.created > 0, empty: dimensionImportPreview.valid && !dimensionImportPreview.created }">
+                      {{ !dimensionImportPreview.valid ? '暂不可导入' : dimensionImportPreview.created > 0 ? '可以导入' : '全部跳过' }}
+                    </span>
+                  </header>
+
+                  <div class="dimension-import-metrics">
+                    <article>
+                      <small>数据行数</small>
+                      <strong>{{ dimensionImportPreview.rowCount.toLocaleString() }}</strong>
+                      <span>行</span>
+                    </article>
+                    <article>
+                      <small>表头列数</small>
+                      <strong>{{ dimensionImportPreview.columnCount.toLocaleString() }}</strong>
+                      <span>列</span>
+                    </article>
+                    <article>
+                      <small>可导入新记录</small>
+                      <strong>{{ (dimensionImportPreview.created || 0).toLocaleString() }}</strong>
+                      <span>行</span>
+                    </article>
+                    <article>
+                      <small>数据库已存在</small>
+                      <strong>{{ (dimensionImportPreview.existing || 0).toLocaleString() }}</strong>
+                      <span>行</span>
+                    </article>
+                  </div>
+
+                  <ul class="dimension-import-checks">
+                    <li v-for="check in dimensionImportChecks" :key="check.label" :class="{ passed: check.passed, warning: check.warning }">
+                      <span>{{ check.warning ? '↷' : check.passed ? '✓' : '!' }}</span>
+                      <div><strong>{{ check.label }}</strong><small>{{ check.detail }}</small></div>
+                    </li>
+                  </ul>
+
+                  <div v-if="dimensionImportPreview.valid" class="dimension-import-impact">
+                    <span></span>
+                    <p>
+                      本次只导入 <strong>{{ (dimensionImportPreview.created || 0).toLocaleString() }}</strong> 条新记录；
+                      数据库已存在 <strong>{{ (dimensionImportPreview.existing || 0).toLocaleString() }}</strong> 条、文件内重复
+                      <strong>{{ (dimensionImportPreview.duplicateInFile || 0).toLocaleString() }}</strong> 条，全部自动跳过且不会覆盖原值。
+                    </p>
+                  </div>
+
+                  <section v-if="dimensionImportSkippedRows.length" class="dimension-import-skipped">
+                    <header>
+                      <div>
+                        <strong>已跳过的记录</strong>
+                        <small>逐条核对哪些信息已经存在或在文件内重复</small>
+                      </div>
+                      <span>{{ dimensionImportSkippedRows.length.toLocaleString() }} 条</span>
+                    </header>
+                    <div class="dimension-import-skipped-table">
+                      <div class="dimension-import-skipped-head">
+                        <span>Excel 行</span><span>跳过原因</span><span>适用的包</span><span>名称</span><span>标识信息</span>
+                      </div>
+                      <div
+                        v-for="row in pagedDimensionImportSkippedRows"
+                        :key="`${row.reasonType}-${row.row}-${row.displayName}`"
+                        class="dimension-import-skipped-row"
+                      >
+                        <span class="dimension-import-row-number">{{ row.row }}</span>
+                        <span class="dimension-import-skip-reason" :class="row.reasonType">
+                          {{ row.reasonType === 'existing' ? '数据库已存在' : `与第 ${row.duplicateOfRow} 行重复` }}
+                        </span>
+                        <span :title="row.packageName">{{ row.packageName || '—' }}</span>
+                        <strong :title="row.displayName">{{ row.displayName || '—' }}</strong>
+                        <span :title="dimensionImportReferenceDetail(row)">{{ dimensionImportReferenceDetail(row) }}</span>
+                      </div>
+                    </div>
+                    <footer v-if="dimensionImportSkipTotalPages > 1">
+                      <button type="button" :disabled="dimensionImportSkipPage <= 1" @click="dimensionImportSkipPage -= 1">上一页</button>
+                      <span>第 {{ dimensionImportSkipPage }} / {{ dimensionImportSkipTotalPages }} 页</span>
+                      <button type="button" :disabled="dimensionImportSkipPage >= dimensionImportSkipTotalPages" @click="dimensionImportSkipPage += 1">下一页</button>
+                    </footer>
+                  </section>
+
+                  <div v-if="!dimensionImportPreview.valid" class="dimension-import-errors">
+                    <p>请修正 Excel 后重新选择文件</p>
+                    <ul>
+                      <li v-for="(issue, index) in dimensionImportPreview.issues" :key="`${issue.row}-${issue.column}-${index}`">
+                        <span>第 {{ issue.row }} 行 · {{ issue.column }}</span>
+                        <strong>{{ issue.message }}</strong>
+                      </li>
+                    </ul>
+                    <small v-if="dimensionImportPreview.errorCount > dimensionImportPreview.issues.length">
+                      另有 {{ dimensionImportPreview.errorCount - dimensionImportPreview.issues.length }} 个问题未展开
+                    </small>
+                  </div>
+                </section>
+              </template>
+            </div>
+
+            <footer class="dimension-import-actions">
+              <div>
+                <strong>{{ dimensionImportPreview?.sheetName || '等待选择文件' }}</strong>
+                <small v-if="dimensionImportPreview?.expiresAt">预检结果 30 分钟内有效</small>
+                <small v-else-if="dimensionImportPreview?.valid && !dimensionImportPreview?.created">全部记录都将跳过，无需执行导入</small>
+                <small v-else>确认前不会写入任何数据</small>
+              </div>
+              <button type="button" :disabled="dimensionImportBusy" @click="closeDimensionImport">取消</button>
+              <button
+                class="admin-primary-button"
+                type="button"
+                :disabled="!dimensionImportPreview?.valid || !dimensionImportPreview?.importId || !dimensionImportPreview?.created || dimensionImportBusy"
+                @click="confirmDimensionImport"
+              >
+                {{ dimensionImportBusy ? '处理中…' : `确认导入 ${dimensionImportPreview?.created || 0} 条新记录` }}
+              </button>
+            </footer>
+          </template>
+        </section>
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -936,6 +1158,7 @@ import {
   Operation,
   Search,
   Setting,
+  Upload,
 } from '@element-plus/icons-vue'
 import DataSafetyPanel from './DataSafetyPanel.vue'
 import FeedbackAdminPanel from './FeedbackAdminPanel.vue'
@@ -978,6 +1201,7 @@ const ROLE_LABELS = {
   user: '普通用户',
 }
 const DIMENSION_PAGE_SIZES = [20, 30, 50, 100]
+const DIMENSION_IMPORT_SKIP_PAGE_SIZE = 8
 const PLAN_USER_PAGE_SIZE = 8
 const ROLE_OPTIONS = [
   { value: 'user', label: '普通用户', description: '使用工作台、方案中心和任务中台' },
@@ -1041,6 +1265,14 @@ const dimensionEditorOpen = ref(false)
 const editingRow = ref(null)
 const dimensionFormData = reactive({})
 const dimensionSaving = ref(false)
+const dimensionImportOpen = ref(false)
+const dimensionImportBusy = ref(false)
+const dimensionImportDragging = ref(false)
+const dimensionImportFileInput = ref(null)
+const dimensionImportFileName = ref('')
+const dimensionImportPreview = ref(null)
+const dimensionImportComplete = ref(null)
+const dimensionImportSkipPage = ref(1)
 const loading = ref(false)
 const busy = ref(false)
 const busyUserId = ref('')
@@ -1084,7 +1316,60 @@ let userDataRequestId = 0
 
 const canManageAccounts = computed(() => props.currentUserRole === 'super_admin')
 const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
+const canImportDimensions = computed(() => ['config_admin', 'super_admin'].includes(props.currentUserRole))
 const canDeleteAuditLogs = computed(() => props.currentUserRole === 'super_admin')
+const dimensionImportExpectedColumns = computed(() => {
+  if (dimensionColumns.value.length) return dimensionColumns.value
+  return dimensions.value.find((item) => item.file === selectedDimensionFile.value)?.requiredColumns || []
+})
+const dimensionImportSkippedRows = computed(() => {
+  const preview = dimensionImportPreview.value
+  if (!preview) return []
+  return [
+    ...(preview.existingRows || []).map((row) => ({ ...row, reasonType: 'existing' })),
+    ...(preview.duplicateRows || []).map((row) => ({ ...row, reasonType: 'file' })),
+  ].sort((left, right) => left.row - right.row)
+})
+const dimensionImportSkipTotalPages = computed(() => Math.ceil(
+  dimensionImportSkippedRows.value.length / DIMENSION_IMPORT_SKIP_PAGE_SIZE,
+))
+const pagedDimensionImportSkippedRows = computed(() => {
+  const start = (dimensionImportSkipPage.value - 1) * DIMENSION_IMPORT_SKIP_PAGE_SIZE
+  return dimensionImportSkippedRows.value.slice(start, start + DIMENSION_IMPORT_SKIP_PAGE_SIZE)
+})
+const dimensionImportChecks = computed(() => {
+  const preview = dimensionImportPreview.value
+  if (!preview) return []
+  const issueCodes = new Set((preview.issues || []).map((issue) => issue.code))
+  const formatIssues = [...issueCodes].filter((code) => code !== 'HEADER_MISMATCH')
+  const headersPassed = Boolean(preview.headersValid)
+  const skipped = Number(preview.skipped || 0)
+  return [
+    {
+      label: '表头与顺序',
+      passed: headersPassed,
+      detail: headersPassed ? `${preview.columnCount} 列完全匹配` : '名称或列顺序不一致',
+    },
+    {
+      label: '数据格式',
+      passed: headersPassed && formatIssues.length === 0,
+      detail: !headersPassed ? '表头通过后继续核对' : (formatIssues.length ? '存在不支持的单元格格式' : '单元格格式可安全写入'),
+    },
+    {
+      label: '重复数据处理',
+      passed: headersPassed && skipped === 0,
+      warning: headersPassed && skipped > 0,
+      detail: skipped
+        ? `已存在 ${preview.existing || 0} 条 · 文件内重复 ${preview.duplicateInFile || 0} 条`
+        : '未发现数据库已有或文件内重复记录',
+    },
+    {
+      label: '导入范围',
+      passed: preview.rowCount > 0 && preview.rowCount <= 20000,
+      detail: `${preview.rowCount.toLocaleString()} 行 · ${preview.columnCount.toLocaleString()} 列`,
+    },
+  ]
+})
 const databaseHealthy = computed(() => Boolean(dataSafetySnapshot.value?.database?.healthy))
 const pendingFeedbackCount = computed(() => feedbackItems.value.filter((item) => item.status === 'new').length)
 const navigationItems = computed(() => {
@@ -1468,6 +1753,7 @@ async function loadDimensionRows() {
 }
 
 function selectDimension(file) {
+  closeDimensionImport()
   selectedDimensionFile.value = file
   dimensionPage.value = 1
   dimensionQuery.value = ''
@@ -1784,6 +2070,107 @@ function syncAccountForm(user) {
   accountForm.role = user?.role || 'user'
   accountForm.enabled = user?.enabled !== false
   accountForm.password = ''
+}
+
+function resetDimensionImport() {
+  dimensionImportBusy.value = false
+  dimensionImportDragging.value = false
+  dimensionImportFileName.value = ''
+  dimensionImportPreview.value = null
+  dimensionImportComplete.value = null
+  dimensionImportSkipPage.value = 1
+  if (dimensionImportFileInput.value) dimensionImportFileInput.value.value = ''
+}
+
+function openDimensionImport() {
+  if (!canImportDimensions.value || !selectedDimensionFile.value) return
+  closeDimensionEditor()
+  resetDimensionImport()
+  dimensionImportOpen.value = true
+}
+
+function closeDimensionImport() {
+  if (dimensionImportBusy.value) return
+  dimensionImportOpen.value = false
+  resetDimensionImport()
+}
+
+function chooseDimensionImportFile() {
+  if (dimensionImportBusy.value) return
+  dimensionImportFileInput.value?.click()
+}
+
+function handleDimensionImportFile(event) {
+  const file = event?.target?.files?.[0]
+  if (dimensionImportFileInput.value) dimensionImportFileInput.value.value = ''
+  if (file) previewDimensionImport(file)
+}
+
+function dropDimensionImportFile(event) {
+  dimensionImportDragging.value = false
+  if (dimensionImportBusy.value) return
+  const file = event?.dataTransfer?.files?.[0]
+  if (file) previewDimensionImport(file)
+}
+
+function dimensionImportReferenceDetail(row) {
+  return [row?.channel, row?.identity].filter(Boolean).join(' · ') || '—'
+}
+
+async function previewDimensionImport(file) {
+  if (!file || !String(file.name || '').toLowerCase().endsWith('.xlsx')) {
+    showMessage('请选择 .xlsx 格式的 Excel 文件', 'error')
+    return
+  }
+  dimensionImportFileName.value = file.name
+  dimensionImportPreview.value = null
+  dimensionImportComplete.value = null
+  dimensionImportSkipPage.value = 1
+  dimensionImportBusy.value = true
+  try {
+    const body = new FormData()
+    body.append('file', file)
+    const preview = await request(
+      `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/preview`,
+      {
+        method: 'POST',
+        body,
+        timeoutMs: 60_000,
+      },
+    )
+    dimensionImportPreview.value = preview
+    if (!preview.valid) showMessage(`Excel 预检发现 ${preview.errorCount || 1} 个问题`, 'error')
+  } catch (error) {
+    dimensionImportPreview.value = null
+    showMessage(error.message || 'Excel 文件核对失败', 'error')
+  } finally {
+    dimensionImportBusy.value = false
+  }
+}
+
+async function confirmDimensionImport() {
+  const preview = dimensionImportPreview.value
+  if (!preview?.valid || !preview?.importId || !preview?.created || dimensionImportBusy.value) return
+  dimensionImportBusy.value = true
+  try {
+    const result = await request(
+      `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/${encodeURIComponent(preview.importId)}/confirm`,
+      { method: 'POST', timeoutMs: 60_000 },
+    )
+    dimensionImportComplete.value = result
+    dimensionPage.value = 1
+    await Promise.all([
+      loadDimensionRows(),
+      refreshConfigSummary(),
+      loadConfigAuditLogs({ silent: true }),
+    ])
+    showMessage(`已导入 ${result.rowCount} 行，等待发布配置`)
+  } catch (error) {
+    showMessage(error.message || '批量导入失败', 'error')
+    if (/重新|超过|变化/.test(error.message || '')) dimensionImportPreview.value = null
+  } finally {
+    dimensionImportBusy.value = false
+  }
 }
 
 function selectAccountUser(user) {
@@ -3596,6 +3983,42 @@ onBeforeUnmount(() => {
 
 .dimension-add { min-width: 112px; }
 
+.dimension-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.dimension-import-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 13px;
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 560;
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.dimension-import-trigger:hover {
+  border-color: var(--ui-ink);
+  box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+
+.dimension-import-trigger svg {
+  width: 14px;
+  height: 14px;
+  color: var(--ui-accent);
+}
+
 .dimension-filters {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 190px auto;
@@ -3883,6 +4306,424 @@ onBeforeUnmount(() => {
 
 .dimension-pagination button:hover:not(:disabled) { color: var(--ui-ink); }
 .dimension-pagination button:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.dimension-import-backdrop {
+  position: fixed;
+  z-index: 1350;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.28);
+  backdrop-filter: blur(10px);
+}
+
+.dimension-import-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(840px, 100%);
+  max-height: min(880px, calc(100vh - 48px));
+  color: var(--ui-ink);
+  background: var(--ui-fill);
+  border: 1px solid var(--ui-divider);
+  border-radius: 20px;
+  box-shadow: 0 30px 100px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.dimension-import-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 23px 26px 20px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.dimension-import-head .admin-panel-index { margin-bottom: 7px; }
+.dimension-import-head h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 560;
+  letter-spacing: -0.04em;
+}
+
+.dimension-import-head p:last-child {
+  margin: 7px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.dimension-import-head > button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--ui-text-tertiary);
+  font: 22px/1 inherit;
+  background: transparent;
+  border: 1px solid var(--ui-divider);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.dimension-import-head > button:hover:not(:disabled) { color: var(--ui-ink); border-color: var(--ui-ink); }
+.dimension-import-head > button:disabled { opacity: 0.35; }
+
+.dimension-import-body {
+  min-height: 0;
+  padding: 20px 26px 24px;
+  overflow-y: auto;
+}
+
+.dimension-import-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.dimension-import-target small,
+.dimension-import-target strong { display: block; }
+.dimension-import-target small { color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-target strong { margin-top: 4px; font: 600 11px/1.4 "SF Mono", "Cascadia Code", ui-monospace, monospace; }
+.dimension-import-target p {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: 10px;
+}
+.dimension-import-target p span { width: 6px; height: 6px; flex: 0 0 auto; background: var(--ui-accent); border-radius: 50%; }
+
+.dimension-import-schema {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 17px 0;
+}
+
+.dimension-import-schema strong,
+.dimension-import-schema small { display: block; }
+.dimension-import-schema strong { font-size: 11px; }
+.dimension-import-schema small { margin-top: 5px; color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-schema ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.dimension-import-schema li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+  padding: 0 8px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+  border: 1px solid var(--ui-divider);
+  border-radius: 7px;
+}
+.dimension-import-schema li span { color: var(--ui-accent); font: 700 8px/1 "SF Mono", monospace; }
+
+.dimension-import-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.dimension-import-dropzone {
+  display: grid;
+  grid-template-columns: 47px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 14px;
+  color: var(--ui-ink);
+  font: inherit;
+  text-align: left;
+  background: var(--ui-fill);
+  border: 1px dashed color-mix(in srgb, var(--ui-ink) 34%, var(--ui-divider));
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.dimension-import-dropzone:hover:not(:disabled),
+.dimension-import-dropzone.dragging {
+  border-color: var(--ui-accent);
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.dimension-import-dropzone.loading { cursor: wait; opacity: 0.68; }
+.dimension-import-file-mark {
+  display: grid;
+  place-items: center;
+  width: 47px;
+  height: 39px;
+  color: var(--ui-accent);
+  font: 700 8px/1 "SF Mono", monospace;
+  letter-spacing: 0.08em;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 38%, var(--ui-divider));
+  border-radius: 8px;
+}
+.dimension-import-dropzone strong,
+.dimension-import-dropzone small { display: block; }
+.dimension-import-dropzone strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dimension-import-dropzone small { margin-top: 5px; color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-dropzone i { color: var(--ui-text-secondary); font-size: 9px; font-style: normal; }
+
+.dimension-import-review {
+  margin-top: 17px;
+  padding-top: 17px;
+  border-top: 1px solid var(--ui-divider);
+}
+.dimension-import-review > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 15px;
+}
+.dimension-import-review > header .admin-panel-index { margin-bottom: 5px; }
+.dimension-import-review h3 { margin: 0; font-size: 16px; font-weight: 590; }
+.dimension-import-review > header > span {
+  padding: 5px 8px;
+  color: var(--ui-danger);
+  font-size: 9px;
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 30%, var(--ui-divider));
+  border-radius: 999px;
+}
+.dimension-import-review > header > span.passed { color: var(--ui-success); border-color: color-mix(in srgb, var(--ui-success) 32%, var(--ui-divider)); }
+.dimension-import-review > header > span.empty {
+  color: var(--ui-accent);
+  border-color: color-mix(in srgb, var(--ui-accent) 38%, var(--ui-divider));
+}
+
+.dimension-import-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--ui-divider);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.dimension-import-metrics article { position: relative; min-height: 76px; padding: 13px 14px; border-left: 1px solid var(--ui-divider); }
+.dimension-import-metrics article:first-child { border-left: 0; }
+.dimension-import-metrics small { display: block; color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-metrics strong { display: inline-block; margin-top: 9px; font: 600 22px/1 "SF Mono", monospace; letter-spacing: -0.04em; }
+.dimension-import-metrics span { margin-left: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+
+.dimension-import-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.dimension-import-checks li { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 7px 0; }
+.dimension-import-checks li > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ui-danger);
+  font: 700 9px/1 monospace;
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 34%, var(--ui-divider));
+  border-radius: 50%;
+}
+.dimension-import-checks li.passed > span { color: var(--ui-success); border-color: color-mix(in srgb, var(--ui-success) 38%, var(--ui-divider)); }
+.dimension-import-checks li.warning > span {
+  color: var(--ui-accent);
+  border-color: color-mix(in srgb, var(--ui-accent) 42%, var(--ui-divider));
+}
+.dimension-import-checks strong,
+.dimension-import-checks small { display: block; }
+.dimension-import-checks strong { font-size: 10px; }
+.dimension-import-checks small { margin-top: 4px; overflow: hidden; color: var(--ui-text-tertiary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+
+.dimension-import-impact {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 10px 11px;
+  border-top: 1px solid var(--ui-divider);
+}
+.dimension-import-impact > span { width: 6px; height: 6px; flex: 0 0 auto; background: var(--ui-success); border-radius: 50%; }
+.dimension-import-impact p { margin: 0; color: var(--ui-text-secondary); font-size: 9px; line-height: 1.6; }
+.dimension-import-impact strong { color: var(--ui-ink); }
+
+.dimension-import-skipped {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.dimension-import-skipped > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.dimension-import-skipped > header strong,
+.dimension-import-skipped > header small { display: block; }
+.dimension-import-skipped > header strong { font-size: 11px; font-weight: 620; }
+.dimension-import-skipped > header small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-skipped > header > span {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  color: var(--ui-accent);
+  font: 650 9px/1 "SF Mono", monospace;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 36%, var(--ui-divider));
+  border-radius: 999px;
+}
+
+.dimension-import-skipped-table {
+  overflow: hidden;
+  border: 1px solid var(--ui-divider);
+  border-radius: 10px;
+}
+
+.dimension-import-skipped-head,
+.dimension-import-skipped-row {
+  display: grid;
+  grid-template-columns: 62px 128px minmax(110px, 0.9fr) minmax(130px, 1fr) minmax(130px, 1fr);
+  align-items: center;
+  min-width: 0;
+}
+
+.dimension-import-skipped-head {
+  min-height: 32px;
+  color: var(--ui-text-tertiary);
+  font-size: 8px;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid var(--ui-divider);
+}
+
+.dimension-import-skipped-row {
+  min-height: 39px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+  border-top: 1px solid var(--ui-divider);
+}
+
+.dimension-import-skipped-row:first-of-type { border-top: 0; }
+.dimension-import-skipped-head > span,
+.dimension-import-skipped-row > span,
+.dimension-import-skipped-row > strong {
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dimension-import-skipped-row > strong { color: var(--ui-ink); font-weight: 560; }
+.dimension-import-row-number { color: var(--ui-text-tertiary); font-family: "SF Mono", monospace; }
+.dimension-import-skip-reason { color: var(--ui-accent); font-weight: 590; }
+.dimension-import-skip-reason.file { color: var(--ui-text-secondary); }
+
+.dimension-import-skipped > footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 9px;
+  color: var(--ui-text-tertiary);
+  font-size: 8px;
+}
+
+.dimension-import-skipped > footer button {
+  padding: 4px 7px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  background: transparent;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.dimension-import-skipped > footer button:hover:not(:disabled) { color: var(--ui-ink); border-color: var(--ui-ink); }
+.dimension-import-skipped > footer button:disabled { cursor: not-allowed; opacity: 0.35; }
+
+.dimension-import-errors {
+  margin-top: 10px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--ui-danger) 4%, var(--ui-fill));
+  border: 1px solid color-mix(in srgb, var(--ui-danger) 22%, var(--ui-divider));
+  border-radius: 10px;
+}
+.dimension-import-errors > p { margin: 0 0 8px; color: var(--ui-danger); font-size: 10px; font-weight: 600; }
+.dimension-import-errors ul { display: grid; gap: 6px; max-height: 130px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.dimension-import-errors li { display: grid; grid-template-columns: 135px minmax(0, 1fr); gap: 9px; font-size: 9px; }
+.dimension-import-errors li span { color: var(--ui-text-tertiary); }
+.dimension-import-errors li strong { overflow: hidden; color: var(--ui-text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.dimension-import-errors > small { display: block; margin-top: 8px; color: var(--ui-text-tertiary); font-size: 8px; }
+
+.dimension-import-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 15px 26px;
+  background: var(--ui-surface);
+  border-top: 1px solid var(--ui-divider);
+}
+.dimension-import-actions > div { min-width: 0; }
+.dimension-import-actions strong,
+.dimension-import-actions small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dimension-import-actions strong { font-size: 10px; }
+.dimension-import-actions small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 8px; }
+.dimension-import-actions > button:not(.admin-primary-button) {
+  height: 36px;
+  padding: 0 12px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.dimension-import-actions .admin-primary-button { min-width: 145px; height: 36px; }
+.dimension-import-actions button:disabled { cursor: not-allowed; opacity: 0.4; }
+
+.dimension-import-complete {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  padding: 44px 28px;
+  text-align: center;
+}
+.dimension-import-complete > span {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 20px;
+  color: #fff;
+  font-size: 20px;
+  background: var(--ui-success);
+  border-radius: 50%;
+}
+.dimension-import-complete .admin-panel-index { margin-bottom: 8px; }
+.dimension-import-complete h3 { margin: 0; font-size: 22px; font-weight: 570; letter-spacing: -0.04em; }
+.dimension-import-complete > p:last-of-type { max-width: 520px; margin: 12px 0 0; color: var(--ui-text-secondary); font-size: 11px; line-height: 1.7; }
+.dimension-import-complete > div { margin-top: 24px; }
 
 .config-audit-panel {
   margin-top: 28px;
@@ -4992,7 +5833,19 @@ onBeforeUnmount(() => {
     flex-direction: column;
   }
   .dimension-toolbar { align-items: flex-start; flex-direction: column; }
-  .dimension-add { align-self: flex-start; }
+  .dimension-toolbar-actions { align-self: flex-start; }
+  .dimension-import-backdrop { padding: 12px; }
+  .dimension-import-dialog { max-height: calc(100vh - 24px); border-radius: 16px; }
+  .dimension-import-head,
+  .dimension-import-body,
+  .dimension-import-actions { padding-right: 18px; padding-left: 18px; }
+  .dimension-import-schema { grid-template-columns: 1fr; gap: 10px; }
+  .dimension-import-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dimension-import-metrics article:nth-child(3) { border-top: 1px solid var(--ui-divider); border-left: 0; }
+  .dimension-import-metrics article:nth-child(4) { border-top: 1px solid var(--ui-divider); }
+  .dimension-import-skipped-table { overflow-x: auto; }
+  .dimension-import-skipped-head,
+  .dimension-import-skipped-row { min-width: 690px; }
   .config-release-actions { align-items: stretch; flex-wrap: wrap; }
   .account-dialog-backdrop { padding: 12px; }
   .account-dialog { max-height: calc(100vh - 24px); border-radius: 17px; }
@@ -5026,6 +5879,15 @@ onBeforeUnmount(() => {
   .admin-primary-button { grid-column: auto; }
   .dimension-filters { grid-template-columns: 1fr; }
   .dimension-fields { grid-template-columns: 1fr; }
+  .dimension-toolbar-actions { width: 100%; }
+  .dimension-toolbar-actions > button { flex: 1; min-width: 0; }
+  .dimension-import-target { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .dimension-import-dropzone { grid-template-columns: 42px minmax(0, 1fr); }
+  .dimension-import-dropzone i { display: none; }
+  .dimension-import-checks { grid-template-columns: 1fr; }
+  .dimension-import-actions { grid-template-columns: 1fr 1fr; }
+  .dimension-import-actions > div { grid-column: 1 / -1; }
+  .dimension-import-actions .admin-primary-button { min-width: 0; }
   .config-release-actions input { width: 100%; flex-basis: 100%; }
   .invite-link-row { align-items: stretch; flex-direction: column; }
   .invite-link-row button { align-self: flex-start; }

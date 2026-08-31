@@ -23,9 +23,16 @@ from .announcement_store import (
 from .constants import BASE_DIR, DB_PATH
 from .dimension_store import (
     DimensionConflictError,
+    DimensionImportNotFoundError,
+    DimensionImportStateError,
     DimensionNotFoundError,
     DimensionStore,
     DimensionValidationError,
+)
+from .dimension_import import (
+    MAX_IMPORT_BYTES,
+    DimensionImportFileError,
+    parse_dimension_workbook,
 )
 from .data_safety import collect_data_safety, create_backup
 from .engine import ConfigEngine
@@ -1103,6 +1110,72 @@ def register_routes(
         except DimensionConflictError as exc:
             return error_response("DIMENSION_CONFLICT", str(exc), 409)
         except DimensionValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify(result)
+
+    @app.route(
+        "/api/admin/dimensions/<filename>/import/preview",
+        methods=["POST"],
+    )
+    def admin_preview_dimension_import(filename: str):
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        upload = request.files.get("file")
+        if upload is None or not upload.filename:
+            return error_response("IMPORT_FILE_REQUIRED", "请选择要导入的 Excel 文件", 400)
+        try:
+            content = upload.stream.read(MAX_IMPORT_BYTES + 1)
+            parsed = parse_dimension_workbook(content, upload.filename, filename)
+        except DimensionImportFileError as exc:
+            return error_response("INVALID_IMPORT_FILE", str(exc), 400)
+
+        response = {key: value for key, value in parsed.items() if key != "rows"}
+        if not parsed["valid"]:
+            return jsonify(response)
+        try:
+            preview = dimension_store.create_import_preview(
+                filename,
+                parsed["rows"],
+                g.current_user["id"],
+                source_name=parsed["sourceName"],
+                sheet_name=parsed["sheetName"],
+                row_count=parsed["rowCount"],
+                column_count=parsed["columnCount"],
+            )
+        except DimensionConflictError as exc:
+            issues = list(getattr(exc, "issues", []))
+            return jsonify(
+                {
+                    **response,
+                    "valid": False,
+                    "issues": issues,
+                    "errorCount": len(issues) or 1,
+                }
+            )
+        except DimensionValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify({**response, **preview, "valid": True})
+
+    @app.route(
+        "/api/admin/dimensions/<filename>/import/<import_id>/confirm",
+        methods=["POST"],
+    )
+    def admin_confirm_dimension_import(filename: str, import_id: str):
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            result = dimension_store.confirm_import(
+                filename,
+                import_id,
+                g.current_user["id"],
+            )
+        except DimensionImportNotFoundError:
+            return error_response("IMPORT_NOT_FOUND", "导入预检不存在，请重新选择文件", 404)
+        except DimensionImportStateError as exc:
+            return error_response("IMPORT_PREVIEW_EXPIRED", str(exc), 409)
+        except (DimensionConflictError, DimensionValidationError) as exc:
             return error_response("INVALID_REQUEST", str(exc), 400)
         return jsonify(result)
 

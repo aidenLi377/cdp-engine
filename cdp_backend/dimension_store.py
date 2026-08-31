@@ -8,7 +8,7 @@ source files in place.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from .constants import (
@@ -35,6 +35,14 @@ class DimensionValidationError(ValueError):
 
 
 class DimensionConflictError(Exception):
+    pass
+
+
+class DimensionImportNotFoundError(Exception):
+    pass
+
+
+class DimensionImportStateError(Exception):
     pass
 
 
@@ -584,6 +592,387 @@ class DimensionStore:
             ).fetchall()
         return [self._row_to_data(row) for row in rows]
 
+    @classmethod
+    def _normalize_import_rows(cls, filename: str, rows: list[dict]) -> list[dict]:
+        if not isinstance(rows, list) or not rows:
+            raise DimensionValidationError("导入数据不能为空")
+        normalized_rows = []
+        seen: dict[str, int] = {}
+        duplicate_issues = []
+        for index, item in enumerate(rows, start=2):
+            if isinstance(item, dict) and "data" in item:
+                row_number = int(item.get("rowNumber") or index)
+                raw_data = item.get("data")
+            else:
+                row_number = index
+                raw_data = item
+            data = cls._normalize_data(filename, raw_data)
+            key = cls._natural_key(filename, data)
+            if key in seen:
+                duplicate_issues.append(
+                    {
+                        "row": row_number,
+                        "column": cls._name_column(filename),
+                        "code": "DUPLICATE_NATURAL_KEY",
+                        "message": f"与第 {seen[key]} 行的唯一记录重复",
+                    }
+                )
+            else:
+                seen[key] = row_number
+            normalized_rows.append({"rowNumber": row_number, "data": data})
+        if duplicate_issues:
+            error = DimensionConflictError("导入数据中存在重复记录")
+            error.issues = duplicate_issues
+            raise error
+        return normalized_rows
+
+    @classmethod
+    def _import_row_reference(
+        cls,
+        filename: str,
+        item: dict,
+        *,
+        existing_row_id: str = "",
+        duplicate_of_row: int | None = None,
+    ) -> dict:
+        data = item["data"]
+        name_column = cls._name_column(filename)
+        identity_columns = [
+            column
+            for column in REQUIRED_DIMENSION_COLUMNS[filename]
+            if column not in {"适用的包", name_column, "适用的渠道"}
+            and data.get(column)
+        ]
+        return {
+            "row": item["rowNumber"],
+            "packageName": data.get("适用的包", ""),
+            "displayName": data.get(name_column, ""),
+            "channel": data.get("适用的渠道", ""),
+            "identity": " · ".join(
+                f"{column}: {data[column]}" for column in identity_columns
+            ),
+            "existingRowId": existing_row_id,
+            "duplicateOfRow": duplicate_of_row,
+        }
+
+    @classmethod
+    def _plan_import(cls, conn, filename: str, normalized_rows: list[dict]) -> dict:
+        existing_rows = conn.execute(
+            "SELECT * FROM dimension_rows WHERE dimension_file = ?",
+            (filename,),
+        ).fetchall()
+        existing_by_key = {row["natural_key"]: row for row in existing_rows}
+        created = 0
+        updated = 0
+        unchanged = 0
+        for item in normalized_rows:
+            data = item["data"]
+            current = existing_by_key.get(cls._natural_key(filename, data))
+            if current is None:
+                created += 1
+            elif (
+                cls._row_to_data(current) == data
+                and bool(current["enabled"])
+                and not bool(current["deleted"])
+            ):
+                unchanged += 1
+            else:
+                updated += 1
+        return {
+            "created": created,
+            "updated": updated,
+            "unchanged": unchanged,
+            "total": len(normalized_rows),
+        }
+
+    def create_import_preview(
+        self,
+        filename: str,
+        rows: list[dict],
+        user_id: str,
+        *,
+        source_name: str,
+        sheet_name: str,
+        row_count: int,
+        column_count: int,
+    ) -> dict:
+        if not isinstance(rows, list) or not rows:
+            raise DimensionValidationError("导入数据不能为空")
+        normalized_rows = []
+        duplicate_rows = []
+        seen: dict[str, int] = {}
+        for index, item in enumerate(rows, start=2):
+            if isinstance(item, dict) and "data" in item:
+                row_number = int(item.get("rowNumber") or index)
+                raw_data = item.get("data")
+            else:
+                row_number = index
+                raw_data = item
+            normalized = {
+                "rowNumber": row_number,
+                "data": self._normalize_data(filename, raw_data),
+            }
+            natural_key = self._natural_key(filename, normalized["data"])
+            if natural_key in seen:
+                duplicate_rows.append(
+                    self._import_row_reference(
+                        filename,
+                        normalized,
+                        duplicate_of_row=seen[natural_key],
+                    )
+                )
+                continue
+            seen[natural_key] = row_number
+            normalized_rows.append(normalized)
+
+        now = _utc_now()
+        expires_at = (
+            datetime.now(timezone.utc) + timedelta(minutes=30)
+        ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        import_id = ""
+        with get_db(self.db_path) as conn:
+            conn.execute(
+                "UPDATE dimension_import_jobs SET status = 'expired' "
+                "WHERE status = 'pending' AND expires_at <= ?",
+                (now,),
+            )
+            existing = {
+                row["natural_key"]: row
+                for row in conn.execute(
+                    "SELECT id, natural_key FROM dimension_rows WHERE dimension_file = ?",
+                    (filename,),
+                ).fetchall()
+            }
+            new_rows = []
+            existing_rows = []
+            for item in normalized_rows:
+                natural_key = self._natural_key(filename, item["data"])
+                current = existing.get(natural_key)
+                if current is None:
+                    new_rows.append(item)
+                else:
+                    existing_rows.append(
+                        self._import_row_reference(
+                            filename,
+                            item,
+                            existing_row_id=current["id"],
+                        )
+                    )
+
+            skipped = len(existing_rows) + len(duplicate_rows)
+            if new_rows:
+                import_id = f"dim_import_{uuid4().hex}"
+                conn.execute(
+                    """INSERT INTO dimension_import_jobs (
+                        id, dimension_file, created_by, source_name, sheet_name,
+                        row_count, column_count, created_count, updated_count,
+                        unchanged_count, rows_json, status, created_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', ?, ?)""",
+                    (
+                        import_id,
+                        filename,
+                        user_id,
+                        str(source_name or ""),
+                        str(sheet_name or ""),
+                        int(row_count),
+                        int(column_count),
+                        len(new_rows),
+                        skipped,
+                        json.dumps(new_rows, ensure_ascii=False),
+                        now,
+                        expires_at,
+                    ),
+                )
+        return {
+            "importId": import_id,
+            "expiresAt": expires_at if import_id else None,
+            "created": len(new_rows),
+            "updated": 0,
+            "unchanged": skipped,
+            "existing": len(existing_rows),
+            "duplicateInFile": len(duplicate_rows),
+            "skipped": skipped,
+            "total": int(row_count),
+            "existingRows": existing_rows,
+            "duplicateRows": duplicate_rows,
+        }
+
+    def _apply_import_rows(
+        self,
+        conn,
+        filename: str,
+        normalized_rows: list[dict],
+        user_id: str,
+        *,
+        source_name: str = "",
+        sheet_name: str = "",
+        column_count: int = 0,
+        source_row_count: int = 0,
+        skipped_count: int = 0,
+        replace: bool = False,
+    ) -> dict:
+        now = _utc_now()
+        if replace:
+            conn.execute(
+                """UPDATE dimension_rows
+                   SET enabled = 0, deleted = 0, has_changes = 1,
+                       updated_by = ?, updated_at = ?
+                   WHERE dimension_file = ?""",
+                (user_id, now, filename),
+            )
+
+        plan = self._plan_import(conn, filename, normalized_rows)
+        existing_rows = conn.execute(
+            "SELECT * FROM dimension_rows WHERE dimension_file = ?",
+            (filename,),
+        ).fetchall()
+        existing_by_key = {row["natural_key"]: row for row in existing_rows}
+
+        for item in normalized_rows:
+            data = item["data"]
+            natural_key = self._natural_key(filename, data)
+            current = existing_by_key.get(natural_key)
+            if current is not None:
+                if (
+                    self._row_to_data(current) == data
+                    and bool(current["enabled"])
+                    and not bool(current["deleted"])
+                ):
+                    continue
+                published_data = (
+                    self._decode_json_object(current["published_data"])
+                    if current["is_published"]
+                    else None
+                )
+                has_changes = not (
+                    bool(current["is_published"])
+                    and published_data == data
+                    and bool(current["published_enabled"])
+                    and not bool(current["published_deleted"])
+                )
+                conn.execute(
+                    """UPDATE dimension_rows
+                       SET package_name = ?, display_name = ?, data = ?,
+                           enabled = 1, deleted = 0, has_changes = ?,
+                           updated_by = ?, updated_at = ?
+                       WHERE dimension_file = ? AND id = ?""",
+                    (
+                        data.get("适用的包", ""),
+                        data[self._name_column(filename)],
+                        json.dumps(data, ensure_ascii=False),
+                        1 if has_changes else 0,
+                        user_id,
+                        now,
+                        filename,
+                        current["id"],
+                    ),
+                )
+                continue
+
+            row_id = f"dim_{uuid4().hex}"
+            conn.execute(
+                """INSERT INTO dimension_rows (
+                    id, dimension_file, natural_key, package_name, display_name,
+                    data, enabled, published_data, published_enabled,
+                    is_published, has_changes, deleted, created_by, updated_by,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 0, 0, 1, 0, ?, ?, ?, ?)""",
+                (
+                    row_id,
+                    filename,
+                    natural_key,
+                    data.get("适用的包", ""),
+                    data[self._name_column(filename)],
+                    json.dumps(data, ensure_ascii=False),
+                    user_id,
+                    user_id,
+                    now,
+                    now,
+                ),
+            )
+
+        result = {
+            **plan,
+            "rowCount": len(normalized_rows),
+            "columnCount": int(column_count or len(REQUIRED_DIMENSION_COLUMNS[filename])),
+            "sourceRowCount": int(source_row_count or len(normalized_rows)),
+            "skipped": int(skipped_count),
+        }
+        self._record_config_audit(
+            conn,
+            actor_user_id=user_id,
+            action="DIMENSION_ROWS_IMPORTED",
+            dimension_file=filename,
+            created_at=now,
+            details={
+                "summary": "通过 Excel 批量导入维表记录" if source_name else "批量导入维表记录",
+                **result,
+                "sourceName": source_name,
+                "sheetName": sheet_name,
+                "replace": bool(replace),
+            },
+        )
+        return result
+
+    def confirm_import(self, filename: str, import_id: str, user_id: str) -> dict:
+        now = _utc_now()
+        result = None
+        state_error = None
+        with get_db(self.db_path) as conn:
+            job = conn.execute(
+                """SELECT * FROM dimension_import_jobs
+                   WHERE id = ? AND dimension_file = ? AND created_by = ?""",
+                (import_id, filename, user_id),
+            ).fetchone()
+            if job is None:
+                raise DimensionImportNotFoundError(import_id)
+            if job["status"] != "pending":
+                state_error = "这次导入已处理，请重新选择文件"
+            elif job["expires_at"] <= now:
+                conn.execute(
+                    "UPDATE dimension_import_jobs SET status = 'expired' WHERE id = ?",
+                    (import_id,),
+                )
+                state_error = "导入预检已超过 30 分钟，请重新核对"
+            else:
+                normalized_rows = self._normalize_import_rows(
+                    filename,
+                    json.loads(job["rows_json"]),
+                )
+                current_plan = self._plan_import(conn, filename, normalized_rows)
+                expected_plan = {
+                    "created": job["created_count"],
+                    "updated": 0,
+                    "unchanged": 0,
+                    "total": job["created_count"],
+                }
+                if current_plan != expected_plan:
+                    conn.execute(
+                        "UPDATE dimension_import_jobs SET status = 'expired' WHERE id = ?",
+                        (import_id,),
+                    )
+                    state_error = "维表在预检后发生了变化，请重新核对导入数量"
+                else:
+                    result = self._apply_import_rows(
+                        conn,
+                        filename,
+                        normalized_rows,
+                        user_id,
+                        source_name=job["source_name"],
+                        sheet_name=job["sheet_name"],
+                        column_count=job["column_count"],
+                        source_row_count=job["row_count"],
+                        skipped_count=job["unchanged_count"],
+                    )
+                    conn.execute(
+                        """UPDATE dimension_import_jobs
+                           SET status = 'confirmed', confirmed_at = ? WHERE id = ?""",
+                        (now, import_id),
+                    )
+        if state_error:
+            raise DimensionImportStateError(state_error)
+        return result
+
     def import_rows(
         self,
         filename: str,
@@ -591,53 +980,14 @@ class DimensionStore:
         user_id: str,
         replace: bool = False,
     ) -> dict:
-        if not isinstance(rows, list) or not rows:
-            raise DimensionValidationError("导入数据不能为空")
-        normalized_rows = [self._normalize_data(filename, row) for row in rows]
-        seen: set[str] = set()
-        for data in normalized_rows:
-            key = self._natural_key(filename, data)
-            if key in seen:
-                raise DimensionConflictError("导入数据中存在重复记录")
-            seen.add(key)
-        if replace:
-            with get_db(self.db_path) as conn:
-                conn.execute(
-                    """UPDATE dimension_rows
-                       SET enabled = 0, deleted = 0, has_changes = 1,
-                           updated_by = ?, updated_at = ?
-                       WHERE dimension_file = ?""",
-                    (user_id, _utc_now(), filename),
-                )
-        created = 0
-        updated = 0
-        for data in normalized_rows:
-            natural_key = self._natural_key(filename, data)
-            with get_db(self.db_path) as conn:
-                existing = conn.execute(
-                    """SELECT id FROM dimension_rows
-                       WHERE dimension_file = ? AND natural_key = ?""",
-                    (filename, natural_key),
-                ).fetchone()
-            if existing:
-                self.update_row(filename, existing["id"], data, user_id)
-                self.set_enabled(filename, existing["id"], True, user_id)
-                updated += 1
-            else:
-                self.create_row(filename, data, user_id)
-                created += 1
-        result = {"created": created, "updated": updated, "total": len(normalized_rows)}
+        normalized_rows = self._normalize_import_rows(filename, rows)
         with get_db(self.db_path) as conn:
-            self._record_config_audit(
+            result = self._apply_import_rows(
                 conn,
-                actor_user_id=user_id,
-                action="DIMENSION_ROWS_IMPORTED",
-                dimension_file=filename,
-                details={
-                    "summary": "批量导入维表记录",
-                    **result,
-                    "replace": bool(replace),
-                },
+                filename,
+                normalized_rows,
+                user_id,
+                replace=replace,
             )
         return result
 

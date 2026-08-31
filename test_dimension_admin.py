@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+from openpyxl import Workbook
 
 from cdp_backend.app_factory import create_app
 from cdp_backend.user_store import UserStore
@@ -38,6 +41,20 @@ class DimensionAdminApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         return client
+
+    @staticmethod
+    def excel_file(headers, rows, filename="维表批量导入.xlsx"):
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.title = "导入数据"
+        worksheet.append(headers)
+        for row in rows:
+            worksheet.append(row)
+        content = BytesIO()
+        workbook.save(content)
+        workbook.close()
+        content.seek(0)
+        return content, filename
 
     def test_config_admin_can_create_and_disable_dimension_row(self):
         client = self.login("config", "config-password")
@@ -130,6 +147,199 @@ class DimensionAdminApiTests(unittest.TestCase):
         client = self.login("normal", "normal-password")
         response = client.get("/api/admin/dimensions")
         self.assertEqual(response.status_code, 403)
+
+        excel = self.excel_file(
+            ["适用的包", "类目名称", "cateId"],
+            [["类目公域行为", "无权限导入", "990100001"]],
+        )
+        preview = client.post(
+            "/api/admin/dimensions/类目维表.csv/import/preview",
+            data={"file": excel},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(preview.status_code, 403)
+        confirm = client.post(
+            "/api/admin/dimensions/类目维表.csv/import/not-allowed/confirm"
+        )
+        self.assertEqual(confirm.status_code, 403)
+
+    def test_config_admin_can_preview_and_confirm_excel_import(self):
+        client = self.login("config", "config-password")
+        filename = "类目维表.csv"
+        existing = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": "3C数码配件>USB数码周边", "pageSize": 10},
+        ).get_json()["rows"][0]
+        updated_id = f"{existing['data']['cateId']}9"
+        new_name = "测试类目>Excel批量导入"
+        excel = self.excel_file(
+            ["适用的包", "类目名称", "cateId"],
+            [
+                [existing["data"]["适用的包"], existing["data"]["类目名称"], updated_id],
+                ["类目公域行为", new_name, "990100002"],
+                ["类目公域行为", new_name, "990100002"],
+            ],
+        )
+
+        preview_response = client.post(
+            f"/api/admin/dimensions/{filename}/import/preview",
+            data={"file": excel},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(preview_response.status_code, 200)
+        preview = preview_response.get_json()
+        self.assertTrue(preview["valid"])
+        self.assertEqual(preview["rowCount"], 3)
+        self.assertEqual(preview["columnCount"], 3)
+        self.assertEqual(preview["created"], 1)
+        self.assertEqual(preview["updated"], 0)
+        self.assertEqual(preview["existing"], 1)
+        self.assertEqual(preview["duplicateInFile"], 1)
+        self.assertEqual(preview["unchanged"], 2)
+        self.assertEqual(preview["skipped"], 2)
+        self.assertEqual(preview["existingRows"][0]["row"], 2)
+        self.assertEqual(
+            preview["existingRows"][0]["displayName"],
+            existing["data"]["类目名称"],
+        )
+        self.assertEqual(preview["duplicateRows"][0]["row"], 4)
+        self.assertEqual(preview["duplicateRows"][0]["duplicateOfRow"], 3)
+        self.assertTrue(preview["importId"].startswith("dim_import_"))
+
+        before_confirm = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": new_name},
+        ).get_json()
+        self.assertEqual(before_confirm["total"], 0)
+
+        confirmed_response = client.post(
+            f"/api/admin/dimensions/{filename}/import/{preview['importId']}/confirm"
+        )
+        self.assertEqual(confirmed_response.status_code, 200)
+        confirmed = confirmed_response.get_json()
+        self.assertEqual(confirmed["created"], 1)
+        self.assertEqual(confirmed["updated"], 0)
+        self.assertEqual(confirmed["rowCount"], 1)
+        self.assertEqual(confirmed["sourceRowCount"], 3)
+        self.assertEqual(confirmed["skipped"], 2)
+
+        imported = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": new_name},
+        ).get_json()["rows"][0]
+        self.assertTrue(imported["hasChanges"])
+        self.assertFalse(imported["published"])
+        changed_existing = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": existing["data"]["类目名称"], "pageSize": 10},
+        ).get_json()["rows"][0]
+        self.assertEqual(
+            changed_existing["data"]["cateId"],
+            existing["data"]["cateId"],
+        )
+
+        repeated = client.post(
+            f"/api/admin/dimensions/{filename}/import/{preview['importId']}/confirm"
+        )
+        self.assertEqual(repeated.status_code, 409)
+
+        audit_entries = client.get(
+            "/api/admin/config/audit-logs",
+            query_string={"dimensionFile": filename, "limit": 20},
+        ).get_json()["items"]
+        import_entry = next(
+            entry for entry in audit_entries
+            if entry["action"] == "DIMENSION_ROWS_IMPORTED"
+        )
+        self.assertEqual(import_entry["details"]["rowCount"], 1)
+        self.assertEqual(import_entry["details"]["sourceRowCount"], 3)
+        self.assertEqual(import_entry["details"]["skipped"], 2)
+        self.assertEqual(import_entry["details"]["sourceName"], "维表批量导入.xlsx")
+
+    def test_excel_import_with_only_existing_rows_has_no_confirmable_job(self):
+        client = self.login("root", "root-password")
+        filename = "状态维表.csv"
+        existing = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"pageSize": 1},
+        ).get_json()["rows"][0]
+        excel = self.excel_file(
+            ["适用的包", "状态名称", "ID", "Value"],
+            [[
+                existing["data"]["适用的包"],
+                existing["data"]["状态名称"],
+                "999999",
+                "SHOULD_NOT_OVERWRITE",
+            ]],
+        )
+        response = client.post(
+            f"/api/admin/dimensions/{filename}/import/preview",
+            data={"file": excel},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        preview = response.get_json()
+        self.assertTrue(preview["valid"])
+        self.assertEqual(preview["created"], 0)
+        self.assertEqual(preview["existing"], 1)
+        self.assertEqual(preview["skipped"], 1)
+        self.assertFalse(preview["importId"])
+        refreshed = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": existing["data"]["状态名称"]},
+        ).get_json()["rows"][0]
+        self.assertEqual(refreshed["data"], existing["data"])
+
+    def test_excel_import_rejects_header_and_cell_format_errors_without_writing(self):
+        client = self.login("root", "root-password")
+        filename = "类目维表.csv"
+        wrong_headers = self.excel_file(
+            ["适用的包", "cateId", "类目名称"],
+            [["类目公域行为", "990100003", "表头错误"]],
+        )
+        header_response = client.post(
+            f"/api/admin/dimensions/{filename}/import/preview",
+            data={"file": wrong_headers},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(header_response.status_code, 200)
+        header_preview = header_response.get_json()
+        self.assertFalse(header_preview["valid"])
+        self.assertEqual(header_preview["rowCount"], 1)
+        self.assertEqual(header_preview["columnCount"], 3)
+        self.assertIn(
+            "HEADER_MISMATCH",
+            {issue["code"] for issue in header_preview["issues"]},
+        )
+        self.assertNotIn("importId", header_preview)
+
+        formula_workbook = Workbook()
+        worksheet = formula_workbook.active
+        worksheet.append(["适用的包", "类目名称", "cateId"])
+        worksheet.append(["类目公域行为", "公式错误", "=1+1"])
+        formula_content = BytesIO()
+        formula_workbook.save(formula_content)
+        formula_workbook.close()
+        formula_content.seek(0)
+        format_response = client.post(
+            f"/api/admin/dimensions/{filename}/import/preview",
+            data={"file": (formula_content, "格式错误.xlsx")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(format_response.status_code, 200)
+        format_preview = format_response.get_json()
+        self.assertFalse(format_preview["valid"])
+        self.assertIn(
+            "FORMULA_NOT_ALLOWED",
+            {issue["code"] for issue in format_preview["issues"]},
+        )
+        self.assertEqual(
+            client.get(
+                f"/api/admin/dimensions/{filename}",
+                query_string={"q": "公式错误"},
+            ).get_json()["total"],
+            0,
+        )
 
     def test_config_audit_records_field_diffs_actor_and_publish_details(self):
         client = self.login("config", "config-password")

@@ -70,6 +70,25 @@ test('dimension table uses a structured high-contrast header with explicit actio
   assert.match(adminCenterVue, /\.dimension-table-wrap \{[^}]*border-radius: 12px;/s)
 })
 
+test('dimension Excel import is permission-gated and requires preview before confirmation', () => {
+  assert.match(adminCenterVue, /const canImportDimensions = computed\(\(\) => \['config_admin', 'super_admin'\]\.includes\(props\.currentUserRole\)\)/)
+  assert.match(adminCenterVue, /v-if="canImportDimensions"[\s\S]*批量导入/)
+  assert.match(adminCenterVue, /accept="\.xlsx,application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet"/)
+  assert.match(adminCenterVue, /\/import\/preview/)
+  assert.match(adminCenterVue, /dimensionImportPreview\.rowCount\.toLocaleString\(\)/)
+  assert.match(adminCenterVue, /dimensionImportPreview\.columnCount\.toLocaleString\(\)/)
+  assert.match(adminCenterVue, /可导入新记录/)
+  assert.match(adminCenterVue, /数据库已存在/)
+  assert.match(adminCenterVue, /已跳过的记录/)
+  assert.match(adminCenterVue, /dimensionImportSkippedRows/)
+  assert.match(adminCenterVue, /文件内重复/)
+  assert.match(adminCenterVue, /全部自动跳过且不会覆盖原值/)
+  assert.match(adminCenterVue, /!dimensionImportPreview\?\.valid \|\| !dimensionImportPreview\?\.importId \|\| !dimensionImportPreview\?\.created/)
+  assert.match(adminCenterVue, /\/import\/\$\{encodeURIComponent\(preview\.importId\)\}\/confirm/)
+  assert.match(adminCenterVue, /确认导入 \$\{dimensionImportPreview\?\.created \|\| 0\} 条新记录/)
+  assert.match(adminCenterVue, /导入后进入待发布/)
+})
+
 test('audit deletion is visible only to super admins and uses the guarded API action', () => {
   assert.match(adminCenterVue, /const canDeleteAuditLogs = computed\(\(\) => props\.currentUserRole === 'super_admin'\)/)
   assert.match(adminCenterVue, /v-if="canDeleteAuditLogs" class="admin-table-action"/)

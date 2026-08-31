@@ -30,6 +30,8 @@ cdp-web/dist/
 deliverables/
 design-qa.md
 qa-artifacts/
+.tmp/
+outputs/
 
 # IDE
 .vscode/

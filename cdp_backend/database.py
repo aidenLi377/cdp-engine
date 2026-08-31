@@ -95,6 +95,25 @@ CREATE TABLE IF NOT EXISTS config_audit_logs (
     created_at      TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS dimension_import_jobs (
+    id              TEXT PRIMARY KEY,
+    dimension_file  TEXT NOT NULL,
+    created_by      TEXT NOT NULL,
+    source_name     TEXT NOT NULL DEFAULT '',
+    sheet_name      TEXT NOT NULL DEFAULT '',
+    row_count       INTEGER NOT NULL,
+    column_count    INTEGER NOT NULL,
+    created_count   INTEGER NOT NULL DEFAULT 0,
+    updated_count   INTEGER NOT NULL DEFAULT 0,
+    unchanged_count INTEGER NOT NULL DEFAULT 0,
+    rows_json       TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending', 'confirmed', 'expired')),
+    created_at      TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    confirmed_at    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS solutions (
     id                          TEXT PRIMARY KEY,
     name                        TEXT NOT NULL DEFAULT '',
@@ -261,6 +280,8 @@ CREATE INDEX IF NOT EXISTS idx_config_audit_created
     ON config_audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_config_audit_dimension
     ON config_audit_logs(dimension_file, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dimension_import_jobs_owner
+    ON dimension_import_jobs(created_by, status, expires_at);
 CREATE INDEX IF NOT EXISTS idx_solutions_scope ON solutions(visibility, owner_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder_order
     ON solutions(visibility, owner_id, folder_id, sort_order);
@@ -373,4 +394,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 8")
+        conn.execute("PRAGMA user_version = 9")
