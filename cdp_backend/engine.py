@@ -47,6 +47,7 @@ class BatchGenerateResult:
 
 class ConfigEngine:
     CATEGORY_PUBLIC_PACKAGE = "类目公域行为"
+    CATEGORY_ITEM_PACKAGE = "类目商品行为"
     COMMODITY_PACKAGE = "商品行为"
     OFFICIAL_ORDERED_PACKAGES = (CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE)
     CATEGORY_PUBLIC_TOP_LEVEL_ORDER = ("selectionLv1", "selectionLv3", "fromPoolId")
@@ -374,6 +375,15 @@ class ConfigEngine:
 
             if state != "isEmpty":
                 final_val = self._translate_value(current_pkg, key, cleaned_val, payload)
+                # 类目商品行为的商品ID在前端按列表承载，以支持批量粘贴和自动拆分。
+                # 每个拆分后的组件只有一个ID，生成官方结构时仍保持原有的字符串格式。
+                if (
+                    current_pkg == self.CATEGORY_ITEM_PACKAGE
+                    and key == "item"
+                    and isinstance(final_val, list)
+                    and len(final_val) == 1
+                ):
+                    final_val = final_val[0]
                 if isinstance(final_val, dict):
                     final_val = {
                         inner_key: inner_value.replace("-", "")

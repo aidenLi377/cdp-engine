@@ -163,6 +163,30 @@ class CdpApiTests(unittest.TestCase):
         self.assertEqual(len(data["list"]), 1)
         self.assertNotIn("stdBrand", data["list"][0]["selectionLv3"]["extraFilters"])
 
+    def test_category_item_meta_supports_batch_ids(self):
+        response = self.client.get("/api/meta/类目商品行为")
+        self.assertEqual(response.status_code, 200)
+        item_field = next(field for field in response.get_json()["schema"] if field["key"] == "item")
+        self.assertEqual(item_field["Widget_Type"], "列表输入")
+        self.assertIn("批量粘贴多个商品ID", item_field["Description"])
+
+    def test_generate_category_item_json_keeps_single_item_id_scalar(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "类目商品行为",
+                "bhv": ["购买"],
+                "item": ["123456789"],
+                "time": {"val": {"days": 30}, "min": "recent"},
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(
+            data["list"][0]["selectionLv3"]["extraFilters"]["item"],
+            "123456789",
+        )
+
     def test_generate_commodity_json(self):
         payload = {
             "_package": "商品行为",

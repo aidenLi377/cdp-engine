@@ -994,7 +994,7 @@ function setSavedSnapshotFromRecord(record) {
   lastSavedSnapshot.value = JSON.stringify({
     name,
     defaultCrowdName,
-    nodes: record?.nodes || [],
+    nodes: serializeNodesForSolution(record?.nodes || []),
     workbenchFieldIds: [...fieldIds],
     customFields: serializeCustomFieldsForSolution(record?.customFields),
   })

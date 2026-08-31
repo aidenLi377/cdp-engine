@@ -10,6 +10,7 @@ import {
   serializeNodesForSolution,
   cleanWorkbenchFieldIds,
   buildUsageSections,
+  buildMultiFieldNodeSplits,
   isWorkbenchStructureLocked,
   serializeCustomFieldsForSolution,
 } from './solutionState.js'
@@ -211,6 +212,48 @@ test('isWorkbenchStructureLocked only locks workbench structure for active publi
   assert.equal(isWorkbenchStructureLocked(null), false)
   assert.equal(isWorkbenchStructureLocked({ id: 'draft-1', status: 'draft' }), false)
   assert.equal(isWorkbenchStructureLocked({ id: 'pub-1', status: 'published' }), true)
+})
+
+test('serializeNodesForSolution folds single class product IDs back to the persisted scalar shape', () => {
+  const [node] = serializeNodesForSolution([{
+    id: 'node-item',
+    packageType: '类目商品行为',
+    formData: { item: ['1001'] },
+    modeData: {},
+  }])
+
+  assert.equal(node.formData.item, '1001')
+})
+
+test('buildMultiFieldNodeSplits creates one class product behavior per product ID', () => {
+  const sourceNode = {
+    id: 'node-item',
+    packageType: '类目商品行为',
+    operator: null,
+    displayName: '商品行为',
+    formData: {
+      bhv: ['购买'],
+      item: ['1001'],
+      time: { days: 30, dateRange: [] },
+    },
+    modeData: { time: 'recent' },
+  }
+
+  const splits = buildMultiFieldNodeSplits(sourceNode, [{
+    fieldKey: 'item',
+    fieldLabel: '商品ID',
+    allValues: ['1001', '1002', '1003'],
+    limit: 1,
+  }])
+
+  assert.equal(splits.length, 2)
+  assert.deepEqual(splits.map((node) => node.formData.item), [['1002'], ['1003']])
+  assert.deepEqual(splits.map((node) => node.formData.bhv), [['购买'], ['购买']])
+  assert.deepEqual(splits.map((node) => node.formData.time), [
+    { days: 30, dateRange: [] },
+    { days: 30, dateRange: [] },
+  ])
+  assert.deepEqual(splits.map((node) => node.operator), ['u', 'u'])
 })
 
 // ============================================================

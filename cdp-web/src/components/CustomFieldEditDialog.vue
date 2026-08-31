@@ -15,7 +15,21 @@
       <div class="cf-edit-dialog-body">
         <!-- 编辑区 -->
         <div class="cf-edit-section">
-          <div class="display-body strong" style="margin-bottom:12px">编辑值</div>
+          <div class="cf-edit-value-header">
+            <div>
+              <span class="display-body strong">编辑值</span>
+              <small v-if="showBatchAction">可单次修改，也可按 Excel 行批量建包</small>
+            </div>
+            <button
+              v-if="showBatchAction"
+              type="button"
+              class="cf-edit-batch-action"
+              @click="emit('batch')"
+            >
+              <span aria-hidden="true"></span>
+              Excel 批量
+            </button>
+          </div>
 
           <!-- 日期 -->
           <template v-if="isDateType">
@@ -140,9 +154,10 @@ const props = defineProps({
   currentValue: { type: [String, Number, Array, Object], default: null },
   nodeList: { type: Array, default: () => [] },
   onWriteBack: { type: Function, default: null },
+  showBatchAction: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits(['update:modelValue', 'save', 'batch'])
 
 const editValue = ref(null)
 const editMode = ref('recent')
@@ -236,6 +251,58 @@ watch(() => props.modelValue, (val) => {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+.cf-edit-value-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.cf-edit-value-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.cf-edit-value-header small {
+  color: #989398;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.cf-edit-batch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0 11px;
+  color: #343134;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  border: 1px solid rgba(29,29,31,0.14);
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+.cf-edit-batch-action > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--ui-accent);
+}
+.cf-edit-batch-action:hover {
+  color: #171717;
+  border-color: var(--ui-accent);
+  transform: translateY(-1px);
+}
+.cf-edit-batch-action:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 2px;
 }
 .cf-edit-section {
   padding: 16px;

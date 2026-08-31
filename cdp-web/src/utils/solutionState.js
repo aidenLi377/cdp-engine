@@ -71,14 +71,26 @@ export function insertNodeAtPosition(nodeList, newNode, index) {
 export function serializeNodesForSolution(nodeList) {
   const nodes = Array.isArray(nodeList) ? nodeList : []
 
-  return nodes.map((node) => ({
-    id: node?.id ?? null,
-    displayName: typeof node?.displayName === 'string' ? node.displayName : '',
-    packageType: node?.packageType ?? null,
-    operator: node?.operator ?? null,
-    formData: node?.formData ?? {},
-    modeData: node?.modeData ?? {},
-  }))
+  return nodes.map((node) => {
+    const formData = node?.formData ?? {}
+    const persistedFormData = { ...formData }
+
+    // 类目商品行为的商品ID运行时按列表承载；保存时把单值折回旧格式，
+    // 这样已有草稿的快照不会因为控件升级而被误判为未保存修改。
+    if (node?.packageType === '类目商品行为' && Array.isArray(persistedFormData.item)) {
+      if (persistedFormData.item.length === 0) persistedFormData.item = ''
+      else if (persistedFormData.item.length === 1) persistedFormData.item = persistedFormData.item[0]
+    }
+
+    return {
+      id: node?.id ?? null,
+      displayName: typeof node?.displayName === 'string' ? node.displayName : '',
+      packageType: node?.packageType ?? null,
+      operator: node?.operator ?? null,
+      formData: persistedFormData,
+      modeData: node?.modeData ?? {},
+    }
+  })
 }
 
 export function getNodeDisplayName(node, index = 0) {

@@ -268,6 +268,19 @@ export function useSolutionRuntime() {
     const packageType = node?.packageType || ''
     const meta = await fetchPackageMeta(packageType)
     const defaults = buildInitialNodeState(meta.schema, packageType)
+    const formData = { ...defaults.formData, ...(cloneValue(node?.formData) || {}) }
+
+    // 类目商品行为历史上使用普通输入框，已保存的商品ID可能是字符串。
+    // 现在统一按列表承载，便于粘贴多个ID并沿用节点拆分流程；旧数据在加载时自动兼容。
+    if (packageType === '类目商品行为' && Object.prototype.hasOwnProperty.call(formData, 'item')) {
+      const rawItem = formData.item
+      formData.item = Array.isArray(rawItem)
+        ? rawItem.filter((value) => String(value ?? '').trim())
+        : String(rawItem ?? '')
+            .split(/[\s,，;；\t\r\n]+/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+    }
 
     return {
       id: node?.id || `node_${Date.now()}_${index}`,
@@ -276,7 +289,7 @@ export function useSolutionRuntime() {
       operator: index === 0 ? null : (node?.operator ?? 'n'),
       schema: meta.schema,
       logicMatrix: meta.matrix,
-      formData: { ...defaults.formData, ...(cloneValue(node?.formData) || {}) },
+      formData,
       modeData: { ...defaults.modeData, ...(cloneValue(node?.modeData) || {}) },
       selectedFirstDate: null,
       collapsed: false,

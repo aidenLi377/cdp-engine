@@ -147,6 +147,7 @@ function getSelectionCountHint(field, node) {
           if (node.packageType === '商品行为') return `已输入 ${vals.length}/5`
         }
         if (['itemId', 'itemIds'].includes(field.key) || field.Label.includes('商品ID')) {
+          if (node.packageType === '类目商品行为') return `已输入 ${vals.length}/1（每个组件1个）`
           if (node.packageType === '商品行为') return `已输入 ${vals.length}/50`
         }
         return `已输入 ${vals.length} 个`
@@ -174,6 +175,7 @@ function getListLimit(field, node) {
     if (node.packageType === '商品行为') return 5
   }
   if (['itemId', 'itemIds'].includes(field.key) || field.Label.includes('商品ID')) {
+    if (node.packageType === '类目商品行为') return 1
     if (node.packageType === '商品行为') return 50
   }
   if (['leafCates', 'stdBrand', 'cate'].includes(field.key) || field.Label.includes('类目') || field.Label.includes('品牌')) {

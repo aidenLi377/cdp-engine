@@ -154,12 +154,16 @@
         <div class="display-feature-title">
           {{
             batchMode
-              ? `${batchFolderName || '组合方案'} · ${batchEntries.length} 个人群包`
+              ? (isParameterBatch
+                ? `${batchFolderName || '单方案批量任务'} · ${batchEntries.length} 包`
+                : `${batchFolderName || '组合方案'} · ${batchEntries.length} 个人群包`)
               : (workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台')
           }}
         </div>
         <div v-if="batchMode" class="batch-toolbar-caption">
-          参数按名称聚合 · 修改一次同步到所有匹配方案
+          {{ isParameterBatch
+            ? `${parameterBatchFieldName} 按 Excel 行拆分 · 其余参数保持一致`
+            : '参数按名称聚合 · 修改一次同步到所有匹配方案' }}
         </div>
         <div v-else-if="workbenchMode === 'solution-use' && derivedSolutionMeta.hasStructureChanges" class="display-body-light">
           当前内容已偏离原方案结构
@@ -178,7 +182,9 @@
         >
           <span class="workbench-phase-dot"></span>
           <span class="display-body strong">
-            {{ batchMode ? '组合方案使用中' : (workbenchMode === 'solution-use' ? '方案使用中' : '自由搭建中') }}
+            {{ batchMode
+              ? (isParameterBatch ? '批量任务使用中' : '组合方案使用中')
+              : (workbenchMode === 'solution-use' ? '方案使用中' : '自由搭建中') }}
           </span>
         </div>
 
@@ -191,7 +197,7 @@
               text
               @click="clearCanvas"
             >
-              清空组合
+              {{ isParameterBatch ? '清空批量' : '清空组合' }}
             </el-button>
             <el-tooltip content="恢复方案默认值" placement="top">
               <el-button
@@ -316,10 +322,14 @@
           class="batch-parameter-heading"
         >
           <div>
-            <span class="batch-parameter-eyebrow">组合参数</span>
-            <strong>按名称去重，共 {{ customFieldSections.length }} 项</strong>
+            <span class="batch-parameter-eyebrow">{{ isParameterBatch ? '批量参数' : '组合参数' }}</span>
+            <strong>{{ isParameterBatch ? `${parameterBatchFieldName} 按行独立` : `按名称去重，共 ${customFieldSections.length} 项` }}</strong>
           </div>
-          <span class="batch-parameter-rule">同名参数同步写入 {{ batchEntries.length }} 个人群包</span>
+          <span class="batch-parameter-rule">
+            {{ isParameterBatch
+              ? `其余参数修改一次，同步写入 ${batchEntries.length} 个人群包`
+              : `同名参数同步写入 ${batchEntries.length} 个人群包` }}
+          </span>
         </div>
 
         <div v-if="customFieldSections.length > 0" class="cf-cards-bar" ref="cfCardsBarRef">
@@ -344,6 +354,7 @@
 	            <div class="cf-use-card-info">
 	              <span class="cf-use-card-title-row">
 	                <span class="display-body strong cf-use-card-name">{{ section.name }}</span>
+	                <span v-if="isParameterBatchSection(section)" class="cf-parameter-row-badge">按行独立</span>
 	              </span>
 	              <span class="cf-use-card-value-row">
 	                <span class="display-body-light cf-use-card-value">{{ getCfValueSummaryMeta(section).primaryText }}</span>
@@ -358,12 +369,14 @@
 	                </el-tooltip>
 	              </span>
                 <span v-if="batchMode" class="batch-parameter-scope">
-                  适用于 {{ section.entryCount || 0 }}/{{ batchEntries.length }} 个包
+                  {{ isParameterBatchSection(section)
+                    ? `当前第 ${activeBatchIndex + 1} 行`
+                    : `适用于 ${section.entryCount || 0}/${batchEntries.length} 个包` }}
                 </span>
 	            </div>
 	            <span
 	              class="display-mono cf-use-card-count"
-              title="点击编辑"
+	              :title="isParameterBatchSection(section) ? '该参数由 Excel 行独立控制' : '点击编辑'"
               @click.stop="openCfEditDialog(section)"
             >{{ section.bindings.length }}</span>
           </div>
@@ -481,6 +494,8 @@
         :bound-nodes="editingCfSection?.bindings || []"
         :current-value="editingCfCurrentValue"
         :node-list="editingCfNodeList.length ? editingCfNodeList : nodeList"
+        :show-batch-action="canBatchParameterSection(editingCfSection)"
+        @batch="openParameterBatchFromEditor"
         @save="onCfDialogSave"
       />
     </div>
@@ -609,7 +624,9 @@
 
       <div v-if="batchMode && currentSolution" class="batch-crowd-name-lock">
         <span class="batch-crowd-name-lock-mark">✓</span>
-        名称来自方案中心，组合执行期间保持锁定
+        {{ isParameterBatch
+          ? '名称来自 Excel 批量预览，逐包执行期间保持锁定'
+          : '名称来自方案中心，组合执行期间保持锁定' }}
       </div>
       <div v-else-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
         来源方案：{{ currentSolution.name || '未命名方案' }}，当前改动仅保留在工作台
@@ -694,6 +711,120 @@
       <pre v-else class="json-code display-mono" aria-label="JSON 预览">{{ getPreviewJsonText() }}</pre>
     </div>
   </div>
+
+  <el-dialog
+    v-model="parameterBatchDialogVisible"
+    width="860px"
+    class="intercom-dialog parameter-batch-dialog"
+    :close-on-click-modal="false"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="parameter-batch-dialog-head">
+        <div class="parameter-batch-kicker">EXCEL PASTE · SINGLE SOLUTION</div>
+        <h3>批量设置 · {{ parameterBatchSection?.name || '方案参数' }}</h3>
+        <p>保留当前方案中的时间、品类等参数，只按 Excel 的行拆分人群包。</p>
+      </div>
+    </template>
+
+    <div class="parameter-batch-guide">
+      <div class="parameter-batch-guide-index">01</div>
+      <div>
+        <strong>从 Excel 直接复制并粘贴</strong>
+        <span>每一行生成 1 个人群包；同一行的多个单元格作为该参数的多个选项。</span>
+      </div>
+      <div class="parameter-batch-guide-example" aria-label="粘贴格式示例">
+        <span>品牌1</span><span>品牌2</span>
+        <span>品牌3</span><span></span>
+        <span>品牌4</span><span>品牌5</span>
+      </div>
+    </div>
+
+    <div class="parameter-batch-editor-head">
+      <div>
+        <strong>粘贴区域</strong>
+        <small v-if="getParameterBatchLimit(parameterBatchSection)">
+          每行最多 {{ getParameterBatchLimit(parameterBatchSection) }} 项
+        </small>
+      </div>
+      <button
+        v-if="parameterBatchText"
+        type="button"
+        class="parameter-batch-clear"
+        @click="clearParameterBatchInput"
+      >清空</button>
+    </div>
+    <el-input
+      v-model="parameterBatchText"
+      type="textarea"
+      :rows="5"
+      resize="none"
+      class="parameter-batch-textarea"
+      placeholder="点击这里，从 Excel 复制后直接粘贴（Ctrl + V）"
+      @input="refreshParameterBatchRows"
+    />
+
+    <div class="parameter-batch-metrics" aria-live="polite">
+      <div><strong>{{ parameterBatchRows.length }}</strong><span>识别行数</span></div>
+      <div><strong>{{ parameterBatchTotalValues }}</strong><span>参数值</span></div>
+      <div :class="{ 'has-error': parameterBatchInvalidCount > 0 }">
+        <strong>{{ parameterBatchInvalidCount }}</strong><span>需处理</span>
+      </div>
+      <p v-if="parameterBatchRows.length > 100">单次最多生成 100 个人群包，请分批粘贴。</p>
+      <p v-else-if="parameterBatchRows.length">已自动检查空值、行内重复、重复行、选项匹配和每行数量限制。</p>
+      <p v-else>粘贴后会先预览，不会立即执行建包。</p>
+    </div>
+
+    <div v-if="parameterBatchRows.length" class="parameter-batch-preview">
+      <div class="parameter-batch-preview-head">
+        <span>行</span>
+        <span>{{ parameterBatchSection?.name || '参数值' }}</span>
+        <span>人群包名称</span>
+        <span>校验</span>
+        <span></span>
+      </div>
+      <div
+        v-for="(row, index) in parameterBatchRows"
+        :key="row.id"
+        class="parameter-batch-preview-row"
+        :class="{ 'has-error': !row.valid || getParameterBatchNameIssue(row) }"
+      >
+        <span class="parameter-batch-row-number">{{ String(index + 1).padStart(2, '0') }}</span>
+        <div class="parameter-batch-value-list">
+          <span
+            v-for="value in row.values"
+            :key="value"
+            :class="{ invalid: row.invalidValues.includes(value) }"
+          >{{ value }}</span>
+        </div>
+        <el-input v-model="row.crowdName" size="small" maxlength="80" />
+        <span class="parameter-batch-row-status">
+          <i></i>{{ getParameterBatchRowStatus(row) }}
+        </span>
+        <button
+          type="button"
+          class="parameter-batch-row-remove"
+          :aria-label="`移除第 ${index + 1} 行`"
+          @click="removeParameterBatchRow(row.id)"
+        >×</button>
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="batch-dialog-footer parameter-batch-footer">
+        <span>确认后仍需在右侧选择“自动化圈人”，系统才会逐包执行。</span>
+        <div>
+          <el-button class="intercom-btn-outlined" @click="parameterBatchDialogVisible = false">取消</el-button>
+          <el-button
+            class="batch-dialog-primary"
+            :loading="parameterBatchCreating"
+            :disabled="!parameterBatchCanCreate"
+            @click="createParameterBatchEntries"
+          >生成 {{ parameterBatchRows.length }} 个建包任务</el-button>
+        </div>
+      </div>
+    </template>
+  </el-dialog>
 
   <el-dialog
     v-model="batchPreviewVisible"
@@ -921,6 +1052,11 @@ import {
   buildBatchCustomFieldSections as composeBatchCustomFieldSections,
   collectUniqueCustomFieldNames,
 } from '../utils/solutionBatch.js'
+import {
+  buildParameterBatchRows,
+  collectBatchAllowedValues,
+  isBatchableParameterSection,
+} from '../utils/parameterBatch.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 import {
   readSessionWorkspace,
@@ -994,7 +1130,7 @@ const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
 
-const { getArray, isVisible } = useCdpShared()
+const { getArray, getListLimit, isVisible } = useCdpShared()
 const {
   cloneValue,
   createRuntimeNode,
@@ -1048,6 +1184,7 @@ const cfVisibleCount = ref(10)
 const dragCfIndex = ref(-1)
 const dragOverCfIndex = ref(-1)
 const batchMode = ref(false)
+const batchKind = ref('solutions')
 const batchEntries = ref([])
 const activeBatchIndex = ref(0)
 const batchFolderName = ref('')
@@ -1060,6 +1197,13 @@ const batchCopyIndex = ref(0)
 const batchCopying = ref(false)
 const batchAutomationDialogVisible = ref(false)
 const batchAutomationScope = ref('current')
+const parameterBatchDialogVisible = ref(false)
+const parameterBatchSection = ref(null)
+const parameterBatchText = ref('')
+const parameterBatchRows = ref([])
+const parameterBatchFieldName = ref('')
+const parameterBatchFieldId = ref('')
+const parameterBatchCreating = ref(false)
 const derivedSolutionMeta = reactive({
   sourceSolutionId: null,
   sourceSolutionVersion: null,
@@ -1135,6 +1279,18 @@ const batchPreviewHasInvalidNames = computed(() =>
 )
 
 const activeBatchEntry = computed(() => batchEntries.value[activeBatchIndex.value] || null)
+const isParameterBatch = computed(() => batchMode.value && batchKind.value === 'parameter')
+const parameterBatchTotalValues = computed(() => (
+  parameterBatchRows.value.reduce((total, row) => total + row.values.length, 0)
+))
+const parameterBatchInvalidCount = computed(() => (
+  parameterBatchRows.value.filter((row) => !row.valid || getParameterBatchNameIssue(row)).length
+))
+const parameterBatchCanCreate = computed(() => (
+  parameterBatchRows.value.length > 0
+  && parameterBatchRows.value.length <= 100
+  && parameterBatchInvalidCount.value === 0
+))
 
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
 const canUndo = computed(() => !batchMode.value && historyPos.value > 0)
@@ -1193,6 +1349,104 @@ function getBindingNode(binding) {
     return entry?.nodes?.find((node) => node.id === binding.nodeId)
   }
   return nodeList.value.find((node) => node.id === binding?.nodeId)
+}
+
+function isParameterBatchSection(section) {
+  return isParameterBatch.value
+    && String(section?.name || '').trim() === parameterBatchFieldName.value
+}
+
+function getSectionDisplayBindings(section) {
+  const bindings = Array.isArray(section?.bindings) ? section.bindings : []
+  if (!isParameterBatchSection(section)) return bindings
+  const activeEntryId = activeBatchEntry.value?.id
+  return bindings.filter((binding) => binding.entryId === activeEntryId)
+}
+
+function canBatchParameterSection(section) {
+  return workbenchMode.value === 'solution-use'
+    && Boolean(currentSolution.value)
+    && !batchMode.value
+    && Array.isArray(section?.bindings)
+    && section.bindings.length > 0
+    && isBatchableParameterSection(section)
+}
+
+function getParameterBatchLimit(section) {
+  const limits = (Array.isArray(section?.bindings) ? section.bindings : [])
+    .map((binding) => {
+      const node = getBindingNode(binding)
+      const field = (Array.isArray(node?.schema) ? node.schema : [])
+        .find((item) => item.key === binding.fieldKey)
+      return field && node ? Number(getListLimit(field, node)) : 0
+    })
+    .filter((limit) => Number.isFinite(limit) && limit > 0)
+  return limits.length ? Math.min(...limits) : 0
+}
+
+function refreshParameterBatchRows() {
+  const section = parameterBatchSection.value
+  if (!section) {
+    parameterBatchRows.value = []
+    return
+  }
+  const existingNames = new Map(
+    parameterBatchRows.value.map((row) => [JSON.stringify(row.values), row.crowdName]),
+  )
+  parameterBatchRows.value = buildParameterBatchRows(parameterBatchText.value, {
+    allowedValues: collectBatchAllowedValues(section),
+    maxItems: getParameterBatchLimit(section),
+    baseName: String(crowdNameInput.value || currentSolution.value?.defaultCrowdName || '人群包').trim(),
+  }).map((row) => ({
+    ...row,
+    crowdName: existingNames.get(JSON.stringify(row.values)) || row.crowdName,
+  }))
+}
+
+function openParameterBatch(section) {
+  if (!canBatchParameterSection(section)) return
+  parameterBatchSection.value = section
+  parameterBatchText.value = ''
+  parameterBatchRows.value = []
+  parameterBatchDialogVisible.value = true
+}
+
+async function openParameterBatchFromEditor() {
+  const section = editingCfSection.value
+  if (!canBatchParameterSection(section)) return
+  cfEditDialogVisible.value = false
+  await nextTick()
+  openParameterBatch(section)
+}
+
+function clearParameterBatchInput() {
+  parameterBatchText.value = ''
+  parameterBatchRows.value = []
+}
+
+function removeParameterBatchRow(rowId) {
+  const target = parameterBatchRows.value.find((row) => row.id === rowId)
+  if (!target) return
+  const remainingRows = parameterBatchRows.value.filter((row) => row.id !== rowId)
+  parameterBatchText.value = remainingRows
+    .map((row) => row.values.join('\t'))
+    .join('\n')
+  refreshParameterBatchRows()
+}
+
+function getParameterBatchNameIssue(row) {
+  const name = String(row?.crowdName || '').trim()
+  if (!name) return '请填写人群包名称'
+  const duplicateCount = parameterBatchRows.value.filter(
+    (item) => String(item?.crowdName || '').trim() === name,
+  ).length
+  return duplicateCount > 1 ? '人群包名称重复' : ''
+}
+
+function getParameterBatchRowStatus(row) {
+  const nameIssue = getParameterBatchNameIssue(row)
+  if (nameIssue) return nameIssue
+  return row.valid ? '可生成' : row.issues.join('；')
 }
 
 function resetDerivedSolutionMeta() {
@@ -1343,7 +1597,7 @@ function getFocusFieldDisplay(fieldKey, node) {
 }
 
 function getCfValueSummary(section) {
-  const bindings = Array.isArray(section.bindings) ? section.bindings : []
+  const bindings = getSectionDisplayBindings(section)
   if (bindings.length === 0) return ''
   const values = bindings
     .map((binding) => {
@@ -1369,7 +1623,7 @@ function getCfValueSummary(section) {
 }
 
 function getCfValueSummaryMeta(section) {
-  const bindings = Array.isArray(section.bindings) ? section.bindings : []
+  const bindings = getSectionDisplayBindings(section)
   if (bindings.length === 0) {
     return {
       primaryText: '',
@@ -1411,6 +1665,10 @@ function getCfValueSummaryMeta(section) {
 }
 
 function openCfEditDialog(section) {
+  if (isParameterBatchSection(section)) {
+    ElMessage.info(`“${parameterBatchFieldName.value}”已按 Excel 行拆分，如需调整请重新创建批量任务`)
+    return
+  }
   const activeEntryId = activeBatchEntry.value?.id
   const sectionBindings = section.bindings || []
   const activeBindings = batchMode.value
@@ -1473,6 +1731,10 @@ function onCfDialogSave({ customFieldId, value }) {
 function applyBatchCustomFieldValue(rawName, value) {
   const name = String(rawName || '').trim()
   if (!name) return
+  if (isParameterBatch.value && name === parameterBatchFieldName.value) {
+    ElMessage.warning(`“${name}”是本次按行拆分的参数，不能同步覆盖`)
+    return
+  }
 
   let affectedPackages = 0
   batchEntries.value.forEach((entry) => {
@@ -1565,6 +1827,7 @@ function onDragEnd() {
 
 function resetBatchContext() {
   batchMode.value = false
+  batchKind.value = 'solutions'
   batchEntries.value = []
   activeBatchIndex.value = 0
   batchFolderName.value = ''
@@ -1573,6 +1836,12 @@ function resetBatchContext() {
   batchCopyDialogVisible.value = false
   batchAutomationDialogVisible.value = false
   batchAutomationScope.value = 'current'
+  parameterBatchDialogVisible.value = false
+  parameterBatchSection.value = null
+  parameterBatchText.value = ''
+  parameterBatchRows.value = []
+  parameterBatchFieldName.value = ''
+  parameterBatchFieldId.value = ''
 }
 
 function resetWorkbenchContext() {
@@ -1851,6 +2120,9 @@ async function enterBatchMode() {
       })
     }
 
+    batchKind.value = 'solutions'
+    parameterBatchFieldName.value = ''
+    parameterBatchFieldId.value = ''
     batchEntries.value = entries
     activeBatchIndex.value = 0
     batchFolderName.value = selectedPublishedFolderName.value || '组合方案'
@@ -1865,6 +2137,74 @@ async function enterBatchMode() {
     ElMessage.error(error?.message || '组合方案加载失败，请稍后重试')
   } finally {
     batchLoading.value = false
+  }
+}
+
+async function createParameterBatchEntries() {
+  if (parameterBatchCreating.value || !parameterBatchCanCreate.value) return
+  if (workbenchMode.value !== 'solution-use' || !currentSolution.value || batchMode.value) {
+    ElMessage.warning('批量参数只能从正在使用的单个方案中创建')
+    return
+  }
+
+  const section = parameterBatchSection.value
+  const customFieldId = String(section?.customFieldId || '')
+  const fieldName = String(section?.name || '').trim()
+  const baseRecord = cloneValue(currentSolution.value)
+  const baseNodes = cloneValue(nodeList.value)
+  const sourceField = (baseRecord?.customFields || []).find((field) => field.id === customFieldId)
+  if (!sourceField || !fieldName) {
+    ElMessage.error('未找到要批量设置的方案参数，请重新打开批量设置')
+    return
+  }
+
+  parameterBatchCreating.value = true
+  try {
+    const nonce = Date.now()
+    const entries = parameterBatchRows.value.map((row, index) => {
+      const record = cloneValue(baseRecord)
+      const nodes = cloneValue(baseNodes)
+      const customFields = Array.isArray(record.customFields) ? record.customFields : []
+      syncCustomFieldValue(nodes, customFieldId, customFields, cloneValue(row.values))
+      record.customFields = customFields.map((field) => (
+        field.id === customFieldId
+          ? { ...field, defaultValue: cloneValue(row.values) }
+          : field
+      ))
+      record.defaultCrowdName = String(row.crowdName || '').trim()
+
+      return {
+        id: `parameter_${record.id || 'solution'}_${nonce}_${index}`,
+        solutionName: String(record.name || '').trim() || '未命名方案',
+        crowdName: record.defaultCrowdName,
+        record,
+        sourceRecord: cloneValue(record),
+        nodes,
+        sourceNodes: cloneValue(nodes),
+        generatedJson: null,
+        automationStatus: 'idle',
+        parameterBatchValues: cloneValue(row.values),
+        parameterBatchSourceRow: row.sourceRow,
+      }
+    })
+
+    batchKind.value = 'parameter'
+    parameterBatchFieldName.value = fieldName
+    parameterBatchFieldId.value = customFieldId
+    batchEntries.value = entries
+    activeBatchIndex.value = 0
+    batchFolderName.value = String(baseRecord.name || '单方案批量任务').trim()
+    batchSourceFolderId.value = null
+    batchMode.value = true
+    parameterBatchDialogVisible.value = false
+    await activateBatchEntry(0, { skipPersist: true })
+    resetHistory()
+    ElMessage.success(`已按 ${entries.length} 行生成 ${entries.length} 个建包任务`)
+  } catch (error) {
+    resetBatchContext()
+    ElMessage.error(error?.message || '批量任务生成失败，请检查粘贴内容后重试')
+  } finally {
+    parameterBatchCreating.value = false
   }
 }
 
@@ -2567,11 +2907,14 @@ function buildWorkbenchSessionPayload() {
     },
     batch: {
       enabled: batchMode.value,
+      kind: batchKind.value,
       entries: batchEntries.value.map(serializeBatchEntryForSession),
       activeIndex: activeBatchIndex.value,
       folderName: batchFolderName.value,
       sourceFolderId: batchSourceFolderId.value,
       automationScope: batchAutomationScope.value,
+      parameterFieldName: parameterBatchFieldName.value,
+      parameterFieldId: parameterBatchFieldId.value,
     },
   }
 }
@@ -2633,6 +2976,9 @@ async function restoreWorkbenchSession() {
       batchFolderName.value = String(stored.batch.folderName || '')
       batchSourceFolderId.value = stored.batch.sourceFolderId || null
       batchAutomationScope.value = stored.batch.automationScope === 'all' ? 'all' : 'current'
+      batchKind.value = stored.batch.kind === 'parameter' ? 'parameter' : 'solutions'
+      parameterBatchFieldName.value = String(stored.batch.parameterFieldName || '')
+      parameterBatchFieldId.value = String(stored.batch.parameterFieldId || '')
       batchMode.value = true
 
       const activeEntry = restoredEntries[activeBatchIndex.value]
@@ -2741,11 +3087,14 @@ watch(
     highlightedCfId,
     collapsedCfId,
     batchMode,
+    batchKind,
     batchEntries,
     activeBatchIndex,
     batchFolderName,
     batchSourceFolderId,
     batchAutomationScope,
+    parameterBatchFieldName,
+    parameterBatchFieldId,
   ],
   scheduleWorkbenchSessionSave,
   { deep: true },
