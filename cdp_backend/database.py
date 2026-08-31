@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS config_versions (
     snapshot        TEXT NOT NULL,
     change_count    INTEGER NOT NULL DEFAULT 0,
     note            TEXT NOT NULL DEFAULT '',
+    release_type    TEXT NOT NULL DEFAULT 'publish',
+    source_version  INTEGER,
     published_by    TEXT NOT NULL,
     published_at    TEXT NOT NULL
 );
@@ -322,6 +324,10 @@ MIGRATION_COLUMNS = {
         "deleted": "INTEGER NOT NULL DEFAULT 0",
         "published_deleted": "INTEGER NOT NULL DEFAULT 0",
     },
+    "config_versions": {
+        "release_type": "TEXT NOT NULL DEFAULT 'publish'",
+        "source_version": "INTEGER",
+    },
     "solutions": {
         "owner_id": "TEXT",
         "visibility": "TEXT NOT NULL DEFAULT 'public'",
@@ -394,4 +400,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 9")
+        conn.execute("PRAGMA user_version = 10")

@@ -46,6 +46,10 @@ class DimensionImportStateError(Exception):
     pass
 
 
+class DimensionVersionNotFoundError(Exception):
+    pass
+
+
 class DimensionStore:
     NAME_COLUMNS = {
         **DIMENSION_NAME_COLUMNS,
@@ -116,6 +120,14 @@ class DimensionStore:
     @classmethod
     def _row_to_data(cls, row) -> dict:
         return json.loads(row["data"]) if isinstance(row["data"], str) else row["data"]
+
+    @staticmethod
+    def _is_published_tombstone(row) -> bool:
+        return bool(
+            row["is_published"]
+            and row["published_deleted"]
+            and not row["has_changes"]
+        )
 
     @staticmethod
     def _decode_json_object(value) -> dict:
@@ -287,7 +299,12 @@ class DimensionStore:
             result = []
             for filename in DIMENSION_FILES:
                 total = conn.execute(
-                    "SELECT COUNT(*) FROM dimension_rows WHERE dimension_file = ?",
+                    """SELECT COUNT(*) FROM dimension_rows
+                       WHERE dimension_file = ?
+                       AND NOT (
+                           is_published = 1 AND published_deleted = 1
+                           AND has_changes = 0
+                       )""",
                     (filename,),
                 ).fetchone()[0]
                 active = conn.execute(
@@ -325,7 +342,10 @@ class DimensionStore:
         self._name_column(filename)
         page = max(1, int(page))
         page_size = min(200, max(1, int(page_size)))
-        clauses = ["dimension_file = ?"]
+        clauses = [
+            "dimension_file = ?",
+            "NOT (is_published = 1 AND published_deleted = 1 AND has_changes = 0)",
+        ]
         params: list[str | int] = [filename]
         if not include_disabled:
             clauses.append("enabled = 1")
@@ -354,7 +374,12 @@ class DimensionStore:
             ).fetchall()
             packages = conn.execute(
                 """SELECT DISTINCT package_name FROM dimension_rows
-                   WHERE dimension_file = ? ORDER BY package_name""",
+                   WHERE dimension_file = ?
+                   AND NOT (
+                       is_published = 1 AND published_deleted = 1
+                       AND has_changes = 0
+                   )
+                   ORDER BY package_name""",
                 (filename,),
             ).fetchall()
         return {
@@ -385,32 +410,50 @@ class DimensionStore:
         row_id = f"dim_{uuid4().hex}"
         with get_db(self.db_path) as conn:
             existing = conn.execute(
-                """SELECT id FROM dimension_rows
+                """SELECT * FROM dimension_rows
                    WHERE dimension_file = ? AND natural_key = ?""",
                 (filename, natural_key),
             ).fetchone()
             if existing is not None:
-                raise DimensionConflictError("同一维表中已存在相同的包和名称")
-            conn.execute(
-                """INSERT INTO dimension_rows (
-                    id, dimension_file, natural_key, package_name, display_name,
-                    data, enabled, published_data, published_enabled,
-                    is_published, has_changes, created_by, updated_by,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 0, 0, 1, ?, ?, ?, ?)""",
-                (
-                    row_id,
-                    filename,
-                    natural_key,
-                    data.get("适用的包", ""),
-                    data[self._name_column(filename)],
-                    json.dumps(data, ensure_ascii=False),
-                    user_id,
-                    user_id,
-                    now,
-                    now,
-                ),
-            )
+                if not self._is_published_tombstone(existing):
+                    raise DimensionConflictError("同一维表中已存在相同的包和名称")
+                row_id = existing["id"]
+                conn.execute(
+                    """UPDATE dimension_rows
+                       SET package_name = ?, display_name = ?, data = ?,
+                           enabled = 1, deleted = 0, has_changes = 1,
+                           updated_by = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (
+                        data.get("适用的包", ""),
+                        data[self._name_column(filename)],
+                        json.dumps(data, ensure_ascii=False),
+                        user_id,
+                        now,
+                        row_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO dimension_rows (
+                        id, dimension_file, natural_key, package_name, display_name,
+                        data, enabled, published_data, published_enabled,
+                        is_published, has_changes, created_by, updated_by,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 0, 0, 1, ?, ?, ?, ?)""",
+                    (
+                        row_id,
+                        filename,
+                        natural_key,
+                        data.get("适用的包", ""),
+                        data[self._name_column(filename)],
+                        json.dumps(data, ensure_ascii=False),
+                        user_id,
+                        user_id,
+                        now,
+                        now,
+                    ),
+                )
             self._record_config_audit(
                 conn,
                 actor_user_id=user_id,
@@ -420,7 +463,7 @@ class DimensionStore:
                 row_name=data[self._name_column(filename)],
                 created_at=now,
                 details={
-                    "summary": "新增维表记录",
+                    "summary": "恢复并新增维表记录" if existing is not None else "新增维表记录",
                     "changes": self._diff_data({}, data),
                     "before": None,
                     "after": data,
@@ -668,7 +711,7 @@ class DimensionStore:
         for item in normalized_rows:
             data = item["data"]
             current = existing_by_key.get(cls._natural_key(filename, data))
-            if current is None:
+            if current is None or cls._is_published_tombstone(current):
                 created += 1
             elif (
                 cls._row_to_data(current) == data
@@ -739,9 +782,12 @@ class DimensionStore:
             existing = {
                 row["natural_key"]: row
                 for row in conn.execute(
-                    "SELECT id, natural_key FROM dimension_rows WHERE dimension_file = ?",
+                    """SELECT id, natural_key, is_published, published_deleted,
+                              has_changes
+                       FROM dimension_rows WHERE dimension_file = ?""",
                     (filename,),
                 ).fetchall()
+                if not self._is_published_tombstone(row)
             }
             new_rows = []
             existing_rows = []
@@ -833,6 +879,24 @@ class DimensionStore:
             natural_key = self._natural_key(filename, data)
             current = existing_by_key.get(natural_key)
             if current is not None:
+                if self._is_published_tombstone(current):
+                    conn.execute(
+                        """UPDATE dimension_rows
+                           SET package_name = ?, display_name = ?, data = ?,
+                               enabled = 1, deleted = 0, has_changes = 1,
+                               updated_by = ?, updated_at = ?
+                           WHERE dimension_file = ? AND id = ?""",
+                        (
+                            data.get("适用的包", ""),
+                            data[self._name_column(filename)],
+                            json.dumps(data, ensure_ascii=False),
+                            user_id,
+                            now,
+                            filename,
+                            current["id"],
+                        ),
+                    )
+                    continue
                 if (
                     self._row_to_data(current) == data
                     and bool(current["enabled"])
@@ -997,7 +1061,8 @@ class DimensionStore:
                 "SELECT COUNT(*) FROM dimension_rows WHERE has_changes = 1"
             ).fetchone()[0]
             latest = conn.execute(
-                """SELECT version_number, note, published_by, published_at, change_count
+                """SELECT version_number, note, published_by, published_at,
+                          change_count, release_type, source_version
                    FROM config_versions ORDER BY version_number DESC LIMIT 1"""
             ).fetchone()
         return {
@@ -1010,6 +1075,8 @@ class DimensionStore:
                     "publishedBy": latest["published_by"],
                     "publishedAt": latest["published_at"],
                     "changeCount": latest["change_count"],
+                    "releaseType": latest["release_type"],
+                    "sourceVersion": latest["source_version"],
                 }
                 if latest
                 else None
@@ -1027,6 +1094,53 @@ class DimensionStore:
             "version": latest["version_number"] if latest else 0,
             "publishedAt": latest["published_at"] if latest else None,
         }
+
+    @classmethod
+    def _normalize_snapshot(cls, snapshot) -> list[dict]:
+        if not isinstance(snapshot, list):
+            raise DimensionValidationError("目标版本快照损坏，无法回滚")
+        normalized = []
+        seen = set()
+        for item in snapshot:
+            if not isinstance(item, dict):
+                raise DimensionValidationError("目标版本快照损坏，无法回滚")
+            filename = str(item.get("dimensionFile") or "")
+            data = cls._normalize_data(filename, item.get("data"))
+            natural_key = cls._natural_key(filename, data)
+            identity = (filename, natural_key)
+            if identity in seen:
+                raise DimensionValidationError("目标版本包含重复维表记录，无法回滚")
+            seen.add(identity)
+            normalized.append(
+                {
+                    "id": str(item.get("id") or f"dim_{uuid4().hex}"),
+                    "dimensionFile": filename,
+                    "naturalKey": natural_key,
+                    "packageName": data.get("适用的包", ""),
+                    "displayName": data[cls._name_column(filename)],
+                    "data": data,
+                    "enabled": bool(item.get("enabled", True)),
+                }
+            )
+        return normalized
+
+    @staticmethod
+    def _snapshot_change_count(before: list[dict], after: list[dict]) -> int:
+        def comparable(snapshot: list[dict]) -> dict:
+            return {
+                (item["dimensionFile"], item["naturalKey"]): {
+                    "data": item["data"],
+                    "enabled": bool(item.get("enabled", True)),
+                }
+                for item in snapshot
+            }
+
+        before_map = comparable(before)
+        after_map = comparable(after)
+        return sum(
+            before_map.get(key) != after_map.get(key)
+            for key in set(before_map) | set(after_map)
+        )
 
     def publish_changes(self, user_id: str, note: str = "") -> dict:
         note = str(note or "").strip()
@@ -1077,8 +1191,8 @@ class DimensionStore:
             conn.execute(
                 """INSERT INTO config_versions (
                     id, version_number, snapshot, change_count, note,
-                    published_by, published_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    release_type, source_version, published_by, published_at
+                ) VALUES (?, ?, ?, ?, ?, 'publish', NULL, ?, ?)""",
                 (
                     version_id,
                     version_number,
@@ -1109,6 +1223,215 @@ class DimensionStore:
             "note": note,
             "publishedBy": user_id,
             "publishedAt": now,
+            "releaseType": "publish",
+            "sourceVersion": None,
+        }
+
+    def rollback_version(
+        self,
+        target_version: int,
+        user_id: str,
+        note: str = "",
+    ) -> dict:
+        try:
+            target_version = int(target_version)
+        except (TypeError, ValueError) as exc:
+            raise DimensionValidationError("回滚版本无效") from exc
+        if target_version <= 0:
+            raise DimensionValidationError("回滚版本无效")
+        note = str(note or "").strip()
+        if len(note) > 300:
+            raise DimensionValidationError("回滚说明不能超过 300 个字符")
+
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            pending = conn.execute(
+                "SELECT COUNT(*) FROM dimension_rows WHERE has_changes = 1"
+            ).fetchone()[0]
+            if pending:
+                raise DimensionValidationError(
+                    "存在待发布修改，请先发布或放弃草稿后再回滚"
+                )
+
+            target = conn.execute(
+                """SELECT version_number, snapshot FROM config_versions
+                   WHERE version_number = ?""",
+                (target_version,),
+            ).fetchone()
+            if target is None:
+                raise DimensionVersionNotFoundError(target_version)
+            latest = conn.execute(
+                """SELECT version_number, snapshot FROM config_versions
+                   ORDER BY version_number DESC LIMIT 1"""
+            ).fetchone()
+            if latest is None:
+                raise DimensionValidationError("当前没有可回滚的发布版本")
+            from_version = int(latest["version_number"])
+            if target_version == from_version:
+                raise DimensionValidationError("目标版本已经是当前版本")
+
+            target_snapshot = self._normalize_snapshot(json.loads(target["snapshot"]))
+            current_snapshot = self._normalize_snapshot(json.loads(latest["snapshot"]))
+            change_count = self._snapshot_change_count(current_snapshot, target_snapshot)
+
+            current_rows = conn.execute("SELECT * FROM dimension_rows").fetchall()
+            current_by_id = {row["id"]: row for row in current_rows}
+            current_by_key = {
+                (row["dimension_file"], row["natural_key"]): row
+                for row in current_rows
+            }
+            used_ids = set()
+
+            for row in current_rows:
+                conn.execute(
+                    "UPDATE dimension_rows SET natural_key = ? WHERE id = ?",
+                    (f"__rollback__\x1f{uuid4().hex}\x1f{row['id']}", row["id"]),
+                )
+
+            for item in target_snapshot:
+                current = current_by_id.get(item["id"])
+                if current is None or current["id"] in used_ids:
+                    current = current_by_key.get(
+                        (item["dimensionFile"], item["naturalKey"])
+                    )
+                data_json = json.dumps(item["data"], ensure_ascii=False)
+                if current is not None and current["id"] not in used_ids:
+                    row_id = current["id"]
+                    conn.execute(
+                        """UPDATE dimension_rows
+                           SET dimension_file = ?, natural_key = ?, package_name = ?,
+                               display_name = ?, data = ?, enabled = ?,
+                               published_data = ?, published_enabled = ?,
+                               is_published = 1, has_changes = 0,
+                               deleted = 0, published_deleted = 0,
+                               updated_by = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (
+                            item["dimensionFile"],
+                            item["naturalKey"],
+                            item["packageName"],
+                            item["displayName"],
+                            data_json,
+                            1 if item["enabled"] else 0,
+                            data_json,
+                            1 if item["enabled"] else 0,
+                            user_id,
+                            now,
+                            row_id,
+                        ),
+                    )
+                else:
+                    row_id = item["id"]
+                    if row_id in current_by_id:
+                        row_id = f"dim_{uuid4().hex}"
+                    conn.execute(
+                        """INSERT INTO dimension_rows (
+                            id, dimension_file, natural_key, package_name,
+                            display_name, data, enabled, published_data,
+                            published_enabled, is_published, has_changes,
+                            deleted, published_deleted, created_by, updated_by,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, ?, ?)""",
+                        (
+                            row_id,
+                            item["dimensionFile"],
+                            item["naturalKey"],
+                            item["packageName"],
+                            item["displayName"],
+                            data_json,
+                            1 if item["enabled"] else 0,
+                            data_json,
+                            1 if item["enabled"] else 0,
+                            user_id,
+                            user_id,
+                            now,
+                            now,
+                        ),
+                    )
+                used_ids.add(row_id)
+
+            for row in current_rows:
+                if row["id"] in used_ids:
+                    continue
+                archived_key = (
+                    f"{self._natural_key(row['dimension_file'], self._row_to_data(row))}"
+                    f"\x1farchived:{row['id']}"
+                )
+                conn.execute(
+                    """UPDATE dimension_rows
+                       SET natural_key = ?, enabled = 0, published_enabled = 0,
+                           is_published = 1, has_changes = 0,
+                           deleted = 1, published_deleted = 1,
+                           updated_by = ?, updated_at = ?
+                       WHERE id = ?""",
+                    (archived_key, user_id, now, row["id"]),
+                )
+
+            restored_rows = conn.execute(
+                """SELECT id, dimension_file, natural_key, package_name,
+                          display_name, published_data, published_enabled
+                   FROM dimension_rows
+                   WHERE is_published = 1 AND published_deleted = 0
+                   ORDER BY dimension_file, natural_key, id"""
+            ).fetchall()
+            restored_snapshot = [
+                {
+                    "id": row["id"],
+                    "dimensionFile": row["dimension_file"],
+                    "naturalKey": row["natural_key"],
+                    "packageName": row["package_name"],
+                    "displayName": row["display_name"],
+                    "data": json.loads(row["published_data"]),
+                    "enabled": bool(row["published_enabled"]),
+                }
+                for row in restored_rows
+            ]
+            version_number = from_version + 1
+            version_id = f"config_{uuid4().hex}"
+            release_note = note or f"回滚至 V{target_version}"
+            conn.execute(
+                """INSERT INTO config_versions (
+                    id, version_number, snapshot, change_count, note,
+                    release_type, source_version, published_by, published_at
+                ) VALUES (?, ?, ?, ?, ?, 'rollback', ?, ?, ?)""",
+                (
+                    version_id,
+                    version_number,
+                    json.dumps(restored_snapshot, ensure_ascii=False),
+                    change_count,
+                    release_note,
+                    target_version,
+                    user_id,
+                    now,
+                ),
+            )
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="CONFIG_ROLLED_BACK",
+                created_at=now,
+                details={
+                    "summary": (
+                        f"回滚配置 V{from_version} → V{target_version}，"
+                        f"生成 V{version_number}"
+                    ),
+                    "version": version_number,
+                    "fromVersion": from_version,
+                    "targetVersion": target_version,
+                    "changeCount": change_count,
+                    "note": release_note,
+                },
+            )
+
+        return {
+            "id": version_id,
+            "version": version_number,
+            "changeCount": change_count,
+            "note": release_note,
+            "publishedBy": user_id,
+            "publishedAt": now,
+            "releaseType": "rollback",
+            "sourceVersion": target_version,
         }
 
     def discard_changes(self, user_id: str) -> dict:
@@ -1207,10 +1530,15 @@ class DimensionStore:
         limit = min(100, max(1, int(limit)))
         with get_db(self.db_path) as conn:
             rows = conn.execute(
-                """SELECT id, version_number, change_count, note,
-                          published_by, published_at
-                   FROM config_versions
-                   ORDER BY version_number DESC LIMIT ?""",
+                """SELECT versions.id, versions.version_number,
+                          versions.change_count, versions.note,
+                          versions.release_type, versions.source_version,
+                          versions.published_by, versions.published_at,
+                          users.username AS publisher_username,
+                          users.display_name AS publisher_display_name
+                   FROM config_versions AS versions
+                   LEFT JOIN users ON users.id = versions.published_by
+                   ORDER BY versions.version_number DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
         return [
@@ -1220,7 +1548,11 @@ class DimensionStore:
                 "changeCount": row["change_count"],
                 "note": row["note"],
                 "publishedBy": row["published_by"],
+                "publisherUsername": row["publisher_username"],
+                "publisherDisplayName": row["publisher_display_name"],
                 "publishedAt": row["published_at"],
+                "releaseType": row["release_type"],
+                "sourceVersion": row["source_version"],
             }
             for row in rows
         ]

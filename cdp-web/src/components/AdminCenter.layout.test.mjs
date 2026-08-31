@@ -141,6 +141,19 @@ test('account and plan management use distinct master-detail surfaces', () => {
   assert.doesNotMatch(adminCenterVue, /\['users', 'plans'\]\.includes\(activeSection\)/)
 })
 
+test('release history provides guarded non-destructive version rollback', () => {
+  assert.match(adminCenterVue, /id="config-version-title">发布版本/)
+  assert.match(adminCenterVue, /每次发布和回滚都会生成新版本，历史版本始终保留/)
+  assert.match(adminCenterVue, /\/api\/admin\/config\/versions/)
+  assert.match(adminCenterVue, /\/api\/admin\/config\/versions\/\$\{encodeURIComponent\(version\.version\)\}\/rollback/)
+  assert.match(adminCenterVue, /请先发布或放弃草稿，再进行版本回滚/)
+  assert.match(adminCenterVue, /系统会生成新的 V\$\{nextVersion\}，不会删除任何历史版本/)
+  assert.match(adminCenterVue, /class="config-rollback-button"/)
+  assert.match(adminCenterVue, /:disabled="Boolean\(configStatus\.pendingChanges\) \|\| rollbackBusyVersion === version\.version"/)
+  assert.match(adminCenterVue, /class="config-version-row"[\s\S]*:class="\{ current: index === 0 \}"/)
+  assert.match(adminCenterVue, /\.config-version-row\.current \{[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\);/s)
+})
+
 test('account permissions use crisp black and white states without grey disabled checkboxes', () => {
   assert.match(adminCenterVue, /class="permission-access"/)
   assert.match(adminCenterVue, /<Check v-if="selectedRolePermissions\.includes\(permission\.key\)"/)

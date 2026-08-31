@@ -540,6 +540,170 @@ class DimensionAdminApiTests(unittest.TestCase):
         self.assertTrue(refreshed_row["deleted"])
         self.assertTrue(refreshed_row["hasChanges"])
 
+    def test_published_delete_disappears_and_can_be_added_or_imported_again(self):
+        client = self.login("root", "root-password")
+        filename = "类目维表.csv"
+        data = {
+            "适用的包": "类目公域行为",
+            "类目名称": "测试类目>删除后重建",
+            "cateId": "990000099",
+        }
+        created = client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={"data": data},
+        ).get_json()
+        client.post("/api/admin/config/publish", json={"note": "创建待删除记录"})
+
+        client.delete(f"/api/admin/dimensions/{filename}/{created['id']}")
+        pending = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": data["类目名称"]},
+        ).get_json()
+        self.assertEqual(pending["total"], 1)
+        self.assertTrue(pending["rows"][0]["deleted"])
+
+        client.post("/api/admin/config/publish", json={"note": "确认删除"})
+        removed = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": data["类目名称"]},
+        ).get_json()
+        self.assertEqual(removed["total"], 0)
+
+        restored = client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={"data": data},
+        )
+        self.assertEqual(restored.status_code, 201)
+        self.assertEqual(restored.get_json()["id"], created["id"])
+        self.assertTrue(restored.get_json()["hasChanges"])
+        client.post("/api/admin/config/publish", json={"note": "手动恢复"})
+
+        client.delete(f"/api/admin/dimensions/{filename}/{created['id']}")
+        client.post("/api/admin/config/publish", json={"note": "再次删除"})
+        excel = self.excel_file(
+            ["适用的包", "类目名称", "cateId"],
+            [[data["适用的包"], data["类目名称"], data["cateId"]]],
+        )
+        preview_response = client.post(
+            f"/api/admin/dimensions/{filename}/import/preview",
+            data={"file": excel},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(preview_response.status_code, 200)
+        preview = preview_response.get_json()
+        self.assertEqual(preview["created"], 1)
+        self.assertEqual(preview["existing"], 0)
+        confirmed = client.post(
+            f"/api/admin/dimensions/{filename}/import/{preview['importId']}/confirm"
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.get_json()["created"], 1)
+        imported = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": data["类目名称"]},
+        ).get_json()["rows"]
+        self.assertEqual(imported[0]["id"], created["id"])
+        self.assertTrue(imported[0]["hasChanges"])
+
+    def test_config_admin_can_rollback_to_a_published_version_as_a_new_release(self):
+        client = self.login("config", "config-password")
+        filename = "类目维表.csv"
+        original = {
+            "适用的包": "类目公域行为",
+            "类目名称": "测试类目>版本回滚",
+            "cateId": "990000120",
+        }
+        created = client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={"data": original},
+        ).get_json()
+        first = client.post(
+            "/api/admin/config/publish",
+            json={"note": "回滚测试基线"},
+        ).get_json()
+        self.assertEqual(first["version"], 1)
+
+        changed = {**original, "cateId": "990000121"}
+        self.assertEqual(
+            client.put(
+                f"/api/admin/dimensions/{filename}/{created['id']}",
+                json={"data": changed},
+            ).status_code,
+            200,
+        )
+        extra_name = "测试类目>仅存在于V2"
+        client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={
+                "data": {
+                    "适用的包": "类目公域行为",
+                    "类目名称": extra_name,
+                    "cateId": "990000122",
+                }
+            },
+        )
+        second = client.post(
+            "/api/admin/config/publish",
+            json={"note": "回滚测试第二版"},
+        ).get_json()
+        self.assertEqual(second["version"], 2)
+
+        client.post(
+            f"/api/admin/dimensions/{filename}",
+            json={
+                "data": {
+                    "适用的包": "类目公域行为",
+                    "类目名称": "测试类目>未发布草稿",
+                    "cateId": "990000123",
+                }
+            },
+        )
+        blocked = client.post("/api/admin/config/versions/1/rollback")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("待发布修改", blocked.get_json()["message"])
+        client.post("/api/admin/config/discard")
+
+        regular_client = self.login("normal", "normal-password")
+        self.assertEqual(
+            regular_client.post("/api/admin/config/versions/1/rollback").status_code,
+            403,
+        )
+
+        rolled_back = client.post(
+            "/api/admin/config/versions/1/rollback",
+            json={"note": "恢复稳定配置"},
+        )
+        self.assertEqual(rolled_back.status_code, 201)
+        rollback = rolled_back.get_json()
+        self.assertEqual(rollback["version"], 3)
+        self.assertEqual(rollback["releaseType"], "rollback")
+        self.assertEqual(rollback["sourceVersion"], 1)
+
+        restored = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": original["类目名称"]},
+        ).get_json()["rows"][0]
+        self.assertEqual(restored["data"]["cateId"], original["cateId"])
+        removed_extra = client.get(
+            f"/api/admin/dimensions/{filename}",
+            query_string={"q": extra_name},
+        ).get_json()
+        self.assertEqual(removed_extra["total"], 0)
+
+        status = client.get("/api/admin/config/status").get_json()
+        self.assertEqual(status["currentVersion"], 3)
+        self.assertEqual(status["latestVersion"]["releaseType"], "rollback")
+        versions = client.get("/api/admin/config/versions").get_json()
+        self.assertEqual(versions[0]["version"], 3)
+        self.assertEqual(versions[0]["sourceVersion"], 1)
+        self.assertEqual(versions[0]["publisherDisplayName"], "Config")
+        audit = client.get("/api/admin/config/audit-logs").get_json()["items"]
+        rollback_audit = next(
+            item for item in audit if item["action"] == "CONFIG_ROLLED_BACK"
+        )
+        self.assertEqual(rollback_audit["details"]["fromVersion"], 2)
+        self.assertEqual(rollback_audit["details"]["targetVersion"], 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

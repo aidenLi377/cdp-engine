@@ -28,6 +28,7 @@ from .dimension_store import (
     DimensionNotFoundError,
     DimensionStore,
     DimensionValidationError,
+    DimensionVersionNotFoundError,
 )
 from .dimension_import import (
     MAX_IMPORT_BYTES,
@@ -1247,6 +1248,31 @@ def register_routes(
         if permission_error is not None:
             return permission_error
         return jsonify(dimension_store.list_versions())
+
+    @app.route(
+        "/api/admin/config/versions/<int:version_number>/rollback",
+        methods=["POST"],
+    )
+    def admin_rollback_config(version_number: int):
+        nonlocal loaded_config_version
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True) or {}
+        try:
+            with config_reload_lock:
+                version = dimension_store.rollback_version(
+                    version_number,
+                    g.current_user["id"],
+                    payload.get("note", ""),
+                )
+                engine.reload_config(validate_on_load=False)
+                loaded_config_version = version["version"]
+        except DimensionVersionNotFoundError:
+            return error_response("CONFIG_VERSION_NOT_FOUND", "发布版本不存在", 404)
+        except DimensionValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify(version), 201
 
     @app.route("/api/admin/config/audit-logs")
     def admin_config_audit_logs():

@@ -733,9 +733,71 @@
       </template>
 
       <section v-if="activeSection === 'releases'" class="config-audit-panel" aria-labelledby="config-audit-title">
+        <section class="config-version-panel" aria-labelledby="config-version-title">
+          <div class="config-version-head">
+            <div>
+              <p class="admin-panel-index">04 / RELEASE VERSIONS</p>
+              <h2 id="config-version-title">发布版本</h2>
+              <p>每次发布和回滚都会生成新版本，历史版本始终保留。</p>
+            </div>
+            <button
+              class="config-audit-refresh"
+              type="button"
+              :disabled="configVersionsLoading"
+              @click="loadConfigVersions()"
+            >{{ configVersionsLoading ? '读取中…' : '刷新版本' }}</button>
+          </div>
+
+          <div v-if="configStatus.pendingChanges" class="config-rollback-blocker" role="status">
+            <span aria-hidden="true"></span>
+            当前有 {{ configStatus.pendingChanges }} 项待发布修改。请先发布或放弃草稿，再进行版本回滚。
+          </div>
+
+          <div class="config-version-list" :class="{ loading: configVersionsLoading }">
+            <article
+              v-for="(version, index) in configVersions"
+              :key="version.id"
+              class="config-version-row"
+              :class="{ current: index === 0 }"
+            >
+              <div class="config-version-mark" aria-hidden="true">
+                <span>{{ index === 0 ? '●' : '○' }}</span>
+              </div>
+              <div class="config-version-number">
+                <strong>V{{ version.version }}</strong>
+                <span v-if="index === 0" class="config-version-current">当前</span>
+                <span v-else-if="version.releaseType === 'rollback'" class="config-version-rollback-tag">
+                  回滚自 V{{ version.sourceVersion }}
+                </span>
+                <span v-else class="config-version-publish-tag">发布</span>
+              </div>
+              <div class="config-version-copy">
+                <strong>{{ version.note || (version.releaseType === 'rollback' ? `回滚至 V${version.sourceVersion}` : '未填写发布说明') }}</strong>
+                <small>
+                  {{ version.publisherDisplayName || version.publisherUsername || '管理员' }}
+                  · {{ formatDate(version.publishedAt) }}
+                  · {{ version.changeCount }} 项变化
+                </small>
+              </div>
+              <button
+                v-if="index > 0"
+                class="config-rollback-button"
+                type="button"
+                :disabled="Boolean(configStatus.pendingChanges) || rollbackBusyVersion === version.version"
+                @click="rollbackConfigVersion(version)"
+              >{{ rollbackBusyVersion === version.version ? '回滚中…' : '回滚到此版本' }}</button>
+              <span v-else class="config-version-live">运行中</span>
+            </article>
+            <p v-if="!configVersions.length && !configVersionsLoading" class="config-version-empty">
+              还没有发布版本。首次发布维表配置后，这里会自动建立版本记录。
+            </p>
+          </div>
+        </section>
+
+        <div class="config-audit-divider" aria-hidden="true"></div>
         <div class="config-audit-head">
           <div>
-            <p class="admin-panel-index">04 / CONFIG CHANGELOG</p>
+            <p class="admin-panel-index">05 / CONFIG CHANGELOG</p>
             <h3 id="config-audit-title">配置修改记录</h3>
             <p>按管理员操作留档，展开可查看维表、记录以及每个字段的旧值与新值。</p>
           </div>
@@ -1247,6 +1309,9 @@ const configAuditTotal = ref(0)
 const configAuditLoading = ref(false)
 const configAuditScope = ref('all')
 const expandedConfigAuditId = ref('')
+const configVersions = ref([])
+const configVersionsLoading = ref(false)
+const rollbackBusyVersion = ref(0)
 const dimensions = ref([])
 const configStatus = ref({ currentVersion: 0, pendingChanges: 0 })
 const publishNote = ref('')
@@ -1437,6 +1502,7 @@ watch(activeSection, (section) => {
     adminCenterRoot.value?.scrollTo({ top: 0, behavior: 'auto' })
   })
   closeSolutionPreview()
+  if (section === 'releases') loadConfigVersions({ silent: true })
   const current = users.value.find((user) => user.id === managedUser.value?.id) || users.value[0]
   if (!current) return
   if (section === 'users') selectAccountUser(current)
@@ -1679,8 +1745,11 @@ async function loadData() {
     if (!selectedDimensionFile.value || !dimensions.value.some((item) => item.file === selectedDimensionFile.value)) {
       selectedDimensionFile.value = dimensions.value[0]?.file || ''
     }
-    await loadDimensionRows()
-    await loadConfigAuditLogs({ silent: true })
+    await Promise.all([
+      loadDimensionRows(),
+      loadConfigAuditLogs({ silent: true }),
+      loadConfigVersions({ silent: true }),
+    ])
     if (canManageAccounts.value) {
       const [nextUsers, nextInvites, nextAuditLogs] = await Promise.all([
         request('/api/admin/users', { cache: 'no-store' }),
@@ -1800,6 +1869,7 @@ function configAuditActionClass(action) {
   if (action === 'DIMENSION_ROW_CREATED') return 'created'
   if (action === 'DIMENSION_ROW_DELETED' || action === 'CONFIG_DRAFT_DISCARDED') return 'removed'
   if (action === 'CONFIG_PUBLISHED') return 'published'
+  if (action === 'CONFIG_ROLLED_BACK') return 'rolled-back'
   return 'changed'
 }
 
@@ -1932,6 +2002,7 @@ async function publishConfig() {
     await Promise.all([
       loadDimensionRows(),
       refreshConfigSummary(),
+      loadConfigVersions({ silent: true }),
       loadConfigAuditLogs({ silent: true }),
     ])
     showMessage(`配置 V${version.version} 已发布并同步，共 ${version.changeCount} 项修改`)
@@ -2148,6 +2219,48 @@ async function previewDimensionImport(file) {
   }
 }
 
+async function loadConfigVersions({ silent = false } = {}) {
+  configVersionsLoading.value = true
+  try {
+    const result = await request('/api/admin/config/versions', { cache: 'no-store' })
+    configVersions.value = Array.isArray(result) ? result : []
+  } catch (error) {
+    if (!silent) showMessage(error.message || '发布版本加载失败', 'error')
+  } finally {
+    configVersionsLoading.value = false
+  }
+}
+
+async function rollbackConfigVersion(version) {
+  if (!version || rollbackBusyVersion.value || configStatus.value.pendingChanges) return
+  const currentVersion = configStatus.value.currentVersion || configVersions.value[0]?.version || 0
+  const nextVersion = currentVersion + 1
+  const confirmed = window.confirm(
+    `确定将当前 V${currentVersion} 回滚至 V${version.version} 吗？\n\n系统会生成新的 V${nextVersion}，不会删除任何历史版本。`,
+  )
+  if (!confirmed) return
+  rollbackBusyVersion.value = version.version
+  try {
+    const result = await request(
+      `/api/admin/config/versions/${encodeURIComponent(version.version)}/rollback`,
+      { method: 'POST', body: JSON.stringify({}) },
+    )
+    adoptConfigVersion(result, { notify: true })
+    closeDimensionEditor()
+    await Promise.all([
+      loadDimensionRows(),
+      refreshConfigSummary(),
+      loadConfigVersions({ silent: true }),
+      loadConfigAuditLogs({ silent: true }),
+    ])
+    showMessage(`已回滚至 V${version.version} 的配置，并生成 V${result.version}`)
+  } catch (error) {
+    showMessage(error.message || '版本回滚失败', 'error')
+  } finally {
+    rollbackBusyVersion.value = 0
+  }
+}
+
 async function confirmDimensionImport() {
   const preview = dimensionImportPreview.value
   if (!preview?.valid || !preview?.importId || !preview?.created || dimensionImportBusy.value) return
@@ -2162,6 +2275,7 @@ async function confirmDimensionImport() {
     await Promise.all([
       loadDimensionRows(),
       refreshConfigSummary(),
+      loadConfigVersions({ silent: true }),
       loadConfigAuditLogs({ silent: true }),
     ])
     showMessage(`已导入 ${result.rowCount} 行，等待发布配置`)
@@ -4725,6 +4839,190 @@ onBeforeUnmount(() => {
 .dimension-import-complete > p:last-of-type { max-width: 520px; margin: 12px 0 0; color: var(--ui-text-secondary); font-size: 11px; line-height: 1.7; }
 .dimension-import-complete > div { margin-top: 24px; }
 
+.config-version-panel {
+  min-width: 0;
+}
+
+.config-version-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.config-version-head h2 {
+  margin: 4px 0 0;
+  color: var(--ui-ink);
+  font: 600 22px/1.2 "Avenir Next", "Segoe UI Variable", "PingFang SC", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.config-version-head p:not(.admin-panel-index) {
+  margin: 7px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+
+.config-rollback-blocker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  margin-top: 16px;
+  padding: 0 13px;
+  color: #9a521f;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--ui-accent) 5%, var(--ui-surface));
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 24%, var(--ui-divider));
+  border-radius: 9px;
+}
+
+.config-rollback-blocker > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  background: var(--ui-accent);
+  border-radius: 50%;
+}
+
+.config-version-list {
+  overflow: hidden;
+  margin-top: 18px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-control-border);
+  border-radius: 12px;
+  transition: opacity 160ms ease;
+}
+
+.config-version-list.loading { opacity: 0.58; }
+
+.config-version-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 150px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 70px;
+  padding: 0 18px;
+  background: #fff;
+}
+
+.config-version-row + .config-version-row {
+  border-top: 1px solid var(--ui-divider);
+}
+
+.config-version-row.current {
+  box-shadow: inset 3px 0 0 var(--ui-accent);
+}
+
+.config-version-mark {
+  position: relative;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  color: var(--ui-text-tertiary);
+  font-size: 12px;
+}
+
+.config-version-row.current .config-version-mark { color: var(--ui-accent); }
+
+.config-version-number {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.config-version-number > strong {
+  color: var(--ui-ink);
+  font: 650 16px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace;
+  letter-spacing: -0.04em;
+}
+
+.config-version-current,
+.config-version-rollback-tag,
+.config-version-publish-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 19px;
+  padding: 0 7px;
+  font-size: 8px;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.config-version-current {
+  color: #fff;
+  background: var(--ui-ink);
+}
+
+.config-version-rollback-tag {
+  color: var(--ui-accent-strong, #d55b27);
+  background: color-mix(in srgb, var(--ui-accent) 8%, #fff);
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 24%, #fff);
+}
+
+.config-version-publish-tag {
+  color: var(--ui-text-tertiary);
+  border: 1px solid var(--ui-control-border);
+}
+
+.config-version-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.config-version-copy strong,
+.config-version-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-version-copy strong { color: var(--ui-ink); font-size: 11px; font-weight: 600; }
+.config-version-copy small { color: var(--ui-text-tertiary); font-size: 9px; }
+
+.config-rollback-button {
+  height: 30px;
+  padding: 0 12px;
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 9px;
+  background: #fff;
+  border: 1px solid var(--ui-control-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.config-rollback-button:hover:not(:disabled) {
+  color: var(--ui-accent-strong, #d55b27);
+  background: color-mix(in srgb, var(--ui-accent) 4%, #fff);
+  border-color: color-mix(in srgb, var(--ui-accent) 58%, var(--ui-control-border));
+}
+
+.config-rollback-button:disabled { cursor: not-allowed; opacity: 0.38; }
+
+.config-version-live {
+  color: var(--ui-success);
+  font-size: 9px;
+}
+
+.config-version-empty {
+  margin: 0;
+  padding: 32px 18px;
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
+  text-align: center;
+}
+
+.config-audit-divider {
+  margin: 34px 0 28px;
+  border-top: 1px solid var(--ui-divider);
+}
+
 .config-audit-panel {
   margin-top: 28px;
   padding-top: 24px;
@@ -5088,6 +5386,12 @@ onBeforeUnmount(() => {
   border: 1px solid var(--ui-divider);
   border-radius: 16px;
   animation: admin-view-enter 220ms ease-out both;
+}
+
+.config-audit-action.rolled-back {
+  color: var(--ui-accent-strong, #d55b27);
+  background: color-mix(in srgb, var(--ui-accent) 8%, #fff);
+  border-color: color-mix(in srgb, var(--ui-accent) 28%, var(--ui-control-border));
 }
 
 .management-directory {
