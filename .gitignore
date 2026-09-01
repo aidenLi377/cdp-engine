@@ -32,6 +32,8 @@ design-qa.md
 qa-artifacts/
 .tmp/
 outputs/
+tmp/
+output/
 
 # IDE
 .vscode/

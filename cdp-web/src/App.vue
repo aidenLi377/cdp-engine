@@ -115,6 +115,7 @@
             :initial-id="selectedAnnouncementId"
             @close="closeAnnouncementCenter"
             @read-updated="handleAnnouncementRead"
+            @start-tutorial="handleStartTutorial"
           />
         </KeepAlive>
       </main>
@@ -126,6 +127,7 @@
         @updated="handleProfileUpdated"
       />
       <FeedbackDrawer :open="feedbackOpen" @close="feedbackOpen = false" />
+      <GuidedTutorialOverlay />
     </div>
   </el-config-provider>
 </template>
@@ -138,6 +140,8 @@ import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import FeedbackDrawer from './components/FeedbackDrawer.vue'
+import GuidedTutorialOverlay from './components/GuidedTutorialOverlay.vue'
+import { startGuidedTutorial } from './composables/useGuidedTutorial.js'
 import { fetchWithTimeout, request } from './utils/apiClient.js'
 import {
   refreshConfigVersion,
@@ -342,6 +346,12 @@ function closeAnnouncementCenter() {
     ? announcementReturnMode.value
     : 'workbench'
   appMode.value = nextMode
+}
+
+function handleStartTutorial(taskId) {
+  if (!startGuidedTutorial(taskId)) return
+  selectedAnnouncementId.value = ''
+  appMode.value = 'workbench'
 }
 
 function handleAnnouncementRead(state) {

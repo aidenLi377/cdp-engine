@@ -21,10 +21,20 @@
       </header>
 
       <div v-if="loadingList" class="announcement-center__rail-empty">正在读取内容…</div>
-      <div v-else-if="!filteredItems.length" class="announcement-center__rail-empty">
+      <div v-else-if="!hasRailItems" class="announcement-center__rail-empty">
         {{ activeKind === 'tutorial' ? '新手教程正在准备中' : '暂时还没有更新公告' }}
       </div>
       <nav v-else>
+        <button
+          v-if="activeKind === 'tutorial'"
+          type="button"
+          :class="{ active: selectedId === BUILTIN_TUTORIAL_ID }"
+          @click="selectBuiltInTutorial"
+        >
+          <span class="announcement-center__version">GUIDED TASK</span>
+          <strong>类目商品行为 · 7 个商品 ID 自动拆分</strong>
+          <small>约 5 分钟 · 可实际操作</small>
+        </button>
         <button
           v-for="item in filteredItems"
           :key="item.id"
@@ -48,7 +58,10 @@
         </button>
       </div>
 
-      <div v-if="loadingDetail" class="announcement-center__state">
+      <div v-if="selectedId === BUILTIN_TUTORIAL_ID" class="announcement-center__scroll">
+        <TutorialTaskDetail @start="emit('start-tutorial', BUILTIN_TUTORIAL_ID)" />
+      </div>
+      <div v-else-if="loadingDetail" class="announcement-center__state">
         <span class="announcement-center__loader"></span>
         正在打开内容…
       </div>
@@ -72,7 +85,9 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AnnouncementArticle from './AnnouncementArticle.vue'
+import TutorialTaskDetail from './TutorialTaskDetail.vue'
 import { request } from '../utils/apiClient.js'
+import { CATEGORY_ITEM_TUTORIAL_ID } from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   initialId: {
@@ -80,7 +95,8 @@ const props = defineProps({
     default: '',
   },
 })
-const emit = defineEmits(['close', 'read-updated'])
+const emit = defineEmits(['close', 'read-updated', 'start-tutorial'])
+const BUILTIN_TUTORIAL_ID = CATEGORY_ITEM_TUTORIAL_ID
 
 const kindOptions = [
   { value: 'announcement', label: '更新公告' },
@@ -98,9 +114,11 @@ let enterInFlight = null
 let activationCount = 0
 
 const filteredItems = computed(() => items.value.filter((item) => (item.kind || 'announcement') === activeKind.value))
+const hasRailItems = computed(() => activeKind.value === 'tutorial' || filteredItems.value.length > 0)
 
 function countKind(kind) {
-  return items.value.filter((item) => (item.kind || 'announcement') === kind).length
+  const remoteCount = items.value.filter((item) => (item.kind || 'announcement') === kind).length
+  return kind === 'tutorial' ? remoteCount + 1 : remoteCount
 }
 
 function itemLabel(item) {
@@ -144,10 +162,14 @@ async function loadItems(preferredId = '') {
   errorMessage.value = ''
   try {
     items.value = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
+    const preferredBuiltIn = preferredId === BUILTIN_TUTORIAL_ID
     const preferred = preferredId ? items.value.find((item) => item.id === preferredId) : null
-    if (preferred) activeKind.value = preferred.kind || 'announcement'
-    const nextId = preferred?.id
+    if (preferredBuiltIn) activeKind.value = 'tutorial'
+    else if (preferred) activeKind.value = preferred.kind || 'announcement'
+    const nextId = (preferredBuiltIn ? BUILTIN_TUTORIAL_ID : '')
+      || preferred?.id
       || (filteredItems.value.some((item) => item.id === selectedId.value) ? selectedId.value : '')
+      || (activeKind.value === 'tutorial' ? BUILTIN_TUTORIAL_ID : '')
       || filteredItems.value[0]?.id
       || ''
     if (nextId) await selectAnnouncement(nextId)
@@ -164,6 +186,10 @@ async function loadItems(preferredId = '') {
 
 async function selectAnnouncement(id) {
   if (!id) return
+  if (id === BUILTIN_TUTORIAL_ID) {
+    selectBuiltInTutorial()
+    return
+  }
   selectedId.value = id
   const requestId = ++detailRequestId
   loadingDetail.value = true
@@ -180,9 +206,21 @@ async function selectAnnouncement(id) {
   }
 }
 
+function selectBuiltInTutorial() {
+  detailRequestId += 1
+  selectedId.value = BUILTIN_TUTORIAL_ID
+  detail.value = null
+  loadingDetail.value = false
+  errorMessage.value = ''
+}
+
 function activateKind(kind) {
   if (activeKind.value === kind) return
   activeKind.value = kind
+  if (kind === 'tutorial') {
+    selectBuiltInTutorial()
+    return
+  }
   const first = filteredItems.value[0]
   if (first) void selectAnnouncement(first.id)
   else {

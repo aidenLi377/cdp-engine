@@ -119,6 +119,7 @@
           :key="pkg"
           type="default"
           class="intercom-btn-outlined"
+          :data-tutorial-target="pkg === CATEGORY_ITEM_PACKAGE ? 'add-category-item' : undefined"
           @click="addNode(pkg)"
           :loading="loadingPkg === pkg"
         >
@@ -148,7 +149,7 @@
     ></div>
   </div>
 
-  <div class="center-panel">
+  <div class="center-panel" data-tutorial-target="clean-workbench">
     <div class="panel-toolbar">
       <div class="workbench-toolbar-copy">
         <div class="display-feature-title">
@@ -506,7 +507,7 @@
         请从左侧点击添加行为组件，或直接加载已发布方案
       </div>
 
-      <div v-if="nodeList.length > 0" class="canvas-with-minimap">
+      <div v-if="nodeList.length > 0" class="canvas-with-minimap" data-tutorial-target="split-result">
         <div class="canvas-scroll-area" ref="canvasScrollRef" @scroll="onCanvasScroll">
           <div
             v-for="(node, index) in nodeList"
@@ -613,6 +614,7 @@
       <div style="display:flex;align-items:center;gap:6px">
         <el-input
           v-model="crowdNameInput"
+          data-tutorial-target="audience-name"
           placeholder="手动输入人群包名称"
           size="default"
           clearable
@@ -663,6 +665,7 @@
           </el-button>
           <el-button
             class="intercom-btn-outlined databank-automation-button"
+            data-tutorial-target="start-automation"
             size="small"
             :disabled="databankAutomating"
             @click="handleDataBankCommand('auto')"
@@ -1033,6 +1036,7 @@ import { useSolutionsApi } from '../composables/useSolutionsApi'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
 import { usePanelResize } from '../composables/usePanelResize'
+import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import {
   fieldToken,
@@ -1120,6 +1124,7 @@ const {
 
 const DEFAULT_CROWD_NAME = '未命名人群包'
 const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'
+const CATEGORY_ITEM_PACKAGE = '类目商品行为'
 const COMMODITY_PACKAGE = '商品行为'
 const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'
 const DEFAULT_DRAFT_NAME = '工作台方案草稿'
@@ -1148,6 +1153,12 @@ const {
 const { listSolutions, getSolution, createDraft } = useSolutionsApi()
 const { listFolders } = useFoldersApi()
 const { listPackages } = usePackagesApi()
+const {
+  state: guidedTutorialState,
+  completeStep: completeGuidedTutorialStep,
+  isStep: isGuidedTutorialStep,
+  updateContext: updateGuidedTutorialContext,
+} = useGuidedTutorial()
 
 const jsonViewMode = ref('summary')
 const workbenchMode = ref('free-build')
@@ -1881,8 +1892,11 @@ function toggleLeftPanelMode() {
   leftPanelMode.value = leftPanelMode.value === 'packages' ? 'solutions' : 'packages'
 }
 
-function onNameManualEdit() {
+function onNameManualEdit(value) {
   markDerivedParamChange()
+  if (guidedTutorialState.active) {
+    updateGuidedTutorialContext({ audienceName: String(value || '') })
+  }
 }
 
 function onDragStart(event, index) {
@@ -1962,6 +1976,21 @@ function clearCanvas() {
   crowdNameInput.value = ''
   resetWorkbenchContext()
   ElMessage.success('工作台已清空')
+}
+
+function prepareCleanGuidedTutorialWorkbench() {
+  const hadContent = nodeList.value.length > 0
+    || Boolean(currentSolution.value)
+    || Boolean(String(crowdNameInput.value || '').trim())
+
+  if (nodeList.value.length > 0 || currentSolution.value) takeSnapshot()
+  nodeList.value = []
+  nodeRefs.value = {}
+  activeNodeIndex.value = 0
+  crowdNameInput.value = ''
+  resetWorkbenchContext()
+
+  if (hadContent) ElMessage.success('已为教程自动清空工作台')
 }
 
 function toggleCollapseAll() {
@@ -2310,6 +2339,9 @@ async function addNode(packageType) {
     takeSnapshot()
     nodeList.value.push(node)
     markDerivedStructureChange()
+    if (packageType === CATEGORY_ITEM_PACKAGE) {
+      completeGuidedTutorialStep('add-category-item')
+    }
   } catch (error) {
     ElMessage.error(error.message || '组件加载失败，请检查后端连接')
   } finally {
@@ -2884,6 +2916,10 @@ function sendMessageToDatabankExtension(jsonText) {
 
 function handleDataBankCommand(command) {
   if (command === 'auto') {
+    if (isGuidedTutorialStep('start-automation')) {
+      completeGuidedTutorialStep('start-automation')
+      return
+    }
     if (batchMode.value) {
       batchAutomationScope.value = 'current'
       batchAutomationDialogVisible.value = true
@@ -2969,9 +3005,11 @@ async function startBatchAutomationFlow(scope = 'current') {
 }
 
 async function startAutoDataBankFlow() {
-  if (databankAutomating.value) return
+  if (databankAutomating.value) return { ok: false, error: '自动化任务正在执行中' }
   await buildFinalJson()
-  if (!ensureGeneratedOutputReady('自动化执行')) return
+  if (!ensureGeneratedOutputReady('自动化执行')) {
+    return { ok: false, error: '当前参数还没有通过执行前检查' }
+  }
 
   databankAutomating.value = true
   const pendingMessage = ElMessage({
@@ -2983,17 +3021,36 @@ async function startAutoDataBankFlow() {
     const result = await sendMessageToDatabankExtension(getGeneratedJsonText())
     if (!result?.ok) {
       pendingMessage.close()
-      ElMessage.error(result?.error || result?.message || '自动化圈人失败')
-      return
+      const errorMessage = result?.error || result?.message || '自动化圈人失败'
+      ElMessage.error(errorMessage)
+      return { ok: false, error: errorMessage }
     }
     pendingMessage.close()
     ElMessage.success(result?.message || '已完成自动化圈人操作')
+    return { ok: true, message: result?.message || '已完成自动化圈人操作' }
   } catch (error) {
     pendingMessage.close()
-    ElMessage.error(error?.message || '自动化圈人失败')
+    const errorMessage = error?.message || '自动化圈人失败'
+    ElMessage.error(errorMessage)
+    return { ok: false, error: errorMessage }
   } finally {
     databankAutomating.value = false
   }
+}
+
+async function handleTutorialAutomationConfirmed() {
+  if (!isGuidedTutorialStep('automation-running')) return
+  updateGuidedTutorialContext({ automationStatus: 'running', automationError: '' })
+  const result = await startAutoDataBankFlow()
+  if (result?.ok) {
+    updateGuidedTutorialContext({ automationStatus: 'success', automationError: '' })
+    completeGuidedTutorialStep('automation-running')
+    return
+  }
+  updateGuidedTutorialContext({
+    automationStatus: 'failed',
+    automationError: result?.error || '自动化圈人失败，请检查后重试。',
+  })
 }
 
 function serializeBatchEntryForSession(entry, index) {
@@ -3185,6 +3242,44 @@ function handleKeydown(event) {
   }
 }
 
+function syncGuidedTutorialContext() {
+  if (!guidedTutorialState.active) return
+  const tutorialNode = nodeList.value.find((node) => node.packageType === CATEGORY_ITEM_PACKAGE)
+  const timeField = tutorialNode?.schema?.find((field) => field.key === 'time' || field.Widget_Type === '日期_切换')
+  const timeKey = timeField?.key || 'time'
+  updateGuidedTutorialContext({
+    nodeCount: nodeList.value.length,
+    behaviors: Array.isArray(tutorialNode?.formData?.bhv)
+      ? [...tutorialNode.formData.bhv]
+      : [],
+    recentDays: tutorialNode?.formData?.[timeKey]?.days ?? null,
+    dateMode: tutorialNode?.modeData?.[timeKey] || '',
+    dateRange: Array.isArray(tutorialNode?.formData?.[timeKey]?.dateRange)
+      ? [...tutorialNode.formData[timeKey].dateRange]
+      : [],
+    audienceName: String(crowdNameInput.value || ''),
+  })
+}
+
+watch(
+  () => guidedTutorialState.active,
+  async (active) => {
+    if (!active) return
+    leftPanelMode.value = 'packages'
+    pkgSearch.value = ''
+    prepareCleanGuidedTutorialWorkbench()
+    await nextTick()
+    syncGuidedTutorialContext()
+  },
+  { immediate: true },
+)
+
+watch(
+  [nodeList, crowdNameInput],
+  syncGuidedTutorialContext,
+  { deep: true, immediate: true },
+)
+
 watch(
   [nodeList, crowdNameInput],
   ([nextNodes]) => {
@@ -3287,6 +3382,7 @@ function disableSessionPersistence() {
 onMounted(async () => {
   window.addEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   window.addEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
+  window.addEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
@@ -3314,6 +3410,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('beforeunload', persistWorkbenchSession)
   window.removeEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
+  window.removeEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
   window.removeEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()

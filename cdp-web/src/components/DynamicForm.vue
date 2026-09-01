@@ -3,6 +3,7 @@
     <template v-for="field in node.schema" :key="field.key">
       <el-form-item
         v-if="isVisible(field, node)"
+        :data-tutorial-target="getTutorialFieldTarget(node, field)"
         :title="ctx && ctx.creatingCustomField && ctx.creatingCustomFieldStep === 2 && field.Widget_Type !== ctx.creatingCustomFieldType ? '仅可选择「' + (ctx.creatingCustomFieldType || '') + '」类型的字段' : undefined"
         :class="{
           'field-highlighted': ctx && ctx.isFieldHighlighted && ctx.isFieldHighlighted(node.id, field.key),
@@ -31,7 +32,11 @@
         </template>
 
         <template v-else-if="field.Widget_Type === '列表输入'">
-          <div class="form-row" @paste.capture="onFieldPaste(node, field, $event)">
+          <div
+            class="form-row"
+            :data-tutorial-target="isTutorialProductIdField(node, field) ? 'paste-product-ids' : undefined"
+            @paste.capture="onFieldPaste(node, field, $event)"
+          >
             <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :placeholder="`输入并回车创建${field.Label}`" @change="handleListInputWithOverflow(field.key, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
             <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
@@ -76,7 +81,13 @@
                   </div>
                   <div class="paste-panel-foot">
                     <button type="button" class="paste-btn cancel" @click="clearPaste(node.id, field.key)">取消</button>
-                    <button type="button" class="paste-btn confirm" @click="applyPaste(node, field)" :disabled="!pasteResultMap[psKey(node.id, field.key)]?.valid.length">
+                    <button
+                      type="button"
+                      class="paste-btn confirm"
+                      :data-tutorial-target="isTutorialProductIdField(node, field) ? 'add-product-ids' : undefined"
+                      @click="applyPaste(node, field)"
+                      :disabled="!pasteResultMap[psKey(node.id, field.key)]?.valid.length"
+                    >
                       添加 {{ pasteResultMap[psKey(node.id, field.key)]?.valid.length || 0 }} 项
                     </button>
                   </div>
@@ -157,8 +168,18 @@
         </template>
 
         <template v-else-if="field.Widget_Type === '复选组'">
-          <el-checkbox-group v-model="node.formData[field.key]" class="custom-checkbox-group" @change="handleCheckboxChange(field, $event, node)">
-            <el-checkbox v-for="opt in field.options" :key="opt" :value="opt" :disabled="isCheckboxDisabled(field, opt, node)">{{ opt }}</el-checkbox>
+          <el-checkbox-group
+            v-model="node.formData[field.key]"
+            class="custom-checkbox-group"
+            :data-tutorial-target="isTutorialBehaviorField(node, field) ? 'select-behavior' : undefined"
+            @change="onCheckboxGroupChange(field, $event, node)"
+          >
+            <el-checkbox
+              v-for="opt in field.options"
+              :key="opt"
+              :value="opt"
+              :disabled="isCheckboxDisabled(field, opt, node)"
+            >{{ opt }}</el-checkbox>
           </el-checkbox-group>
         </template>
 
@@ -179,7 +200,7 @@
 
         <template v-else-if="field.Widget_Type === '日期_切换'">
           <div class="range-block">
-            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group" @change="handleDateModeChange(node)">
+            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group" @change="handleDateModeChange(node, field)">
               <el-radio-button value="recent">过去 N 天</el-radio-button>
               <DateQuickRangePopover
                 :disabled="props.readonly"
@@ -189,12 +210,12 @@
               </DateQuickRangePopover>
             </el-radio-group>
             <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs">
-              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" @update:model-value="markCategoryBehaviorDateManual(node)" />
+              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" @update:model-value="onRecentDaysUpdate(node, field, $event)" />
               <span class="display-body">天</span>
               <span class="hint-text display-body-light">最多向前追溯 366 天</span>
             </div>
             <div v-if="node.modeData[field.key] === 'range'" class="range-inputs">
-              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input" style="width:260px" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" @change="markCategoryBehaviorDateManual(node)" />
+              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input" style="width:260px" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" @change="onDateRangeChange(node, field, $event)" />
               <span class="hint-text display-body-light">{{ getExactDateRangeHint(node) }}</span>
             </div>
           </div>
@@ -211,6 +232,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
 import { markCategoryBehaviorDateManual } from '../utils/categoryBehaviorDateDefaults.js'
+import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
+import { CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS } from '../utils/guidedTutorialConfig.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
 
 const props = defineProps({
@@ -223,6 +246,11 @@ const props = defineProps({
 const emit = defineEmits(['overflow-split'])
 
 const ctx = inject('solutionCenterContext', null)
+const {
+  completeStep: completeGuidedTutorialStep,
+  isStep: isGuidedTutorialStep,
+  updateContext: updateGuidedTutorialContext,
+} = useGuidedTutorial()
 
 const {
   isVisible, getDynamicDescription, getDynamicStyle,
@@ -240,10 +268,79 @@ function applyQuickDateRange(node, field, dateRange) {
   node.modeData[field.key] = 'range'
   node.formData[field.key].dateRange = [...dateRange]
   node.selectedFirstDate = null
+  if (isTutorialCategoryItemNode(node)) {
+    updateGuidedTutorialContext({
+      dateMode: 'range',
+      dateRange: [...dateRange],
+    })
+  }
 }
 
-function handleDateModeChange(node) {
+function isTutorialCategoryItemNode(node) {
+  return node?.packageType === '类目商品行为'
+}
+
+function isTutorialProductIdField(node, field) {
+  return isTutorialCategoryItemNode(node)
+    && (field?.key === 'item' || String(field?.Label || '').includes('商品ID'))
+}
+
+function isTutorialBehaviorField(node, field) {
+  return isTutorialCategoryItemNode(node)
+    && field?.key === 'bhv'
+}
+
+function getTutorialFieldTarget(node, field) {
+  if (isTutorialCategoryItemNode(node) && (field?.key === 'time' || field?.Widget_Type === '日期_切换')) {
+    return 'set-time'
+  }
+  return undefined
+}
+
+function onCheckboxGroupChange(field, value, node) {
+  handleCheckboxChange(field, value, node)
+  const values = Array.isArray(value) ? value : [value]
+  if (isTutorialBehaviorField(node, field)) {
+    updateGuidedTutorialContext({ behaviors: [...values] })
+  }
+  if (isTutorialBehaviorField(node, field) && values.length > 0) {
+    completeGuidedTutorialStep('select-behavior')
+  }
+}
+
+function handleDateModeChange(node, field) {
   markCategoryBehaviorDateManual(node)
+  if (isTutorialCategoryItemNode(node)) {
+    updateGuidedTutorialContext({
+      dateMode: node.modeData?.[field.key] || '',
+      recentDays: node.formData?.[field.key]?.days ?? null,
+      dateRange: Array.isArray(node.formData?.[field.key]?.dateRange)
+        ? [...node.formData[field.key].dateRange]
+        : [],
+    })
+  }
+}
+
+function onRecentDaysUpdate(node, field, value) {
+  markCategoryBehaviorDateManual(node)
+  if (isTutorialCategoryItemNode(node)) {
+    updateGuidedTutorialContext({
+      dateMode: node.modeData?.[field.key] || '',
+      recentDays: value,
+      dateRange: Array.isArray(node.formData?.[field.key]?.dateRange)
+        ? [...node.formData[field.key].dateRange]
+        : [],
+    })
+  }
+}
+
+function onDateRangeChange(node, field, value) {
+  markCategoryBehaviorDateManual(node)
+  if (!isTutorialCategoryItemNode(node)) return
+  updateGuidedTutorialContext({
+    dateMode: node.modeData?.[field.key] || 'range',
+    dateRange: Array.isArray(value) ? [...value] : [],
+  })
 }
 
 function onFieldPaste(node, field, event) {
@@ -257,6 +354,21 @@ function onFieldPaste(node, field, event) {
   pasteOpenMap[key] = true
   pasteTextMap[key] = pastedText
   onPasteInput(node, field)
+  if (isGuidedTutorialStep('paste-ids') && isTutorialProductIdField(node, field)) {
+    const normalizedItems = [...new Set(items.map((item) => String(item).trim()).filter(Boolean))]
+    const expectedItems = [...CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS]
+    const matchesTutorialIds = normalizedItems.length === expectedItems.length
+      && expectedItems.every((id) => normalizedItems.includes(id))
+    if (matchesTutorialIds) {
+      updateGuidedTutorialContext({ pastedIdCount: normalizedItems.length, pasteError: '' })
+      completeGuidedTutorialStep('paste-ids')
+    } else {
+      updateGuidedTutorialContext({
+        pastedIdCount: normalizedItems.length,
+        pasteError: `请粘贴教程提供的 7 个商品 ID；当前识别到 ${normalizedItems.length} 项。`,
+      })
+    }
+  }
 }
 
 function handleListInputWithOverflow(key, node) {
@@ -430,6 +542,10 @@ function applyPaste(node, field) {
   }, 1)
   const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
 
+  if (isGuidedTutorialStep('add-product-ids') && isTutorialProductIdField(node, field)) {
+    completeGuidedTutorialStep('add-product-ids')
+  }
+
   ElMessageBox.confirm(
     `以下字段超限：${fieldList}。将自动拆分为 ${totalNodes} 个节点（关系：并集），是否继续？`,
     '超限拆分节点',
@@ -440,6 +556,7 @@ function applyPaste(node, field) {
     }
     emit('overflow-split', { nodeId: node.id, overflows: allOverflows })
     ElMessage.success(`已拆分为 ${totalNodes} 个节点，有效值已分布到各节点`)
+    completeGuidedTutorialStep('confirm-split')
   }).catch(() => {
     ElMessage.info('已取消拆分，溢出数据保留，可稍后统一处理')
   })
