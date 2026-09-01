@@ -57,7 +57,7 @@ test('workbench phase status is a compact breathing-light indicator', () => {
 
 test('history snapshots reuse read-only component metadata instead of cloning large schemas', () => {
   assert.match(normalModeVue, /const \{ schema, logicMatrix, \.\.\.editableState \} = rawNode/)
-  assert.match(normalModeVue, /\.\.\.structuredClone\(editableState\)/)
+  assert.match(normalModeVue, /\.\.\.cloneValue\(editableState\)/)
   assert.match(normalModeVue, /schema,\s*logicMatrix,/s)
   assert.doesNotMatch(normalModeVue, /structuredClone\(\{\s*nodeList: toRaw\(nodeList\.value\)/s)
 })

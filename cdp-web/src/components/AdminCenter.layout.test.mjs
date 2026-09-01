@@ -154,6 +154,20 @@ test('release history provides guarded non-destructive version rollback', () => 
   assert.match(adminCenterVue, /\.config-version-row\.current \{[^}]*box-shadow: inset 3px 0 0 var\(--ui-accent\);/s)
 })
 
+test('field option order is a publishable configuration with drag and keyboard-friendly controls', () => {
+  assert.match(adminCenterVue, /id="field-option-order-title">组内字段选项顺序</)
+  assert.match(adminCenterVue, /保存后先进入草稿，发布配置后对所有用户生效/)
+  assert.match(adminCenterVue, /class="field-option-order-list"[\s\S]*role="listbox"/)
+  assert.match(adminCenterVue, /draggable="true"/)
+  assert.match(adminCenterVue, /@drop="dropOptionOrder\(index\)"/)
+  assert.match(adminCenterVue, /:aria-label="`将\$\{option\}上移`"/)
+  assert.match(adminCenterVue, /:aria-label="`将\$\{option\}下移`"/)
+  assert.match(adminCenterVue, /@click="saveFieldOptionOrder"/)
+  assert.match(adminCenterVue, /request\('\/api\/admin\/field-orders'/)
+  assert.match(adminCenterVue, /method: 'PUT'/)
+  assert.match(adminCenterVue, /发布配置后对所有用户生效/)
+})
+
 test('account permissions use crisp black and white states without grey disabled checkboxes', () => {
   assert.match(adminCenterVue, /class="permission-access"/)
   assert.match(adminCenterVue, /<Check v-if="selectedRolePermissions\.includes\(permission\.key\)"/)

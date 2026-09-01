@@ -730,6 +730,66 @@
           </div>
         </div>
       </div>
+
+      <section class="field-option-order-panel" aria-labelledby="field-option-order-title">
+        <div class="field-option-order-head">
+          <div>
+            <p class="admin-panel-index">OPTION ORDER</p>
+            <h3 id="field-option-order-title">组内字段选项顺序</h3>
+            <p>调整行为、渠道等选项在工作台中的显示顺序；保存后先进入草稿，发布配置后对所有用户生效。</p>
+          </div>
+          <span v-if="fieldOptionOrderHasChanges" class="draft-chip">待发布</span>
+        </div>
+        <div v-if="fieldOptionOrderItems.length" class="field-option-order-layout">
+          <div class="field-option-order-selects">
+            <label>
+              <span>方案</span>
+              <select v-model="selectedOptionOrderPackage" @change="selectOptionOrderPackage">
+                <option v-for="item in fieldOptionOrderPackages" :key="item" :value="item">{{ item }}</option>
+              </select>
+            </label>
+            <label>
+              <span>字段</span>
+              <select v-model="selectedOptionOrderField" @change="selectOptionOrderField">
+                <option v-for="item in fieldOptionOrderFields" :key="item.fieldKey" :value="item.fieldKey">{{ item.fieldLabel }}</option>
+              </select>
+            </label>
+          </div>
+          <div
+            class="field-option-order-list"
+            role="listbox"
+            aria-label="字段选项顺序"
+            @dragover.prevent
+          >
+            <div
+              v-for="(option, index) in optionOrderDraft"
+              :key="`${option}-${index}`"
+              class="field-option-order-row"
+              :class="{ dragging: optionOrderDragIndex === index }"
+              draggable="true"
+              @dragstart="startOptionOrderDrag(index)"
+              @dragover.prevent
+              @drop="dropOptionOrder(index)"
+              @dragend="endOptionOrderDrag"
+            >
+              <span class="field-option-order-grip" aria-hidden="true">⋮⋮</span>
+              <span class="field-option-order-index">{{ String(index + 1).padStart(2, '0') }}</span>
+              <strong>{{ option }}</strong>
+              <div class="field-option-order-moves">
+                <button type="button" :disabled="index === 0" @click="moveOptionOrder(index, -1)" :aria-label="`将${option}上移`">↑</button>
+                <button type="button" :disabled="index === optionOrderDraft.length - 1" @click="moveOptionOrder(index, 1)" :aria-label="`将${option}下移`">↓</button>
+              </div>
+            </div>
+          </div>
+          <div class="field-option-order-actions">
+            <span>拖拽或使用箭头调整顺序</span>
+            <button class="admin-primary-button" type="button" :disabled="fieldOptionOrderSaving || !fieldOptionOrderDirty" @click="saveFieldOptionOrder">
+              {{ fieldOptionOrderSaving ? '保存中…' : '保存顺序' }}
+            </button>
+          </div>
+        </div>
+        <div v-else class="admin-empty field-option-order-empty">暂无可调整的组内字段</div>
+      </section>
       </template>
 
       <section v-if="activeSection === 'releases'" class="config-audit-panel" aria-labelledby="config-audit-title">
@@ -1338,6 +1398,12 @@ const dimensionImportFileName = ref('')
 const dimensionImportPreview = ref(null)
 const dimensionImportComplete = ref(null)
 const dimensionImportSkipPage = ref(1)
+const fieldOptionOrderItems = ref([])
+const selectedOptionOrderPackage = ref('')
+const selectedOptionOrderField = ref('')
+const optionOrderDraft = ref([])
+const fieldOptionOrderSaving = ref(false)
+const optionOrderDragIndex = ref(-1)
 const loading = ref(false)
 const busy = ref(false)
 const busyUserId = ref('')
@@ -1387,6 +1453,21 @@ const dimensionImportExpectedColumns = computed(() => {
   if (dimensionColumns.value.length) return dimensionColumns.value
   return dimensions.value.find((item) => item.file === selectedDimensionFile.value)?.requiredColumns || []
 })
+const fieldOptionOrderPackages = computed(() => [
+  ...new Set(fieldOptionOrderItems.value.map(item => item.packageName)),
+])
+const fieldOptionOrderFields = computed(() => fieldOptionOrderItems.value.filter(
+  item => item.packageName === selectedOptionOrderPackage.value,
+))
+const selectedFieldOptionOrder = computed(() => fieldOptionOrderItems.value.find(
+  item => item.packageName === selectedOptionOrderPackage.value
+    && item.fieldKey === selectedOptionOrderField.value,
+))
+const fieldOptionOrderDirty = computed(() => {
+  const item = selectedFieldOptionOrder.value
+  return Boolean(item && JSON.stringify(optionOrderDraft.value) !== JSON.stringify(item.order || []))
+})
+const fieldOptionOrderHasChanges = computed(() => fieldOptionOrderItems.value.some(item => item.hasChanges))
 const dimensionImportSkippedRows = computed(() => {
   const preview = dimensionImportPreview.value
   if (!preview) return []
@@ -1736,12 +1817,14 @@ function flattenFolders(folders, parentPath = '') {
 async function loadData() {
   loading.value = true
   try {
-    const [dimensionList, nextConfigStatus] = await Promise.all([
+    const [dimensionList, nextConfigStatus, nextFieldOptionOrders] = await Promise.all([
       request('/api/admin/dimensions', { cache: 'no-store' }),
       request('/api/admin/config/status', { cache: 'no-store' }),
+      request('/api/admin/field-orders', { cache: 'no-store' }),
     ])
     dimensions.value = dimensionList || []
     configStatus.value = nextConfigStatus || { currentVersion: 0, pendingChanges: 0 }
+    setFieldOptionOrderItems(nextFieldOptionOrders || [])
     if (!selectedDimensionFile.value || !dimensions.value.some((item) => item.file === selectedDimensionFile.value)) {
       selectedDimensionFile.value = dimensions.value[0]?.file || ''
     }
@@ -1785,12 +1868,92 @@ async function loadData() {
 }
 
 async function refreshConfigSummary() {
-  const [dimensionList, nextConfigStatus] = await Promise.all([
+  const [dimensionList, nextConfigStatus, nextFieldOptionOrders] = await Promise.all([
     request('/api/admin/dimensions', { cache: 'no-store' }),
     request('/api/admin/config/status', { cache: 'no-store' }),
+    request('/api/admin/field-orders', { cache: 'no-store' }),
   ])
   dimensions.value = dimensionList || []
   configStatus.value = nextConfigStatus || { currentVersion: 0, pendingChanges: 0 }
+  setFieldOptionOrderItems(nextFieldOptionOrders || [])
+}
+
+async function loadFieldOptionOrders() {
+  try {
+    const result = await request('/api/admin/field-orders', { cache: 'no-store' })
+    setFieldOptionOrderItems(result || [])
+  } catch (error) {
+    showMessage(error.message || '字段选项顺序加载失败', 'error')
+  }
+}
+
+function setFieldOptionOrderItems(items) {
+  fieldOptionOrderItems.value = Array.isArray(items) ? items : []
+  if (!fieldOptionOrderPackages.value.includes(selectedOptionOrderPackage.value)) {
+    selectedOptionOrderPackage.value = fieldOptionOrderPackages.value[0] || ''
+  }
+  selectOptionOrderPackage()
+}
+
+function selectOptionOrderPackage() {
+  if (!fieldOptionOrderFields.value.some(item => item.fieldKey === selectedOptionOrderField.value)) {
+    selectedOptionOrderField.value = fieldOptionOrderFields.value[0]?.fieldKey || ''
+  }
+  selectOptionOrderField()
+}
+
+function selectOptionOrderField() {
+  optionOrderDraft.value = [...(selectedFieldOptionOrder.value?.order || [])]
+  optionOrderDragIndex.value = -1
+}
+
+function moveOptionOrder(index, delta) {
+  const target = index + delta
+  if (target < 0 || target >= optionOrderDraft.value.length) return
+  const next = [...optionOrderDraft.value]
+  const [item] = next.splice(index, 1)
+  next.splice(target, 0, item)
+  optionOrderDraft.value = next
+}
+
+function startOptionOrderDrag(index) {
+  optionOrderDragIndex.value = index
+}
+
+function dropOptionOrder(index) {
+  const source = optionOrderDragIndex.value
+  if (source < 0 || source === index) return endOptionOrderDrag()
+  const next = [...optionOrderDraft.value]
+  const [item] = next.splice(source, 1)
+  next.splice(index, 0, item)
+  optionOrderDraft.value = next
+  endOptionOrderDrag()
+}
+
+function endOptionOrderDrag() {
+  optionOrderDragIndex.value = -1
+}
+
+async function saveFieldOptionOrder() {
+  const item = selectedFieldOptionOrder.value
+  if (!item || !fieldOptionOrderDirty.value) return
+  fieldOptionOrderSaving.value = true
+  try {
+    await request('/api/admin/field-orders', {
+      method: 'PUT',
+      body: JSON.stringify({
+        packageName: item.packageName,
+        fieldKey: item.fieldKey,
+        order: optionOrderDraft.value,
+      }),
+    })
+    showMessage('选项顺序已保存到配置草稿，发布后对工作台生效')
+    await refreshConfigSummary()
+  } catch (error) {
+    showMessage(error.message || '选项顺序保存失败', 'error')
+  } finally {
+    fieldOptionOrderSaving.value = false
+  }
 }
 
 function dimensionDisplayName(file) {
@@ -2002,6 +2165,7 @@ async function publishConfig() {
     await Promise.all([
       loadDimensionRows(),
       refreshConfigSummary(),
+      loadFieldOptionOrders(),
       loadConfigVersions({ silent: true }),
       loadConfigAuditLogs({ silent: true }),
     ])
@@ -2023,6 +2187,7 @@ async function discardConfig() {
     await Promise.all([
       loadDimensionRows(),
       refreshConfigSummary(),
+      loadFieldOptionOrders(),
       loadConfigAuditLogs({ silent: true }),
     ])
     showMessage(`已放弃 ${result.discarded} 项草稿修改`)
@@ -2250,6 +2415,7 @@ async function rollbackConfigVersion(version) {
     await Promise.all([
       loadDimensionRows(),
       refreshConfigSummary(),
+      loadFieldOptionOrders(),
       loadConfigVersions({ silent: true }),
       loadConfigAuditLogs({ silent: true }),
     ])
@@ -4028,6 +4194,53 @@ onBeforeUnmount(() => {
   grid-template-columns: 190px minmax(0, 1fr);
   gap: 22px;
 }
+
+.field-option-order-panel {
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-radius: 14px;
+}
+
+.field-option-order-head,
+.field-option-order-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.field-option-order-head h3 { margin: 4px 0 5px; color: var(--ui-ink); font-size: 17px; }
+.field-option-order-head p:last-child { margin: 0; color: var(--ui-text-tertiary); font-size: 11px; line-height: 1.6; }
+.field-option-order-layout { max-width: 760px; margin-top: 18px; }
+.field-option-order-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-option-order-selects label { display: grid; gap: 6px; color: var(--ui-text-secondary); font-size: 11px; }
+.field-option-order-selects select {
+  width: 100%; height: 36px; padding: 0 10px; color: var(--ui-ink); font: inherit; font-size: 12px;
+  background: var(--ui-fill); border: 1px solid var(--ui-control-border); border-radius: 8px; outline: none;
+}
+.field-option-order-selects select:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.field-option-order-list { margin-top: 14px; overflow: hidden; border: 1px solid var(--ui-divider); border-radius: 10px; }
+.field-option-order-row {
+  display: grid; grid-template-columns: 22px 32px minmax(0, 1fr) auto; align-items: center; gap: 8px;
+  min-height: 42px; padding: 0 10px; border-bottom: 1px solid var(--ui-divider); cursor: grab; background: var(--ui-fill);
+}
+.field-option-order-row:last-child { border-bottom: 0; }
+.field-option-order-row:hover { background: color-mix(in srgb, var(--ui-accent) 5%, var(--ui-fill)); }
+.field-option-order-row.dragging { opacity: 0.45; }
+.field-option-order-grip { color: var(--ui-text-tertiary); font-size: 14px; letter-spacing: -4px; }
+.field-option-order-index { color: var(--ui-accent); font: 600 10px/1 "SF Mono", ui-monospace, monospace; }
+.field-option-order-row strong { color: var(--ui-ink); font-size: 12px; font-weight: 600; }
+.field-option-order-moves { display: inline-flex; gap: 4px; }
+.field-option-order-moves button {
+  width: 26px; height: 26px; color: var(--ui-text-secondary); font: 14px/1 inherit; background: transparent;
+  border: 1px solid var(--ui-control-border); border-radius: 6px; cursor: pointer;
+}
+.field-option-order-moves button:hover:not(:disabled) { color: var(--ui-ink); border-color: var(--ui-ink); }
+.field-option-order-moves button:disabled { cursor: not-allowed; opacity: .3; }
+.field-option-order-actions { margin-top: 12px; color: var(--ui-text-tertiary); font-size: 10px; }
+.field-option-order-empty { padding: 22px 0; }
 
 .dimension-sidebar {
   display: flex;
@@ -6118,6 +6331,9 @@ onBeforeUnmount(() => {
   .invite-form { grid-template-columns: 1fr 0.75fr; }
   .admin-primary-button { grid-column: 1 / -1; }
   .dimension-layout { grid-template-columns: 1fr; }
+  .field-option-order-selects { grid-template-columns: 1fr; }
+  .field-option-order-actions { align-items: flex-start; flex-direction: column; }
+  .field-option-order-actions .admin-primary-button { width: 100%; }
   .dimension-sidebar {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));

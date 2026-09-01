@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const normalModeVue = readFileSync(join(currentDir, 'NormalMode.vue'), 'utf8')
+const dynamicFormVue = readFileSync(join(currentDir, 'DynamicForm.vue'), 'utf8')
 const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'utf8')
 
 test('custom field cards render compact +N overflow badges with tooltip content', () => {
@@ -49,4 +50,39 @@ test('solution-use parameter highlighting stays field-level and reaches the matc
   assert.doesNotMatch(summaryFunction, /collapsedCfId/)
   assert.match(normalModeVue, /'cf-use-card-active': highlightedCfId === section\.customFieldId/)
   assert.match(fieldHighlightCallback, /highlightedCfId\.value/)
+})
+
+test('single-field overflow policy is enabled only while using a solution', () => {
+  const solutionUseStart = normalModeVue.indexOf("workbenchMode === 'solution-use'")
+  const freeBuildStart = normalModeVue.indexOf('<div v-else key="free-build"', solutionUseStart)
+  const solutionUseTemplate = normalModeVue.slice(solutionUseStart, freeBuildStart)
+  const freeBuildTemplate = normalModeVue.slice(freeBuildStart, normalModeVue.indexOf('<script setup>', freeBuildStart))
+
+  assert.match(solutionUseTemplate, /:overflow-policy="!batchMode \? 'solution-use' : 'legacy'"/)
+  assert.match(freeBuildTemplate, /<DynamicForm v-else v-show="!node\.collapsed" :node="node" @overflow-split="handleOverflowSplit"/)
+  assert.doesNotMatch(freeBuildTemplate, /overflow-policy="solution-use"/)
+  assert.match(normalModeVue, /const overflows = workbenchMode\.value === 'solution-use'/)
+  assert.match(normalModeVue, /if \(workbenchMode\.value !== 'solution-use' \|\| batchMode\.value\) return \[\]/)
+})
+
+test('solution-use blocks multiple overflow fields and previews a custom-field edit before applying it', () => {
+  assert.match(dynamicFormVue, /overflowPolicy: \{ type: String, default: 'legacy' \}/)
+  assert.match(dynamicFormVue, /props\.overflowPolicy === 'solution-use' && allOverflows\.length > 1/g)
+  assert.match(dynamicFormVue, /一次只能处理一个超限字段，请先删除多余超限值/g)
+  assert.match(normalModeVue, /const previewNodes = cloneValue\(nodeList\.value\)/)
+  assert.match(normalModeVue, /syncCustomFieldValue\(\s*previewNodes,/)
+  assert.match(normalModeVue, /if \(overflowFieldKeys\.length > 1\)/)
+  assert.match(normalModeVue, /applyCustomFieldValue\(customFieldId, value\)[\s\S]*handleOverflowSplit\(/)
+  assert.match(normalModeVue, /请返回参数区删减，或重新保存该参数并确认拆分/)
+})
+
+test('overflow clones inherit custom-field bindings so later edits stay synchronized', () => {
+  const splitStart = normalModeVue.indexOf('function handleOverflowSplit(payload)')
+  const splitEnd = normalModeVue.indexOf('\nfunction buildDraftWorkbenchFieldIds', splitStart)
+  const splitFunction = normalModeVue.slice(splitStart, splitEnd)
+
+  assert.match(splitFunction, /const sourceBindings = \(cf\.bindings \|\| \[\]\)\.filter\(binding => binding\.nodeId === sourceNode\.id\)/)
+  assert.match(splitFunction, /const derivedBindings = splits\.flatMap/)
+  assert.match(splitFunction, /nodeId: split\.id/)
+  assert.match(splitFunction, /bindings: \[\.\.\.\(cf\.bindings \|\| \[\]\), \.\.\.derivedBindings\]/)
 })

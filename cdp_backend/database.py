@@ -86,6 +86,27 @@ CREATE TABLE IF NOT EXISTS config_versions (
     published_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS field_option_orders (
+    id                  TEXT PRIMARY KEY,
+    package_name        TEXT NOT NULL,
+    field_key           TEXT NOT NULL,
+    draft_order         TEXT NOT NULL,
+    published_order     TEXT NOT NULL,
+    has_changes         INTEGER NOT NULL DEFAULT 0,
+    updated_by          TEXT,
+    updated_at          TEXT NOT NULL,
+    UNIQUE(package_name, field_key)
+);
+
+CREATE TABLE IF NOT EXISTS config_version_option_orders (
+    version_id          TEXT NOT NULL,
+    package_name        TEXT NOT NULL,
+    field_key           TEXT NOT NULL,
+    option_order        TEXT NOT NULL,
+    PRIMARY KEY(version_id, package_name, field_key),
+    FOREIGN KEY(version_id) REFERENCES config_versions(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS config_audit_logs (
     id              TEXT PRIMARY KEY,
     actor_user_id   TEXT NOT NULL,
@@ -278,6 +299,10 @@ CREATE INDEX IF NOT EXISTS idx_dimension_rows_lookup
 CREATE INDEX IF NOT EXISTS idx_dimension_rows_changes
     ON dimension_rows(has_changes, dimension_file);
 CREATE INDEX IF NOT EXISTS idx_config_versions_number ON config_versions(version_number);
+CREATE INDEX IF NOT EXISTS idx_field_option_orders_changes
+    ON field_option_orders(has_changes, package_name, field_key);
+CREATE INDEX IF NOT EXISTS idx_config_version_option_orders_version
+    ON config_version_option_orders(version_id);
 CREATE INDEX IF NOT EXISTS idx_config_audit_created
     ON config_audit_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_config_audit_dimension

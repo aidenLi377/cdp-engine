@@ -404,6 +404,27 @@ test('syncCustomFieldValue writes array values without corrupting them', () => {
   assert.deepEqual(nodes[1].formData.cate, ['面部护理', '精华'])
 })
 
+test('syncCustomFieldValue applies category behavior date defaults through custom fields', () => {
+  const nodes = [{
+    id: 'node-1',
+    packageType: '类目公域行为',
+    schema: [
+      { key: 'bhv', Widget_Type: '复选组' },
+      { key: 'time', Widget_Type: '日期_切换' },
+    ],
+    formData: { bhv: [], time: { days: 30, dateRange: [] } },
+    modeData: { time: 'recent' },
+  }]
+  const customFields = [{
+    id: 'cf-behavior',
+    bindings: [{ nodeId: 'node-1', fieldKey: 'bhv' }],
+  }]
+
+  syncCustomFieldValue(nodes, 'cf-behavior', customFields, ['购买', '收藏'])
+  assert.equal(nodes[0].formData.time.days, 90)
+  assert.equal(nodes[0].modeData.time, 'recent')
+})
+
 test('syncCustomFieldValue handles date/number objects with mode sync', () => {
   const nodes = [
     {

@@ -7,6 +7,7 @@ import {
   CONFIG_VERSION_EVENT,
   refreshConfigVersion,
 } from '../utils/configVersion.js'
+import { initializeCategoryBehaviorDateState } from '../utils/categoryBehaviorDateDefaults.js'
 
 function unwrapCloneValue(value, seen = new WeakMap()) {
   if (isRef(value)) return unwrapCloneValue(value.value, seen)
@@ -282,7 +283,7 @@ export function useSolutionRuntime() {
             .filter(Boolean)
     }
 
-    return {
+    const runtimeNode = {
       id: node?.id || `node_${Date.now()}_${index}`,
       displayName: typeof node?.displayName === 'string' ? node.displayName : '',
       packageType,
@@ -294,6 +295,10 @@ export function useSolutionRuntime() {
       selectedFirstDate: null,
       collapsed: false,
     }
+    initializeCategoryBehaviorDateState(runtimeNode, {
+      preserveExisting: Boolean(node?.id || node?.formData || node?.modeData),
+    })
+    return runtimeNode
   }
 
   async function hydrateNodes(nodes) {

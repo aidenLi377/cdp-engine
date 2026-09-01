@@ -179,7 +179,7 @@
 
         <template v-else-if="field.Widget_Type === '日期_切换'">
           <div class="range-block">
-            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group">
+            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group" @change="handleDateModeChange(node)">
               <el-radio-button value="recent">过去 N 天</el-radio-button>
               <DateQuickRangePopover
                 :disabled="props.readonly"
@@ -189,12 +189,12 @@
               </DateQuickRangePopover>
             </el-radio-group>
             <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs">
-              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" />
+              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" @update:model-value="markCategoryBehaviorDateManual(node)" />
               <span class="display-body">天</span>
               <span class="hint-text display-body-light">最多向前追溯 366 天</span>
             </div>
             <div v-if="node.modeData[field.key] === 'range'" class="range-inputs">
-              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input" style="width:260px" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" />
+              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input" style="width:260px" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" @change="markCategoryBehaviorDateManual(node)" />
               <span class="hint-text display-body-light">{{ getExactDateRangeHint(node) }}</span>
             </div>
           </div>
@@ -210,11 +210,14 @@ import { inject, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
+import { markCategoryBehaviorDateManual } from '../utils/categoryBehaviorDateDefaults.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
 
 const props = defineProps({
   node: { type: Object, required: true },
   readonly: { type: Boolean, default: false },
+  // 方案使用时，多个超限字段不能自动做笛卡尔积拆分；制作方案仍保持原有行为。
+  overflowPolicy: { type: String, default: 'legacy' },
 })
 
 const emit = defineEmits(['overflow-split'])
@@ -233,9 +236,14 @@ const {
 } = useCdpShared()
 
 function applyQuickDateRange(node, field, dateRange) {
+  markCategoryBehaviorDateManual(node)
   node.modeData[field.key] = 'range'
   node.formData[field.key].dateRange = [...dateRange]
   node.selectedFirstDate = null
+}
+
+function handleDateModeChange(node) {
+  markCategoryBehaviorDateManual(node)
 }
 
 function onFieldPaste(node, field, event) {
@@ -256,6 +264,12 @@ function handleListInputWithOverflow(key, node) {
     node.formData[field.key] = uniqueArr
     const allOverflows = collectNodeOverflows(node)
     if (allOverflows.length === 0) return
+
+    if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
+      const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+      ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
+      return
+    }
 
     const totalNodes = allOverflows.reduce((prod, o) => {
     const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
@@ -289,6 +303,12 @@ function handleMultiSelectChangeWithOverflow(key, node) {
     node.formData[field.key] = uniqueArr
     const allOverflows = collectNodeOverflows(node)
     if (allOverflows.length === 0) return
+
+    if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
+      const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+      ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
+      return
+    }
 
     const totalNodes = allOverflows.reduce((prod, o) => {
     const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
@@ -395,6 +415,12 @@ function applyPaste(node, field) {
   const allOverflows = collectNodeOverflows(node)
   if (allOverflows.length === 0) {
     ElMessage.success(`已添加 ${totalAdded} 个选项`)
+    return
+  }
+
+  if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
+    const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+    ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
     return
   }
 

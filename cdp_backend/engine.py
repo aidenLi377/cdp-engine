@@ -171,6 +171,35 @@ class ConfigEngine:
     def reload_config(self, validate_on_load: bool = True) -> None:
         self.load_config(validate_on_load=validate_on_load)
 
+    def _apply_field_option_order(
+        self,
+        package_name: str,
+        field_key: str,
+        options: list[str],
+    ) -> list[str]:
+        """Apply the published admin order while preserving newly added options."""
+        if not self.db_path or len(options) < 2:
+            return options
+        try:
+            with get_db(self.db_path) as conn:
+                row = conn.execute(
+                    """SELECT published_order FROM field_option_orders
+                       WHERE package_name = ? AND field_key = ?""",
+                    (package_name, field_key),
+                ).fetchone()
+            if not row:
+                return options
+            preferred = json.loads(row["published_order"] or "[]")
+            if not isinstance(preferred, list):
+                return options
+            option_set = set(options)
+            ordered = [value for value in preferred if value in option_set]
+            ordered.extend(value for value in options if value not in ordered)
+            return ordered
+        except Exception:
+            self.logger.exception("failed to apply option order for %s/%s", package_name, field_key)
+            return options
+
     def _load_dimension_tables(self) -> None:
         self.id_translator = {}
         self.dim_translator = {}
@@ -262,6 +291,11 @@ class ConfigEngine:
                 item["options"] = list(
                     self.attr_options.get((package_name, data_source), self.dimensions.get(data_source, []))
                 )
+            item["options"] = self._apply_field_option_order(
+                package_name,
+                key,
+                item["options"],
+            )
 
             if package_name in ["AIPL状态", "商品行为"] and item["key"] in ["cate", "leafCates"]:
                 if "全部" not in item["options"]:

@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getQuickRangeSelectableStart } from '../utils/dateQuickRanges.js'
+import { applyCategoryBehaviorDateDefault } from '../utils/categoryBehaviorDateDefaults.js'
 
 // ---- 模块级单例 (所有调用者共享) ----
 const schemaCache = ref({})
@@ -129,6 +130,10 @@ function handleCheckboxChange(field, currentVals, node) {
     if (currentVals.includes('所有销售渠道') && currentVals.length > 1) {
       node.formData[field.key] = ['所有销售渠道']
     }
+  }
+  if (field.key === 'bhv') {
+    node.formData[field.key] = Array.isArray(currentVals) ? [...currentVals] : currentVals
+    applyCategoryBehaviorDateDefault(node)
   }
 }
 

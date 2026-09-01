@@ -1057,8 +1057,11 @@ class DimensionStore:
 
     def get_config_status(self) -> dict:
         with get_db(self.db_path) as conn:
-            pending = conn.execute(
+            pending_rows = conn.execute(
                 "SELECT COUNT(*) FROM dimension_rows WHERE has_changes = 1"
+            ).fetchone()[0]
+            pending_orders = conn.execute(
+                "SELECT COUNT(*) FROM field_option_orders WHERE has_changes = 1"
             ).fetchone()[0]
             latest = conn.execute(
                 """SELECT version_number, note, published_by, published_at,
@@ -1066,7 +1069,9 @@ class DimensionStore:
                    FROM config_versions ORDER BY version_number DESC LIMIT 1"""
             ).fetchone()
         return {
-            "pendingChanges": pending,
+            "pendingChanges": pending_rows + pending_orders,
+            "pendingDimensionChanges": pending_rows,
+            "pendingOptionOrderChanges": pending_orders,
             "currentVersion": latest["version_number"] if latest else 0,
             "latestVersion": (
                 {
@@ -1093,6 +1098,112 @@ class DimensionStore:
         return {
             "version": latest["version_number"] if latest else 0,
             "publishedAt": latest["published_at"] if latest else None,
+        }
+
+    def list_field_option_orders(self) -> list[dict]:
+        """Return saved draft/published option orders for admin configuration UI."""
+        with get_db(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT package_name, field_key, draft_order, published_order,
+                          has_changes, updated_by, updated_at
+                   FROM field_option_orders
+                   ORDER BY package_name, field_key"""
+            ).fetchall()
+        return [
+            {
+                "packageName": row["package_name"],
+                "fieldKey": row["field_key"],
+                "draftOrder": json.loads(row["draft_order"] or "[]"),
+                "publishedOrder": json.loads(row["published_order"] or "[]"),
+                "hasChanges": bool(row["has_changes"]),
+                "updatedBy": row["updated_by"],
+                "updatedAt": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def set_field_option_order(
+        self,
+        package_name: str,
+        field_key: str,
+        option_order: list[str],
+        user_id: str,
+    ) -> dict:
+        package_name = str(package_name or "").strip()
+        field_key = str(field_key or "").strip()
+        if not package_name or not field_key or not isinstance(option_order, list):
+            raise DimensionValidationError("字段选项顺序格式不正确")
+        normalized = []
+        seen = set()
+        for value in option_order:
+            value = str(value or "").strip()
+            if value and value not in seen:
+                normalized.append(value)
+                seen.add(value)
+        if not normalized:
+            raise DimensionValidationError("字段选项顺序不能为空")
+
+        now = _utc_now()
+        draft_json = json.dumps(normalized, ensure_ascii=False)
+        with get_db(self.db_path) as conn:
+            existing = conn.execute(
+                """SELECT id, published_order FROM field_option_orders
+                   WHERE package_name = ? AND field_key = ?""",
+                (package_name, field_key),
+            ).fetchone()
+            if existing is None:
+                conn.execute(
+                    """INSERT INTO field_option_orders (
+                        id, package_name, field_key, draft_order, published_order,
+                        has_changes, updated_by, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+                    (
+                        f"field_order_{uuid4().hex}",
+                        package_name,
+                        field_key,
+                        draft_json,
+                        json.dumps([], ensure_ascii=False),
+                        user_id,
+                        now,
+                    ),
+                )
+                published = []
+            else:
+                published = json.loads(existing["published_order"] or "[]")
+                has_changes = normalized != published
+                conn.execute(
+                    """UPDATE field_option_orders
+                       SET draft_order = ?, has_changes = ?, updated_by = ?, updated_at = ?
+                       WHERE package_name = ? AND field_key = ?""",
+                    (
+                        draft_json,
+                        1 if has_changes else 0,
+                        user_id,
+                        now,
+                        package_name,
+                        field_key,
+                    ),
+                )
+            self._record_config_audit(
+                conn,
+                actor_user_id=user_id,
+                action="FIELD_OPTION_ORDER_UPDATED",
+                created_at=now,
+                details={
+                    "summary": f"调整 {package_name} / {field_key} 选项顺序",
+                    "packageName": package_name,
+                    "fieldKey": field_key,
+                    "order": normalized,
+                },
+            )
+        return {
+            "packageName": package_name,
+            "fieldKey": field_key,
+            "draftOrder": normalized,
+            "publishedOrder": published,
+            "hasChanges": normalized != published,
+            "updatedBy": user_id,
+            "updatedAt": now,
         }
 
     @classmethod
@@ -1151,7 +1262,10 @@ class DimensionStore:
             pending_rows = conn.execute(
                 "SELECT * FROM dimension_rows WHERE has_changes = 1"
             ).fetchall()
-            pending = len(pending_rows)
+            pending_orders = conn.execute(
+                "SELECT * FROM field_option_orders WHERE has_changes = 1"
+            ).fetchall()
+            pending = len(pending_rows) + len(pending_orders)
             if pending == 0:
                 raise DimensionValidationError("没有待发布的配置修改")
             conn.execute(
@@ -1163,6 +1277,17 @@ class DimensionStore:
                        has_changes = 0
                    WHERE has_changes = 1"""
             )
+            conn.execute(
+                """UPDATE field_option_orders
+                   SET published_order = draft_order, has_changes = 0,
+                       updated_by = ?, updated_at = ?
+                   WHERE has_changes = 1""",
+                (user_id, now),
+            )
+            published_orders = conn.execute(
+                """SELECT package_name, field_key, published_order
+                   FROM field_option_orders"""
+            ).fetchall()
             rows = conn.execute(
                 """SELECT id, dimension_file, natural_key, package_name,
                           display_name, published_data, published_enabled,
@@ -1203,6 +1328,18 @@ class DimensionStore:
                     now,
                 ),
             )
+            for order in published_orders:
+                conn.execute(
+                    """INSERT INTO config_version_option_orders (
+                           version_id, package_name, field_key, option_order
+                       ) VALUES (?, ?, ?, ?)""",
+                    (
+                        version_id,
+                        order["package_name"],
+                        order["field_key"],
+                        order["published_order"],
+                    ),
+                )
             self._record_config_audit(
                 conn,
                 actor_user_id=user_id,
@@ -1227,6 +1364,31 @@ class DimensionStore:
             "sourceVersion": None,
         }
 
+    @staticmethod
+    def _version_option_orders(conn, version_id: str) -> dict[tuple[str, str], list[str]]:
+        rows = conn.execute(
+            """SELECT package_name, field_key, option_order
+               FROM config_version_option_orders WHERE version_id = ?""",
+            (version_id,),
+        ).fetchall()
+        return {
+            (row["package_name"], row["field_key"]): json.loads(row["option_order"] or "[]")
+            for row in rows
+        }
+
+    @staticmethod
+    def _current_option_orders(conn) -> dict[tuple[str, str], list[str]]:
+        rows = conn.execute(
+            """SELECT package_name, field_key, published_order
+               FROM field_option_orders"""
+        ).fetchall()
+        result = {}
+        for row in rows:
+            order = json.loads(row["published_order"] or "[]")
+            if order:
+                result[(row["package_name"], row["field_key"])] = order
+        return result
+
     def rollback_version(
         self,
         target_version: int,
@@ -1245,23 +1407,26 @@ class DimensionStore:
 
         now = _utc_now()
         with get_db(self.db_path) as conn:
-            pending = conn.execute(
+            pending_dimensions = conn.execute(
                 "SELECT COUNT(*) FROM dimension_rows WHERE has_changes = 1"
             ).fetchone()[0]
-            if pending:
+            pending_orders = conn.execute(
+                "SELECT COUNT(*) FROM field_option_orders WHERE has_changes = 1"
+            ).fetchone()[0]
+            if pending_dimensions or pending_orders:
                 raise DimensionValidationError(
                     "存在待发布修改，请先发布或放弃草稿后再回滚"
                 )
 
             target = conn.execute(
-                """SELECT version_number, snapshot FROM config_versions
+                """SELECT id, version_number, snapshot FROM config_versions
                    WHERE version_number = ?""",
                 (target_version,),
             ).fetchone()
             if target is None:
                 raise DimensionVersionNotFoundError(target_version)
             latest = conn.execute(
-                """SELECT version_number, snapshot FROM config_versions
+                """SELECT id, version_number, snapshot FROM config_versions
                    ORDER BY version_number DESC LIMIT 1"""
             ).fetchone()
             if latest is None:
@@ -1273,6 +1438,12 @@ class DimensionStore:
             target_snapshot = self._normalize_snapshot(json.loads(target["snapshot"]))
             current_snapshot = self._normalize_snapshot(json.loads(latest["snapshot"]))
             change_count = self._snapshot_change_count(current_snapshot, target_snapshot)
+            target_orders = self._version_option_orders(conn, target["id"])
+            current_orders = self._current_option_orders(conn)
+            change_count += sum(
+                current_orders.get(key) != target_orders.get(key)
+                for key in set(current_orders) | set(target_orders)
+            )
 
             current_rows = conn.execute("SELECT * FROM dimension_rows").fetchall()
             current_by_id = {row["id"]: row for row in current_rows}
@@ -1367,6 +1538,25 @@ class DimensionStore:
                     (archived_key, user_id, now, row["id"]),
                 )
 
+            conn.execute("DELETE FROM field_option_orders")
+            for (package_name, field_key), order in target_orders.items():
+                order_json = json.dumps(order, ensure_ascii=False)
+                conn.execute(
+                    """INSERT INTO field_option_orders (
+                           id, package_name, field_key, draft_order, published_order,
+                           has_changes, updated_by, updated_at
+                       ) VALUES (?, ?, ?, ?, ?, 0, ?, ?)""",
+                    (
+                        f"field_order_{uuid4().hex}",
+                        package_name,
+                        field_key,
+                        order_json,
+                        order_json,
+                        user_id,
+                        now,
+                    ),
+                )
+
             restored_rows = conn.execute(
                 """SELECT id, dimension_file, natural_key, package_name,
                           display_name, published_data, published_enabled
@@ -1405,6 +1595,18 @@ class DimensionStore:
                     now,
                 ),
             )
+            for (package_name, field_key), order in target_orders.items():
+                conn.execute(
+                    """INSERT INTO config_version_option_orders (
+                           version_id, package_name, field_key, option_order
+                       ) VALUES (?, ?, ?, ?)""",
+                    (
+                        version_id,
+                        package_name,
+                        field_key,
+                        json.dumps(order, ensure_ascii=False),
+                    ),
+                )
             self._record_config_audit(
                 conn,
                 actor_user_id=user_id,
@@ -1461,7 +1663,17 @@ class DimensionStore:
                         row["id"],
                     ),
                 )
-            if pending_rows:
+            pending_orders = conn.execute(
+                "SELECT COUNT(*) FROM field_option_orders WHERE has_changes = 1"
+            ).fetchone()[0]
+            conn.execute(
+                """UPDATE field_option_orders
+                   SET draft_order = published_order, has_changes = 0,
+                       updated_by = ?, updated_at = ?
+                   WHERE has_changes = 1""",
+                (user_id, now),
+            )
+            if pending_rows or pending_orders:
                 self._record_config_audit(
                     conn,
                     actor_user_id=user_id,
@@ -1469,7 +1681,7 @@ class DimensionStore:
                     created_at=now,
                     details={
                         "summary": "放弃全部待发布修改",
-                        "changeCount": len(pending_rows),
+                        "changeCount": len(pending_rows) + pending_orders,
                         "tables": change_groups,
                     },
                 )

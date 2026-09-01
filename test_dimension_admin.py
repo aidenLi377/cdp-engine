@@ -704,6 +704,74 @@ class DimensionAdminApiTests(unittest.TestCase):
         self.assertEqual(rollback_audit["details"]["fromVersion"], 2)
         self.assertEqual(rollback_audit["details"]["targetVersion"], 1)
 
+    def test_field_option_order_is_draft_only_until_publish_and_restored_by_rollback(self):
+        client = self.login("config", "config-password")
+        records_response = client.get("/api/admin/field-orders")
+        self.assertEqual(records_response.status_code, 200)
+        record = next(
+            item for item in records_response.get_json()
+            if item["packageName"] == "类目公域行为" and item["fieldKey"] == "bhv"
+        )
+        original_order = list(record["order"])
+        reversed_order = list(reversed(original_order))
+
+        staged = client.put(
+            "/api/admin/field-orders",
+            json={
+                "packageName": record["packageName"],
+                "fieldKey": record["fieldKey"],
+                "order": reversed_order,
+            },
+        )
+        self.assertEqual(staged.status_code, 200)
+        status = client.get("/api/admin/config/status").get_json()
+        self.assertEqual(status["pendingOptionOrderChanges"], 1)
+
+        draft_meta = client.get("/api/meta/类目公域行为").get_json()
+        draft_behavior = next(
+            field for field in draft_meta["schema"] if field["key"] == "bhv"
+        )
+        self.assertEqual(draft_behavior["options"], original_order)
+
+        first = client.post(
+            "/api/admin/config/publish",
+            json={"note": "发布组内字段排序"},
+        )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(first.get_json()["version"], 1)
+        published_meta = client.get("/api/meta/类目公域行为").get_json()
+        published_behavior = next(
+            field for field in published_meta["schema"] if field["key"] == "bhv"
+        )
+        self.assertEqual(published_behavior["options"], reversed_order)
+
+        client.put(
+            "/api/admin/field-orders",
+            json={
+                "packageName": record["packageName"],
+                "fieldKey": record["fieldKey"],
+                "order": original_order,
+            },
+        )
+        second = client.post(
+            "/api/admin/config/publish",
+            json={"note": "恢复默认排序"},
+        )
+        self.assertEqual(second.status_code, 201)
+        self.assertEqual(second.get_json()["version"], 2)
+
+        rollback = client.post(
+            "/api/admin/config/versions/1/rollback",
+            json={"note": "回滚字段排序"},
+        )
+        self.assertEqual(rollback.status_code, 201)
+        self.assertEqual(rollback.get_json()["version"], 3)
+        restored_meta = client.get("/api/meta/类目公域行为").get_json()
+        restored_behavior = next(
+            field for field in restored_meta["schema"] if field["key"] == "bhv"
+        )
+        self.assertEqual(restored_behavior["options"], reversed_order)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -477,6 +477,7 @@
                   v-show="!node.collapsed"
                   :node="node"
                   :readonly="batchMode"
+                  :overflow-policy="!batchMode ? 'solution-use' : 'legacy'"
                   @overflow-split="handleOverflowSplit"
                 />
               </div>
@@ -1130,7 +1131,13 @@ const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
 
-const { getArray, getListLimit, isVisible } = useCdpShared()
+const {
+  getArray,
+  getListLimit,
+  isVisible,
+  collectNodeOverflows,
+  countUniqueSecondaryCategories,
+} = useCdpShared()
 const {
   cloneValue,
   createRuntimeNode,
@@ -1700,31 +1707,116 @@ function openCfEditDialog(section) {
   cfEditDialogVisible.value = true
 }
 
-function onCfDialogSave({ customFieldId, value }) {
+function getCustomFieldOverflowBindings(customField, value) {
+  if (!customField) return []
+
+  // Validate the complete post-save state on a clone. This catches an already
+  // overflowing second field, while also allowing a user to reduce the value
+  // that was previously over the limit.
+  const previewNodes = cloneValue(nodeList.value)
+  syncCustomFieldValue(
+    previewNodes,
+    customField.id,
+    [customField],
+    cloneValue(value),
+  )
+  const seen = new Set()
+  const overflows = []
+
+  previewNodes.forEach((node) => {
+    collectNodeOverflows(node).forEach((overflow) => {
+      const identity = `${node.id}:${overflow.fieldKey}`
+      if (seen.has(identity)) return
+      seen.add(identity)
+      overflows.push({
+        ...overflow,
+        nodeId: node.id,
+        packageType: node.packageType,
+        effectiveCount: overflow.fieldKey === 'leafCates'
+          ? countUniqueSecondaryCategories(overflow.allValues)
+          : overflow.allValues.length,
+      })
+    })
+  })
+
+  return overflows
+}
+
+function applyCustomFieldValue(customFieldId, value) {
+  const cfs = currentSolution.value?.customFields || []
+  const cf = cfs.find(item => item.id === customFieldId)
+  if (!cf) return null
+
+  syncCustomFieldValue(nodeList.value, customFieldId, cfs, value)
+  setCurrentCustomFields(cfs.map((item) => (
+    item.id === customFieldId
+      ? { ...item, defaultValue: cloneValue(value) }
+      : item
+  )))
+  return cf
+}
+
+async function onCfDialogSave({ customFieldId, value }) {
   if (batchMode.value) {
     applyBatchCustomFieldValue(editingCfSection.value?.name, value)
     return
   }
 
-  syncCustomFieldValue(
-    nodeList.value,
-    customFieldId,
-    currentSolution.value?.customFields || [],
-    value,
-  )
   const cfs = currentSolution.value?.customFields || []
   const cf = cfs.find(c => c.id === customFieldId)
-  if (cf) {
-    const nextFields = cfs.map((item) => (
-      item.id === customFieldId
-        ? { ...item, defaultValue: cloneValue(value) }
-        : item
-    ))
-    setCurrentCustomFields(nextFields)
-    const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
-    if (uniqueNodes.size > 0) {
-      ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
+  if (!cf) return
+
+  const overflows = workbenchMode.value === 'solution-use'
+    ? getCustomFieldOverflowBindings(cf, value)
+    : []
+  const overflowFieldKeys = [...new Set(overflows.map(item => item.fieldKey))]
+
+  if (overflowFieldKeys.length > 1) {
+    const fieldList = overflowFieldKeys.map((fieldKey) => {
+      const overflow = overflows.find(item => item.fieldKey === fieldKey)
+      return `「${overflow.fieldLabel}」${overflow.effectiveCount}/${overflow.limit}`
+    }).join('、')
+    ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
+    return
+  }
+
+  if (overflows.length > 0) {
+    const overflow = overflows[0]
+    const chunkCount = overflow.fieldKey === 'leafCates'
+      ? chunkBySecondaryCategory(overflow.allValues, overflow.limit).length
+      : Math.ceil(overflow.allValues.length / overflow.limit)
+    const affectedNodes = new Set(overflows.map(item => item.nodeId)).size
+    try {
+      await ElMessageBox.confirm(
+        `「${overflow.fieldLabel}」已填写 ${overflow.effectiveCount} 项，单个组件最多 ${overflow.limit} 项。将把 ${affectedNodes} 个关联组件各拆分为 ${chunkCount} 个并集组件，是否继续？`,
+        '参数超限，需要拆分',
+        { confirmButtonText: '确认拆分', cancelButtonText: '返回修改', type: 'warning' },
+      )
+    } catch {
+      ElMessage.info('未应用本次修改，请删减参数后再保存')
+      return
     }
+
+    applyCustomFieldValue(customFieldId, value)
+    overflows.forEach((item) => {
+      handleOverflowSplit({
+        nodeId: item.nodeId,
+        overflows: [{
+          fieldKey: item.fieldKey,
+          fieldLabel: item.fieldLabel,
+          allValues: item.allValues,
+          limit: item.limit,
+        }],
+      })
+    })
+    ElMessage.success(`已按「${overflow.fieldLabel}」拆分并同步到 ${affectedNodes} 个组件`)
+    return
+  }
+
+  applyCustomFieldValue(customFieldId, value)
+  const uniqueNodes = new Set((cf.bindings || []).map(b => b.nodeId))
+  if (uniqueNodes.size > 0) {
+    ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
   }
 }
 
@@ -1913,7 +2005,10 @@ function takeSnapshot() {
       const rawNode = toRaw(node)
       const { schema, logicMatrix, ...editableState } = rawNode
       return {
-        ...structuredClone(editableState),
+        // editableState may contain nested Vue proxies after a form edit.
+        // Always unwrap those proxies before cloning; native structuredClone
+        // throws and surfaces a yellow toast when it receives one directly.
+        ...cloneValue(editableState),
         schema,
         logicMatrix,
       }
@@ -2299,6 +2394,23 @@ function handleOverflowSplit(payload) {
   nodeList.value.forEach((node, idx) => {
     if (idx === 0) node.operator = null
   })
+
+  const customFields = currentSolution.value?.customFields || []
+  if (customFields.some(cf => (cf.bindings || []).some(binding => binding.nodeId === sourceNode.id))) {
+    const nextFields = customFields.map((cf) => {
+      const sourceBindings = (cf.bindings || []).filter(binding => binding.nodeId === sourceNode.id)
+      if (sourceBindings.length === 0) return cf
+      const derivedBindings = splits.flatMap(split => sourceBindings.map(binding => ({
+        ...binding,
+        nodeId: split.id,
+      })))
+      return {
+        ...cf,
+        bindings: [...(cf.bindings || []), ...derivedBindings],
+      }
+    })
+    setCurrentCustomFields(nextFields)
+  }
   markDerivedStructureChange()
 }
 
@@ -2657,7 +2769,27 @@ function getGeneratedJsonText() {
   return JSON.stringify(generatedJson.value, null, isPureOfficialParityOutput() ? '\t' : 4)
 }
 
+function getUnresolvedSolutionUseOverflows() {
+  if (workbenchMode.value !== 'solution-use' || batchMode.value) return []
+  return nodeList.value.flatMap((node, index) => collectNodeOverflows(node).map(overflow => ({
+    ...overflow,
+    nodeId: node.id,
+    nodeName: getNodeDisplayName(node, index),
+  })))
+}
+
 function ensureGeneratedOutputReady(actionLabel = '继续') {
+  const unresolvedOverflows = getUnresolvedSolutionUseOverflows()
+  if (unresolvedOverflows.length > 0) {
+    const distinctFields = [...new Map(unresolvedOverflows.map(item => [item.fieldKey, item])).values()]
+    const fieldList = distinctFields.map(item => `「${item.fieldLabel}」${item.allValues.length}/${item.limit}`).join('、')
+    const instruction = distinctFields.length > 1
+      ? '一次只能处理一个超限字段，请先删除其余字段的多余值'
+      : '请返回参数区删减，或重新保存该参数并确认拆分'
+    ElMessage.warning(`${actionLabel}前发现超限字段：${fieldList}。${instruction}`)
+    return false
+  }
+
   const validation = validateWorkbenchOutput({
     nodes: nodeList.value,
     generatedJson: generatedJson.value,

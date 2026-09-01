@@ -1,3 +1,8 @@
+import {
+  applyCategoryBehaviorDateDefault,
+  markCategoryBehaviorDateManual,
+} from './categoryBehaviorDateDefaults.js'
+
 const FIELD_TOKEN_SEPARATOR = ':'
 
 function cloneSerializableValue(value) {
@@ -286,6 +291,16 @@ export function syncCustomFieldValue(nodes, customFieldId, customFields, newValu
     if (newValue && typeof newValue === 'object' && newValue.mode !== undefined) {
       if (!node.modeData) node.modeData = {}
       node.modeData[binding.fieldKey] = newValue.mode
+    }
+
+    if (binding.fieldKey === 'bhv') {
+      applyCategoryBehaviorDateDefault(node)
+    } else {
+      const boundField = (Array.isArray(node.schema) ? node.schema : [])
+        .find((field) => field?.key === binding.fieldKey)
+      if (boundField?.Widget_Type === '日期_切换') {
+        markCategoryBehaviorDateManual(node)
+      }
     }
   })
 

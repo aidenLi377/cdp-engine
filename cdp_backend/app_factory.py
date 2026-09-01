@@ -1242,6 +1242,76 @@ def register_routes(
             return permission_error
         return jsonify(dimension_store.get_config_status())
 
+    @app.route("/api/admin/field-orders")
+    def admin_field_orders():
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        ensure_latest_config()
+
+        saved = {
+            (item["packageName"], item["fieldKey"]): item
+            for item in dimension_store.list_field_option_orders()
+        }
+        items = []
+        for package_name in engine.packages:
+            meta = engine.get_package_meta(package_name)
+            for field in meta.get("schema", []):
+                options = field.get("options") or []
+                if field.get("key") not in {"bhv", "channel"} or len(options) < 2:
+                    continue
+                key = (package_name, field.get("key"))
+                record = saved.get(key)
+                order = record.get("draftOrder") if record else list(options)
+                allowed = set(options)
+                order = [value for value in order if value in allowed]
+                order.extend(value for value in options if value not in order)
+                items.append(
+                    {
+                        "packageName": package_name,
+                        "fieldKey": field.get("key"),
+                        "fieldLabel": field.get("Label") or field.get("label") or field.get("key"),
+                        "options": list(options),
+                        "order": order,
+                        "hasChanges": bool(record and record.get("hasChanges")),
+                    }
+                )
+        return jsonify(items)
+
+    @app.route("/api/admin/field-orders", methods=["PUT"])
+    def admin_update_field_order():
+        nonlocal loaded_config_version
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        ensure_latest_config()
+        payload = request.get_json(silent=True) or {}
+        package_name = payload.get("packageName")
+        field_key = payload.get("fieldKey")
+        option_order = payload.get("order")
+        if not isinstance(package_name, str) or not isinstance(field_key, str):
+            return error_response("INVALID_REQUEST", "请提供方案和字段", 400)
+        meta = engine.get_package_meta(package_name)
+        field = next((item for item in meta.get("schema", []) if item.get("key") == field_key), None)
+        if field is None or field_key not in {"bhv", "channel"}:
+            return error_response("INVALID_REQUEST", "暂不支持调整该字段的选项顺序", 400)
+        allowed = [str(value) for value in (field.get("options") or [])]
+        if not isinstance(option_order, list) or set(map(str, option_order)) != set(allowed):
+            return error_response("INVALID_REQUEST", "选项必须完整且不能重复", 400)
+        try:
+            with config_reload_lock:
+                result = dimension_store.set_field_option_order(
+                    package_name,
+                    field_key,
+                    [str(value) for value in option_order],
+                    g.current_user["id"],
+                )
+                # Draft order is intentionally not visible to normal users until publish.
+                loaded_config_version = dimension_store.get_published_version()["version"]
+        except DimensionValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify(result)
+
     @app.route("/api/admin/config/versions")
     def admin_config_versions():
         permission_error = require_config_admin()

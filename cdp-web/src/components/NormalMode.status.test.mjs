@@ -43,6 +43,14 @@ test('solution-use date editor exposes quick fixed ranges without changing its s
   assert.match(customFieldDialogVue, /payload = \{ \.\.\.editValue\.value, mode: editMode\.value \}/)
 })
 
+test('behavior date editor does not expose the removed restore-status affordance', () => {
+  const dynamicFormVue = readFileSync(join(currentDir, 'DynamicForm.vue'), 'utf8')
+  assert.doesNotMatch(dynamicFormVue, /已保留方案原时间/)
+  assert.doesNotMatch(dynamicFormVue, /恢复行为默认/)
+  assert.doesNotMatch(dynamicFormVue, /behavior-date-default-note/)
+  assert.doesNotMatch(dynamicFormVue, /restoreCategoryBehaviorDateDefault/)
+})
+
 test('DataBank automation leaves more headroom than the extension bridge timeout', () => {
   assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 70000/)
 })
