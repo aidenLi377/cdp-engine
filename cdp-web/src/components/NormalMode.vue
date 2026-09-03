@@ -8,6 +8,7 @@
       type="button"
       class="left-panel-edge-toggle"
       :class="{ 'is-solutions': leftPanelMode === 'solutions' }"
+      data-tutorial-target="open-solution-picker"
       @click="toggleLeftPanelMode"
     >
       {{ leftPanelMode === 'packages' ? '选方案' : '组件库' }}
@@ -24,7 +25,7 @@
             :icon="RefreshRight"
             circle
             aria-label="刷新方案"
-            @click="loadPublishedSolutions"
+            @click="refreshPublishedSolutions"
             :loading="loadingPublishedSolutions"
           />
         </el-tooltip>
@@ -70,6 +71,7 @@
             active: currentSolution?.id === item.id && workbenchMode === 'solution-use' && !batchMode,
             'batch-member': batchMode && batchEntries.some(entry => entry.id === item.id),
           }"
+          :data-tutorial-target="isTutorialPublishedSolution(item) ? 'load-tutorial-solution' : undefined"
           @click="loadPublishedSolution(item)"
         >
           <div class="solution-list-item-head">
@@ -119,7 +121,7 @@
           :key="pkg"
           type="default"
           class="intercom-btn-outlined"
-          :data-tutorial-target="pkg === CATEGORY_ITEM_PACKAGE ? 'add-category-item' : undefined"
+          :data-tutorial-target="getTutorialPackageTarget(pkg)"
           @click="addNode(pkg)"
           :loading="loadingPkg === pkg"
         >
@@ -140,7 +142,7 @@
       :aria-valuenow="workbenchLeftWidth"
       aria-valuemin="240"
       aria-valuemax="460"
-      aria-label="调整工作台左侧栏宽度"
+      aria-label="调整圈包页面左侧栏宽度"
       aria-orientation="vertical"
       role="separator"
       tabindex="0"
@@ -158,7 +160,7 @@
               ? (isParameterBatch
                 ? `${batchFolderName || '单方案批量任务'} · ${batchEntries.length} 包`
                 : `${batchFolderName || '组合方案'} · ${batchEntries.length} 个人群包`)
-              : (workbenchMode === 'solution-use' ? (currentSolution?.name || '方案使用') : '自由搭建工作台')
+              : (workbenchMode === 'solution-use' ? (currentSolution?.name || '模板使用') : '自由搭建圈包')
           }}
         </div>
         <div v-if="batchMode" class="batch-toolbar-caption">
@@ -245,6 +247,7 @@
           <template v-else>
             <el-button
               class="workbench-compact-action save-draft"
+              data-tutorial-target="save-workbench-solution"
               size="small"
               text
               @click="saveWorkbenchDraft"
@@ -291,7 +294,7 @@
       <div v-else-if="!currentSolution" class="empty-hint display-body-light">
         请先从左侧选择一个已发布方案
       </div>
-      <div v-else class="solution-use-area">
+      <div v-else class="solution-use-area" data-tutorial-target="solution-use-area">
         <div v-if="batchMode" class="batch-compact-rail">
           <span class="batch-compact-label">人群包</span>
           <div class="batch-compact-tabs" role="tablist" aria-label="切换人群包">
@@ -378,6 +381,7 @@
 	            <span
 	              class="display-mono cf-use-card-count"
 	              :title="isParameterBatchSection(section) ? '该参数由 Excel 行独立控制' : '点击编辑'"
+                :data-tutorial-target="getTutorialCustomFieldTarget(section)"
               @click.stop="openCfEditDialog(section)"
             >{{ section.bindings.length }}</span>
           </div>
@@ -477,6 +481,7 @@
                   v-else
                   v-show="!node.collapsed"
                   :node="node"
+                  :node-index="index"
                   :readonly="batchMode"
                   :overflow-policy="!batchMode ? 'solution-use' : 'legacy'"
                   @overflow-split="handleOverflowSplit"
@@ -513,7 +518,11 @@
             v-for="(node, index) in nodeList"
             :key="node.id"
             class="node-wrapper"
-            :class="{ 'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id) }"
+            :class="{
+              'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id),
+              'tutorial-copy-source': tutorialCopySourceId === node.id,
+              'tutorial-copy-arrival': tutorialCopyArrivalId === node.id,
+            }"
             :ref="(el) => { if (el) nodeRefs[index] = el }"
             @dragover.prevent="onDragOver(index)"
             @drop="onDrop(index)"
@@ -521,11 +530,17 @@
           >
             <div v-if="index > 0" class="logic-connector">
               <div class="connector-line"></div>
-              <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
-	                <el-radio-button value="n">交集 (n)</el-radio-button>
-	                <el-radio-button value="u">并集 (u)</el-radio-button>
-	                <el-radio-button value="d">差集 (d)</el-radio-button>
-              </el-radio-group>
+              <div
+                class="tutorial-intersection-control"
+                :data-tutorial-target="index === 1 ? 'solution-intersection' : undefined"
+                aria-label="节点关系：交集、并集、差集"
+              >
+                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
+	                  <el-radio-button value="n">交集 (n)</el-radio-button>
+	                  <el-radio-button value="u">并集 (u)</el-radio-button>
+	                  <el-radio-button value="d">差集 (d)</el-radio-button>
+                </el-radio-group>
+              </div>
               <div class="connector-line"></div>
             </div>
 
@@ -548,7 +563,7 @@
 	                </span>
 	                <div class="behavior-card-action-group">
 	                  <el-tooltip content="复制节点" placement="top">
-	                    <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(index)">
+	                    <el-button class="behavior-card-icon-btn" :data-tutorial-target="index === 0 ? 'duplicate-solution-node-0' : undefined" @click.stop="duplicateNode(index)">
 	                      <el-icon><CopyDocument /></el-icon>
 	                    </el-button>
 	                  </el-tooltip>
@@ -566,7 +581,7 @@
               <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
                 <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
               </div>
-              <DynamicForm v-else v-show="!node.collapsed" :node="node" @overflow-split="handleOverflowSplit" />
+              <DynamicForm v-else v-show="!node.collapsed" :node="node" :node-index="index" @overflow-split="handleOverflowSplit" />
             </div>
           </div>
         </div>
@@ -598,7 +613,7 @@
       :aria-valuenow="workbenchRightWidth"
       aria-valuemin="280"
       aria-valuemax="480"
-      aria-label="调整工作台右侧栏宽度"
+      aria-label="调整圈包页面右侧栏宽度"
       aria-orientation="vertical"
       role="separator"
       tabindex="0"
@@ -629,10 +644,10 @@
         <span class="batch-crowd-name-lock-mark">✓</span>
         {{ isParameterBatch
           ? '名称来自 Excel 批量预览，逐包执行期间保持锁定'
-          : '名称来自方案中心，组合执行期间保持锁定' }}
+          : '名称来自数据引擎取数模板，组合执行期间保持锁定' }}
       </div>
       <div v-else-if="workbenchMode === 'solution-use' && currentSolution" class="display-body-light workbench-name-hint">
-        来源方案：{{ currentSolution.name || '未命名方案' }}，当前改动仅保留在工作台
+        来源模板：{{ currentSolution.name || '未命名模板' }}，当前改动仅保留在圈包画布
       </div>
     </div>
 
@@ -864,7 +879,7 @@
 
     <div class="batch-dialog-section-head">
       <span>即将生成的人群包</span>
-      <small>名称取自方案中心配置</small>
+      <small>名称取自数据引擎取数模板配置</small>
     </div>
     <div class="batch-preview-list">
       <div
@@ -906,7 +921,7 @@
           :disabled="batchPreviewHasInvalidNames"
           @click="enterBatchMode"
         >
-          进入组合工作台
+          进入组合圈包模式
         </el-button>
       </div>
     </template>
@@ -1024,7 +1039,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch, provide } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch, provide } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Delete, FolderAdd, RefreshLeft, RefreshRight, Search } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
@@ -1069,6 +1084,10 @@ import {
   writeSessionWorkspace,
 } from '../utils/sessionWorkspace.js'
 import { validateWorkbenchOutput } from '../utils/workbenchValidation.js'
+import {
+  SOLUTION_REUSE_TUTORIAL_ID,
+  SOLUTION_REUSE_TUTORIAL_VALUES,
+} from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
@@ -1127,7 +1146,7 @@ const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'
 const CATEGORY_ITEM_PACKAGE = '类目商品行为'
 const COMMODITY_PACKAGE = '商品行为'
 const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'
-const DEFAULT_DRAFT_NAME = '工作台方案草稿'
+const DEFAULT_DRAFT_NAME = '圈包方案草稿'
 const MAX_HISTORY = 20
 const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
@@ -1135,6 +1154,30 @@ const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
 const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
+
+function isSolutionReuseTutorialActive() {
+  return guidedTutorialState.active && guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
+}
+
+function getTutorialPackageTarget(packageType) {
+  if (isSolutionReuseTutorialActive() && packageType === CATEGORY_PUBLIC_PACKAGE) return 'add-category-public'
+  if (packageType === CATEGORY_ITEM_PACKAGE) return 'add-category-item'
+  return undefined
+}
+
+function isTutorialPublishedSolution(item) {
+  if (!isSolutionReuseTutorialActive()) return false
+  const expectedId = String(guidedTutorialState.context.solutionId || '')
+  return (expectedId && String(item?.id || '') === expectedId)
+    || String(item?.name || '').trim() === SOLUTION_REUSE_TUTORIAL_VALUES.solutionName
+}
+
+function getTutorialCustomFieldTarget(section) {
+  if (!isSolutionReuseTutorialActive()) return undefined
+  if (section?.name === '分析类目') return 'edit-analysis-field'
+  if (section?.name === '竞争品牌') return 'edit-competitor-field'
+  return undefined
+}
 
 const {
   getArray,
@@ -1222,6 +1265,8 @@ const parameterBatchRows = ref([])
 const parameterBatchFieldName = ref('')
 const parameterBatchFieldId = ref('')
 const parameterBatchCreating = ref(false)
+const tutorialCopySourceId = ref('')
+const tutorialCopyArrivalId = ref('')
 const derivedSolutionMeta = reactive({
   sourceSolutionId: null,
   sourceSolutionVersion: null,
@@ -1240,6 +1285,7 @@ let sessionRestorePending = true
 let sessionPersistenceDisabled = false
 
 provide('solutionCenterContext', {
+  isTutorialSolutionCenter: false,
   highlightedCustomFieldId: null,
   customFields: [],
   creatingCustomField: false,
@@ -1716,6 +1762,27 @@ function openCfEditDialog(section) {
     }
   }
   cfEditDialogVisible.value = true
+  if (section?.name === '分析类目' && isGuidedTutorialStep('open-analysis-field')) {
+    completeGuidedTutorialStep('open-analysis-field')
+  }
+  if (section?.name === '竞争品牌' && isGuidedTutorialStep('open-competitor-field')) {
+    completeGuidedTutorialStep('open-competitor-field')
+  }
+}
+
+function tutorialCustomFieldApplied(fieldName) {
+  const [ownNode, competitorNode] = nodeList.value
+  const firstValue = (node, key) => getArray(node?.formData?.[key])[0] || ''
+  if (fieldName === '分析类目') {
+    return firstValue(ownNode, 'leafCates') === SOLUTION_REUSE_TUTORIAL_VALUES.secondCategory
+      && firstValue(competitorNode, 'leafCates') === SOLUTION_REUSE_TUTORIAL_VALUES.secondCategory
+  }
+  if (fieldName === '竞争品牌') {
+    return firstValue(ownNode, 'stdBrand') === SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand
+      && firstValue(competitorNode, 'stdBrand') === SOLUTION_REUSE_TUTORIAL_VALUES.secondCompetitorBrand
+      && nodeList.value.length === 2
+  }
+  return false
 }
 
 function getCustomFieldOverflowBindings(customField, value) {
@@ -1829,6 +1896,20 @@ async function onCfDialogSave({ customFieldId, value }) {
   if (uniqueNodes.size > 0) {
     ElMessage.success(`已同步到 ${uniqueNodes.size} 个组件`)
   }
+  if (
+    cf.name === '分析类目'
+    && isGuidedTutorialStep('save-analysis-category')
+    && tutorialCustomFieldApplied('分析类目')
+  ) {
+    completeGuidedTutorialStep('save-analysis-category')
+  }
+  if (
+    cf.name === '竞争品牌'
+    && isGuidedTutorialStep('save-competitor-brand')
+    && tutorialCustomFieldApplied('竞争品牌')
+  ) {
+    completeGuidedTutorialStep('save-competitor-brand')
+  }
 }
 
 function applyBatchCustomFieldValue(rawName, value) {
@@ -1890,6 +1971,9 @@ function isSummaryRowHighlighted(nodeId, fieldKey) {
 
 function toggleLeftPanelMode() {
   leftPanelMode.value = leftPanelMode.value === 'packages' ? 'solutions' : 'packages'
+  if (leftPanelMode.value === 'solutions' && isGuidedTutorialStep('open-solution-picker')) {
+    completeGuidedTutorialStep('open-solution-picker')
+  }
 }
 
 function onNameManualEdit(value) {
@@ -1975,7 +2059,7 @@ function clearCanvas() {
   activeNodeIndex.value = 0
   crowdNameInput.value = ''
   resetWorkbenchContext()
-  ElMessage.success('工作台已清空')
+  ElMessage.success('圈包画布已清空')
 }
 
 function prepareCleanGuidedTutorialWorkbench() {
@@ -1990,7 +2074,7 @@ function prepareCleanGuidedTutorialWorkbench() {
   crowdNameInput.value = ''
   resetWorkbenchContext()
 
-  if (hadContent) ElMessage.success('已为教程自动清空工作台')
+  if (hadContent) ElMessage.success('已为教程自动清空圈包画布')
 }
 
 function toggleCollapseAll() {
@@ -2090,31 +2174,73 @@ async function loadPackages() {
   }
 }
 
-async function loadPublishedSolutions() {
+let publishedSolutionsRequestId = 0
+let publishedSolutionsAbort = null
+
+async function loadPublishedSolutions({ fresh = false, notify = false } = {}) {
+  const requestId = ++publishedSolutionsRequestId
+  publishedSolutionsAbort?.abort()
+  const controller = new AbortController()
+  publishedSolutionsAbort = controller
+  const scope = publishedLibraryScope.value
   loadingPublishedSolutions.value = true
   try {
-    publishedSolutions.value = await listSolutions(
+    const nextSolutions = await listSolutions(
       'published',
-      publishedLibraryScope.value,
+      scope,
+      { signal: controller.signal, fresh },
     )
-    await loadPublishedFolders()
+    const nextFolderTree = await loadPublishedFolders({
+      scope,
+      solutions: nextSolutions,
+      signal: controller.signal,
+      fresh,
+    })
+    if (requestId !== publishedSolutionsRequestId) return false
+
+    publishedSolutions.value = nextSolutions
+    publishedFolderTree.value = nextFolderTree
+    if (
+      selectedPublishedFolderId.value
+      && !folderTreeContains(nextFolderTree, selectedPublishedFolderId.value)
+    ) {
+      selectedPublishedFolderId.value = null
+    }
+    if (notify) {
+      ElMessage.success(`${scope === 'public' ? '公共方案' : '我的方案'}已刷新`)
+    }
+    return true
   } catch (error) {
-    ElMessage.error(error.message || '已发布方案列表加载失败')
+    if (error.name === 'AbortError') return false
+    if (requestId === publishedSolutionsRequestId) {
+      ElMessage.error(error.message || (notify ? '方案列表刷新失败' : '已发布方案列表加载失败'))
+    }
+    return false
   } finally {
-    loadingPublishedSolutions.value = false
+    if (requestId === publishedSolutionsRequestId) {
+      loadingPublishedSolutions.value = false
+      if (publishedSolutionsAbort === controller) publishedSolutionsAbort = null
+    }
   }
 }
 
-async function loadPublishedFolders() {
-  try {
-    const allFolders = await listFolders(publishedLibraryScope.value)
-    const publishedIds = new Set(
-      publishedSolutions.value.map(s => s.folderId).filter(Boolean)
-    )
-    publishedFolderTree.value = filterFoldersByPublished(allFolders, publishedIds)
-  } catch (error) {
-    console.error('加载已发布方案文件夹失败:', error)
-  }
+async function loadPublishedFolders({ scope, solutions, signal, fresh = false }) {
+  const allFolders = await listFolders(scope, { signal, fresh })
+  const publishedIds = new Set(
+    solutions.map(s => s.folderId).filter(Boolean)
+  )
+  return filterFoldersByPublished(allFolders, publishedIds)
+}
+
+function folderTreeContains(folders, folderId) {
+  return folders.some(folder => (
+    folder.id === folderId
+    || folderTreeContains(folder.children || [], folderId)
+  ))
+}
+
+async function refreshPublishedSolutions() {
+  await loadPublishedSolutions({ fresh: true, notify: true })
 }
 
 async function switchPublishedLibrary(nextScope) {
@@ -2123,7 +2249,7 @@ async function switchPublishedLibrary(nextScope) {
   selectedPublishedFolderId.value = null
   publishedSolutions.value = []
   publishedFolderTree.value = []
-  await loadPublishedSolutions()
+  await loadPublishedSolutions({ fresh: true })
 }
 
 function filterFoldersByPublished(folders, publishedIds) {
@@ -2217,8 +2343,8 @@ async function activateBatchEntry(index, options = {}) {
 async function enterBatchMode() {
   if (batchLoading.value || batchPreviewSolutions.value.length < 2) return
   const shouldContinue = await confirmReplaceCanvas(
-    '当前工作台已有内容，进入组合工作台后会替换现有状态，是否继续？',
-    '进入组合工作台',
+    '当前圈包画布已有内容，进入组合圈包模式后会替换现有状态，是否继续？',
+    '进入组合圈包模式',
     '继续组合应用',
   )
   if (!shouldContinue) return
@@ -2342,6 +2468,9 @@ async function addNode(packageType) {
     if (packageType === CATEGORY_ITEM_PACKAGE) {
       completeGuidedTutorialStep('add-category-item')
     }
+    if (packageType === CATEGORY_PUBLIC_PACKAGE && isGuidedTutorialStep('add-public-behavior')) {
+      completeGuidedTutorialStep('add-public-behavior')
+    }
   } catch (error) {
     ElMessage.error(error.message || '组件加载失败，请检查后端连接')
   } finally {
@@ -2367,8 +2496,21 @@ function duplicateNode(index) {
 
   takeSnapshot()
   const duplicated = cloneNodeForDuplicate(source, index)
+  const tutorialCopy = isGuidedTutorialStep('duplicate-own-node') && index === 0
+  if (tutorialCopy) duplicated.operator = 'n'
   insertNodeAtPosition(nodeList.value, duplicated, index)
   markDerivedStructureChange()
+
+  if (tutorialCopy) {
+    tutorialCopySourceId.value = source.id
+    tutorialCopyArrivalId.value = duplicated.id
+    updateGuidedTutorialContext({ copiedNodeId: duplicated.id })
+    completeGuidedTutorialStep('duplicate-own-node')
+    window.setTimeout(() => {
+      tutorialCopySourceId.value = ''
+      tutorialCopyArrivalId.value = ''
+    }, 620)
+  }
 
   const cfs = currentSolution.value?.customFields || []
   const relatedCfs = cfs.filter(cf =>
@@ -2463,7 +2605,16 @@ async function saveWorkbenchDraft() {
 
   savingDraft.value = true
   try {
-    await createDraft(buildDraftPayload())
+    const tutorialDraft = isGuidedTutorialStep('save-workbench-solution')
+    const created = await createDraft(buildDraftPayload(tutorialDraft ? '圈包草稿' : undefined))
+    if (tutorialDraft) {
+      updateGuidedTutorialContext({
+        workbenchDraftId: String(created?.id || ''),
+        workbenchDraftSyncStatus: 'pending',
+        workbenchDraftSyncError: '',
+      })
+      completeGuidedTutorialStep('save-workbench-solution')
+    }
     ElMessage.success('当前画布已存为方案草稿')
   } catch (error) {
     ElMessage.error(error.message || '方案草稿保存失败')
@@ -2490,7 +2641,7 @@ async function saveAsNewDerivedDraft() {
 
     savingDraft.value = true
     await createDraft(buildDraftPayload(value))
-    ElMessage.success('当前工作台已另存为新方案草稿')
+    ElMessage.success('当前圈包画布已另存为新方案草稿')
   } catch (error) {
     if (error !== 'cancel' && error?.message !== 'cancel') {
       ElMessage.error(error.message || '另存为新方案失败')
@@ -2554,9 +2705,9 @@ async function loadPublishedSolution(item) {
 
   const shouldContinue = await confirmReplaceCanvas(
     batchMode.value
-      ? '当前正在使用组合方案，切换到单个方案后将退出组合工作台，是否继续？'
+      ? '当前正在使用组合方案，切换到单个方案后将退出组合圈包模式，是否继续？'
       : undefined,
-    batchMode.value ? '退出组合工作台' : undefined,
+    batchMode.value ? '退出组合圈包模式' : undefined,
     batchMode.value ? '切换到单方案' : undefined,
   )
   if (!shouldContinue) return
@@ -2573,6 +2724,14 @@ async function loadPublishedSolution(item) {
     const detail = await getSolution(item.id, { signal })
     await setWorkbenchFromSolution(detail)
     ElMessage.success('已加载发布方案')
+    if (isGuidedTutorialStep('load-tutorial-solution') && isTutorialPublishedSolution(detail)) {
+      updateGuidedTutorialContext({
+        solutionId: String(detail?.id || ''),
+        solutionNodeCount: nodeList.value.length,
+        solutionStructureChanged: false,
+      })
+      completeGuidedTutorialStep('load-tutorial-solution')
+    }
   } catch (error) {
     if (error.name !== 'AbortError') {
       ElMessage.error(error.message || '方案加载失败')
@@ -2920,6 +3079,14 @@ function handleDataBankCommand(command) {
       completeGuidedTutorialStep('start-automation')
       return
     }
+    if (isGuidedTutorialStep('run-first-solution-automation')) {
+      completeGuidedTutorialStep('run-first-solution-automation')
+      return
+    }
+    if (isGuidedTutorialStep('run-second-solution-automation')) {
+      completeGuidedTutorialStep('run-second-solution-automation')
+      return
+    }
     if (batchMode.value) {
       batchAutomationScope.value = 'current'
       batchAutomationDialogVisible.value = true
@@ -3036,6 +3203,112 @@ async function startAutoDataBankFlow() {
   } finally {
     databankAutomating.value = false
   }
+}
+
+function getSolutionTutorialSnapshot(run) {
+  const [ownNode, competitorNode] = nodeList.value
+  const firstValue = (node, key) => getArray(node?.formData?.[key])[0] || ''
+  const category = run === 'first'
+    ? SOLUTION_REUSE_TUTORIAL_VALUES.initialCategory
+    : SOLUTION_REUSE_TUTORIAL_VALUES.secondCategory
+  const competitorBrand = run === 'first'
+    ? SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand
+    : SOLUTION_REUSE_TUTORIAL_VALUES.secondCompetitorBrand
+  const crowdName = run === 'first'
+    ? SOLUTION_REUSE_TUTORIAL_VALUES.defaultCrowdName
+    : SOLUTION_REUSE_TUTORIAL_VALUES.secondCrowdName
+  const timeIsReady = (node) => {
+    const timeField = node?.schema?.find(field => field.key === 'time' || field.Widget_Type === '日期_切换')
+    const timeKey = timeField?.key || 'time'
+    return node?.modeData?.[timeKey] === 'recent'
+      && Number(node?.formData?.[timeKey]?.days) === SOLUTION_REUSE_TUTORIAL_VALUES.recentDays
+  }
+  const valid = workbenchMode.value === 'solution-use'
+    && Boolean(currentSolution.value?.id)
+    && nodeList.value.length === 2
+    && ownNode?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
+    && competitorNode?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
+    && competitorNode?.operator === 'n'
+    && getArray(ownNode?.formData?.bhv).includes(SOLUTION_REUSE_TUTORIAL_VALUES.behavior)
+    && getArray(competitorNode?.formData?.bhv).includes(SOLUTION_REUSE_TUTORIAL_VALUES.behavior)
+    && firstValue(ownNode, 'leafCates') === category
+    && firstValue(competitorNode, 'leafCates') === category
+    && firstValue(ownNode, 'stdBrand') === SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand
+    && firstValue(competitorNode, 'stdBrand') === competitorBrand
+    && getArray(ownNode?.formData?.channel).includes(SOLUTION_REUSE_TUTORIAL_VALUES.channel)
+    && getArray(competitorNode?.formData?.channel).includes(SOLUTION_REUSE_TUTORIAL_VALUES.channel)
+    && timeIsReady(ownNode)
+    && timeIsReady(competitorNode)
+    && String(crowdNameInput.value || '').trim() === crowdName
+    && derivedSolutionMeta.hasStructureChanges === false
+
+  return {
+    valid,
+    run,
+    solutionId: String(currentSolution.value?.id || ''),
+    category,
+    ownBrand: firstValue(ownNode, 'stdBrand'),
+    competitorBrand: firstValue(competitorNode, 'stdBrand'),
+    crowdName: String(crowdNameInput.value || '').trim(),
+    nodeCount: nodeList.value.length,
+    structureChanged: derivedSolutionMeta.hasStructureChanges,
+  }
+}
+
+async function handleSolutionTutorialAutomationConfirmed(event) {
+  const run = event?.detail?.run === 'second' ? 'second' : 'first'
+  const waitStep = run === 'first'
+    ? 'wait-first-solution-automation'
+    : 'wait-second-solution-automation'
+  if (!isGuidedTutorialStep(waitStep)) return
+
+  const snapshot = getSolutionTutorialSnapshot(run)
+  if (!snapshot.valid) {
+    const patch = run === 'first'
+      ? { firstAutomationStatus: 'failed', firstAutomationError: '当前方案参数与教程任务不一致，请检查两个节点、交集关系和人群包名称后重试。' }
+      : { secondAutomationStatus: 'failed', secondAutomationError: '第二次参数尚未完整同步，请确认两个类目都已更新、竞品为 CPB，且没有新增节点。' }
+    updateGuidedTutorialContext(patch)
+    return
+  }
+
+  const result = await startAutoDataBankFlow()
+  if (!result?.ok) {
+    updateGuidedTutorialContext(run === 'first'
+      ? { firstAutomationStatus: 'failed', firstAutomationError: result?.error || '第一次自动化圈人失败，请检查后重试。' }
+      : { secondAutomationStatus: 'failed', secondAutomationError: result?.error || '第二次自动化圈人失败，请检查后重试。' })
+    return
+  }
+
+  if (run === 'first') {
+    updateGuidedTutorialContext({
+      firstAutomationStatus: 'success',
+      firstAutomationError: '',
+      firstAutomationSnapshot: snapshot,
+    })
+    completeGuidedTutorialStep(waitStep)
+    return
+  }
+
+  const first = guidedTutorialState.context.firstAutomationSnapshot
+  const resultsAreDistinct = first
+    && first.solutionId === snapshot.solutionId
+    && first.category !== snapshot.category
+    && first.competitorBrand !== snapshot.competitorBrand
+    && first.crowdName !== snapshot.crowdName
+    && first.nodeCount === snapshot.nodeCount
+  if (!resultsAreDistinct) {
+    updateGuidedTutorialContext({
+      secondAutomationStatus: 'failed',
+      secondAutomationError: '两次结果未形成“同一方案、不同参数”的有效对照，请检查后重试。',
+    })
+    return
+  }
+  updateGuidedTutorialContext({
+    secondAutomationStatus: 'success',
+    secondAutomationError: '',
+    secondAutomationSnapshot: snapshot,
+  })
+  completeGuidedTutorialStep(waitStep)
 }
 
 async function handleTutorialAutomationConfirmed() {
@@ -3224,7 +3497,7 @@ async function restoreWorkbenchSession() {
     crowdNameInput.value = ''
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
     resetWorkbenchContext()
-    ElMessage.warning('上次工作台恢复失败，已回到安全的空白状态')
+    ElMessage.warning('上次圈包画布恢复失败，已回到安全的空白状态')
     return false
   } finally {
     snapshotPaused.value = false
@@ -3244,6 +3517,30 @@ function handleKeydown(event) {
 
 function syncGuidedTutorialContext() {
   if (!guidedTutorialState.active) return
+  if (guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID) {
+    const tutorialNodes = nodeList.value.filter(
+      node => node.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType,
+    )
+    const ownNode = tutorialNodes[0]
+    const timeField = ownNode?.schema?.find(
+      field => field.key === 'time' || field.Widget_Type === '日期_切换',
+    )
+    const timeKey = timeField?.key || 'time'
+    updateGuidedTutorialContext({
+      nodeCount: nodeList.value.length,
+      solutionNodeCount: tutorialNodes.length,
+      solutionOperator: tutorialNodes[1]?.operator || '',
+      recentDays: ownNode?.formData?.[timeKey]?.days ?? null,
+      dateMode: ownNode?.modeData?.[timeKey] || '',
+      dateRange: Array.isArray(ownNode?.formData?.[timeKey]?.dateRange)
+        ? [...ownNode.formData[timeKey].dateRange]
+        : [],
+      audienceName: String(crowdNameInput.value || ''),
+      solutionId: String(currentSolution.value?.id || guidedTutorialState.context.solutionId || ''),
+      solutionStructureChanged: derivedSolutionMeta.hasStructureChanges,
+    })
+    return
+  }
   const tutorialNode = nodeList.value.find((node) => node.packageType === CATEGORY_ITEM_PACKAGE)
   const timeField = tutorialNode?.schema?.find((field) => field.key === 'time' || field.Widget_Type === '日期_切换')
   const timeKey = timeField?.key || 'time'
@@ -3383,13 +3680,22 @@ onMounted(async () => {
   window.addEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   window.addEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.addEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
+  window.addEventListener('cdp:tutorial-confirm-solution-automation', handleSolutionTutorialAutomationConfirmed)
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
   await Promise.all([loadPackages(), loadPublishedSolutions()])
   const restored = await restoreWorkbenchSession()
   sessionRestorePending = false
-  if (!restored) resetHistory()
+  if (guidedTutorialState.active) {
+    leftPanelMode.value = 'packages'
+    pkgSearch.value = ''
+    prepareCleanGuidedTutorialWorkbench()
+    resetHistory()
+    syncGuidedTutorialContext()
+  } else if (!restored) {
+    resetHistory()
+  }
   scheduleWorkbenchSessionSave()
   window.addEventListener('keydown', handleKeydown)
   window.addEventListener('beforeunload', persistWorkbenchSession)
@@ -3401,16 +3707,27 @@ onMounted(async () => {
   }
 })
 
+onActivated(() => {
+  if (
+    isSolutionReuseTutorialActive()
+    && ['open-solution-picker', 'load-tutorial-solution'].some(step => isGuidedTutorialStep(step))
+  ) {
+    void loadPublishedSolutions()
+  }
+})
+
 onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(jsonTimer)
   clearTimeout(sessionSaveTimer)
   persistWorkbenchSession()
+  publishedSolutionsAbort?.abort()
   jsonBuildAbort?.abort()
   window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('beforeunload', persistWorkbenchSession)
   window.removeEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.removeEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
+  window.removeEventListener('cdp:tutorial-confirm-solution-automation', handleSolutionTutorialAutomationConfirmed)
   window.removeEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()
@@ -3418,3 +3735,30 @@ onBeforeUnmount(() => {
   }
 })
 </script>
+
+<style scoped>
+.tutorial-copy-source .behavior-card {
+  animation: tutorial-copy-source 420ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.tutorial-copy-arrival .behavior-card {
+  transform-origin: 50% 0;
+  animation: tutorial-copy-arrival 560ms cubic-bezier(.16, 1, .3, 1) both;
+}
+
+@keyframes tutorial-copy-source {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(-4px); box-shadow: 0 15px 32px rgba(33, 112, 174, .14); }
+}
+
+@keyframes tutorial-copy-arrival {
+  from { opacity: 0; transform: translateY(-18px) scale(.985); }
+  65% { opacity: 1; transform: translateY(3px) scale(1.005); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-copy-source .behavior-card,
+  .tutorial-copy-arrival .behavior-card { animation: none; }
+}
+</style>

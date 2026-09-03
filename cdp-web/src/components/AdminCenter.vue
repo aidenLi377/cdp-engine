@@ -402,12 +402,12 @@
                 <span>01</span>
                 <div>
                   <h3>方案概述</h3>
-                  <small>与工作台右侧摘要一致，只展示实际生效的组件条件</small>
+                  <small>与圈包页面右侧摘要一致，只展示实际生效的组件条件</small>
                 </div>
               </div>
               <div v-if="solutionPreviewLoading" class="solution-overview-loading">
                 <span></span>
-                正在生成与工作台一致的组件概述…
+                正在生成与圈包页面一致的组件概述…
               </div>
               <div v-else-if="previewNodes.length" class="solution-overview-list">
                 <article v-for="(node, index) in previewNodes" :key="node.id || index" class="summary-node">
@@ -534,7 +534,7 @@
           <span class="config-version">V{{ configStatus.currentVersion || 0 }}</span>
           <span class="config-release-copy">
             <strong>{{ configStatus.pendingChanges || 0 }} 项待发布</strong>
-            <small>保存只进入草稿，发布后工作台会自动同步新配置。</small>
+            <small>保存只进入草稿，发布后数据引擎人群圈包会自动同步新配置。</small>
           </span>
         </div>
         <div class="config-release-actions">
@@ -588,7 +588,7 @@
             <div>
               <p class="dimension-file">{{ selectedDimensionFile || '选择维表' }}</p>
               <p class="dimension-description">
-                支持筛选、编辑、停用与删除；删除会先进入待发布，发布后从工作台选项中移除。
+                支持筛选、编辑、停用与删除；删除会先进入待发布，发布后从圈包选项中移除。
               </p>
             </div>
             <div class="dimension-toolbar-actions">
@@ -736,7 +736,7 @@
           <div>
             <p class="admin-panel-index">OPTION ORDER</p>
             <h3 id="field-option-order-title">组内字段选项顺序</h3>
-            <p>调整行为、渠道等选项在工作台中的显示顺序；保存后先进入草稿，发布配置后对所有用户生效。</p>
+            <p>调整行为、渠道等选项在数据引擎人群圈包中的显示顺序；保存后先进入草稿，发布配置后对所有用户生效。</p>
           </div>
           <span v-if="fieldOptionOrderHasChanges" class="draft-chip">待发布</span>
         </div>
@@ -1082,7 +1082,7 @@
             <h3>{{ dimensionImportComplete.rowCount.toLocaleString() }} 行数据已导入草稿</h3>
             <p>
               新增 {{ dimensionImportComplete.created.toLocaleString() }} 行，自动跳过
-              {{ (dimensionImportComplete.skipped || 0).toLocaleString() }} 行重复数据；尚未影响工作台线上配置。
+              {{ (dimensionImportComplete.skipped || 0).toLocaleString() }} 行重复数据；尚未影响圈包线上配置。
             </p>
             <div>
               <button class="admin-primary-button" type="button" @click="closeDimensionImport">返回维表</button>
@@ -1096,7 +1096,7 @@
                   <small>目标维表</small>
                   <strong>{{ selectedDimensionFile }}</strong>
                 </div>
-                <p><span></span>导入后进入待发布，需通过“发布配置”才会同步到工作台。</p>
+                <p><span></span>导入后进入待发布，需通过“发布配置”才会同步到数据引擎人群圈包。</p>
               </section>
 
               <section class="dimension-import-schema" aria-label="Excel 表头要求">
@@ -1326,7 +1326,7 @@ const DIMENSION_PAGE_SIZES = [20, 30, 50, 100]
 const DIMENSION_IMPORT_SKIP_PAGE_SIZE = 8
 const PLAN_USER_PAGE_SIZE = 8
 const ROLE_OPTIONS = [
-  { value: 'user', label: '普通用户', description: '使用工作台、方案中心和任务中台' },
+  { value: 'user', label: '普通用户', description: '使用数据引擎人群圈包、数据引擎取数模板和达摩盘取数' },
   { value: 'config_admin', label: '配置管理员', description: '在普通用户能力上维护维表与配置' },
   { value: 'super_admin', label: '超级管理员', description: '管理系统账号、用户数据与配置' },
 ]
@@ -1336,9 +1336,9 @@ const ROLE_PERMISSIONS = {
   super_admin: ['workspace', 'plans', 'tasks', 'system', 'dimensions'],
 }
 const PERMISSION_ROWS = [
-  { key: 'workspace', label: '工作台', description: '访问任务执行与基础功能', icon: Monitor },
-  { key: 'plans', label: '方案中心', description: '访问个人方案与公共方案', icon: Collection },
-  { key: 'tasks', label: '任务中台', description: '访问任务执行、查看与管理任务', icon: Operation },
+  { key: 'workspace', label: '数据引擎人群圈包', description: '访问圈包执行与基础功能', icon: Monitor },
+  { key: 'plans', label: '数据引擎取数模板', description: '访问个人模板与公共模板', icon: Collection },
+  { key: 'tasks', label: '达摩盘取数', description: '访问取数执行、查看与任务管理', icon: Operation },
   { key: 'system', label: '系统管理', description: '管理账号、邀请、用户数据与日志', icon: Setting },
   { key: 'dimensions', label: '维表与配置', description: '维护维表并发布配置版本', icon: Document },
 ]
@@ -1545,7 +1545,7 @@ const navigationItems = computed(() => {
     {
       id: 'config',
       label: '维表与配置',
-      description: '新增、编辑、启停维表记录，并安全发布工作台配置。',
+      description: '新增、编辑、启停维表记录，并安全发布圈包配置。',
       badge: configStatus.value.pendingChanges || '',
     },
     {
@@ -1947,7 +1947,7 @@ async function saveFieldOptionOrder() {
         order: optionOrderDraft.value,
       }),
     })
-    showMessage('选项顺序已保存到配置草稿，发布后对工作台生效')
+    showMessage('选项顺序已保存到配置草稿，发布后对数据引擎人群圈包生效')
     await refreshConfigSummary()
   } catch (error) {
     showMessage(error.message || '选项顺序保存失败', 'error')
@@ -2131,7 +2131,7 @@ async function toggleDimensionRow(row) {
 async function deleteDimensionRow(row) {
   if (!canDeleteDimensions.value || !row || row.deleted) return
   const name = row.data?.[dimensionColumns.value.find((column) => column !== 'id')] || row.id
-  if (!window.confirm(`确定删除维表记录“${name}”吗？删除会先进入待发布，发布后从工作台移除。`)) return
+  if (!window.confirm(`确定删除维表记录“${name}”吗？删除会先进入待发布，发布后从数据引擎人群圈包移除。`)) return
   try {
     const deleted = await request(
       `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/${row.id}`,

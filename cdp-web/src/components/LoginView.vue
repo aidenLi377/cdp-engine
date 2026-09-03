@@ -8,14 +8,14 @@
       <span class="login-node node-three"></span>
     </div>
 
-    <section class="login-story" aria-label="CDP 圈选工作台">
+    <section class="login-story" aria-label="数据引擎人群圈包">
       <div class="login-brand-mark" aria-hidden="true">
         <span></span><span></span><span></span>
       </div>
       <div class="login-story-copy">
         <p class="login-kicker">CUSTOMER DATA PLATFORM</p>
         <h1>把复杂的人群策略，<br><em>变成清晰的行动。</em></h1>
-        <p class="login-intro">可视化搭建、方案沉淀与任务执行，在同一个工作台自然衔接。</p>
+        <p class="login-intro">可视化圈包、取数模板沉淀与达摩盘任务执行，在同一个系统自然衔接。</p>
       </div>
       <div class="login-story-foot">
         <span>CDP WORKBENCH</span>
@@ -29,7 +29,7 @@
         <header class="login-form-head">
           <span class="login-step">01 / SIGN IN</span>
           <h2>欢迎回来</h2>
-          <p>登录后继续进入你的圈选工作台。</p>
+          <p>登录后继续进入数据引擎人群圈包。</p>
         </header>
 
         <label class="login-field">
@@ -95,13 +95,13 @@
         </transition>
 
         <button class="login-submit" type="submit" :disabled="loading">
-          <span>{{ loading ? '正在验证…' : '进入工作台' }}</span>
+          <span>{{ loading ? '正在验证…' : '进入数据引擎人群圈包' }}</span>
           <span class="login-submit-arrow" aria-hidden="true">↗</span>
         </button>
 
         <p class="login-assurance">
           <span class="login-assurance-dot"></span>
-          账号由管理员统一创建，登录状态仅用于工作台访问。
+          账号由管理员统一创建，登录状态仅用于系统访问。
         </p>
       </form>
     </section>

@@ -13,6 +13,9 @@ const adminCenterVue = readFileSync(join(currentDir, 'AdminCenter.vue'), 'utf8')
 const adminPanelVue = readFileSync(join(currentDir, 'AnnouncementAdminPanel.vue'), 'utf8')
 const centerVue = readFileSync(join(currentDir, 'AnnouncementCenter.vue'), 'utf8')
 const articleVue = readFileSync(join(currentDir, 'AnnouncementArticle.vue'), 'utf8')
+const categoryTutorialVue = readFileSync(join(currentDir, 'TutorialTaskDetail.vue'), 'utf8')
+const dmpTutorialVue = readFileSync(join(currentDir, 'DmpBatchTutorialDetail.vue'), 'utf8')
+const solutionTutorialVue = readFileSync(join(currentDir, 'SolutionReuseTutorialDetail.vue'), 'utf8')
 
 test('signed-in users have a compact unread-aware announcement entry without a login popup', () => {
   assert.match(appVue, /class="app-announcement-link"/)
@@ -39,6 +42,34 @@ test('announcement center marks only the opened item as read and separates updat
   assert.match(centerVue, /新手教程/)
   assert.match(centerVue, /aria-label="公告与新手教程"/)
   assert.match(centerVue, /<AnnouncementArticle/)
+})
+
+test('built-in tutorial introductions lead with a business task, a concrete output, the flow and a reusable next step', () => {
+  assert.match(categoryTutorialVue, /你要解决的业务问题/)
+  assert.match(categoryTutorialVue, /真实业务任务/)
+  assert.match(categoryTutorialVue, /完成后，你会得到什么/)
+  assert.match(categoryTutorialVue, /你会亲手走完这条流程/)
+  assert.match(categoryTutorialVue, /完成后可迁移/)
+
+  assert.match(dmpTutorialVue, /你要解决的业务问题/)
+  assert.match(dmpTutorialVue, /用一个真实复盘任务来练习/)
+  assert.match(dmpTutorialVue, /完成后，你会带走什么/)
+  assert.match(dmpTutorialVue, /你会亲手走完这条流程/)
+  assert.match(dmpTutorialVue, /完成后，下一次可以直接复用/)
+
+  assert.match(solutionTutorialVue, /你要解决的业务问题/)
+  assert.match(solutionTutorialVue, /真实业务任务/)
+  assert.match(solutionTutorialVue, /留下可继续使用的成果/)
+  assert.match(solutionTutorialVue, /亲手走完四个章节/)
+  assert.match(solutionTutorialVue, /完成后，下一篇可以直接复用/)
+})
+
+test('category item tutorial keeps condition splitting distinct from later parameterized batch package creation', () => {
+  assert.match(categoryTutorialVue, /每个 ID 会成为一个条件节点/)
+  assert.match(categoryTutorialVue, /共同组成一个可执行人群/)
+  assert.match(categoryTutorialVue, /按方案参数批量建包.*后续独立教程/)
+  assert.match(categoryTutorialVue, /两种不同能力/)
+  assert.doesNotMatch(categoryTutorialVue, /自动创建 7 个人群包/)
 })
 
 test('system management content editor supports drafts, ordered text, images, videos and tutorials', () => {

@@ -28,7 +28,7 @@
 - Delete: `cdp-web/src/styles/cdp-global.apple-clean.test.mjs` — 删除只认可旧暖色主题的过期测试。
 - Modify style only: `cdp-web/src/App.vue` — 认证检查页和账户区域。
 - Modify style only: `cdp-web/src/components/LoginView.vue` — 登录页画布、排版、表单和状态。
-- Modify style only: `cdp-web/src/components/DynamicForm.vue` — 工作台字段选择、粘贴面板和焦点。
+- Modify style only: `cdp-web/src/components/DynamicForm.vue` — 数据引擎人群圈包字段选择、粘贴面板和焦点。
 - Modify style only: `cdp-web/src/components/CustomFieldEditDialog.vue` — 自定义字段编辑提示。
 - Modify style only: `cdp-web/src/components/FolderTree.vue` — 方案文件夹树视觉状态。
 - Modify style only: `cdp-web/src/components/FolderTreeNode.vue` — 嵌套文件夹节点视觉状态。

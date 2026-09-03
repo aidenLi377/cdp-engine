@@ -22,7 +22,7 @@
 
       <header class="app-shell-header">
         <div class="app-shell-title">
-          <div class="display-feature-title">圈选工作台</div>
+          <div class="display-feature-title">X-Data</div>
         </div>
 
         <nav class="app-shell-nav" aria-label="主导航">
@@ -33,9 +33,21 @@
             :class="`is-${appMode}`"
             aria-label="切换工作区域"
           >
-            <el-radio-button value="workbench">工作台</el-radio-button>
-            <el-radio-button value="solutions">方案中心</el-radio-button>
-            <el-radio-button value="task-center">任务中台</el-radio-button>
+            <el-radio-button
+              value="workbench"
+              data-tutorial-target="open-workbench"
+              @click="handleWorkbenchTutorialClick"
+            >数据引擎人群圈包</el-radio-button>
+            <el-radio-button
+              value="solutions"
+              data-tutorial-target="open-solution-center"
+              @click="handleSolutionCenterTutorialClick"
+            >数据引擎取数模板</el-radio-button>
+            <el-radio-button
+              value="task-center"
+              data-tutorial-target="open-task-center"
+              @click="handleTaskCenterTutorialClick"
+            >达摩盘取数</el-radio-button>
           </el-radio-group>
           <button
             v-if="canAccessAdmin"
@@ -141,7 +153,11 @@ import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import FeedbackDrawer from './components/FeedbackDrawer.vue'
 import GuidedTutorialOverlay from './components/GuidedTutorialOverlay.vue'
-import { startGuidedTutorial } from './composables/useGuidedTutorial.js'
+import {
+  completeGuidedTutorialStep,
+  isGuidedTutorialStep,
+  startGuidedTutorial,
+} from './composables/useGuidedTutorial.js'
 import { fetchWithTimeout, request } from './utils/apiClient.js'
 import {
   refreshConfigVersion,
@@ -352,6 +368,24 @@ function handleStartTutorial(taskId) {
   if (!startGuidedTutorial(taskId)) return
   selectedAnnouncementId.value = ''
   appMode.value = 'workbench'
+}
+
+function handleTaskCenterTutorialClick() {
+  if (isGuidedTutorialStep('open-task-center')) {
+    completeGuidedTutorialStep('open-task-center')
+  }
+}
+
+function handleSolutionCenterTutorialClick() {
+  if (isGuidedTutorialStep('open-solution-center')) {
+    completeGuidedTutorialStep('open-solution-center')
+  }
+}
+
+function handleWorkbenchTutorialClick() {
+  if (isGuidedTutorialStep('open-workbench-after-publish')) {
+    completeGuidedTutorialStep('open-workbench-after-publish')
+  }
 }
 
 function handleAnnouncementRead(state) {

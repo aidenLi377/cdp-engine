@@ -5,6 +5,7 @@ import fs from 'node:fs'
 const source = fs.readFileSync(new URL('./TaskCenter.vue', import.meta.url), 'utf8')
 const batchPopoverSource = fs.readFileSync(new URL('./TaskBatchPopover.vue', import.meta.url), 'utf8')
 const comparisonSource = fs.readFileSync(new URL('./DmpComparisonWorkspace.vue', import.meta.url), 'utf8')
+const tutorialOverlaySource = fs.readFileSync(new URL('./GuidedTutorialOverlay.vue', import.meta.url), 'utf8')
 const globalStyles = fs.readFileSync(new URL('../styles/cdp-global.css', import.meta.url), 'utf8')
 
 test('task center synchronizes shared DMP settings through the extension', () => {
@@ -21,8 +22,8 @@ test('task center exposes field visibility and per-tag Rebase controls', () => {
   assert.match(source, /DMP_RESULT_COLUMNS/)
 })
 
-test('comparison metric exposes the requested Rabase crowd-share display label', () => {
-  assert.match(comparisonSource, /metric === 'Rebase' \? 'Rabase 人群占比' : metric/)
+test('comparison metric exposes the Rebase crowd-share display label', () => {
+  assert.match(comparisonSource, /metric === 'Rebase' \? 'Rebase 人群占比' : metric/)
 })
 
 test('task center enables only ready multi-condition tags with plain status copy', () => {
@@ -217,6 +218,20 @@ test('task center mirrors the plugin tag tree and two-column checkbox layout', (
   assert.doesNotMatch(source, /class="tc-tag-check"/)
 })
 
+test('DMP tutorial highlights each required tag row with the displayed name', () => {
+  assert.match(source, /data-tutorial-target=.*dmp-tag-\$\{tag\.tagId\}/)
+  assert.match(source, /DMP_TUTORIAL_TAG_IDS\.includes\(String\(tag\.tagId\)\)/)
+  assert.match(comparisonSource, /Rebase 人群占比/)
+})
+
+test('tutorial recovers when a temporary operation surface is dismissed', () => {
+  assert.match(tutorialOverlaySource, /targetRecoveryStepMap/)
+  assert.match(tutorialOverlaySource, /'confirm-dmp-batch': 'open-dmp-batch'/)
+  assert.match(tutorialOverlaySource, /'confirm-split': 'add-product-ids'/)
+  assert.match(tutorialOverlaySource, /'sort-label-order': 'open-label-order'/)
+  assert.match(tutorialOverlaySource, /重新点击「批量」打开名单/)
+})
+
 test('task center stabilizes tag requests and results using dictionary order', () => {
   assert.match(source, /orderTagIdsByDictionary/)
   assert.match(source, /orderResultRowsByDictionary/)
@@ -323,9 +338,25 @@ test('label ordering uses a compact six-dot field affordance and a grouped-order
   assert.match(comparisonSource, /class="dc-label-order-trigger"/)
   assert.match(comparisonSource, /aria-label="调整标签顺序"/)
   assert.match(comparisonSource, /id="dmp-label-order-panel"/)
+  assert.match(comparisonSource, /data-tutorial-target="dmp-label-order-apply"/)
+  assert.match(comparisonSource, /dc-drag-demo--label/)
+  assert.match(comparisonSource, /dc-drag-demo--audience/)
   assert.match(comparisonSource, />调整标签顺序</)
   assert.match(comparisonSource, /拖动整组标签，统一调整表格、复制与导出顺序/)
   assert.doesNotMatch(comparisonSource, />标签排序</)
+})
+
+test('选择指标后教程会高亮结果表格供用户查看', () => {
+  assert.match(comparisonSource, /data-tutorial-target="dmp-comparison-table"/)
+  assert.match(tutorialOverlaySource, /inspect-comparison-table/)
+})
+
+test('教程在标签调整完成后把高亮切换到应用排序', () => {
+  assert.match(tutorialOverlaySource, /labelOrderReadyForApply/)
+  assert.match(tutorialOverlaySource, /dmp-label-order-apply/)
+  assert.match(comparisonSource, /syncGuidedTutorialDraftLabelOrder/)
+  assert.match(comparisonSource, /prepareTutorialLabelOrder/)
+  assert.match(comparisonSource, /labelOrderAutoMoved: true/)
 })
 
 test('applied label order persists by structure and drives copy and export', () => {

@@ -28,12 +28,32 @@
         <button
           v-if="activeKind === 'tutorial'"
           type="button"
-          :class="{ active: selectedId === BUILTIN_TUTORIAL_ID }"
-          @click="selectBuiltInTutorial"
+          :class="{ active: selectedId === SOLUTION_REUSE_TUTORIAL_ID }"
+          @click="selectBuiltInTutorial(SOLUTION_REUSE_TUTORIAL_ID)"
+        >
+          <span class="announcement-center__version">GUIDED TASK</span>
+          <strong>方案制作 · 共同浏览本品与竞品</strong>
+          <small>约 8–12 分钟 · 产出正式方案</small>
+        </button>
+        <button
+          v-if="activeKind === 'tutorial'"
+          type="button"
+          :class="{ active: selectedId === CATEGORY_ITEM_TUTORIAL_ID }"
+          @click="selectBuiltInTutorial(CATEGORY_ITEM_TUTORIAL_ID)"
         >
           <span class="announcement-center__version">GUIDED TASK</span>
           <strong>类目商品行为 · 7 个商品 ID 自动拆分</strong>
           <small>约 5 分钟 · 可实际操作</small>
+        </button>
+        <button
+          v-if="activeKind === 'tutorial'"
+          type="button"
+          :class="{ active: selectedId === DMP_BATCH_TUTORIAL_ID }"
+          @click="selectBuiltInTutorial(DMP_BATCH_TUTORIAL_ID)"
+        >
+          <span class="announcement-center__version">GUIDED TASK</span>
+          <strong>达摩盘 · 批量取画像与横向对比</strong>
+          <small>约 1–2 分钟 · 可实际操作</small>
         </button>
         <button
           v-for="item in filteredItems"
@@ -58,8 +78,14 @@
         </button>
       </div>
 
-      <div v-if="selectedId === BUILTIN_TUTORIAL_ID" class="announcement-center__scroll">
-        <TutorialTaskDetail @start="emit('start-tutorial', BUILTIN_TUTORIAL_ID)" />
+      <div v-if="selectedId === CATEGORY_ITEM_TUTORIAL_ID" class="announcement-center__scroll">
+        <TutorialTaskDetail @start="emit('start-tutorial', CATEGORY_ITEM_TUTORIAL_ID)" />
+      </div>
+      <div v-else-if="selectedId === SOLUTION_REUSE_TUTORIAL_ID" class="announcement-center__scroll">
+        <SolutionReuseTutorialDetail @start="emit('start-tutorial', SOLUTION_REUSE_TUTORIAL_ID)" />
+      </div>
+      <div v-else-if="selectedId === DMP_BATCH_TUTORIAL_ID" class="announcement-center__scroll">
+        <DmpBatchTutorialDetail @start="emit('start-tutorial', DMP_BATCH_TUTORIAL_ID)" />
       </div>
       <div v-else-if="loadingDetail" class="announcement-center__state">
         <span class="announcement-center__loader"></span>
@@ -85,9 +111,15 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AnnouncementArticle from './AnnouncementArticle.vue'
+import DmpBatchTutorialDetail from './DmpBatchTutorialDetail.vue'
+import SolutionReuseTutorialDetail from './SolutionReuseTutorialDetail.vue'
 import TutorialTaskDetail from './TutorialTaskDetail.vue'
 import { request } from '../utils/apiClient.js'
-import { CATEGORY_ITEM_TUTORIAL_ID } from '../utils/guidedTutorialConfig.js'
+import {
+  CATEGORY_ITEM_TUTORIAL_ID,
+  DMP_BATCH_TUTORIAL_ID,
+  SOLUTION_REUSE_TUTORIAL_ID,
+} from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   initialId: {
@@ -96,7 +128,11 @@ const props = defineProps({
   },
 })
 const emit = defineEmits(['close', 'read-updated', 'start-tutorial'])
-const BUILTIN_TUTORIAL_ID = CATEGORY_ITEM_TUTORIAL_ID
+const BUILTIN_TUTORIAL_IDS = new Set([
+  SOLUTION_REUSE_TUTORIAL_ID,
+  CATEGORY_ITEM_TUTORIAL_ID,
+  DMP_BATCH_TUTORIAL_ID,
+])
 
 const kindOptions = [
   { value: 'announcement', label: '更新公告' },
@@ -118,7 +154,7 @@ const hasRailItems = computed(() => activeKind.value === 'tutorial' || filteredI
 
 function countKind(kind) {
   const remoteCount = items.value.filter((item) => (item.kind || 'announcement') === kind).length
-  return kind === 'tutorial' ? remoteCount + 1 : remoteCount
+  return kind === 'tutorial' ? remoteCount + BUILTIN_TUTORIAL_IDS.size : remoteCount
 }
 
 function itemLabel(item) {
@@ -162,14 +198,14 @@ async function loadItems(preferredId = '') {
   errorMessage.value = ''
   try {
     items.value = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
-    const preferredBuiltIn = preferredId === BUILTIN_TUTORIAL_ID
+    const preferredBuiltIn = BUILTIN_TUTORIAL_IDS.has(preferredId)
     const preferred = preferredId ? items.value.find((item) => item.id === preferredId) : null
     if (preferredBuiltIn) activeKind.value = 'tutorial'
     else if (preferred) activeKind.value = preferred.kind || 'announcement'
-    const nextId = (preferredBuiltIn ? BUILTIN_TUTORIAL_ID : '')
+    const nextId = (preferredBuiltIn ? preferredId : '')
       || preferred?.id
       || (filteredItems.value.some((item) => item.id === selectedId.value) ? selectedId.value : '')
-      || (activeKind.value === 'tutorial' ? BUILTIN_TUTORIAL_ID : '')
+      || (activeKind.value === 'tutorial' ? CATEGORY_ITEM_TUTORIAL_ID : '')
       || filteredItems.value[0]?.id
       || ''
     if (nextId) await selectAnnouncement(nextId)
@@ -186,8 +222,8 @@ async function loadItems(preferredId = '') {
 
 async function selectAnnouncement(id) {
   if (!id) return
-  if (id === BUILTIN_TUTORIAL_ID) {
-    selectBuiltInTutorial()
+  if (BUILTIN_TUTORIAL_IDS.has(id)) {
+    selectBuiltInTutorial(id)
     return
   }
   selectedId.value = id
@@ -206,9 +242,9 @@ async function selectAnnouncement(id) {
   }
 }
 
-function selectBuiltInTutorial() {
+function selectBuiltInTutorial(id = CATEGORY_ITEM_TUTORIAL_ID) {
   detailRequestId += 1
-  selectedId.value = BUILTIN_TUTORIAL_ID
+  selectedId.value = BUILTIN_TUTORIAL_IDS.has(id) ? id : CATEGORY_ITEM_TUTORIAL_ID
   detail.value = null
   loadingDetail.value = false
   errorMessage.value = ''

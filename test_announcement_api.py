@@ -175,7 +175,7 @@ class AnnouncementApiTests(unittest.TestCase):
                 "content": [
                     {"type": "heading", "text": "开始之前"},
                     {"type": "paragraph", "text": "请先准备好人群名称。"},
-                    {"type": "list", "items": ["打开方案中心", "点击新建"]},
+                    {"type": "list", "items": ["打开数据引擎取数模板", "点击新建"]},
                 ],
             },
         )

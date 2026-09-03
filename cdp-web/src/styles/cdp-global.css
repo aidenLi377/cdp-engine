@@ -613,6 +613,47 @@ body {
 }
 .logic-connector { display: flex; flex-direction: column; align-items: center; margin: 0 0 12px 0; }
 .connector-line { width: 2px; height: 18px; background: linear-gradient(180deg, transparent, rgba(0,0,0,0.10), transparent); border-radius: 1px; }
+.tutorial-intersection-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: var(--ui-surface, #fff);
+  border: 1px solid var(--ui-control-border, #d6dbe1);
+  border-radius: 14px;
+  box-shadow: 0 6px 16px rgba(29, 29, 31, 0.08);
+}
+.tutorial-intersection-control .intercom-radio-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.tutorial-intersection-control .el-radio-button {
+  display: inline-flex;
+  margin: 0 !important;
+}
+.tutorial-intersection-control .el-radio-button__inner {
+  display: inline-flex;
+  min-width: 76px;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 13px !important;
+  color: var(--ui-text-secondary, #5f6368) !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  background: var(--ui-fill, #f5f5f7) !important;
+  border: 0 !important;
+  border-radius: 10px !important;
+  box-shadow: none !important;
+}
+.tutorial-intersection-control .el-radio-button__original-radio:checked + .el-radio-button__inner,
+.tutorial-intersection-control .el-radio-button.is-active .el-radio-button__inner {
+  color: var(--ui-surface, #fff) !important;
+  background: var(--ui-ink, #1d1d1f) !important;
+  border-color: var(--ui-ink, #1d1d1f) !important;
+}
 
 .panel-toolbar {
   display: flex; justify-content: space-between; align-items: center;
@@ -900,7 +941,7 @@ html.is-panel-resizing * {
 }
 
 /* ============================================================ */
-/* 方案中心                                                        */
+/* 数据引擎取数模板                                                  */
 /* ============================================================ */
 .solution-center-page {
   flex: 1;
@@ -1580,7 +1621,7 @@ html.is-panel-resizing * {
   color: #ff6b4a;
 }
 /* ============================================================ */
-/* 工作台方案接入                                                    */
+/* 数据引擎人群圈包模板接入                                          */
 /* ============================================================ */
 .workbench-left-panel {
   position: relative;
@@ -3467,7 +3508,7 @@ body,
 
 /* Top-level modes share one moving black lens instead of three static pills. */
 .app-shell-nav .app-mode-switcher {
-  --app-nav-item-width: 84px;
+  --app-nav-item-width: 132px;
   position: relative;
   isolation: isolate;
   display: grid !important;

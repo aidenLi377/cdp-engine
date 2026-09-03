@@ -3,8 +3,8 @@
     <header class="tutorial-task-detail__hero">
       <div>
         <span class="tutorial-task-detail__eyebrow">GUIDED TASK · 约 5 分钟</span>
-        <h1>7 个商品 ID，怎样快速拆成可执行的人群条件？</h1>
-        <p>跟着系统亲手完成一次“类目商品行为”的批量输入、自动拆分与自动化圈人。</p>
+        <h1>一次拿到 7 个商品 ID，怎样快速变成可执行圈人条件？</h1>
+        <p>用一个真实的购买人群任务，学会把一列商品 ID 一次录入、自动拆分，并完成后续圈人。</p>
       </div>
       <button type="button" @click="emit('start')">
         开始实操教程
@@ -15,19 +15,45 @@
     <section class="tutorial-task-detail__problem">
       <div class="tutorial-task-detail__section-index">01</div>
       <div>
-        <h2>这个教程解决什么问题？</h2>
-        <p>实际业务中经常一次拿到多个竞品或品牌商品 ID。如果每个 ID 都手动添加一个“类目商品行为”，不仅慢，也容易漏配行为和时间。</p>
+        <h2>你要解决的业务问题</h2>
+        <p>大促或日常分析中，经常一次拿到一组本品、竞品或品牌商品 ID。如果每个 ID 都手动添加一个“类目商品行为”，不仅慢，也容易漏配行为和时间。</p>
       </div>
       <aside>
-        <strong>本次任务</strong>
+        <strong>真实业务任务</strong>
         <span>圈出近 30 天购买过下列任意一个商品的人</span>
       </aside>
     </section>
 
-    <section class="tutorial-task-detail__flow">
+    <section class="tutorial-task-detail__case">
       <div class="tutorial-task-detail__section-index">02</div>
+      <div>
+        <h2>用一个真实任务把方法串起来</h2>
+        <p>本次以 7 个商品 ID 为例，统一设置“购买”行为和“过去 30 天”时间范围，让系统替你完成重复的拆分工作。</p>
+        <div class="tutorial-task-detail__case-grid" aria-label="本次任务配置">
+          <article><span>输入对象</span><strong>7 个商品 ID</strong></article>
+          <article><span>行为</span><strong>购买（可替换）</strong></article>
+          <article><span>时间</span><strong>过去 30 天（推荐）</strong></article>
+        </div>
+        <p class="tutorial-task-detail__scope-note"><strong>本教程的边界：</strong>学习的是“同一字段批量录入并自动拆分条件”。每个 ID 会成为一个条件节点，最后共同组成一个可执行人群；“按方案参数批量建包”是后续独立教程。</p>
+      </div>
+    </section>
+
+    <section class="tutorial-task-detail__output">
+      <div class="tutorial-task-detail__section-index">03</div>
+      <div>
+        <h2>完成后，你会得到什么？</h2>
+        <div class="tutorial-task-detail__output-grid">
+          <article><strong>一组可执行条件</strong><span>7 个 ID 自动拆分为 7 个条件，公共行为和时间只需配置一次。</span></article>
+          <article><strong>一次真实圈人结果</strong><span>用这组条件完成自动化圈人，马上看到方法在业务中的效果。</span></article>
+        </div>
+        <p class="tutorial-task-detail__output-note">之后换成自己的商品清单，只需重复“复制一列 → 粘贴 → 确认拆分”的动作；这和后续修改一个参数批量建包是两种不同能力。</p>
+      </div>
+    </section>
+
+    <section class="tutorial-task-detail__flow">
+      <div class="tutorial-task-detail__section-index">04</div>
       <div class="tutorial-task-detail__flow-main">
-        <h2>你会亲手完成什么？</h2>
+        <h2>你会亲手走完这条流程</h2>
         <div class="tutorial-task-detail__flowline" aria-label="教程流程">
           <span>系统自动清空</span><i>→</i>
           <span>配置公共参数</span><i>→</i>
@@ -36,31 +62,27 @@
           <span>自动化圈人</span>
         </div>
         <p>教程启动后，页面会覆盖浅蓝色引导层；只有当前应该操作的位置保持清晰并可点击，每个高亮位置都有对应引导语。</p>
-      </div>
-    </section>
-
-    <section class="tutorial-task-detail__ids">
-      <div class="tutorial-task-detail__section-index">03</div>
-      <div>
-        <h2>教程使用的 7 个商品 ID</h2>
-        <p>教程中会把它们整理成一列供你复制，也支持从 Excel 复制自己的数据。</p>
-        <div class="tutorial-task-detail__id-grid">
-          <code v-for="id in productIds" :key="id">{{ id }}</code>
+        <div class="tutorial-task-detail__ids">
+          <h3>本次使用的 7 个示例商品 ID</h3>
+          <p>教程会把它们整理成一列供你复制；熟悉流程后，也可以直接从 Excel 复制自己的一列商品 ID。</p>
+          <div class="tutorial-task-detail__id-grid">
+            <code v-for="id in productIds" :key="id">{{ id }}</code>
+          </div>
         </div>
       </div>
     </section>
 
     <section class="tutorial-task-detail__extension">
-      <div class="tutorial-task-detail__section-index">04</div>
+      <div class="tutorial-task-detail__section-index">05</div>
       <div>
-        <span class="tutorial-task-detail__extension-badge">能力拓展 · 请重点关注</span>
-        <h2>不只商品 ID，其他限量字段也能这样用</h2>
-        <p>同一种拆分思路还能扩展到“类目公域行为”里的关键词、类目、品牌等限量字段：公共参数先配置一次，超限字段再批量输入并拆分。</p>
+        <span class="tutorial-task-detail__extension-badge">完成后可迁移 · 请重点关注</span>
+        <h2>同一套方法，还能处理其他限量字段</h2>
+        <p>在“类目公域行为”中，关键词、类目、品牌等限量字段也可以沿用这个思路：公共参数先配置一次，超限字段再批量输入并拆分。</p>
         <div class="tutorial-task-detail__extension-tags" aria-label="可拓展字段">
           <span>关键词</span><span>类目</span><span>品牌</span><span>其他限量字段</span>
         </div>
       </div>
-      <button type="button" @click="emit('start')">从空白工作台开始</button>
+      <button type="button" @click="emit('start')">从空白圈包画布开始</button>
     </section>
   </article>
 </template>
@@ -90,9 +112,23 @@ const productIds = CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS
 .tutorial-task-detail__problem aside { display: grid; align-content: center; gap: 7px; padding: 17px; color: #326a95; background: #f0f8ff; border-left: 2px solid #2690df; }
 .tutorial-task-detail__problem aside strong { font-size: 10px; }
 .tutorial-task-detail__problem aside span { color: #5c7990; font-size: 11px; line-height: 1.55; }
+.tutorial-task-detail__case-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 18px; }
+.tutorial-task-detail__case-grid article { display: grid; gap: 6px; padding: 13px 14px; background: #f8fbfd; border: 1px solid #e1ebf2; border-radius: 9px; }
+.tutorial-task-detail__case-grid span { color: #7e94a3; font-size: 9px; }
+.tutorial-task-detail__case-grid strong { color: #235f8c; font-size: 11px; font-weight: 700; }
+.tutorial-task-detail__scope-note { margin-top: 16px !important; padding: 11px 13px; color: #55728a !important; background: #f2f8fc; border-left: 2px solid #7bb8df; border-radius: 0 7px 7px 0; }
+.tutorial-task-detail__scope-note strong { color: #2a638e; }
+.tutorial-task-detail__output-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 17px; }
+.tutorial-task-detail__output-grid article { display: grid; gap: 7px; padding: 16px; background: linear-gradient(135deg, #f5faff, #fbfdff); border: 1px solid #dcebf7; border-radius: 10px; }
+.tutorial-task-detail__output-grid strong { color: #174b74; font-size: 12px; }
+.tutorial-task-detail__output-grid span { color: #718391; font-size: 11px; line-height: 1.6; }
+.tutorial-task-detail__output-note { margin-top: 14px !important; }
 .tutorial-task-detail__flowline { display: flex; align-items: center; gap: 9px; margin: 21px 0 16px; overflow-x: auto; }
 .tutorial-task-detail__flowline span { flex: 0 0 auto; padding: 9px 11px; color: #315b7d; font-size: 10px; font-weight: 620; background: #f5f9fc; border: 1px solid #dfeaf2; border-radius: 7px; }
 .tutorial-task-detail__flowline i { color: #58a0d4; font-size: 11px; font-style: normal; }
+.tutorial-task-detail__ids { margin-top: 27px; padding-top: 22px; border-top: 1px dashed #d7e5ee; }
+.tutorial-task-detail__ids h3 { margin: 0 0 8px; color: #315b7d; font-size: 13px; font-weight: 700; }
+.tutorial-task-detail__ids p { font-size: 11px !important; }
 .tutorial-task-detail__id-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 19px; }
 .tutorial-task-detail__id-grid code { padding: 10px; color: #235f8c; font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; text-align: center; background: #f5faff; border: 1px solid #dcebf7; border-radius: 7px; }
 .tutorial-task-detail__extension { grid-template-columns: 46px minmax(0, 1fr) auto !important; align-items: center; margin-top: 28px; padding: 28px 26px !important; background: linear-gradient(135deg, #eaf6ff, #f8fcff); border: 1px solid #c5e3f8 !important; border-left: 4px solid #1688dc !important; border-radius: 14px; box-shadow: 0 15px 38px rgba(34, 117, 181, .1); }
@@ -110,6 +146,8 @@ button:focus-visible { outline: 3px solid rgba(22, 121, 197, .28); outline-offse
   .tutorial-task-detail__extension { grid-template-columns: 38px minmax(0, 1fr) !important; }
   .tutorial-task-detail__problem aside,
   .tutorial-task-detail__extension button { grid-column: 2; justify-self: start; }
+  .tutorial-task-detail__case-grid,
+  .tutorial-task-detail__output-grid { grid-template-columns: 1fr; }
   .tutorial-task-detail__id-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

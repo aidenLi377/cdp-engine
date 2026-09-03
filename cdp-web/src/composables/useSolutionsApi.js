@@ -2,8 +2,15 @@ import { buildUrl, request } from '../utils/apiClient.js'
 
 export function useSolutionsApi() {
   return {
-    listSolutions(status, scope = 'mine', { signal } = {}) {
-      return request(buildUrl('/api/solutions', { status, scope }), { signal })
+    listSolutions(status, scope = 'mine', { signal, fresh = false } = {}) {
+      return request(buildUrl('/api/solutions', {
+        status,
+        scope,
+        _refresh: fresh ? Date.now() : undefined,
+      }), {
+        signal,
+        ...(fresh ? { cache: 'no-store' } : {}),
+      })
     },
     getSolution(id, { signal } = {}) {
       return request(`/api/solutions/${id}`, { signal })

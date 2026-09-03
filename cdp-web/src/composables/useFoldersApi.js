@@ -2,8 +2,14 @@ import { buildUrl, request } from '../utils/apiClient.js'
 
 export function useFoldersApi() {
   return {
-    listFolders(scope = 'mine') {
-      return request(buildUrl('/api/folders', { scope }))
+    listFolders(scope = 'mine', { signal, fresh = false } = {}) {
+      return request(buildUrl('/api/folders', {
+        scope,
+        _refresh: fresh ? Date.now() : undefined,
+      }), {
+        signal,
+        ...(fresh ? { cache: 'no-store' } : {}),
+      })
     },
     createFolder(name, parentId, scope = 'mine') {
       return request('/api/folders', {

@@ -20,9 +20,9 @@ test('existing top-level workbench navigation remains available after adding log
 
   assert.ok(mainNav, 'main app navigation should exist')
   assert.match(appVue, /const appMode = ref\('workbench'\)/)
-  assert.match(mainNav, /<el-radio-button value="workbench">/)
-  assert.match(mainNav, /<el-radio-button value="solutions">/)
-  assert.match(mainNav, /<el-radio-button value="task-center">/)
+  assert.match(mainNav, /<el-radio-button\s+[^>]*value="workbench"/s)
+  assert.match(mainNav, /<el-radio-button\s+[^>]*value="solutions"/s)
+  assert.match(mainNav, /<el-radio-button\s+[^>]*value="task-center"/s)
   assert.match(appVue, /<LoginView v-else-if="authState === 'guest'"/)
   assert.doesNotMatch(appVue, /const visualSection = ref/)
 })
@@ -56,8 +56,10 @@ test('shell header stays compact and makes room for the signed-in account', () =
 })
 
 test('shell title is concise without the CDP prefix', () => {
-  assert.match(appVue, /class="display-feature-title">圈选工作台<\/div>/)
-  assert.doesNotMatch(appVue, />CDP 圈选工作台</)
+  assert.match(appVue, /class="display-feature-title">X-Data<\/div>/)
+  assert.match(appVue, />数据引擎人群圈包<\/el-radio-button>/)
+  assert.match(appVue, />数据引擎取数模板<\/el-radio-button>/)
+  assert.match(appVue, />达摩盘取数<\/el-radio-button>/)
   assert.doesNotMatch(appVue, /可视化搭建、方案管理与任务调度/)
 })
 

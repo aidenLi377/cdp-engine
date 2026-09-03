@@ -2,7 +2,9 @@ import { computed, reactive } from 'vue'
 import {
   CATEGORY_ITEM_TUTORIAL_ID,
   CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
-  CATEGORY_ITEM_TUTORIAL_STEPS,
+  DMP_BATCH_TUTORIAL_TAGS,
+  GUIDED_TUTORIAL_STEPS,
+  SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
 
 const tutorialState = reactive({
@@ -21,10 +23,44 @@ const tutorialState = reactive({
     copyError: '',
     automationStatus: 'idle',
     automationError: '',
+    selectedTagIds: [],
+    audienceNames: [],
+    audienceCount: 0,
+    batchStatus: 'idle',
+    batchCompletedCount: 0,
+    batchFailedNames: [],
+    batchError: '',
+    comparisonSelectedCount: 0,
+    comparisonMetrics: [],
+    labelOrderFirst: '',
+    labelOrderDraftFirst: '',
+    labelOrderAutoMoved: false,
+    audienceOrder: [],
+    audienceOrderChanged: false,
+    comparisonCopied: false,
+    workbenchDraftId: '',
+    workbenchDraftSyncStatus: 'idle',
+    workbenchDraftSyncError: '',
+    solutionId: '',
+    solutionName: '',
+    defaultCrowdName: '',
+    customFieldName: '',
+    customFields: [],
+    firstAutomationStatus: 'idle',
+    firstAutomationError: '',
+    firstAutomationSnapshot: null,
+    secondAutomationStatus: 'idle',
+    secondAutomationError: '',
+    secondAutomationSnapshot: null,
+    solutionNodeCount: 0,
+    solutionStructureChanged: false,
+    copiedNodeId: '',
+    solutionOperator: '',
   },
 })
 
-const currentStep = computed(() => CATEGORY_ITEM_TUTORIAL_STEPS[tutorialState.stepIndex] || null)
+const steps = computed(() => GUIDED_TUTORIAL_STEPS[tutorialState.taskId] || [])
+const currentStep = computed(() => steps.value[tutorialState.stepIndex] || null)
 
 function resetContext() {
   Object.assign(tutorialState.context, {
@@ -39,11 +75,44 @@ function resetContext() {
     copyError: '',
     automationStatus: 'idle',
     automationError: '',
+    selectedTagIds: [],
+    audienceNames: [],
+    audienceCount: 0,
+    batchStatus: 'idle',
+    batchCompletedCount: 0,
+    batchFailedNames: [],
+    batchError: '',
+    comparisonSelectedCount: 0,
+    comparisonMetrics: [],
+    labelOrderFirst: '',
+    labelOrderDraftFirst: '',
+    labelOrderAutoMoved: false,
+    audienceOrder: [],
+    audienceOrderChanged: false,
+    comparisonCopied: false,
+    workbenchDraftId: '',
+    workbenchDraftSyncStatus: 'idle',
+    workbenchDraftSyncError: '',
+    solutionId: '',
+    solutionName: '',
+    defaultCrowdName: '',
+    customFieldName: '',
+    customFields: [],
+    firstAutomationStatus: 'idle',
+    firstAutomationError: '',
+    firstAutomationSnapshot: null,
+    secondAutomationStatus: 'idle',
+    secondAutomationError: '',
+    secondAutomationSnapshot: null,
+    solutionNodeCount: 0,
+    solutionStructureChanged: false,
+    copiedNodeId: '',
+    solutionOperator: '',
   })
 }
 
 export function startGuidedTutorial(taskId = CATEGORY_ITEM_TUTORIAL_ID) {
-  if (taskId !== CATEGORY_ITEM_TUTORIAL_ID) return false
+  if (!GUIDED_TUTORIAL_STEPS[taskId]) return false
   resetContext()
   tutorialState.taskId = taskId
   tutorialState.stepIndex = 0
@@ -60,9 +129,17 @@ export function stopGuidedTutorial() {
 
 export function completeGuidedTutorialStep(stepId) {
   if (!tutorialState.active || currentStep.value?.id !== stepId) return false
-  if (tutorialState.stepIndex < CATEGORY_ITEM_TUTORIAL_STEPS.length - 1) {
+  if (tutorialState.stepIndex < steps.value.length - 1) {
     tutorialState.stepIndex += 1
   }
+  return true
+}
+
+export function goToGuidedTutorialStep(stepId) {
+  if (!tutorialState.active) return false
+  const index = steps.value.findIndex((step) => step.id === stepId)
+  if (index < 0) return false
+  tutorialState.stepIndex = index
   return true
 }
 
@@ -76,9 +153,10 @@ export function updateGuidedTutorialContext(patch) {
 }
 
 export function finishGuidedTutorial() {
+  const completedTaskId = tutorialState.taskId
   try {
     window.localStorage.setItem(
-      `guided-tutorial.completed.${CATEGORY_ITEM_TUTORIAL_ID}`,
+      `guided-tutorial.completed.${completedTaskId}`,
       new Date().toISOString(),
     )
   } catch {
@@ -91,12 +169,15 @@ export function useGuidedTutorial() {
   return {
     state: tutorialState,
     currentStep,
-    steps: CATEGORY_ITEM_TUTORIAL_STEPS,
+    steps,
     productIds: CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
+    dmpTags: DMP_BATCH_TUTORIAL_TAGS,
+    solutionValues: SOLUTION_REUSE_TUTORIAL_VALUES,
     start: startGuidedTutorial,
     stop: stopGuidedTutorial,
     finish: finishGuidedTutorial,
     completeStep: completeGuidedTutorialStep,
+    goToStep: goToGuidedTutorialStep,
     isStep: isGuidedTutorialStep,
     updateContext: updateGuidedTutorialContext,
   }

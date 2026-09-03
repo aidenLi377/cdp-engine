@@ -74,7 +74,7 @@ test('derived solution sessions clearly state free editing without mutating the 
   assert.doesNotMatch(normalModeVue, /当前内容可自由编辑，不影响原正式方案/)
   assert.match(normalModeVue, /当前内容已偏离原方案结构/)
   assert.doesNotMatch(normalModeVue, /当前内容仍沿用原方案结构/)
-  assert.match(normalModeVue, /来源方案：\{\{ currentSolution\.name \|\| '未命名方案' \}\}，当前改动仅保留在工作台/)
+  assert.match(normalModeVue, /来源模板：\{\{ currentSolution\.name \|\| '未命名模板' \}\}，当前改动仅保留在圈包画布/)
 })
 
 test('solution-use dynamic form is no longer wrapped in a readonly surface', () => {

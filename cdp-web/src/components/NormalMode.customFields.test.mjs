@@ -59,7 +59,7 @@ test('single-field overflow policy is enabled only while using a solution', () =
   const freeBuildTemplate = normalModeVue.slice(freeBuildStart, normalModeVue.indexOf('<script setup>', freeBuildStart))
 
   assert.match(solutionUseTemplate, /:overflow-policy="!batchMode \? 'solution-use' : 'legacy'"/)
-  assert.match(freeBuildTemplate, /<DynamicForm v-else v-show="!node\.collapsed" :node="node" @overflow-split="handleOverflowSplit"/)
+  assert.match(freeBuildTemplate, /<DynamicForm v-else v-show="!node\.collapsed" :node="node" :node-index="index" @overflow-split="handleOverflowSplit"/)
   assert.doesNotMatch(freeBuildTemplate, /overflow-policy="solution-use"/)
   assert.match(normalModeVue, /const overflows = workbenchMode\.value === 'solution-use'/)
   assert.match(normalModeVue, /if \(workbenchMode\.value !== 'solution-use' \|\| batchMode\.value\) return \[\]/)

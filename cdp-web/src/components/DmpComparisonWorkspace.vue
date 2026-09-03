@@ -21,6 +21,7 @@
     <aside
       id="dmp-task-history"
       class="dc-history-rail"
+      data-tutorial-target="dmp-comparison-packages"
       :aria-hidden="mode === 'comparison' && historyCollapsed"
     >
       <div class="dc-history-head">
@@ -122,7 +123,12 @@
           <button type="button" class="dc-quiet-action" @click="clearSelection">清空</button>
         </header>
 
-        <div class="dc-package-strip" aria-label="已选择的人群包，拖动可调整顺序">
+        <div
+          class="dc-package-strip"
+          :class="{ 'is-tutorial-drag': isGuidedAudienceOrderStep }"
+          data-tutorial-target="dmp-audience-order-zone"
+          aria-label="已选择的人群包，拖动可调整顺序"
+        >
           <button
             v-for="(entry, index) in selectedEntries"
             :key="entry.key"
@@ -138,15 +144,25 @@
             <strong>{{ taskDisplayName(entry.task) }}</strong>
             <i aria-hidden="true" @click.stop="removeTask(entry.key)">×</i>
           </button>
+          <div v-if="isGuidedAudienceOrderStep" class="dc-drag-demo dc-drag-demo--audience" role="status">
+            <span class="dc-drag-demo__badge">拖动示范</span>
+            <span class="dc-drag-demo__copy">把第 2 个人群包拖到第 1 位</span>
+            <span class="dc-drag-demo__motion" aria-hidden="true">
+              <i class="dc-drag-demo__hand"></i>
+              <b class="dc-drag-demo__track"></b>
+              <em class="dc-drag-demo__arrow">←</em>
+            </span>
+          </div>
         </div>
 
         <div class="dc-field-toolbar">
-          <div class="dc-field-group">
+          <div class="dc-field-group" data-tutorial-target="dmp-comparison-metrics">
             <span class="dc-fixed-field dc-label-field" :class="{ active: labelOrderDrawerOpen }">
               <button
                 ref="labelOrderTrigger"
                 type="button"
                 class="dc-label-order-trigger"
+                data-tutorial-target="dmp-label-order-trigger"
                 :disabled="!labelOrderAvailable"
                 :aria-expanded="labelOrderDrawerOpen"
                 aria-controls="dmp-label-order-panel"
@@ -176,17 +192,22 @@
               :aria-pressed="selectedMetrics.includes(metric)"
               @click="toggleMetric(metric)"
             >
-              {{ metric === 'Rebase' ? 'Rabase 人群占比' : metric }}
+              {{ metric === 'Rebase' ? 'Rebase 人群占比' : metric }}
               <span v-if="selectedMetrics.includes(metric)" aria-hidden="true">✓</span>
             </button>
           </div>
           <div class="dc-export-actions">
-            <button type="button" class="dc-primary" @click="copyComparison">复制表格</button>
+            <button
+              type="button"
+              class="dc-primary"
+              data-tutorial-target="dmp-copy-comparison"
+              @click="copyComparison"
+            >复制表格</button>
             <button type="button" class="dc-secondary" @click="exportComparison">导出 CSV</button>
           </div>
         </div>
 
-        <div class="dc-table-wrap">
+        <div class="dc-table-wrap" data-tutorial-target="dmp-comparison-table">
           <table class="dc-table" :class="{ 'has-multiple-metrics': selectedMetrics.length > 1 }">
             <thead>
               <tr>
@@ -253,6 +274,7 @@
         id="dmp-label-order-panel"
         ref="labelOrderDrawerRef"
         class="dc-label-order-drawer"
+        data-tutorial-target="dmp-label-order-zone"
         role="dialog"
         aria-modal="false"
         aria-labelledby="dmp-label-order-title"
@@ -266,6 +288,16 @@
           </div>
           <button type="button" aria-label="关闭标签排序" @click="cancelLabelOrder">×</button>
         </header>
+
+        <div v-if="showGuidedLabelDragDemo" class="dc-drag-demo dc-drag-demo--label" role="status">
+          <span class="dc-drag-demo__badge">拖动示范</span>
+          <span class="dc-drag-demo__copy">把“用户性别”移到第 1 位</span>
+          <span class="dc-drag-demo__motion dc-drag-demo__motion--vertical" aria-hidden="true">
+            <i class="dc-drag-demo__hand"></i>
+            <b class="dc-drag-demo__track"></b>
+            <em class="dc-drag-demo__arrow">↑</em>
+          </span>
+        </div>
 
         <div class="dc-label-order-list">
           <article
@@ -321,7 +353,12 @@
           <button type="button" class="dc-secondary dc-label-order-reset" @click="restoreDefaultLabelOrder">恢复默认</button>
           <span></span>
           <button type="button" class="dc-secondary" @click="cancelLabelOrder">取消</button>
-          <button type="button" class="dc-primary" @click="applyLabelOrder">应用排序</button>
+          <button
+            type="button"
+            class="dc-primary"
+            data-tutorial-target="dmp-label-order-apply"
+            @click="applyLabelOrder"
+          >应用排序</button>
         </footer>
       </aside>
     </transition>
@@ -342,6 +379,8 @@ import {
   comparisonToTsv,
   reconcileLabelOrder,
 } from '../utils/dmpComparison.js'
+import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
+import { DMP_BATCH_TUTORIAL_ID } from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },
@@ -364,6 +403,26 @@ const emit = defineEmits([
   'delete-task',
   'clear-history',
 ])
+
+const {
+  state: guidedTutorialState,
+  completeStep: completeGuidedTutorialStep,
+  isStep: isGuidedTutorialStep,
+  updateContext: updateGuidedTutorialContext,
+} = useGuidedTutorial()
+const isDmpTutorialActive = computed(() => (
+  guidedTutorialState.active && guidedTutorialState.taskId === DMP_BATCH_TUTORIAL_ID
+))
+const isGuidedLabelOrderStep = computed(() => (
+  isDmpTutorialActive.value && isGuidedTutorialStep('sort-label-order')
+))
+const isGuidedAudienceOrderStep = computed(() => (
+  isDmpTutorialActive.value && isGuidedTutorialStep('sort-audience-order')
+))
+const showGuidedLabelDragDemo = computed(() => (
+  isGuidedLabelOrderStep.value
+  && !['性别', '用户性别'].includes(guidedTutorialState.context.labelOrderDraftFirst)
+))
 
 const draggedKey = ref('')
 const labelOrderDrawerOpen = ref(false)
@@ -429,6 +488,24 @@ const displayLabelOrder = computed(() => (
     : effectiveLabelOrder.value
 ))
 
+function syncGuidedTutorialDraftLabelOrder(order = draftLabelOrder.value) {
+  if (!isDmpTutorialActive.value) return
+  const normalizedOrder = reconcileLabelOrder(order, baselineRows.value)
+  updateGuidedTutorialContext({ labelOrderDraftFirst: normalizedOrder[0] || '' })
+}
+
+function prepareTutorialLabelOrder(order) {
+  const next = [...order]
+  const canSeedDragDemo = isDmpTutorialActive.value
+    && (isGuidedTutorialStep('open-label-order') || isGuidedTutorialStep('sort-label-order'))
+  const genderIndex = next.findIndex((labelName) => ['性别', '用户性别'].includes(labelName))
+  if (!canSeedDragDemo || genderIndex !== 0 || next.length < 2) return next
+  const [gender] = next.splice(genderIndex, 1)
+  next.splice(1, 0, gender)
+  updateGuidedTutorialContext({ labelOrderAutoMoved: true })
+  return next
+}
+
 const compatibilityByKey = computed(() => {
   const result = new Map()
   if (!baselineEntry.value) return result
@@ -461,6 +538,9 @@ watch(labelStructureFingerprint, () => {
   draftLabelOrder.value = []
   draggedLabelName.value = ''
   dragOverLabelName.value = ''
+  if (isDmpTutorialActive.value) {
+    updateGuidedTutorialContext({ labelOrderDraftFirst: '' })
+  }
 })
 
 function selectedOrder(key) {
@@ -548,19 +628,27 @@ async function openLabelOrderDrawer() {
     ElMessage.info('当前标签名称不足两个，无需调整顺序')
     return
   }
-  draftLabelOrder.value = [...effectiveLabelOrder.value]
+  draftLabelOrder.value = prepareTutorialLabelOrder(effectiveLabelOrder.value)
+  syncGuidedTutorialDraftLabelOrder()
   labelOrderDrawerOpen.value = true
   await nextTick()
   labelOrderDrawerRef.value?.focus?.()
+  if (isGuidedTutorialStep('open-label-order')) {
+    completeGuidedTutorialStep('open-label-order')
+  }
 }
 
 function restoreDefaultLabelOrder() {
   draftLabelOrder.value = [...defaultLabelOrder.value]
+  syncGuidedTutorialDraftLabelOrder()
 }
 
 function cancelLabelOrder() {
   labelOrderDrawerOpen.value = false
   draftLabelOrder.value = []
+  if (isDmpTutorialActive.value) {
+    updateGuidedTutorialContext({ labelOrderDraftFirst: '' })
+  }
   endLabelDrag()
   focusLabelOrderTrigger()
 }
@@ -569,6 +657,11 @@ function applyLabelOrder() {
   const fingerprint = labelStructureFingerprint.value
   if (!fingerprint) return
   const normalizedOrder = reconcileLabelOrder(draftLabelOrder.value, baselineRows.value)
+  const genderIsFirst = ['性别', '用户性别'].includes(normalizedOrder[0])
+  if (isGuidedTutorialStep('sort-label-order') && !genderIsFirst) {
+    ElMessage.warning('请先把“性别”调整到第一位')
+    return
+  }
   const nextOrders = { ...props.labelOrders }
   if (normalizedOrder.join('\u0000') === defaultLabelOrder.value.join('\u0000')) {
     delete nextOrders[fingerprint]
@@ -578,8 +671,17 @@ function applyLabelOrder() {
   emit('update:labelOrders', nextOrders)
   labelOrderDrawerOpen.value = false
   draftLabelOrder.value = []
+  if (isDmpTutorialActive.value) {
+    updateGuidedTutorialContext({ labelOrderDraftFirst: '' })
+  }
   endLabelDrag()
   ElMessage.success('标签顺序已应用，复制与导出将使用当前顺序')
+  if (isDmpTutorialActive.value) {
+    updateGuidedTutorialContext({ labelOrderFirst: normalizedOrder[0] || '' })
+    if (isGuidedTutorialStep('sort-label-order') && genderIsFirst) {
+      completeGuidedTutorialStep('sort-label-order')
+    }
+  }
   focusLabelOrderTrigger()
 }
 
@@ -591,6 +693,7 @@ function moveDraftLabel(labelName, direction) {
   next.splice(sourceIndex, 1)
   next.splice(targetIndex, 0, labelName)
   draftLabelOrder.value = next
+  syncGuidedTutorialDraftLabelOrder()
 }
 
 function startLabelDrag(labelName, event) {
@@ -624,6 +727,7 @@ function dropLabelBefore(targetLabelName) {
   const insertionIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex
   next.splice(insertionIndex, 0, sourceLabelName)
   draftLabelOrder.value = next
+  syncGuidedTutorialDraftLabelOrder()
   endLabelDrag()
 }
 
@@ -660,6 +764,15 @@ function dropBefore(targetKey) {
   next.splice(sourceIndex, 1)
   next.splice(targetIndex, 0, sourceKey)
   emit('update:selectedKeys', next)
+  if (isDmpTutorialActive.value) {
+    updateGuidedTutorialContext({
+      audienceOrder: [...next],
+      audienceOrderChanged: true,
+    })
+    if (isGuidedTutorialStep('sort-audience-order') && sourceIndex === 1 && targetIndex === 0) {
+      completeGuidedTutorialStep('sort-audience-order')
+    }
+  }
 }
 
 function formatValue(metric, value) {
@@ -694,6 +807,12 @@ async function copyComparison() {
   try {
     await copyText(comparisonToTsv(appliedComparisonMatrix.value))
     ElMessage.success('横向对比表已复制，可直接粘贴到 Excel')
+    if (isDmpTutorialActive.value) {
+      updateGuidedTutorialContext({ comparisonCopied: true })
+      if (isGuidedTutorialStep('copy-comparison-table')) {
+        completeGuidedTutorialStep('copy-comparison-table')
+      }
+    }
   } catch {
     ElMessage.error('复制失败，请检查浏览器剪贴板权限')
   }
@@ -955,7 +1074,8 @@ input:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
 .dc-comparison-head p { margin: 0 0 3px; color: var(--dc-muted); font-size: 9px; letter-spacing: 0.06em; }
 .dc-comparison-head h2 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -0.02em; }
 
-.dc-package-strip { display: flex; gap: 7px; margin: 12px 0 10px; overflow-x: auto; padding-bottom: 2px; }
+.dc-package-strip { position: relative; display: flex; gap: 7px; margin: 12px 0 10px; overflow-x: auto; padding-bottom: 2px; }
+.dc-package-strip.is-tutorial-drag { min-height: 62px; padding-bottom: 27px; overflow-y: hidden; }
 .dc-package-chip {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) 16px;
@@ -978,6 +1098,37 @@ input:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
 .dc-package-chip strong { overflow: hidden; font-size: 10px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .dc-package-chip > i { color: #9ca0a8; font-style: normal; font-size: 13px; cursor: pointer; }
 .dc-package-chip > i:hover { color: var(--dc-ink); }
+
+.dc-drag-demo {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: 1px dashed #b8d8f1;
+  border-radius: 7px;
+  background: #f6fbff;
+  color: #3974a6;
+  font-size: 9px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+.dc-drag-demo--audience { position: absolute; right: 0; bottom: 0; left: 0; justify-content: flex-start; }
+.dc-drag-demo--label { margin: 0 12px 2px; }
+.dc-drag-demo__badge { flex: 0 0 auto; padding: 3px 5px; border-radius: 4px; background: #dff1ff; color: #1d6ba8; font-size: 8px; font-weight: 700; }
+.dc-drag-demo__copy { flex: 0 0 auto; font-weight: 600; }
+.dc-drag-demo__motion { position: relative; display: inline-block; width: 56px; height: 16px; flex: 0 0 56px; margin-left: auto; }
+.dc-drag-demo__track { position: absolute; top: 8px; right: 7px; left: 6px; border-top: 1px dashed #78b5df; }
+.dc-drag-demo__hand { position: absolute; z-index: 1; top: 4px; left: 5px; display: block; width: 8px; height: 8px; border: 2px solid #2379b7; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgba(58, 148, 212, 0.12); animation: dc-drag-hand-x 1.45s ease-in-out infinite; }
+.dc-drag-demo__arrow { position: absolute; top: -1px; right: 0; color: #2379b7; font-size: 14px; font-style: normal; line-height: 16px; animation: dc-drag-arrow-x 1.45s ease-in-out infinite; }
+.dc-drag-demo__motion--vertical { width: 20px; height: 30px; flex-basis: 20px; margin-right: 4px; }
+.dc-drag-demo__motion--vertical .dc-drag-demo__track { top: 4px; right: auto; bottom: 4px; left: 9px; border-top: 0; border-left: 1px dashed #78b5df; }
+.dc-drag-demo__motion--vertical .dc-drag-demo__hand { top: 19px; left: 5px; animation-name: dc-drag-hand-y; }
+.dc-drag-demo__motion--vertical .dc-drag-demo__arrow { top: 0; right: 3px; animation-name: dc-drag-arrow-y; }
+@keyframes dc-drag-hand-x { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(30px); } }
+@keyframes dc-drag-arrow-x { 0%, 100% { transform: translateX(0); opacity: 0.55; } 50% { transform: translateX(-3px); opacity: 1; } }
+@keyframes dc-drag-hand-y { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-13px); } }
+@keyframes dc-drag-arrow-y { 0%, 100% { transform: translateY(0); opacity: 0.55; } 50% { transform: translateY(2px); opacity: 1; } }
 
 .dc-field-toolbar { justify-content: space-between; gap: 12px; padding: 10px 0 12px; border-top: 1px solid #f0f1f4; }
 .dc-field-group { display: flex; min-width: 0; align-items: center; gap: 6px; overflow-x: auto; }
@@ -1176,6 +1327,8 @@ input:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
   .dc-label-order-trigger,
   .dc-label-order-item,
   .dc-label-order-moves,
+  .dc-drag-demo__hand,
+  .dc-drag-demo__arrow,
   .dc-history-row,
   .dc-selector { transition: none; }
 }

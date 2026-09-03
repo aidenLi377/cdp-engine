@@ -84,7 +84,7 @@ git push origin main
 
 1. 打开 `https://duruo377.top`，确认页面和登录正常。
 2. 打开 `https://duruo377.top/api/health`，应返回 `status: ok`。
-3. 检查公共方案库、方案保存和任务中台等关键功能。
+3. 检查公共方案库、方案保存和达摩盘取数等关键功能。
 4. 如果本次修改了浏览器扩展，重新加载扩展后再验证自动圈人。
 
 ## 4. GitHub Actions 做了什么
@@ -209,7 +209,7 @@ GitHub 仓库的 **Settings → Secrets and variables → Actions** 中配置以
 
 扩展目录：[`DMP_PluginV2.1-CDP-Merged`](DMP_PluginV2.1-CDP-Merged)。
 
-服务器上线不会自动把扩展安装到用户电脑。使用任务中台自动圈人时，每位用户都需要：
+服务器上线不会自动把扩展安装到用户电脑。使用达摩盘取数自动圈人时，每位用户都需要：
 
 1. 在 Chrome 打开 `chrome://extensions`。
 2. 开启开发者模式。
@@ -260,7 +260,7 @@ caddy validate --config /etc/caddy/Caddyfile
 | 首页能开、API 失败 | Gunicorn、`/api/health`、Caddy 反代 |
 | HTTPS 证书失败 | DNS 是否指向服务器、80/443 是否放行、Caddy 日志 |
 | 发布后数据为空 | 是否误用了版本目录内数据库；生产库应为 `/srv/cdp/shared/cdp.db` |
-| 任务中台显示扩展未连接 | Chrome 是否加载/重载扩展，线上域名是否存在于扩展三处白名单 |
+| 达摩盘取数显示扩展未连接 | Chrome 是否加载/重载扩展，线上域名是否存在于扩展三处白名单 |
 | 自动圈人提示来源不允许 | `background.js` 的 `ALLOWED_ORIGINS` 和扩展是否重新加载 |
 
 ## 12. 发布检查清单
@@ -279,5 +279,5 @@ caddy validate --config /etc/caddy/Caddyfile
 - [ ] `https://duruo377.top/api/health` 返回正常。
 - [ ] 首页、登录、公共方案库和关键业务功能正常。
 - [ ] 服务器 `current` 指向本次 Git 提交 SHA。
-- [ ] 若修改扩展，Chrome 已重新加载扩展并验证任务中台。
+- [ ] 若修改扩展，Chrome 已重新加载扩展并验证达摩盘取数。
 

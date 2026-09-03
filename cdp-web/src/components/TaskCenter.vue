@@ -67,6 +67,9 @@
               task-label="达摩盘"
               run-hint="将按照名单顺序逐个采集"
               :disabled="taskRunning !== null"
+              :minimum-items="isDmpTutorialActive ? 2 : 1"
+              tutorial-key="dmp-batch"
+              @open="handleDmpBatchOpen"
               @run="runBatchDraft('dmp', $event)"
             />
             <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp()">运行</el-button>
@@ -119,7 +122,7 @@
       </div>
 
       <!-- 标签选择 -->
-      <section class="tc-tags-card">
+      <section class="tc-tags-card" data-tutorial-target="dmp-feature-tags">
         <div class="tc-tags-head">
           <span class="tc-tags-title">特征大盘</span>
           <span class="tc-tags-count">已选 {{ selectedTags.length }}</span>
@@ -144,6 +147,7 @@
                       v-for="tag in category.tags"
                       :key="tag.tagId"
                       class="tc-feature-option"
+                      :data-tutorial-target="isDmpTutorialActive && DMP_TUTORIAL_TAG_IDS.includes(String(tag.tagId)) ? `dmp-tag-${tag.tagId}` : undefined"
                       :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
                       :title="tag.annotation || (!isTagSelectable(tag) ? '请先在 DMP 页面配置该标签的下钻条件' : '')"
                     >
@@ -177,7 +181,7 @@
     </aside>
 
     <!-- 右栏：监控台 -->
-    <main class="tc-monitor-panel">
+    <main class="tc-monitor-panel" data-tutorial-target="dmp-batch-progress">
       <transition name="tc-toast">
         <section
           v-if="completionToastVisible && activeTask && activeTask.hasResults"
@@ -202,12 +206,17 @@
         </section>
       </transition>
 
-      <nav class="tc-monitor-tabs" aria-label="任务中台视图">
+      <nav class="tc-monitor-tabs" aria-label="达摩盘取数视图">
         <button type="button" :class="{ active: monitorView === 'result' }" @click="monitorView = 'result'">本次结果</button>
         <button type="button" :class="{ active: monitorView === 'history' }" @click="monitorView = 'history'">
           任务记录 <span>{{ taskHistory.length }}</span>
         </button>
-        <button type="button" :class="{ active: monitorView === 'comparison' }" @click="monitorView = 'comparison'">
+        <button
+          type="button"
+          data-tutorial-target="dmp-horizontal-comparison"
+          :class="{ active: monitorView === 'comparison' }"
+          @click="openComparisonView"
+        >
           横向对比 <span>{{ selectedComparisonTaskKeys.length }}</span>
         </button>
       </nav>
@@ -326,6 +335,11 @@ import { parseCrowdBatch } from '../utils/crowdBatch.js'
 import { readSessionWorkspace, writeSessionWorkspace } from '../utils/sessionWorkspace.js'
 import { createTaskProgressPersistence } from '../utils/taskProgressPersistence.js'
 import { usePanelResize } from '../composables/usePanelResize'
+import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
+import {
+  DMP_BATCH_TUTORIAL_ID,
+  DMP_BATCH_TUTORIAL_TAGS,
+} from '../utils/guidedTutorialConfig.js'
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
@@ -337,6 +351,18 @@ const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
 })
+
+const {
+  state: guidedTutorialState,
+  currentStep: guidedTutorialStep,
+  completeStep: completeGuidedTutorialStep,
+  isStep: isGuidedTutorialStep,
+  updateContext: updateGuidedTutorialContext,
+} = useGuidedTutorial()
+const DMP_TUTORIAL_TAG_IDS = DMP_BATCH_TUTORIAL_TAGS.map((tag) => String(tag.tagId))
+const isDmpTutorialActive = computed(() => (
+  guidedTutorialState.active && guidedTutorialState.taskId === DMP_BATCH_TUTORIAL_ID
+))
 
 const taskCenterPageRef = ref(null)
 const TASK_MIN_MONITOR_WIDTH = 620
@@ -465,6 +491,101 @@ const databankCrowdNames = computed(() => (
 const dmpCrowdNames = computed(() => (
   dmpBatchMode.value ? dmpBatch.value.items : [dmpCrowd.value.trim()].filter(Boolean)
 ))
+
+let dmpTutorialPrepared = false
+
+function prepareDmpTutorialWorkspace() {
+  dmpTutorialPrepared = true
+  selectedTags.value = selectedTags.value.filter((tagId) => !DMP_TUTORIAL_TAG_IDS.includes(String(tagId)))
+  tagSearch.value = ''
+  dmpCrowd.value = ''
+  dmpBatchMode.value = false
+  dmpBatchText.value = ''
+  dmpBatchDraft.value = ''
+  selectedComparisonTaskKeys.value = []
+  comparisonMetrics.value = ['覆盖人数']
+  monitorView.value = 'result'
+  updateGuidedTutorialContext({
+    selectedTagIds: [...selectedTags.value].map(String),
+    audienceNames: [],
+    audienceCount: 0,
+    batchStatus: 'idle',
+    batchCompletedCount: 0,
+    batchFailedNames: [],
+    batchError: '',
+    comparisonSelectedCount: 0,
+    comparisonMetrics: [],
+    labelOrderFirst: '',
+    labelOrderDraftFirst: '',
+    labelOrderAutoMoved: false,
+    audienceOrder: [],
+    audienceOrderChanged: false,
+    comparisonCopied: false,
+  })
+}
+
+function syncDmpTutorialTags() {
+  if (!isDmpTutorialActive.value) return
+  const selected = [...selectedTags.value].map(String)
+  updateGuidedTutorialContext({ selectedTagIds: selected })
+  if (
+    isGuidedTutorialStep('select-dmp-tags')
+    && DMP_TUTORIAL_TAG_IDS.every((tagId) => selected.includes(tagId))
+  ) {
+    completeGuidedTutorialStep('select-dmp-tags')
+  }
+}
+
+function syncDmpTutorialDraft() {
+  if (!isDmpTutorialActive.value) return
+  const names = parseCrowdBatch(dmpBatchDraft.value).items
+  updateGuidedTutorialContext({ audienceNames: [...names], audienceCount: names.length })
+  if (isGuidedTutorialStep('input-dmp-crowds') && names.length >= 2) {
+    completeGuidedTutorialStep('input-dmp-crowds')
+  }
+}
+
+function syncDmpTutorialComparisonSelection() {
+  if (!isDmpTutorialActive.value) return
+  const selectedCount = selectedComparisonTaskKeys.value.length
+  updateGuidedTutorialContext({ comparisonSelectedCount: selectedCount })
+  if (
+    isGuidedTutorialStep('select-comparison-crowds')
+    && selectedCount >= 2
+    && selectedCount === Number(guidedTutorialState.context.audienceCount)
+  ) {
+    comparisonMetrics.value = []
+    completeGuidedTutorialStep('select-comparison-crowds')
+  }
+}
+
+function syncDmpTutorialMetrics() {
+  if (!isDmpTutorialActive.value) return
+  updateGuidedTutorialContext({ comparisonMetrics: [...comparisonMetrics.value] })
+  if (
+    isGuidedTutorialStep('select-comparison-metrics')
+    && comparisonMetrics.value.includes('人群占比')
+    && comparisonMetrics.value.includes('Rebase')
+  ) {
+    completeGuidedTutorialStep('select-comparison-metrics')
+  }
+}
+
+watch(
+  [() => guidedTutorialState.active, () => guidedTutorialState.taskId, guidedTutorialStep],
+  ([active, taskId, step]) => {
+    if (!active || taskId !== DMP_BATCH_TUTORIAL_ID) {
+      dmpTutorialPrepared = false
+      return
+    }
+    if (step?.id === 'select-dmp-tags' && !dmpTutorialPrepared) prepareDmpTutorialWorkspace()
+  },
+  { immediate: true },
+)
+watch(selectedTags, syncDmpTutorialTags, { deep: true })
+watch(dmpBatchDraft, syncDmpTutorialDraft)
+watch(selectedComparisonTaskKeys, syncDmpTutorialComparisonSelection, { deep: true })
+watch(comparisonMetrics, syncDmpTutorialMetrics, { deep: true })
 
 const tagGroups = computed(() => {
   const map = {}
@@ -620,9 +741,32 @@ function prepareBatchRun(type, text) {
   }
 }
 
+function handleDmpBatchOpen() {
+  if (isGuidedTutorialStep('open-dmp-batch')) {
+    completeGuidedTutorialStep('open-dmp-batch')
+  }
+}
+
 async function runBatchDraft(type, text) {
   if (taskRunning.value !== null) return
   prepareBatchRun(type, text)
+  if (type === 'dmp' && isGuidedTutorialStep('confirm-dmp-batch')) {
+    const names = parseCrowdBatch(text).items
+    if (names.length < 2) {
+      updateGuidedTutorialContext({ batchError: '批量教程至少需要 2 个人群包名称。' })
+      return
+    }
+    updateGuidedTutorialContext({
+      audienceNames: [...names],
+      audienceCount: names.length,
+      batchStatus: 'idle',
+      batchCompletedCount: 0,
+      batchFailedNames: [],
+      batchError: '',
+    })
+    completeGuidedTutorialStep('confirm-dmp-batch')
+    return
+  }
   try {
     if (type === 'databank') await runDatabank()
     else await runDmp()
@@ -630,6 +774,14 @@ async function runBatchDraft(type, text) {
     if (type === 'databank') databankBatchMode.value = false
     else dmpBatchMode.value = false
   }
+}
+
+function openComparisonView() {
+  monitorView.value = 'comparison'
+  if (!isGuidedTutorialStep('open-dmp-comparison')) return
+  selectedComparisonTaskKeys.value = []
+  comparisonHistoryCollapsed.value = false
+  completeGuidedTutorialStep('open-dmp-comparison')
 }
 
 function phaseLabel(s) { return { running: '执行中', completed: '已完成', failed: '执行失败' }[s] || s }
@@ -1332,19 +1484,28 @@ async function runDatabank() {
 }
 
 async function runDmp() {
-  if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
-  if (!canRunDmp.value) return
+  const names = [...dmpCrowdNames.value]
+  if (!extConnected.value) {
+    ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展')
+    return { completed: 0, failed: names.length, completedNames: [], failedNames: names, error: '任务执行器未连接' }
+  }
+  if (!canRunDmp.value) return { completed: 0, failed: names.length, completedNames: [], failedNames: names }
   if (selectedTags.value.length === 0) {
     ElMessage.warning('请先在特征大盘中选择至少一个已就绪的标签')
-    return
+    return { completed: 0, failed: names.length, completedNames: [], failedNames: names, error: '未选择画像标签' }
   }
   monitorView.value = 'result'
-  const names = [...dmpCrowdNames.value]
   taskRunning.value = 'dmp'
   const run = createRunContext('dmp')
   try {
-    if (dmpBatchMode.value) await executeBatch(names, 'dmp', {}, run)
-    else await executeViaExtension(names[0], 'dmp', { run })
+    if (dmpBatchMode.value) return await executeBatch(names, 'dmp', {}, run)
+    const outcome = await executeViaExtension(names[0], 'dmp', { run })
+    return {
+      completed: outcome.status === 'completed' ? 1 : 0,
+      failed: outcome.status === 'failed' ? 1 : 0,
+      completedNames: outcome.status === 'completed' ? names : [],
+      failedNames: outcome.status === 'failed' ? names : [],
+    }
   } finally {
     if (activeRunContext === run && !run.cancelling) {
       activeRunContext = null
@@ -1356,6 +1517,8 @@ async function runDmp() {
 async function executeBatch(names, type, options = {}, run) {
   let completed = 0
   let failed = 0
+  const completedNames = []
+  const failedNames = []
 
   for (let index = 0; index < names.length; index += 1) {
     if (!isRunActive(run)) break
@@ -1366,17 +1529,46 @@ async function executeBatch(names, type, options = {}, run) {
       batchIndex: index + 1,
       batchTotal: names.length,
     })
-    if (outcome.status === 'completed') completed += 1
-    else if (outcome.status === 'failed') failed += 1
+    if (outcome.status === 'completed') {
+      completed += 1
+      completedNames.push(names[index])
+      if (type === 'dmp' && isGuidedTutorialStep('wait-dmp-batch')) {
+        updateGuidedTutorialContext({
+          batchCompletedCount: Number(guidedTutorialState.context.batchCompletedCount || 0) + 1,
+        })
+      }
+    } else if (outcome.status === 'failed') {
+      failed += 1
+      failedNames.push(names[index])
+      if (type === 'dmp' && isGuidedTutorialStep('wait-dmp-batch')) {
+        updateGuidedTutorialContext({
+          batchFailedNames: [...guidedTutorialState.context.batchFailedNames, names[index]],
+        })
+      }
+    }
     else if (outcome.status === 'cancelled') break
 
     if (outcome.task?.persistenceFailed) {
       ElMessage.error('批量执行已暂停：当前人群包采集完成，但服务器未确认保存。请先复制或导出当前结果后再重试')
-      return
+      const remainingNames = names.slice(index + 1)
+      return {
+        completed,
+        failed: failed + remainingNames.length,
+        completedNames,
+        failedNames: [...failedNames, ...remainingNames],
+        error: '服务器未确认保存，批量执行已暂停',
+      }
     }
     if (outcome.task?.recordCreationFailed) {
       ElMessage.error('批量执行已暂停：服务器无法创建任务记录，请恢复服务连接后重试')
-      return
+      const remainingNames = names.slice(index + 1)
+      return {
+        completed,
+        failed: failed + remainingNames.length,
+        completedNames,
+        failedNames: [...failedNames, ...remainingNames],
+        error: '服务器无法创建任务记录，批量执行已暂停',
+      }
     }
 
     if (isRunActive(run) && index < names.length - 1) {
@@ -1389,10 +1581,22 @@ async function executeBatch(names, type, options = {}, run) {
     }
   }
 
-  if (!isRunActive(run)) return
+  if (!isRunActive(run)) {
+    const processedNames = new Set([...completedNames, ...failedNames])
+    const remainingNames = names.filter((name) => !processedNames.has(name))
+    return {
+      completed,
+      failed,
+      completedNames,
+      failedNames,
+      cancelledNames: remainingNames,
+      cancelled: true,
+    }
+  }
   const summary = `批量执行完成：成功 ${completed} 个，失败 ${failed} 个`
   if (failed > 0) ElMessage.warning(summary)
   else ElMessage.success(summary)
+  return { completed, failed, completedNames, failedNames }
 }
 
 async function retryTask() {
@@ -1406,6 +1610,87 @@ async function retryTask() {
     dmpCrowd.value = task.crowdName
     await runDmp()
   }
+}
+
+async function runDmpTutorialBatch(event) {
+  if (!isDmpTutorialActive.value || !isGuidedTutorialStep('wait-dmp-batch')) return
+  const requestedNames = Array.isArray(event?.detail?.names)
+    ? event.detail.names.map((name) => String(name).trim()).filter(Boolean)
+    : []
+  const names = requestedNames.length
+    ? requestedNames
+    : [...guidedTutorialState.context.audienceNames]
+  const retrying = event?.detail?.retry === true
+  const previousCompleted = retrying ? Number(guidedTutorialState.context.batchCompletedCount || 0) : 0
+
+  if (names.length === 0) {
+    updateGuidedTutorialContext({
+      batchStatus: 'failed',
+      batchFailedNames: [],
+      batchError: '没有可执行的人群包名称，请返回修改名单。',
+    })
+    return
+  }
+
+  dmpBatchText.value = names.join('\n')
+  dmpBatchDraft.value = dmpBatchText.value
+  dmpBatchMode.value = true
+  updateGuidedTutorialContext({
+    batchStatus: 'running',
+    batchFailedNames: [],
+    batchError: '',
+  })
+
+  try {
+    const summary = await runDmp()
+    const failedNames = Array.isArray(summary?.failedNames) ? summary.failedNames : names
+    const completedNow = Array.isArray(summary?.completedNames) ? summary.completedNames.length : 0
+    const completedCount = Math.min(
+      Number(guidedTutorialState.context.audienceCount || names.length),
+      Math.max(
+        Number(guidedTutorialState.context.batchCompletedCount || 0),
+        previousCompleted + completedNow,
+      ),
+    )
+    const targetCount = Number(guidedTutorialState.context.audienceCount || names.length)
+
+    if (failedNames.length || summary?.cancelled || completedCount < targetCount) {
+      updateGuidedTutorialContext({
+        batchStatus: completedCount > 0 ? 'partial' : 'failed',
+        batchCompletedCount: completedCount,
+        batchFailedNames: [...failedNames],
+        batchError: summary?.error
+          || (summary?.cancelled ? '批量任务已终止，可修改名单后重新开始。' : `有 ${failedNames.length} 个人群包取数失败。`),
+      })
+      return
+    }
+
+    updateGuidedTutorialContext({
+      batchStatus: 'completed',
+      batchCompletedCount: completedCount,
+      batchFailedNames: [],
+      batchError: '',
+    })
+    completeGuidedTutorialStep('wait-dmp-batch')
+  } finally {
+    dmpBatchMode.value = false
+  }
+}
+
+function editDmpTutorialBatch() {
+  if (!isDmpTutorialActive.value) return
+  const names = Array.isArray(guidedTutorialState.context.audienceNames)
+    ? guidedTutorialState.context.audienceNames
+    : []
+  dmpBatchText.value = names.join('\n')
+  dmpBatchDraft.value = dmpBatchText.value
+  dmpBatchMode.value = false
+  updateGuidedTutorialContext({
+    batchStatus: 'idle',
+    batchCompletedCount: 0,
+    batchFailedNames: [],
+    batchError: '',
+  })
 }
 
 async function checkExtension(manual = false) {
@@ -1460,6 +1745,8 @@ async function checkExtension(manual = false) {
 
 onMounted(async () => {
   window.addEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
+  window.addEventListener('cdp:tutorial-run-dmp-batch', runDmpTutorialBatch)
+  window.addEventListener('cdp:tutorial-edit-dmp-batch', editDmpTutorialBatch)
   window.addEventListener('beforeunload', persistTaskSession)
   loadHistory()
   await checkExtension()
@@ -1474,6 +1761,8 @@ onBeforeUnmount(() => {
   persistTaskSession()
   window.removeEventListener('beforeunload', persistTaskSession)
   window.removeEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
+  window.removeEventListener('cdp:tutorial-run-dmp-batch', runDmpTutorialBatch)
+  window.removeEventListener('cdp:tutorial-edit-dmp-batch', editDmpTutorialBatch)
 })
 </script>
 

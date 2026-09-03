@@ -35,7 +35,7 @@
     </div>
 
     <footer class="announcement-article__footer">
-      <span>圈选工作台</span>
+      <span>数据引擎人群圈包</span>
       <span>持续为使用体验更新</span>
     </footer>
   </article>

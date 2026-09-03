@@ -37,7 +37,7 @@
             :data-tutorial-target="isTutorialProductIdField(node, field) ? 'paste-product-ids' : undefined"
             @paste.capture="onFieldPaste(node, field, $event)"
           >
-            <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :placeholder="`输入并回车创建${field.Label}`" @change="handleListInputWithOverflow(field.key, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
+            <el-select v-model="node.formData[field.key]" multiple filterable allow-create default-first-option :placeholder="`输入并回车创建${field.Label}`" @change="handleListFieldChange(field, node)" no-data-text="💡 敲击回车或输入逗号自动炸开标签" class="flex-1 intercom-input select-auto-height"></el-select>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
             <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
@@ -106,7 +106,19 @@
 
         <template v-else-if="field.Widget_Type === '搜索多选'">
           <div class="form-row" @paste.capture="onFieldPaste(node, field, $event)">
-            <el-select-v2 v-model="node.formData[field.key]" :options="formatOptions(field.options)" multiple filterable clearable :reserve-keyword="false" :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input select-auto-height" @change="handleMultiSelectChangeWithOverflow(field.key, node)"></el-select-v2>
+            <el-select-v2
+              :ref="(instance) => setTutorialSelectRef(node, field, instance)"
+              v-model="node.formData[field.key]"
+              :options="getSearchOptions(node, field, field.options)"
+              multiple filterable clearable
+              :filter-method="isCategorySearchField(field) ? (query) => handleCategorySearch(node, field, query) : undefined"
+              :reserve-keyword="false"
+              :popper-class="getTutorialSelectPopperClass(node, field)"
+              :placeholder="`请搜索并选择${field.Label}`"
+              class="flex-1 intercom-input select-auto-height"
+              @change="handleMultiSelectFieldChange(field, node)"
+              @visible-change="handleTutorialSelectVisibleChange(node, field, $event)"
+            ></el-select-v2>
             <span v-if="getSelectionCountHint(field, node)" class="count-hint display-mono">{{ getSelectionCountHint(field, node) }}</span>
             <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
@@ -162,7 +174,19 @@
 
         <template v-else-if="field.Widget_Type === '搜索单选'">
           <div class="form-row">
-            <el-select-v2 :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${getArray(node.formData.channel).join(',')}-${node.formData.shop}` : field.key" v-model="node.formData[field.key]" :options="formatOptions(getDynamicOptions(field, node))" filterable clearable :placeholder="`请搜索并选择${field.Label}`" class="flex-1 intercom-input"></el-select-v2>
+            <el-select-v2
+              :ref="(instance) => setTutorialSelectRef(node, field, instance)"
+              :key="['selectedGoodsType', 'shop'].includes(field.key) ? `${field.key}-${getArray(node.formData.channel).join(',')}-${node.formData.shop}` : field.key"
+              v-model="node.formData[field.key]"
+              :options="getSearchOptions(node, field, getDynamicOptions(field, node))"
+              filterable clearable
+              :filter-method="isCategorySearchField(field) ? (query) => handleCategorySearch(node, field, query) : undefined"
+              :popper-class="getTutorialSelectPopperClass(node, field)"
+              :placeholder="`请搜索并选择${field.Label}`"
+              class="flex-1 intercom-input"
+              @change="onTutorialFieldChanged(node, field)"
+              @visible-change="handleTutorialSelectVisibleChange(node, field, $event)"
+            ></el-select-v2>
             <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
@@ -227,13 +251,18 @@
 </template>
 
 <script setup>
-import { inject, reactive } from 'vue'
+import { inject, onBeforeUnmount, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
 import { markCategoryBehaviorDateManual } from '../utils/categoryBehaviorDateDefaults.js'
+import { rankCategoryOptions } from '../utils/categoryOptionSearch.js'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
-import { CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS } from '../utils/guidedTutorialConfig.js'
+import {
+  CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
+  SOLUTION_REUSE_TUTORIAL_ID,
+  SOLUTION_REUSE_TUTORIAL_VALUES,
+} from '../utils/guidedTutorialConfig.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
 
 const props = defineProps({
@@ -241,12 +270,15 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
   // 方案使用时，多个超限字段不能自动做笛卡尔积拆分；制作方案仍保持原有行为。
   overflowPolicy: { type: String, default: 'legacy' },
+  nodeIndex: { type: Number, default: 0 },
 })
 
 const emit = defineEmits(['overflow-split'])
 
 const ctx = inject('solutionCenterContext', null)
 const {
+  state: guidedTutorialState,
+  currentStep: guidedTutorialStep,
   completeStep: completeGuidedTutorialStep,
   isStep: isGuidedTutorialStep,
   updateContext: updateGuidedTutorialContext,
@@ -263,17 +295,110 @@ const {
   countUniqueSecondaryCategories,
 } = useCdpShared()
 
+const tutorialSelectRefs = new Map()
+const pendingTutorialSelectSteps = new Map()
+const tutorialSelectCloseTimers = new Map()
+const categorySearchQueries = reactive({})
+
+function tutorialSelectKey(node, field) {
+  return `${node?.id || 'node'}:${field?.key || 'field'}`
+}
+
+function isCategorySearchField(field) {
+  return ['leafCates', 'cate'].includes(field?.key) || String(field?.Label || '').includes('类目')
+}
+
+function handleCategorySearch(node, field, query) {
+  categorySearchQueries[tutorialSelectKey(node, field)] = String(query ?? '')
+}
+
+function getSearchOptions(node, field, options) {
+  const formatted = formatOptions(options)
+  if (!isCategorySearchField(field)) return formatted
+  return rankCategoryOptions(formatted, categorySearchQueries[tutorialSelectKey(node, field)] || '')
+}
+
+function clearCategorySearch(node, field) {
+  if (!isCategorySearchField(field)) return
+  delete categorySearchQueries[tutorialSelectKey(node, field)]
+}
+
+function setTutorialSelectRef(node, field, instance) {
+  const key = tutorialSelectKey(node, field)
+  if (instance) tutorialSelectRefs.set(key, instance)
+  else tutorialSelectRefs.delete(key)
+}
+
+function getTutorialSelectPopperClass(node, field) {
+  const target = getTutorialFieldTarget(node, field)
+  const stepTarget = guidedTutorialStep.value?.target || ''
+  return target && stepTarget.includes(`"${target}"`)
+    ? 'guided-tutorial-select-popper'
+    : undefined
+}
+
+function closeTutorialSelect(node, field) {
+  const instance = tutorialSelectRefs.get(tutorialSelectKey(node, field))
+  instance?.blur?.()
+  instance?.$el?.querySelector?.('input')?.blur?.()
+}
+
+function finishPendingTutorialSelectStep(node, field) {
+  const key = tutorialSelectKey(node, field)
+  const stepId = pendingTutorialSelectSteps.get(key)
+  if (!stepId) return
+  pendingTutorialSelectSteps.delete(key)
+  const timer = tutorialSelectCloseTimers.get(key)
+  if (timer) window.clearTimeout(timer)
+  tutorialSelectCloseTimers.delete(key)
+  if (isGuidedTutorialStep(stepId)) completeGuidedTutorialStep(stepId)
+}
+
+function handleTutorialSelectVisibleChange(node, field, visible) {
+  if (visible) return
+  clearCategorySearch(node, field)
+  const key = tutorialSelectKey(node, field)
+  const previousTimer = tutorialSelectCloseTimers.get(key)
+  if (previousTimer) window.clearTimeout(previousTimer)
+  // Element Plus restores focus to the input after emitting visible-change.
+  // Advance only after that focus scroll has settled, otherwise the next
+  // tutorial target can be pushed outside the canvas viewport.
+  tutorialSelectCloseTimers.set(key, window.setTimeout(() => {
+    finishPendingTutorialSelectStep(node, field)
+  }, 180))
+}
+
+function completeTutorialStepAfterSelectClose(node, field, stepId) {
+  const key = tutorialSelectKey(node, field)
+  pendingTutorialSelectSteps.set(key, stepId)
+  closeTutorialSelect(node, field)
+  const previousTimer = tutorialSelectCloseTimers.get(key)
+  if (previousTimer) window.clearTimeout(previousTimer)
+  tutorialSelectCloseTimers.set(key, window.setTimeout(() => {
+    finishPendingTutorialSelectStep(node, field)
+  }, 180))
+}
+
 function applyQuickDateRange(node, field, dateRange) {
   markCategoryBehaviorDateManual(node)
   node.modeData[field.key] = 'range'
   node.formData[field.key].dateRange = [...dateRange]
   node.selectedFirstDate = null
-  if (isTutorialCategoryItemNode(node)) {
+  if (shouldSyncTutorialTime(node)) {
     updateGuidedTutorialContext({
       dateMode: 'range',
       dateRange: [...dateRange],
     })
   }
+}
+
+function shouldSyncTutorialTime(node) {
+  return isTutorialCategoryItemNode(node)
+    || (
+      guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
+      && node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
+      && props.nodeIndex === 0
+    )
 }
 
 function isTutorialCategoryItemNode(node) {
@@ -291,10 +416,50 @@ function isTutorialBehaviorField(node, field) {
 }
 
 function getTutorialFieldTarget(node, field) {
+  if (guidedTutorialState.active && guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID) {
+    if (ctx?.isTutorialSolutionCenter) {
+      return `solution-node-${props.nodeIndex}-${field.key}`
+    }
+    if (node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType) {
+      const role = props.nodeIndex === 0 ? 'own' : 'competitor'
+      return `solution-${role}-${field.key}`
+    }
+  }
   if (isTutorialCategoryItemNode(node) && (field?.key === 'time' || field?.Widget_Type === '日期_切换')) {
     return 'set-time'
   }
   return undefined
+}
+
+function normalizedFieldValues(value) {
+  return (Array.isArray(value) ? value : [value])
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean)
+}
+
+function onTutorialFieldChanged(node, field) {
+  if (!guidedTutorialState.active || guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return
+  if (node?.packageType !== SOLUTION_REUSE_TUTORIAL_VALUES.packageType) return
+  const values = normalizedFieldValues(node.formData?.[field.key])
+  const includes = expected => values.includes(expected)
+  const stepChecks = {
+    'set-own-category': props.nodeIndex === 0 && field.key === 'leafCates' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.initialCategory),
+    'set-own-brand': props.nodeIndex === 0 && field.key === 'stdBrand' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand),
+    'set-own-channel': props.nodeIndex === 0 && field.key === 'channel' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.channel),
+    'set-competitor-brand': props.nodeIndex === 1 && field.key === 'stdBrand' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand),
+  }
+  const stepId = Object.keys(stepChecks).find(id => isGuidedTutorialStep(id) && stepChecks[id])
+  if (stepId) completeTutorialStepAfterSelectClose(node, field, stepId)
+}
+
+function handleListFieldChange(field, node) {
+  handleListInputWithOverflow(field.key, node)
+  onTutorialFieldChanged(node, field)
+}
+
+function handleMultiSelectFieldChange(field, node) {
+  handleMultiSelectChangeWithOverflow(field.key, node)
+  onTutorialFieldChanged(node, field)
 }
 
 function onCheckboxGroupChange(field, value, node) {
@@ -306,11 +471,21 @@ function onCheckboxGroupChange(field, value, node) {
   if (isTutorialBehaviorField(node, field) && values.length > 0) {
     completeGuidedTutorialStep('select-behavior')
   }
+  if (
+    guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
+    && node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
+    && props.nodeIndex === 0
+    && field.key === 'bhv'
+    && values.includes(SOLUTION_REUSE_TUTORIAL_VALUES.behavior)
+  ) {
+    completeGuidedTutorialStep('set-own-behavior')
+  }
+  onTutorialFieldChanged(node, field)
 }
 
 function handleDateModeChange(node, field) {
   markCategoryBehaviorDateManual(node)
-  if (isTutorialCategoryItemNode(node)) {
+  if (shouldSyncTutorialTime(node)) {
     updateGuidedTutorialContext({
       dateMode: node.modeData?.[field.key] || '',
       recentDays: node.formData?.[field.key]?.days ?? null,
@@ -323,7 +498,7 @@ function handleDateModeChange(node, field) {
 
 function onRecentDaysUpdate(node, field, value) {
   markCategoryBehaviorDateManual(node)
-  if (isTutorialCategoryItemNode(node)) {
+  if (shouldSyncTutorialTime(node)) {
     updateGuidedTutorialContext({
       dateMode: node.modeData?.[field.key] || '',
       recentDays: value,
@@ -336,7 +511,7 @@ function onRecentDaysUpdate(node, field, value) {
 
 function onDateRangeChange(node, field, value) {
   markCategoryBehaviorDateManual(node)
-  if (!isTutorialCategoryItemNode(node)) return
+  if (!shouldSyncTutorialTime(node)) return
   updateGuidedTutorialContext({
     dateMode: node.modeData?.[field.key] || 'range',
     dateRange: Array.isArray(value) ? [...value] : [],
@@ -561,6 +736,13 @@ function applyPaste(node, field) {
     ElMessage.info('已取消拆分，溢出数据保留，可稍后统一处理')
   })
 }
+
+onBeforeUnmount(() => {
+  tutorialSelectCloseTimers.forEach((timer) => window.clearTimeout(timer))
+  tutorialSelectCloseTimers.clear()
+  pendingTutorialSelectSteps.clear()
+  tutorialSelectRefs.clear()
+})
 </script>
 
 <style scoped>

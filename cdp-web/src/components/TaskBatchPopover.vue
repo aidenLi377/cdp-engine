@@ -16,6 +16,7 @@
       <button
         type="button"
         class="tc-batch-popover-trigger"
+        :data-tutorial-target="tutorialKey ? `${tutorialKey}-trigger` : undefined"
         :disabled="disabled"
         :aria-label="`配置并运行${taskLabel}批量名单`"
       >
@@ -23,7 +24,12 @@
       </button>
     </template>
 
-    <form class="tc-batch-composer" @submit.prevent="runDraft" @keydown.esc.stop="closePopover">
+    <form
+      class="tc-batch-composer"
+      :data-tutorial-target="tutorialKey ? `${tutorialKey}-composer` : undefined"
+      @submit.prevent="runDraft"
+      @keydown.esc.stop="closePopover"
+    >
       <header class="tc-batch-composer__header">
         <div>
           <h3>批量人群包</h3>
@@ -39,6 +45,7 @@
         ref="editor"
         :value="modelValue"
         class="tc-batch-composer__textarea"
+        :data-tutorial-target="tutorialKey ? `${tutorialKey}-input` : undefined"
         rows="6"
         :aria-label="`${taskLabel}批量人群包名单`"
         placeholder="粘贴人群包名称，每行一个"
@@ -56,15 +63,16 @@
       </div>
 
       <footer class="tc-batch-composer__footer">
-        <div class="tc-batch-composer__status" :class="{ 'is-ready': draftBatch.items.length > 0 }" aria-live="polite">
+        <div class="tc-batch-composer__status" :class="{ 'is-ready': canRunDraft }" aria-live="polite">
           <span class="tc-batch-composer__dot" aria-hidden="true"></span>
-          <span>{{ draftBatch.items.length ? `已识别 ${draftBatch.items.length} 个` : '等待粘贴名单' }}</span>
+          <span>{{ draftStatusLabel }}</span>
         </div>
         <button type="button" class="tc-batch-composer__cancel" @click="closePopover">取消</button>
         <button
           type="submit"
           class="tc-batch-composer__run"
-          :disabled="draftBatch.items.length === 0"
+          :data-tutorial-target="tutorialKey ? `${tutorialKey}-run` : undefined"
+          :disabled="!canRunDraft"
         >{{ draftBatch.items.length ? `运行 ${draftBatch.items.length} 个` : '运行' }}</button>
       </footer>
     </form>
@@ -80,13 +88,21 @@ const props = defineProps({
   taskLabel: { type: String, required: true },
   runHint: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
+  minimumItems: { type: Number, default: 1 },
+  tutorialKey: { type: String, default: '' },
 })
 
-const emit = defineEmits(['update:modelValue', 'run'])
+const emit = defineEmits(['update:modelValue', 'run', 'open'])
 
 const visible = ref(false)
 const editor = ref(null)
 const draftBatch = computed(() => parseCrowdBatch(props.modelValue))
+const canRunDraft = computed(() => draftBatch.value.items.length >= Math.max(1, props.minimumItems))
+const draftStatusLabel = computed(() => {
+  if (!draftBatch.value.items.length) return '等待粘贴名单'
+  if (!canRunDraft.value) return `已识别 ${draftBatch.value.items.length} 个，至少需要 ${Math.max(1, props.minimumItems)} 个`
+  return `已识别 ${draftBatch.value.items.length} 个`
+})
 
 watch(() => props.disabled, (disabled) => {
   if (disabled) visible.value = false
@@ -106,11 +122,12 @@ function closePopover() {
 }
 
 function focusEditor() {
+  emit('open')
   nextTick(() => editor.value?.focus())
 }
 
 function runDraft() {
-  if (!draftBatch.value.items.length) return
+  if (!canRunDraft.value) return
   emit('run', props.modelValue.trim())
   closePopover()
 }

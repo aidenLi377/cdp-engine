@@ -97,7 +97,7 @@ Commit: `style: simplify gallery white workbench library`
 
 - [ ] **Step 1: Write failing template and style contracts**
 
-Require removal of `草稿编辑、发布与工作台预览` and `创建字段，让一个字段控制多个组件`. Require visible title `自定义字段`, button copy `+ 新增自定义字段`, and a focusable/hoverable `一对多` badge element. Assert the badge is positioned in the upper-right, hidden by default, and shown on card hover/focus-within.
+Require removal of `草稿编辑、发布与数据引擎人群圈包预览` and `创建字段，让一个字段控制多个组件`. Require visible title `自定义字段`, button copy `+ 新增自定义字段`, and a focusable/hoverable `一对多` badge element. Assert the badge is positioned in the upper-right, hidden by default, and shown on card hover/focus-within.
 
 - [ ] **Step 2: Run focused tests and confirm RED**
 

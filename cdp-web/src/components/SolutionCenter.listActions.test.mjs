@@ -92,8 +92,8 @@ test('solution center nodes support editable display names in drafts', () => {
 })
 
 test('solution center description copy stays concise', () => {
-  assert.doesNotMatch(solutionCenterVue, /草稿编辑、发布与工作台预览/)
-  assert.doesNotMatch(solutionCenterVue, /勾选后会进入工作台方案使用态与预览抽屉/)
+  assert.doesNotMatch(solutionCenterVue, /草稿编辑、发布与圈包画布预览/)
+  assert.doesNotMatch(solutionCenterVue, /勾选后会进入圈包模板使用态与预览抽屉/)
 })
 
 test('custom field relationship is disclosed without persistent explanatory copy', () => {

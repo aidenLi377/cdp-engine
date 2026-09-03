@@ -12,7 +12,7 @@
 
 - 只修改前端；不得修改后端、接口、扩展消息协议、依赖、构建配置、路由或权限。
 - 不得修改方案序列化、任务执行函数、数据请求、持久化逻辑、函数名或状态语义。
-- 保持现有三栏结构、栏宽、工作台交互、方案保存、撤销、重做和任务执行行为。
+- 保持现有三栏结构、栏宽、数据引擎人群圈包交互、方案保存、撤销、重做和任务执行行为。
 - 视觉方向是 Apple-like Gallery White A：纯白表面、黑色选中态、发丝边框、橙色只作细微信号；不得出现灰色环境填充或橙色块。
 - 全站所有菜单式下拉均不得有灰底，包括 Select、Select V2、Tree Select、Dropdown、Cascader、Autocomplete 的触发器、标签、面板、默认、hover、selected、disabled、empty 和 loading 状态。
 - 下拉禁用态保持白底，只用三级文字色、透明度和禁用光标表达；该规则优先于通用禁用态填充。
@@ -30,7 +30,7 @@
 
 **Interfaces:**
 - Consumes: 现有 Gallery White token `--ui-surface`、`--ui-ink`、`--ui-divider`、`--ui-control-border`、`--ui-text-tertiary`、`--ui-accent`、`--ui-accent-ring`。
-- Produces: 全局菜单式下拉白底契约，以及主导航、方案中心分段和摘要工具栏统一尺寸契约；后续任务不依赖新的 JS 接口。
+- Produces: 全局菜单式下拉白底契约，以及主导航、数据引擎取数模板分段和摘要工具栏统一尺寸契约；后续任务不依赖新的 JS 接口。
 
 - [ ] **Step 1: Write failing Gallery White contract tests**
 
@@ -373,7 +373,7 @@ git commit -m "fix: link solution parameters to exact fields"
 
 **Interfaces:**
 - Consumes: existing `runDatabank`, `runDmp`, `canRunDatabank`, `canRunDmp`, and `taskRunning` bindings unchanged.
-- Produces: visible title `圈选工作台`, two idle action labels `运行`, and matching empty-state copy.
+- Produces: visible title `数据引擎人群圈包`, two idle action labels `运行`, and matching empty-state copy.
 
 - [ ] **Step 1: Write failing copy contracts**
 
@@ -381,8 +381,8 @@ git commit -m "fix: link solution parameters to exact fields"
 
 ```js
 test('shell title is concise without the CDP prefix', () => {
-  assert.match(appVue, /class="display-feature-title">圈选工作台<\/div>/)
-  assert.doesNotMatch(appVue, />CDP 圈选工作台</)
+  assert.match(appVue, /class="display-feature-title">数据引擎人群圈包<\/div>/)
+  assert.doesNotMatch(appVue, />CDP 数据引擎人群圈包</)
 })
 ```
 
@@ -412,13 +412,13 @@ Expected: both new tests fail on the old visible strings.
 在 `App.vue` 中把：
 
 ```vue
-<div class="display-feature-title">CDP 圈选工作台</div>
+<div class="display-feature-title">CDP 数据引擎人群圈包</div>
 ```
 
 改为：
 
 ```vue
-<div class="display-feature-title">圈选工作台</div>
+<div class="display-feature-title">数据引擎人群圈包</div>
 ```
 
 在 `TaskCenter.vue` 中把两个空闲按钮的 `测试` 改为 `运行`，并把空状态改为：
@@ -487,7 +487,7 @@ At `1263×674`, `1538×674`, and `1440×900`, open representative Select, Select
 
 - [ ] **Step 3: Verify all reviewed controls and parameter behavior**
 
-Confirm the three top navigation capsules are identical, the two Solution Center groups have no outer gray container, the JSON toolbar controls are all 32px high, title reads `圈选工作台`, and both Task Center idle actions read `运行`. In solution-use mode, click one parameter card and confirm only the top card, exact middle field and exact summary row highlight; the entire behavior card has no orange border; clicking the same parameter again clears the highlight.
+Confirm the three top navigation capsules are identical, the two Solution Center groups have no outer gray container, the JSON toolbar controls are all 32px high, title reads `数据引擎人群圈包`, and both Task Center idle actions read `运行`. In solution-use mode, click one parameter card and confirm only the top card, exact middle field and exact summary row highlight; the entire behavior card has no orange border; clicking the same parameter again clears the highlight.
 
 - [ ] **Step 4: Check runtime health and final regression**
 

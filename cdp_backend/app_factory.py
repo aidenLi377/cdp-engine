@@ -1943,7 +1943,7 @@ def register_routes(
             return error_response("INVALID_FOLDER_MOVE", "文件夹不能移动到自身或其子文件夹中", 400)
         return jsonify(updated)
 
-    # -- 任务中台 API --
+    # -- 达摩盘取数 API --
 
     @app.route("/api/tasks", methods=["POST"])
     def create_task():

@@ -5,9 +5,9 @@
 ## 合并能力
 
 - 保留 DMP Copilot 原有面板、画像数据提取、Rebase、字段控制、方案口令和 CSV 导出。
-- 支持 CDP 工作台自动打开 DataBank 并执行参数粘贴。
-- 支持 CDP 任务中台的 DataBank 人群匹配与 DataHub 状态检查。
-- 支持 CDP 任务中台的 DMP 人群匹配、画像等待和指定标签结果提取。
+- 支持 CDP 数据引擎人群圈包自动打开 DataBank 并执行参数粘贴。
+- 支持 CDP 达摩盘取数的 DataBank 人群匹配与 DataHub 状态检查。
+- 支持 CDP 达摩盘取数的 DMP 人群匹配、画像等待和指定标签结果提取。
 - CDP 网页与插件面板共享多条件就绪状态、显示字段和 Rebase 标签设置。
 - 两个入口统一返回覆盖人数、Rebase 后人数、CTR/PPC 等十个标准字段。
 - 使用 `chrome.storage.session` 保存长任务标签页，降低 MV3 后台休眠导致任务中断的风险。

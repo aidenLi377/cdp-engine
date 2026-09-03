@@ -71,24 +71,34 @@
           <!-- 搜索多选 -->
           <template v-else-if="isMultiSelect">
             <el-select-v2
+              ref="tutorialSelectRef"
               v-model="editValue"
               :options="formattedOptions"
               multiple filterable clearable
               :placeholder="'搜索并选择' + customField.name"
               class="flex-1 intercom-input"
               style="width:100%"
+              :popper-class="getTutorialSelectPopperClass()"
+              :data-tutorial-target="getTutorialEditTarget()"
+              @change="handleTutorialValueChange"
+              @visible-change="handleTutorialSelectVisibleChange"
             />
           </template>
 
           <!-- 搜索单选 -->
           <template v-else-if="customField.type === '搜索单选'">
             <el-select-v2
+              ref="tutorialSelectRef"
               v-model="editValue"
               :options="formattedOptions"
               filterable clearable
               :placeholder="'搜索并选择' + customField.name"
               class="flex-1 intercom-input"
               style="width:100%"
+              :popper-class="getTutorialSelectPopperClass()"
+              :data-tutorial-target="getTutorialEditTarget()"
+              @change="handleTutorialValueChange"
+              @visible-change="handleTutorialSelectVisibleChange"
             />
           </template>
 
@@ -118,7 +128,7 @@
               :loading="writingBack"
               @click="writeBack"
             >
-              同步到当前工作台
+              同步到当前圈包画布
             </el-button>
           </div>
           <div class="cf-bound-list">
@@ -136,16 +146,21 @@
 
     <template #footer>
       <el-button class="intercom-btn-outlined" @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button class="intercom-btn-primary" @click="save">保存</el-button>
+      <el-button class="intercom-btn-primary" :data-tutorial-target="getTutorialSaveTarget()" @click="save">保存</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { formatCfDisplayValue } from '../utils/display.js'
 import { getNodeDisplayNameById } from '../utils/solutionState.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
+import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
+import {
+  SOLUTION_REUSE_TUTORIAL_ID,
+  SOLUTION_REUSE_TUTORIAL_VALUES,
+} from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -162,6 +177,14 @@ const emit = defineEmits(['update:modelValue', 'save', 'batch'])
 const editValue = ref(null)
 const editMode = ref('recent')
 const writingBack = ref(false)
+const tutorialSelectRef = ref(null)
+let pendingTutorialStep = ''
+let tutorialSelectCloseTimer = null
+const {
+  state: guidedTutorialState,
+  completeStep: completeGuidedTutorialStep,
+  isStep: isGuidedTutorialStep,
+} = useGuidedTutorial()
 
 const isDateType = computed(() => props.customField?.type?.includes('日期'))
 const isNumberType = computed(() => props.customField?.type?.includes('数值'))
@@ -175,6 +198,68 @@ const formattedOptions = computed(() => {
   if (typeof raw[0] === 'object') return raw
   return raw.map(opt => ({ value: opt, label: String(opt) }))
 })
+
+function getTutorialEditTarget() {
+  if (!guidedTutorialState.active || guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return undefined
+  if (props.customField?.name === '分析类目') return 'edit-analysis-value'
+  if (props.customField?.name === '竞争品牌') return 'edit-competitor-value'
+  return undefined
+}
+
+function getTutorialSelectPopperClass() {
+  const isAnalysisStep = props.customField?.name === '分析类目'
+    && isGuidedTutorialStep('change-analysis-category')
+  const isCompetitorStep = props.customField?.name === '竞争品牌'
+    && isGuidedTutorialStep('change-competitor-brand')
+  return isAnalysisStep || isCompetitorStep ? 'guided-tutorial-select-popper' : undefined
+}
+
+function finishPendingTutorialStep() {
+  if (!pendingTutorialStep) return
+  const stepId = pendingTutorialStep
+  pendingTutorialStep = ''
+  if (tutorialSelectCloseTimer) window.clearTimeout(tutorialSelectCloseTimer)
+  tutorialSelectCloseTimer = null
+  if (isGuidedTutorialStep(stepId)) completeGuidedTutorialStep(stepId)
+}
+
+function handleTutorialSelectVisibleChange(visible) {
+  if (!visible) finishPendingTutorialStep()
+}
+
+function completeTutorialStepAfterSelectClose(stepId) {
+  pendingTutorialStep = stepId
+  tutorialSelectRef.value?.blur?.()
+  tutorialSelectRef.value?.$el?.querySelector?.('input')?.blur?.()
+  if (tutorialSelectCloseTimer) window.clearTimeout(tutorialSelectCloseTimer)
+  tutorialSelectCloseTimer = window.setTimeout(finishPendingTutorialStep, 180)
+}
+
+function getTutorialSaveTarget() {
+  if (
+    isGuidedTutorialStep('save-analysis-category')
+    || isGuidedTutorialStep('save-competitor-brand')
+  ) return 'save-custom-field-value'
+  return undefined
+}
+
+function handleTutorialValueChange(value) {
+  const values = (Array.isArray(value) ? value : [value]).map(item => String(item || '').trim())
+  if (
+    props.customField?.name === '分析类目'
+    && isGuidedTutorialStep('change-analysis-category')
+    && values.includes(SOLUTION_REUSE_TUTORIAL_VALUES.secondCategory)
+  ) {
+    completeTutorialStepAfterSelectClose('change-analysis-category')
+  }
+  if (
+    props.customField?.name === '竞争品牌'
+    && isGuidedTutorialStep('change-competitor-brand')
+    && values.includes(SOLUTION_REUSE_TUTORIAL_VALUES.secondCompetitorBrand)
+  ) {
+    completeTutorialStepAfterSelectClose('change-competitor-brand')
+  }
+}
 
 function initEditState() {
   const v = props.currentValue
@@ -237,6 +322,10 @@ function save() {
 
 watch(() => props.modelValue, (val) => {
   if (val) initEditState()
+})
+
+onBeforeUnmount(() => {
+  if (tutorialSelectCloseTimer) window.clearTimeout(tutorialSelectCloseTimer)
 })
 </script>
 

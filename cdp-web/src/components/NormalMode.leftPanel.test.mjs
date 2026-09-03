@@ -42,14 +42,25 @@ test('JSON preview preserves code spacing instead of scattering characters', () 
 test('package library omits redundant mode explanations', () => {
   assert.doesNotMatch(normalModeVue, /自由搭建时可继续增删节点/)
   assert.doesNotMatch(normalModeVue, /已应用方案，仍可继续增删节点和调整逻辑关系/)
-  assert.doesNotMatch(normalModeVue, /加载后进入工作台方案使用态/)
+  assert.doesNotMatch(normalModeVue, /加载后进入圈包模板使用态/)
 })
 
 test('published solution header uses an accessible refresh icon instead of button text', () => {
   assert.match(normalModeVue, /class="workbench-section-icon-btn"/)
   assert.match(normalModeVue, /:icon="RefreshRight"/)
   assert.match(normalModeVue, /aria-label="刷新方案"/)
+  assert.match(normalModeVue, /@click="refreshPublishedSolutions"/)
   assert.doesNotMatch(normalModeVue, />\s*刷新\s*<\/el-button>/)
+})
+
+test('workbench refresh force-fetches the active solution library without stale requests winning', () => {
+  assert.match(normalModeVue, /publishedSolutionsAbort\?\.abort\(\)/)
+  assert.match(normalModeVue, /const scope = publishedLibraryScope\.value/)
+  assert.match(normalModeVue, /listSolutions\([\s\S]*?\{ signal: controller\.signal, fresh \}/)
+  assert.match(normalModeVue, /listFolders\(scope, \{ signal, fresh \}\)/)
+  assert.match(normalModeVue, /requestId !== publishedSolutionsRequestId/)
+  assert.match(normalModeVue, /loadPublishedSolutions\(\{ fresh: true, notify: true \}\)/)
+  assert.match(normalModeVue, /我的方案'\}已刷新/)
 })
 
 test('workbench published solutions use the same status light and compact row anatomy as solution center', () => {
@@ -88,7 +99,7 @@ test('workbench solution picker switches between personal and public libraries',
   assert.match(normalModeVue, /<el-radio-button value="public">公共方案<\/el-radio-button>/)
   assert.match(normalModeVue, /@change="switchPublishedLibrary"/)
   assert.match(normalModeVue, /listSolutions\([\s\S]*?'published',[\s\S]*?publishedLibraryScope\.value,[\s\S]*?\)/)
-  assert.match(normalModeVue, /listFolders\(publishedLibraryScope\.value\)/)
+  assert.match(normalModeVue, /listFolders\(scope, \{ signal, fresh \}\)/)
   assert.match(normalModeVue, /function switchPublishedLibrary\(nextScope\)/)
   assert.match(normalModeVue, /selectedPublishedFolderId\.value = null/)
 })

@@ -2,9 +2,19 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  CATEGORY_ITEM_TUTORIAL_VALUES,
   CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
   CATEGORY_ITEM_TUTORIAL_STEPS,
+  DMP_BATCH_TUTORIAL_STEPS,
+  DMP_BATCH_TUTORIAL_TAGS,
+  GUIDED_TUTORIAL_STEPS,
+  SOLUTION_REUSE_TUTORIAL_STEPS,
+  SOLUTION_REUSE_TUTORIAL_VALUES,
 } from './guidedTutorialConfig.js'
+
+test('类目商品行为教程提供可直接复制的人群包名称示例', () => {
+  assert.equal(CATEGORY_ITEM_TUTORIAL_VALUES.audienceName, '近30天购买指定7商品人群')
+})
 
 test('类目商品行为教程保留原稿中的七个商品 ID', () => {
   assert.deepEqual(CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS, [
@@ -28,7 +38,7 @@ test('每个教程步骤都有独立引导语且步骤 ID 不重复', () => {
   }
 })
 
-test('教程从干净工作台开始并以成功完成和拓展提示结束', () => {
+test('教程从干净圈包画布开始并以成功完成和拓展提示结束', () => {
   assert.equal(CATEGORY_ITEM_TUTORIAL_STEPS[0].id, 'clean-workbench')
   assert.equal(CATEGORY_ITEM_TUTORIAL_STEPS.at(-1).id, 'tutorial-complete')
   assert.match(CATEGORY_ITEM_TUTORIAL_STEPS.at(-1).hint, /关键词、类目、品牌/)
@@ -58,4 +68,113 @@ test('批量输入步骤明确说明 Excel 一列和本次七个示例 ID', () =
   assert.match(pasteStep.body, /Excel.*一整列商品 ID/)
   assert.match(pasteStep.body, /示例中的 7 个商品 ID/)
   assert.match(pasteStep.hint, /自己的 Excel 一列/)
+})
+
+test('自动化圈人最终确认会提醒用户登录数据引擎', () => {
+  const confirmStep = CATEGORY_ITEM_TUTORIAL_STEPS.find((step) => step.id === 'final-confirm')
+  assert.equal(confirmStep.warning.title, '请确保已登录数据引擎')
+  assert.match(confirmStep.warning.body, /未登录.*自动化圈人失败/)
+})
+
+test('达摩盘教程使用约定的四个画像标签', () => {
+  assert.deepEqual(DMP_BATCH_TUTORIAL_TAGS.map((tag) => tag.name), [
+    '用户年龄',
+    '用户性别',
+    '城市等级',
+    '大快消策略人群（新）',
+  ])
+})
+
+test('达摩盘教程覆盖批量取数、横向对比、双重排序和复制', () => {
+  const ids = DMP_BATCH_TUTORIAL_STEPS.map((step) => step.id)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.deepEqual(ids.slice(0, 3), ['open-task-center', 'select-dmp-tags', 'open-dmp-batch'])
+  assert.ok(ids.includes('input-dmp-crowds'))
+  assert.ok(ids.includes('wait-dmp-batch'))
+  assert.ok(ids.includes('select-comparison-metrics'))
+  assert.ok(ids.includes('inspect-comparison-table'))
+  assert.ok(ids.includes('sort-label-order'))
+  assert.ok(ids.includes('sort-audience-order'))
+  assert.equal(ids.at(-1), 'dmp-tutorial-complete')
+})
+
+test('达摩盘等待步骤不锁页面且失败分支有明确引导', () => {
+  const waitStep = DMP_BATCH_TUTORIAL_STEPS.find((step) => step.id === 'wait-dmp-batch')
+  assert.equal(waitStep.nonBlocking, true)
+  assert.match(waitStep.body, /不会被锁住/)
+  assert.match(waitStep.hint, /失败项.*重试.*修改名单/)
+})
+
+test('达摩盘指标说明包含原始占比与标签内 Rebase 口径', () => {
+  const metricStep = DMP_BATCH_TUTORIAL_STEPS.find((step) => step.id === 'select-comparison-metrics')
+  assert.match(metricStep.body, /原始覆盖比例/)
+  assert.match(metricStep.body, /同一标签内重新归一化/)
+})
+
+test('调整标签后明确提醒点击右下角应用排序', () => {
+  const orderStep = DMP_BATCH_TUTORIAL_STEPS.find((step) => step.id === 'sort-label-order')
+  assert.match(orderStep.body, /右下角的“应用排序”/)
+  assert.match(orderStep.hint, /右下角“应用排序”/)
+})
+
+test('三个内置教程都注册到统一配置中', () => {
+  assert.equal(Object.keys(GUIDED_TUTORIAL_STEPS).length, 3)
+})
+
+test('方案复用教程覆盖制作、一对多字段、发布和两次真实应用', () => {
+  const ids = SOLUTION_REUSE_TUTORIAL_STEPS.map(step => step.id)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.equal(ids[0], 'solution-clean-workbench')
+  assert.ok(ids.includes('duplicate-own-node'))
+  assert.ok(ids.includes('bind-analysis-first'))
+  assert.ok(ids.includes('bind-analysis-second'))
+  assert.ok(ids.includes('publish-tutorial-solution'))
+  assert.ok(ids.includes('run-first-solution-automation'))
+  assert.ok(ids.includes('run-second-solution-automation'))
+  assert.equal(ids.at(-1), 'solution-tutorial-complete')
+  assert.equal(SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand, 'SK-II')
+  assert.equal(SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand, 'Shiseido/资生堂')
+  assert.equal(SOLUTION_REUSE_TUTORIAL_VALUES.secondCompetitorBrand, 'CPB/肌肤之钥')
+})
+
+test('方案教程首个组件只放行类目公域行为按钮', () => {
+  const step = SOLUTION_REUSE_TUTORIAL_STEPS.find(item => item.id === 'add-public-behavior')
+  assert.equal(step.target, '[data-tutorial-target="add-category-public"]')
+  assert.equal(step.focusPadding, 0)
+})
+
+test('自定义字段绑定步骤明确要求点击字段空白处', () => {
+  const bindingSteps = SOLUTION_REUSE_TUTORIAL_STEPS.filter(item => [
+    'bind-analysis-first',
+    'bind-analysis-second',
+    'bind-own-brand',
+    'bind-competitor-brand',
+  ].includes(item.id))
+  assert.equal(bindingSteps.length, 4)
+  bindingSteps.forEach((step) => {
+    assert.match(`${step.body}${step.hint}`, /空白处/)
+    assert.match(step.warning?.body || '', /下拉框/)
+  })
+})
+
+test('数据引擎人群圈包与数据引擎取数模板的跨页导航高亮只包住按钮本体', () => {
+  const navigationSteps = SOLUTION_REUSE_TUTORIAL_STEPS.filter(item => [
+    'open-solution-center',
+    'open-workbench-after-publish',
+  ].includes(item.id))
+  assert.equal(navigationSteps.length, 2)
+  navigationSteps.forEach((step) => {
+    assert.match(step.target, />?\s*\.el-radio-button__inner$/)
+    assert.equal(step.focusPadding, 1)
+    assert.equal(step.focusRadius, 999)
+  })
+})
+
+test('方案教程第四章突出一对多字段的核心提效价值', () => {
+  const entryStep = SOLUTION_REUSE_TUTORIAL_STEPS.find(item => item.id === 'open-solution-picker')
+  const fieldStep = SOLUTION_REUSE_TUTORIAL_STEPS.find(item => item.id === 'open-analysis-field')
+  assert.match(entryStep.title, /业务提效/)
+  assert.match(entryStep.body, /不需要重新搭建方案/)
+  assert.match(fieldStep.title, /不用重新搭建方案/)
+  assert.match(fieldStep.body, /只需要更换分析类目和竞争品牌两个业务参数/)
 })
