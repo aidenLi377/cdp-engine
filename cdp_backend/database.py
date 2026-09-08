@@ -275,6 +275,15 @@ CREATE TABLE IF NOT EXISTS announcement_reads (
     FOREIGN KEY(announcement_id) REFERENCES announcements(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS tutorial_progress (
+    user_id       TEXT NOT NULL,
+    tutorial_id   TEXT NOT NULL,
+    completed_at  TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY(user_id, tutorial_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_solutions_status ON solutions(status);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder ON solutions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_updated ON solutions(updated_at);
@@ -330,6 +339,8 @@ CREATE INDEX IF NOT EXISTS idx_announcement_reads_user
     ON announcement_reads(user_id, read_at, dismissed_at);
 CREATE INDEX IF NOT EXISTS idx_announcement_assets_created
     ON announcement_assets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tutorial_progress_user_completed
+    ON tutorial_progress(user_id, completed_at DESC);
 """
 
 MIGRATION_COLUMNS = {
@@ -425,4 +436,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 10")
+        conn.execute("PRAGMA user_version = 11")

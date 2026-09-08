@@ -24,6 +24,7 @@
               v-if="showBatchAction"
               type="button"
               class="cf-edit-batch-action"
+              :data-tutorial-target="['parameter-open-excel', 'combo-open-excel'].some(isGuidedTutorialStep) ? 'parameter-excel-batch' : undefined"
               @click="emit('batch')"
             >
               <span aria-hidden="true"></span>
@@ -158,6 +159,9 @@ import { getNodeDisplayNameById } from '../utils/solutionState.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import {
+  PARAMETER_BATCH_TUTORIAL_ID,
+  PULL_ANALYSIS_GROUP_TUTORIAL_ID,
+  PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
@@ -200,7 +204,17 @@ const formattedOptions = computed(() => {
 })
 
 function getTutorialEditTarget() {
-  if (!guidedTutorialState.active || guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return undefined
+  if (!guidedTutorialState.active) return undefined
+  if (
+    guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID
+    && props.customField?.name === '竞争品牌'
+  ) return 'parameter-edit-brand-value'
+  if (guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID) {
+    if (props.customField?.name === '分析类目') return 'pull-edit-batch-category'
+    if (props.customField?.name === '竞争品牌') return 'pull-edit-batch-competitor-value'
+    return undefined
+  }
+  if (guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return undefined
   if (props.customField?.name === '分析类目') return 'edit-analysis-value'
   if (props.customField?.name === '竞争品牌') return 'edit-competitor-value'
   return undefined
@@ -211,7 +225,13 @@ function getTutorialSelectPopperClass() {
     && isGuidedTutorialStep('change-analysis-category')
   const isCompetitorStep = props.customField?.name === '竞争品牌'
     && isGuidedTutorialStep('change-competitor-brand')
-  return isAnalysisStep || isCompetitorStep ? 'guided-tutorial-select-popper' : undefined
+  const isPullAnalysisStep = props.customField?.name === '分析类目'
+    && isGuidedTutorialStep('pull-change-batch-category')
+  const isPullCompetitorStep = props.customField?.name === '竞争品牌'
+    && isGuidedTutorialStep('pull-change-batch-competitor')
+  return isAnalysisStep || isCompetitorStep || isPullAnalysisStep || isPullCompetitorStep
+    ? 'guided-tutorial-select-popper'
+    : undefined
 }
 
 function finishPendingTutorialStep() {
@@ -239,6 +259,8 @@ function getTutorialSaveTarget() {
   if (
     isGuidedTutorialStep('save-analysis-category')
     || isGuidedTutorialStep('save-competitor-brand')
+    || isGuidedTutorialStep('pull-save-batch-category')
+    || isGuidedTutorialStep('pull-save-batch-competitor')
   ) return 'save-custom-field-value'
   return undefined
 }
@@ -258,6 +280,22 @@ function handleTutorialValueChange(value) {
     && values.includes(SOLUTION_REUSE_TUTORIAL_VALUES.secondCompetitorBrand)
   ) {
     completeTutorialStepAfterSelectClose('change-competitor-brand')
+  }
+  if (
+    guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+    && props.customField?.name === '分析类目'
+    && isGuidedTutorialStep('pull-change-batch-category')
+    && values.includes(PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.batchCategory)
+  ) {
+    completeTutorialStepAfterSelectClose('pull-change-batch-category')
+  }
+  if (
+    guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+    && props.customField?.name === '竞争品牌'
+    && isGuidedTutorialStep('pull-change-batch-competitor')
+    && values.includes(PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.batchCompetitorBrand)
+  ) {
+    completeTutorialStepAfterSelectClose('pull-change-batch-competitor')
   }
 }
 

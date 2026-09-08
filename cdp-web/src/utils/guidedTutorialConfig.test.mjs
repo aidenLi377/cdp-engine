@@ -5,9 +5,12 @@ import {
   CATEGORY_ITEM_TUTORIAL_VALUES,
   CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
   CATEGORY_ITEM_TUTORIAL_STEPS,
+  COMBINATION_BATCH_TUTORIAL_STEPS,
   DMP_BATCH_TUTORIAL_STEPS,
   DMP_BATCH_TUTORIAL_TAGS,
   GUIDED_TUTORIAL_STEPS,
+  PULL_ANALYSIS_GROUP_TUTORIAL_STEPS,
+  PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_STEPS,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from './guidedTutorialConfig.js'
@@ -117,8 +120,54 @@ test('调整标签后明确提醒点击右下角应用排序', () => {
   assert.match(orderStep.hint, /右下角“应用排序”/)
 })
 
-test('三个内置教程都注册到统一配置中', () => {
-  assert.equal(Object.keys(GUIDED_TUTORIAL_STEPS).length, 3)
+test('六个内置教程都注册到统一配置中', () => {
+  assert.equal(Object.keys(GUIDED_TUTORIAL_STEPS).length, 6)
+})
+
+test('多竞品组合批量教程覆盖三行展开九包与全量执行', () => {
+  const ids = COMBINATION_BATCH_TUTORIAL_STEPS.map(step => step.id)
+  assert.deepEqual(ids, [
+    'combo-open-group',
+    'combo-confirm-group',
+    'combo-open-field',
+    'combo-open-excel',
+    'combo-paste',
+    'combo-create',
+    'combo-start-automation',
+    'combo-select-all',
+    'combo-confirm-run',
+    'combo-wait',
+    'combo-complete',
+  ])
+  for (const step of COMBINATION_BATCH_TUTORIAL_STEPS.slice(0, 4)) {
+    assert.ok(step.target, `${step.id} 应提供明确的高亮目标`)
+    assert.notEqual(step.nonBlocking, true, `${step.id} 应限制用户按指引完成操作`)
+  }
+})
+
+test('拉力分析方案组教程覆盖两个派生方案、字段聚合与批量执行', () => {
+  const ids = PULL_ANALYSIS_GROUP_TUTORIAL_STEPS.map(step => step.id)
+  assert.equal(new Set(ids).size, ids.length)
+  assert.equal(ids[0], 'pull-open-picker-base')
+  assert.ok(ids.includes('pull-duplicate-competitor-node'))
+  assert.ok(ids.includes('pull-bind-own-analysis'))
+  assert.ok(ids.includes('pull-unbind-own-node'))
+  assert.ok(ids.includes('pull-bind-competitor-node'))
+  assert.ok(ids.includes('pull-move-three-solutions'))
+  assert.ok(ids.includes('pull-enter-group'))
+  assert.ok(ids.includes('pull-inspect-group-packages'))
+  assert.ok(ids.includes('pull-explain-aggregation-origin'))
+  assert.ok(ids.includes('pull-run-baseline'))
+  assert.ok(ids.includes('pull-wait-baseline'))
+  assert.ok(ids.includes('pull-inspect-batch-sync'))
+  assert.ok(ids.includes('pull-run-second'))
+  assert.ok(ids.includes('pull-wait-second'))
+  assert.ok(ids.indexOf('pull-wait-baseline') < ids.indexOf('pull-open-batch-analysis'))
+  assert.ok(ids.indexOf('pull-save-batch-competitor') < ids.indexOf('pull-run-second'))
+  assert.equal(ids.at(-1), 'pull-group-complete')
+  assert.equal(PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.folderName, '拉力分析｜本品与竞品浏览转化')
+  assert.equal(PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.baselineCrowdNames.length, 3)
+  assert.equal(PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.finalCrowdNames.length, 3)
 })
 
 test('方案复用教程覆盖制作、一对多字段、发布和两次真实应用', () => {

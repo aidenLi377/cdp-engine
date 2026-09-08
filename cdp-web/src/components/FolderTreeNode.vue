@@ -69,6 +69,7 @@
         v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
         type="button"
         class="folder-batch-badge"
+        :data-tutorial-target="String(folder.id) === String(tutorialBatchFolderId || '') ? 'pull-open-group' : undefined"
         :title="`组合应用：${getBatchCount(folder.id)} 个已发布方案`"
         :aria-label="`${folder.name}可组合应用 ${getBatchCount(folder.id)} 个方案`"
         @click.stop="$emit('batch-apply', folder.id)"
@@ -96,6 +97,7 @@
         :batch-counts="batchCounts"
         :show-batch-badges="showBatchBadges"
         :share-enabled="shareEnabled"
+        :tutorial-batch-folder-id="tutorialBatchFolderId"
         @toggle-expand="(id) => $emit('toggle-expand', id)"
         @select-folder="(id) => $emit('select-folder', id)"
         @batch-apply="(id) => $emit('batch-apply', id)"
@@ -131,6 +133,7 @@ const props = defineProps({
   batchCounts: { type: Object, default: () => ({}) },
   showBatchBadges: { type: Boolean, default: false },
   shareEnabled: { type: Boolean, default: false },
+  tutorialBatchFolderId: { type: String, default: '' },
 })
 
 const emit = defineEmits([

@@ -260,6 +260,9 @@ import { rankCategoryOptions } from '../utils/categoryOptionSearch.js'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import {
   CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
+  PARAMETER_BATCH_TUTORIAL_ID,
+  PARAMETER_BATCH_TUTORIAL_VALUES,
+  PULL_ANALYSIS_GROUP_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
@@ -395,7 +398,7 @@ function applyQuickDateRange(node, field, dateRange) {
 function shouldSyncTutorialTime(node) {
   return isTutorialCategoryItemNode(node)
     || (
-      guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
+      [SOLUTION_REUSE_TUTORIAL_ID, PARAMETER_BATCH_TUTORIAL_ID].includes(guidedTutorialState.taskId)
       && node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
       && props.nodeIndex === 0
     )
@@ -416,9 +419,19 @@ function isTutorialBehaviorField(node, field) {
 }
 
 function getTutorialFieldTarget(node, field) {
-  if (guidedTutorialState.active && guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID) {
+  if (
+    guidedTutorialState.active
+    && [SOLUTION_REUSE_TUTORIAL_ID, PULL_ANALYSIS_GROUP_TUTORIAL_ID, PARAMETER_BATCH_TUTORIAL_ID].includes(guidedTutorialState.taskId)
+  ) {
     if (ctx?.isTutorialSolutionCenter) {
       return `solution-node-${props.nodeIndex}-${field.key}`
+    }
+    if (
+      guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID
+      && node?.packageType === PARAMETER_BATCH_TUTORIAL_VALUES.packageType
+      && props.nodeIndex === 0
+    ) {
+      return `parameter-node-${field.key}`
     }
     if (node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType) {
       const role = props.nodeIndex === 0 ? 'own' : 'competitor'
@@ -438,10 +451,40 @@ function normalizedFieldValues(value) {
 }
 
 function onTutorialFieldChanged(node, field) {
-  if (!guidedTutorialState.active || guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return
+  if (!guidedTutorialState.active) return
   if (node?.packageType !== SOLUTION_REUSE_TUTORIAL_VALUES.packageType) return
   const values = normalizedFieldValues(node.formData?.[field.key])
   const includes = expected => values.includes(expected)
+  if (guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID) {
+    const stepChecks = {
+      'parameter-set-category': props.nodeIndex === 0
+        && field.key === 'leafCates'
+        && includes(PARAMETER_BATCH_TUTORIAL_VALUES.category),
+      'parameter-set-brand': props.nodeIndex === 0
+        && field.key === 'stdBrand'
+        && includes(PARAMETER_BATCH_TUTORIAL_VALUES.initialBrand),
+      'parameter-set-channel': props.nodeIndex === 0
+        && field.key === 'channel'
+        && includes(PARAMETER_BATCH_TUTORIAL_VALUES.channel),
+    }
+    const stepId = Object.keys(stepChecks).find(id => isGuidedTutorialStep(id) && stepChecks[id])
+    if (stepId) completeTutorialStepAfterSelectClose(node, field, stepId)
+    return
+  }
+  if (guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID) {
+    const stepChecks = {
+      'pull-set-own-brand': props.nodeIndex === 2
+        && field.key === 'stdBrand'
+        && includes(SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand),
+      'pull-set-competitor-brand': props.nodeIndex === 2
+        && field.key === 'stdBrand'
+        && includes(SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand),
+    }
+    const stepId = Object.keys(stepChecks).find(id => isGuidedTutorialStep(id) && stepChecks[id])
+    if (stepId) completeTutorialStepAfterSelectClose(node, field, stepId)
+    return
+  }
+  if (guidedTutorialState.taskId !== SOLUTION_REUSE_TUTORIAL_ID) return
   const stepChecks = {
     'set-own-category': props.nodeIndex === 0 && field.key === 'leafCates' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.initialCategory),
     'set-own-brand': props.nodeIndex === 0 && field.key === 'stdBrand' && includes(SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand),
@@ -479,6 +522,27 @@ function onCheckboxGroupChange(field, value, node) {
     && values.includes(SOLUTION_REUSE_TUTORIAL_VALUES.behavior)
   ) {
     completeGuidedTutorialStep('set-own-behavior')
+  }
+  if (
+    guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID
+    && node?.packageType === PARAMETER_BATCH_TUTORIAL_VALUES.packageType
+    && props.nodeIndex === 0
+    && field.key === 'bhv'
+    && values.length === 1
+    && values.includes(PARAMETER_BATCH_TUTORIAL_VALUES.behavior)
+    && isGuidedTutorialStep('parameter-set-purchase')
+  ) {
+    completeGuidedTutorialStep('parameter-set-purchase')
+  }
+  if (
+    guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+    && props.nodeIndex === 2
+    && field.key === 'bhv'
+    && values.length === 1
+    && values.includes('购买')
+    && isGuidedTutorialStep('pull-set-own-purchase')
+  ) {
+    completeGuidedTutorialStep('pull-set-own-purchase')
   }
   onTutorialFieldChanged(node, field)
 }

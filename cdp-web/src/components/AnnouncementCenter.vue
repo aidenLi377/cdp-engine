@@ -1,60 +1,17 @@
 <template>
   <div class="announcement-center">
-    <aside class="announcement-center__rail" aria-label="公告与新手教程">
+    <aside class="announcement-center__rail" aria-label="更新公告">
       <header>
-        <p>PRODUCT LIBRARY</p>
-        <h1>公告与教程</h1>
-        <div class="announcement-center__tabs" role="tablist" aria-label="内容分类">
-          <button
-            v-for="option in kindOptions"
-            :key="option.value"
-            type="button"
-            role="tab"
-            :aria-selected="activeKind === option.value"
-            :class="{ active: activeKind === option.value }"
-            @click="activateKind(option.value)"
-          >
-            {{ option.label }}
-            <span>{{ countKind(option.value) }}</span>
-          </button>
-        </div>
+        <p>PRODUCT UPDATES</p>
+        <h1>更新公告</h1>
+        <span class="announcement-center__count">{{ filteredItems.length }} 条已发布内容</span>
       </header>
 
       <div v-if="loadingList" class="announcement-center__rail-empty">正在读取内容…</div>
       <div v-else-if="!hasRailItems" class="announcement-center__rail-empty">
-        {{ activeKind === 'tutorial' ? '新手教程正在准备中' : '暂时还没有更新公告' }}
+        暂时还没有更新公告
       </div>
       <nav v-else>
-        <button
-          v-if="activeKind === 'tutorial'"
-          type="button"
-          :class="{ active: selectedId === SOLUTION_REUSE_TUTORIAL_ID }"
-          @click="selectBuiltInTutorial(SOLUTION_REUSE_TUTORIAL_ID)"
-        >
-          <span class="announcement-center__version">GUIDED TASK</span>
-          <strong>方案制作 · 共同浏览本品与竞品</strong>
-          <small>约 8–12 分钟 · 产出正式方案</small>
-        </button>
-        <button
-          v-if="activeKind === 'tutorial'"
-          type="button"
-          :class="{ active: selectedId === CATEGORY_ITEM_TUTORIAL_ID }"
-          @click="selectBuiltInTutorial(CATEGORY_ITEM_TUTORIAL_ID)"
-        >
-          <span class="announcement-center__version">GUIDED TASK</span>
-          <strong>类目商品行为 · 7 个商品 ID 自动拆分</strong>
-          <small>约 5 分钟 · 可实际操作</small>
-        </button>
-        <button
-          v-if="activeKind === 'tutorial'"
-          type="button"
-          :class="{ active: selectedId === DMP_BATCH_TUTORIAL_ID }"
-          @click="selectBuiltInTutorial(DMP_BATCH_TUTORIAL_ID)"
-        >
-          <span class="announcement-center__version">GUIDED TASK</span>
-          <strong>达摩盘 · 批量取画像与横向对比</strong>
-          <small>约 1–2 分钟 · 可实际操作</small>
-        </button>
         <button
           v-for="item in filteredItems"
           :key="item.id"
@@ -78,16 +35,7 @@
         </button>
       </div>
 
-      <div v-if="selectedId === CATEGORY_ITEM_TUTORIAL_ID" class="announcement-center__scroll">
-        <TutorialTaskDetail @start="emit('start-tutorial', CATEGORY_ITEM_TUTORIAL_ID)" />
-      </div>
-      <div v-else-if="selectedId === SOLUTION_REUSE_TUTORIAL_ID" class="announcement-center__scroll">
-        <SolutionReuseTutorialDetail @start="emit('start-tutorial', SOLUTION_REUSE_TUTORIAL_ID)" />
-      </div>
-      <div v-else-if="selectedId === DMP_BATCH_TUTORIAL_ID" class="announcement-center__scroll">
-        <DmpBatchTutorialDetail @start="emit('start-tutorial', DMP_BATCH_TUTORIAL_ID)" />
-      </div>
-      <div v-else-if="loadingDetail" class="announcement-center__state">
+      <div v-if="loadingDetail" class="announcement-center__state">
         <span class="announcement-center__loader"></span>
         正在打开内容…
       </div>
@@ -97,8 +45,8 @@
         <button type="button" @click="reload">重新读取</button>
       </div>
       <div v-else-if="!detail" class="announcement-center__state">
-        <strong>{{ activeKind === 'tutorial' ? '新手教程正在准备中' : '暂时还没有更新公告' }}</strong>
-        <span>{{ activeKind === 'tutorial' ? '后续会在这里提供完整的图文与视频操作指南。' : '新版本发布后，会在这里保留完整说明。' }}</span>
+        <strong>暂时还没有更新公告</strong>
+        <span>新版本发布后，会在这里保留完整说明。</span>
       </div>
       <div v-else class="announcement-center__scroll">
         <AnnouncementArticle :announcement="detail" />
@@ -111,15 +59,7 @@
 import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import AnnouncementArticle from './AnnouncementArticle.vue'
-import DmpBatchTutorialDetail from './DmpBatchTutorialDetail.vue'
-import SolutionReuseTutorialDetail from './SolutionReuseTutorialDetail.vue'
-import TutorialTaskDetail from './TutorialTaskDetail.vue'
 import { request } from '../utils/apiClient.js'
-import {
-  CATEGORY_ITEM_TUTORIAL_ID,
-  DMP_BATCH_TUTORIAL_ID,
-  SOLUTION_REUSE_TUTORIAL_ID,
-} from '../utils/guidedTutorialConfig.js'
 
 const props = defineProps({
   initialId: {
@@ -127,21 +67,10 @@ const props = defineProps({
     default: '',
   },
 })
-const emit = defineEmits(['close', 'read-updated', 'start-tutorial'])
-const BUILTIN_TUTORIAL_IDS = new Set([
-  SOLUTION_REUSE_TUTORIAL_ID,
-  CATEGORY_ITEM_TUTORIAL_ID,
-  DMP_BATCH_TUTORIAL_ID,
-])
-
-const kindOptions = [
-  { value: 'announcement', label: '更新公告' },
-  { value: 'tutorial', label: '新手教程' },
-]
+const emit = defineEmits(['close', 'read-updated'])
 const items = ref([])
 const detail = ref(null)
 const selectedId = ref('')
-const activeKind = ref('announcement')
 const loadingList = ref(false)
 const loadingDetail = ref(false)
 const errorMessage = ref('')
@@ -149,16 +78,11 @@ let detailRequestId = 0
 let enterInFlight = null
 let activationCount = 0
 
-const filteredItems = computed(() => items.value.filter((item) => (item.kind || 'announcement') === activeKind.value))
-const hasRailItems = computed(() => activeKind.value === 'tutorial' || filteredItems.value.length > 0)
-
-function countKind(kind) {
-  const remoteCount = items.value.filter((item) => (item.kind || 'announcement') === kind).length
-  return kind === 'tutorial' ? remoteCount + BUILTIN_TUTORIAL_IDS.size : remoteCount
-}
+const filteredItems = computed(() => items.value.filter((item) => (item.kind || 'announcement') === 'announcement'))
+const hasRailItems = computed(() => filteredItems.value.length > 0)
 
 function itemLabel(item) {
-  return (item.kind || 'announcement') === 'tutorial' ? 'GUIDE' : `V${item.version}`
+  return `V${item.version}`
 }
 
 function formatDate(value) {
@@ -177,7 +101,7 @@ async function markAnnouncementRead(id) {
   emit('read-updated', {
     id,
     readAt: optimisticReadAt,
-    unreadCount: items.value.filter((item) => !item.readAt).length,
+    unreadCount: filteredItems.value.filter((item) => !item.readAt).length,
   })
 
   try {
@@ -188,7 +112,7 @@ async function markAnnouncementRead(id) {
     emit('read-updated', {
       id,
       readAt: null,
-      unreadCount: items.value.filter((item) => !item.readAt).length,
+      unreadCount: filteredItems.value.filter((item) => !item.readAt).length,
     })
   }
 }
@@ -198,14 +122,11 @@ async function loadItems(preferredId = '') {
   errorMessage.value = ''
   try {
     items.value = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
-    const preferredBuiltIn = BUILTIN_TUTORIAL_IDS.has(preferredId)
-    const preferred = preferredId ? items.value.find((item) => item.id === preferredId) : null
-    if (preferredBuiltIn) activeKind.value = 'tutorial'
-    else if (preferred) activeKind.value = preferred.kind || 'announcement'
-    const nextId = (preferredBuiltIn ? preferredId : '')
-      || preferred?.id
+    const preferred = preferredId
+      ? filteredItems.value.find((item) => item.id === preferredId)
+      : null
+    const nextId = preferred?.id
       || (filteredItems.value.some((item) => item.id === selectedId.value) ? selectedId.value : '')
-      || (activeKind.value === 'tutorial' ? CATEGORY_ITEM_TUTORIAL_ID : '')
       || filteredItems.value[0]?.id
       || ''
     if (nextId) await selectAnnouncement(nextId)
@@ -214,7 +135,7 @@ async function loadItems(preferredId = '') {
       detail.value = null
     }
   } catch (error) {
-    errorMessage.value = error.message || '公告与教程读取失败'
+    errorMessage.value = error.message || '更新公告读取失败'
   } finally {
     loadingList.value = false
   }
@@ -222,10 +143,6 @@ async function loadItems(preferredId = '') {
 
 async function selectAnnouncement(id) {
   if (!id) return
-  if (BUILTIN_TUTORIAL_IDS.has(id)) {
-    selectBuiltInTutorial(id)
-    return
-  }
   selectedId.value = id
   const requestId = ++detailRequestId
   loadingDetail.value = true
@@ -239,29 +156,6 @@ async function selectAnnouncement(id) {
     if (requestId === detailRequestId) errorMessage.value = error.message || '正文读取失败'
   } finally {
     if (requestId === detailRequestId) loadingDetail.value = false
-  }
-}
-
-function selectBuiltInTutorial(id = CATEGORY_ITEM_TUTORIAL_ID) {
-  detailRequestId += 1
-  selectedId.value = BUILTIN_TUTORIAL_IDS.has(id) ? id : CATEGORY_ITEM_TUTORIAL_ID
-  detail.value = null
-  loadingDetail.value = false
-  errorMessage.value = ''
-}
-
-function activateKind(kind) {
-  if (activeKind.value === kind) return
-  activeKind.value = kind
-  if (kind === 'tutorial') {
-    selectBuiltInTutorial()
-    return
-  }
-  const first = filteredItems.value[0]
-  if (first) void selectAnnouncement(first.id)
-  else {
-    selectedId.value = ''
-    detail.value = null
   }
 }
 
@@ -294,6 +188,7 @@ onActivated(() => {
 .announcement-center__rail header { padding: 27px 28px 18px; border-bottom: 1px solid var(--ui-divider); }
 .announcement-center__rail header > p { margin: 0 0 8px; color: var(--ui-accent); font: 700 8px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .17em; }
 .announcement-center__rail header h1 { margin: 0; font-size: 20px; font-weight: 620; letter-spacing: -.04em; }
+.announcement-center__count { display: block; margin-top: 12px; color: var(--ui-text-tertiary); font-size: 9px; }
 .announcement-center__tabs { display: flex; gap: 22px; margin-top: 18px; border-bottom: 1px solid var(--ui-divider); }
 .announcement-center__tabs button { position: relative; display: inline-flex; height: 35px; appearance: none; align-items: center; gap: 6px; padding: 0 1px; color: var(--ui-text-tertiary); font: inherit; font-size: 10px; background: transparent; border: 0; border-radius: 0; cursor: pointer; transition: color 150ms ease; }
 .announcement-center__tabs button::after { position: absolute; right: 50%; bottom: -1px; left: 50%; height: 2px; content: ''; background: var(--ui-accent); border-radius: 2px 2px 0 0; transition: right 160ms ease, left 160ms ease; }

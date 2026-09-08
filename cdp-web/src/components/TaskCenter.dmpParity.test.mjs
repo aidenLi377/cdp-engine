@@ -224,6 +224,12 @@ test('DMP tutorial highlights each required tag row with the displayed name', ()
   assert.match(comparisonSource, /Rebase 人群占比/)
 })
 
+test('DMP tutorial starts from a completely clean tag selection', () => {
+  const preparation = source.match(/function prepareDmpTutorialWorkspace\(\) \{[\s\S]*?\n\}/)?.[0] || ''
+  assert.match(preparation, /selectedTags\.value = \[\]/)
+  assert.doesNotMatch(preparation, /selectedTags\.value\.filter/)
+})
+
 test('tutorial recovers when a temporary operation surface is dismissed', () => {
   assert.match(tutorialOverlaySource, /targetRecoveryStepMap/)
   assert.match(tutorialOverlaySource, /'confirm-dmp-batch': 'open-dmp-batch'/)

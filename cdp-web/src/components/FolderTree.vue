@@ -2,7 +2,7 @@
   <div class="folder-tree">
     <div class="folder-tree-head">
       <span class="display-body-light" style="font-size:11px">方案文件夹</span>
-      <el-button v-if="!readOnly" class="folder-tree-add" text size="small" @click.stop="startCreate(null)">
+      <el-button v-if="!readOnly" class="folder-tree-add" text size="small" data-tutorial-target="pull-create-folder" @click.stop="startCreate(null, true)">
         + 新建
       </el-button>
     </div>
@@ -73,6 +73,7 @@
           v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
           type="button"
           class="folder-batch-badge"
+          :data-tutorial-target="String(folder.id) === String(tutorialBatchFolderId || '') ? 'pull-open-group' : undefined"
           :title="`组合应用：${getBatchCount(folder.id)} 个已发布方案`"
           :aria-label="`${folder.name}可组合应用 ${getBatchCount(folder.id)} 个方案`"
           @click.stop="openBatchFolder(folder.id)"
@@ -98,6 +99,7 @@
           :batch-counts="batchCounts"
           :show-batch-badges="showBatchBadges"
           :share-enabled="shareEnabled"
+          :tutorial-batch-folder-id="tutorialBatchFolderId"
           @toggle-expand="toggleExpand"
           @select-folder="selectFolder"
           @batch-apply="openBatchFolder"
@@ -131,6 +133,7 @@
         v-model="createName"
         size="small"
         class="intercom-input"
+        data-tutorial-target="pull-folder-name"
         placeholder="文件夹名称"
         @keyup.enter="finishCreate"
         @keyup.esc="cancelCreate"
@@ -171,9 +174,10 @@ const props = defineProps({
   batchCounts: { type: Object, default: () => ({}) },
   showBatchBadges: { type: Boolean, default: false },
   shareEnabled: { type: Boolean, default: false },
+  tutorialBatchFolderId: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply', 'share-folder'])
+const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply', 'share-folder', 'tutorial-create-started'])
 
 const expandedIds = ref(new Set())
 const selectedFolderId = ref(null)
@@ -218,10 +222,11 @@ function shareFolder(folder) {
   emit('share-folder', folder)
 }
 
-function startCreate(parentId) {
+function startCreate(parentId, tutorialTrigger = false) {
   if (props.readOnly) return
   creatingParentId.value = parentId
   createName.value = ''
+  if (tutorialTrigger) emit('tutorial-create-started')
   nextTick(() => {
     createInputRef.value?.focus?.()
   })
@@ -236,9 +241,10 @@ function finishCreate() {
   if (props.readOnly) return
   const name = createName.value.trim()
   if (!name) return
+  const parentId = creatingParentId.value
   contextMenu.value.visible = false
   cancelCreate()
-  emit('folders-changed', { action: 'create', parentId: creatingParentId.value, name })
+  emit('folders-changed', { action: 'create', parentId, name })
 }
 
 function startEdit(id, currentName) {

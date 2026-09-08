@@ -58,6 +58,10 @@ from .solution_store import (
     SolutionStore,
 )
 from .task_store import TaskNotFoundError, TaskStore
+from .tutorial_progress_store import (
+    TutorialProgressStore,
+    TutorialProgressValidationError,
+)
 from .user_store import (
     InvalidCurrentPasswordError,
     InviteInvalidError,
@@ -142,6 +146,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     announcement_store = AnnouncementStore(
         db_path, app.config["ANNOUNCEMENT_UPLOAD_DIR"]
     )
+    tutorial_progress_store = TutorialProgressStore(db_path)
 
     if production:
         cors_origins = [item.strip() for item in os.environ.get("CORS_ORIGINS", "").split(",") if item.strip()]
@@ -174,6 +179,7 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
         dimension_store,
         feedback_store,
         announcement_store,
+        tutorial_progress_store,
     )
     return app, engine
 
@@ -190,6 +196,7 @@ def register_routes(
     dimension_store: DimensionStore,
     feedback_store: FeedbackStore,
     announcement_store: AnnouncementStore,
+    tutorial_progress_store: TutorialProgressStore,
 ) -> None:
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
@@ -877,6 +884,20 @@ def register_routes(
     @app.route("/api/announcements/read-all", methods=["POST"])
     def mark_all_announcements_read():
         return jsonify(announcement_store.mark_all_read(g.current_user["id"]))
+
+    @app.route("/api/tutorial-progress")
+    def list_tutorial_progress():
+        return jsonify(tutorial_progress_store.list_for_user(g.current_user["id"]))
+
+    @app.route("/api/tutorial-progress/<tutorial_id>/complete", methods=["POST"])
+    def complete_tutorial(tutorial_id: str):
+        try:
+            item = tutorial_progress_store.mark_complete(
+                g.current_user["id"], tutorial_id
+            )
+        except TutorialProgressValidationError as exc:
+            return error_response("INVALID_TUTORIAL_ID", str(exc), 400)
+        return jsonify(item)
 
     @app.route("/api/announcement-assets/<asset_id>")
     def announcement_asset(asset_id: str):

@@ -6,7 +6,7 @@
         <h1>多个人群包，怎样一次取画像并完成横向对比？</h1>
         <p>用一次真实的达摩盘复盘任务，学会批量取数、看懂两种占比、整理顺序，并把结果直接复制到 Excel。</p>
       </div>
-      <button type="button" @click="emit('start')">开始实操教程 <span aria-hidden="true">→</span></button>
+      <button type="button" data-tutorial-start @click="emit('start')">开始 2 分钟实操 <span aria-hidden="true">→</span></button>
     </header>
 
     <section class="dmp-tutorial-detail__problem">
@@ -79,7 +79,7 @@
 
     <aside class="dmp-tutorial-detail__start">
       <div><span>开始前提醒</span><strong>请先登录达摩盘，并确认任务执行器已连接</strong><p>教程会执行真实取数；已有任务记录不会被清空。</p></div>
-      <button type="button" @click="emit('start')">开始批量取画像</button>
+      <button type="button" data-tutorial-start @click="emit('start')">开始批量取画像</button>
     </aside>
   </article>
 </template>

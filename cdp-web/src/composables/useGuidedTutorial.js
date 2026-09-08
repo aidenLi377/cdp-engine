@@ -4,8 +4,11 @@ import {
   CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
   DMP_BATCH_TUTORIAL_TAGS,
   GUIDED_TUTORIAL_STEPS,
+  PARAMETER_BATCH_TUTORIAL_VALUES,
+  PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
+import { recordTutorialCompletion } from '../utils/tutorialProgress.js'
 
 const tutorialState = reactive({
   active: false,
@@ -56,6 +59,41 @@ const tutorialState = reactive({
     solutionStructureChanged: false,
     copiedNodeId: '',
     solutionOperator: '',
+    pullBaseSolutionId: '',
+    pullOwnDraftId: '',
+    pullOwnSolutionId: '',
+    pullCompetitorDraftId: '',
+    pullCompetitorSolutionId: '',
+    pullFolderId: '',
+    pullFolderMemberIds: [],
+    pullNodeCount: 0,
+    pullOperators: [],
+    pullBatchStatus: 'idle',
+    pullBatchCompletedCount: 0,
+    pullBatchFailedNames: [],
+    pullBatchError: '',
+    pullBatchCategoryApplied: false,
+    pullBatchCompetitorApplied: false,
+    pullBatchCompatibility: [],
+    pullBatchPackageNames: [],
+    pullVisitedPackageIndexes: [],
+    pullBatchRound: '',
+    pullBaselineStatus: 'idle',
+    pullBaselineCompletedCount: 0,
+    pullBaselineFailedNames: [],
+    pullBaselineError: '',
+    pullSecondStatus: 'idle',
+    pullSecondCompletedCount: 0,
+    pullSecondFailedNames: [],
+    pullSecondError: '',
+    parameterBatchRows: [],
+    parameterBatchPackageNames: [],
+    parameterBatchStatus: 'idle',
+    parameterBatchCompletedCount: 0,
+    parameterBatchFailedNames: [],
+    parameterBatchError: '',
+    comboCompletedCount: 0,
+    comboError: '',
   },
 })
 
@@ -108,6 +146,41 @@ function resetContext() {
     solutionStructureChanged: false,
     copiedNodeId: '',
     solutionOperator: '',
+    pullBaseSolutionId: '',
+    pullOwnDraftId: '',
+    pullOwnSolutionId: '',
+    pullCompetitorDraftId: '',
+    pullCompetitorSolutionId: '',
+    pullFolderId: '',
+    pullFolderMemberIds: [],
+    pullNodeCount: 0,
+    pullOperators: [],
+    pullBatchStatus: 'idle',
+    pullBatchCompletedCount: 0,
+    pullBatchFailedNames: [],
+    pullBatchError: '',
+    pullBatchCategoryApplied: false,
+    pullBatchCompetitorApplied: false,
+    pullBatchCompatibility: [],
+    pullBatchPackageNames: [],
+    pullVisitedPackageIndexes: [],
+    pullBatchRound: '',
+    pullBaselineStatus: 'idle',
+    pullBaselineCompletedCount: 0,
+    pullBaselineFailedNames: [],
+    pullBaselineError: '',
+    pullSecondStatus: 'idle',
+    pullSecondCompletedCount: 0,
+    pullSecondFailedNames: [],
+    pullSecondError: '',
+    parameterBatchRows: [],
+    parameterBatchPackageNames: [],
+    parameterBatchStatus: 'idle',
+    parameterBatchCompletedCount: 0,
+    parameterBatchFailedNames: [],
+    parameterBatchError: '',
+    comboCompletedCount: 0,
+    comboError: '',
   })
 }
 
@@ -153,16 +226,26 @@ export function updateGuidedTutorialContext(patch) {
 }
 
 export function finishGuidedTutorial() {
+  if (!tutorialState.active || tutorialState.stepIndex !== steps.value.length - 1) return false
+  const context = tutorialState.context
+  const resultChecks = {
+    'tutorial-complete': context.automationStatus === 'success',
+    'dmp-tutorial-complete': context.batchStatus === 'completed' && context.comparisonCopied === true,
+    'solution-tutorial-complete': context.firstAutomationStatus === 'success' && context.secondAutomationStatus === 'success',
+    'pull-group-complete': context.pullBaselineStatus === 'completed' && context.pullBaselineCompletedCount === 3
+      && context.pullSecondStatus === 'completed' && context.pullSecondCompletedCount === 3,
+    'parameter-batch-complete': context.parameterBatchStatus === 'completed' && context.parameterBatchCompletedCount === 4,
+    'combo-complete': context.comboCompletedCount === 9 && !context.comboError,
+  }
+  if (resultChecks[currentStep.value?.id] !== true) return false
   const completedTaskId = tutorialState.taskId
-  try {
-    window.localStorage.setItem(
-      `guided-tutorial.completed.${completedTaskId}`,
-      new Date().toISOString(),
-    )
-  } catch {
-    // Completion tracking is optional; the tutorial itself must still finish.
+  if (completedTaskId) {
+    void recordTutorialCompletion(completedTaskId).catch(() => {
+      // Progress synchronization must never prevent the user from finishing the tutorial.
+    })
   }
   stopGuidedTutorial()
+  return true
 }
 
 export function useGuidedTutorial() {
@@ -173,6 +256,8 @@ export function useGuidedTutorial() {
     productIds: CATEGORY_ITEM_TUTORIAL_PRODUCT_IDS,
     dmpTags: DMP_BATCH_TUTORIAL_TAGS,
     solutionValues: SOLUTION_REUSE_TUTORIAL_VALUES,
+    pullAnalysisValues: PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
+    parameterBatchValues: PARAMETER_BATCH_TUTORIAL_VALUES,
     start: startGuidedTutorial,
     stop: stopGuidedTutorial,
     finish: finishGuidedTutorial,

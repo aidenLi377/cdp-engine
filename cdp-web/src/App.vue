@@ -62,6 +62,20 @@
 
         <div class="app-shell-account">
           <button
+            class="app-tutorial-link"
+            :class="{ active: appMode === 'tutorials', 'is-complete': tutorialsComplete }"
+            type="button"
+            :title="tutorialsComplete ? '打开新手教程（已全部完成）' : '打开新手教程'"
+            :aria-label="tutorialsComplete ? '打开新手教程，全部 7 项已完成' : `打开新手教程，已完成 ${tutorialMilestoneCount}/${TUTORIAL_MILESTONE_TOTAL}`"
+            @click="openTutorialCenter"
+          >
+            <el-icon><Reading /></el-icon>
+            <template v-if="!tutorialsComplete">
+              <span>教程</span>
+              <small>{{ tutorialMilestoneCount }}/{{ TUTORIAL_MILESTONE_TOTAL }}</small>
+            </template>
+          </button>
+          <button
             class="app-announcement-link"
             :class="{ active: appMode === 'announcements' }"
             type="button"
@@ -122,12 +136,19 @@
             :is-system-owner="Boolean(currentUser?.isSystemOwner)"
             @current-user-updated="handleCurrentUserUpdated"
           />
+          <TutorialCenter
+            v-else-if="appMode === 'tutorials'"
+            :initial-tutorial-id="tutorialCenterInitialId"
+            :focus-start-token="tutorialCenterFocusToken"
+            :celebration-token="tutorialCenterCelebrationToken"
+            @close="closeTutorialCenter"
+            @start-tutorial="handleStartTutorial"
+          />
           <AnnouncementCenter
             v-else-if="appMode === 'announcements'"
             :initial-id="selectedAnnouncementId"
             @close="closeAnnouncementCenter"
             @read-updated="handleAnnouncementRead"
-            @start-tutorial="handleStartTutorial"
           />
         </KeepAlive>
       </main>
@@ -139,6 +160,12 @@
         @updated="handleProfileUpdated"
       />
       <FeedbackDrawer :open="feedbackOpen" @close="feedbackOpen = false" />
+      <TutorialWelcomeDialog
+        :open="tutorialWelcomeOpen"
+        :progress-items="tutorialProgressItems"
+        @dismiss="dismissTutorialWelcome"
+        @experience="handleTutorialWelcomeExperience"
+      />
       <GuidedTutorialOverlay />
     </div>
   </el-config-provider>
@@ -147,12 +174,13 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Bell, ChatDotRound } from '@element-plus/icons-vue'
+import { Bell, ChatDotRound, Reading } from '@element-plus/icons-vue'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import FeedbackDrawer from './components/FeedbackDrawer.vue'
 import GuidedTutorialOverlay from './components/GuidedTutorialOverlay.vue'
+import TutorialWelcomeDialog from './components/TutorialWelcomeDialog.vue'
 import {
   completeGuidedTutorialStep,
   isGuidedTutorialStep,
@@ -168,16 +196,26 @@ import {
   readSessionWorkspace,
   writeSessionWorkspace,
 } from './utils/sessionWorkspace.js'
+import {
+  TUTORIAL_MILESTONE_TOTAL,
+  becameAllTutorialsComplete,
+  countCompletedMilestones,
+} from './utils/tutorialCatalog.js'
+import {
+  TUTORIAL_PROGRESS_EVENT,
+  fetchTutorialProgress,
+} from './utils/tutorialProgress.js'
 
 const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
 const SolutionCenter = defineAsyncComponent(() => import('./components/SolutionCenter.vue'))
 const TaskCenter = defineAsyncComponent(() => import('./components/TaskCenter.vue'))
 const AdminCenter = defineAsyncComponent(() => import('./components/AdminCenter.vue'))
+const TutorialCenter = defineAsyncComponent(() => import('./components/TutorialCenter.vue'))
 const AnnouncementCenter = defineAsyncComponent(() => import('./components/AnnouncementCenter.vue'))
 
 const HEALTH_FAILURE_THRESHOLD = 3
 const APP_MODE_SESSION_KEY = 'app-mode.v1'
-const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center', 'announcements'])
+const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center', 'tutorials', 'announcements'])
 
 const appMode = ref('workbench')
 const backendOnline = ref(true)
@@ -186,8 +224,14 @@ const currentUser = ref(null)
 const profileOpen = ref(false)
 const feedbackOpen = ref(false)
 const announcementUnreadCount = ref(0)
+const tutorialProgressItems = ref([])
+const tutorialWelcomeOpen = ref(false)
+const tutorialCenterInitialId = ref('')
+const tutorialCenterFocusToken = ref(0)
+const tutorialCenterCelebrationToken = ref(0)
 const selectedAnnouncementId = ref('')
 const announcementReturnMode = ref('workbench')
+const tutorialReturnMode = ref('workbench')
 const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
@@ -198,6 +242,31 @@ let announcementCheckInFlight = false
 let announcementStateRevision = 0
 let isDisposed = false
 let consecutiveBackendFailures = 0
+let tutorialWelcomeTimer = null
+
+const TUTORIAL_WELCOME_VERSION = 'login-v2'
+
+function tutorialWelcomeStorageKey(userId) {
+  return `xdata:tutorial-welcome:${TUTORIAL_WELCOME_VERSION}:${String(userId || '')}`
+}
+
+function hasDismissedTutorialWelcome(userId) {
+  if (!userId) return true
+  try {
+    return window.sessionStorage.getItem(tutorialWelcomeStorageKey(userId)) === 'read'
+  } catch {
+    return false
+  }
+}
+
+function rememberTutorialWelcomeRead(userId) {
+  if (!userId) return
+  try {
+    window.sessionStorage.setItem(tutorialWelcomeStorageKey(userId), 'read')
+  } catch {
+    // 浏览器禁用本地存储时，仍允许用户在当前登录期间关闭提示。
+  }
+}
 
 const userInitial = computed(() => {
   const label = currentUser.value?.displayName || currentUser.value?.username || 'U'
@@ -206,6 +275,13 @@ const userInitial = computed(() => {
 
 const canAccessAdmin = computed(() =>
   ['super_admin', 'config_admin'].includes(currentUser.value?.role),
+)
+
+const tutorialMilestoneCount = computed(() =>
+  countCompletedMilestones(tutorialProgressItems.value),
+)
+const tutorialsComplete = computed(() =>
+  tutorialMilestoneCount.value >= TUTORIAL_MILESTONE_TOTAL,
 )
 
 function canUseAppMode(mode, user = currentUser.value) {
@@ -299,6 +375,7 @@ async function checkSession() {
     if (previousAuthState !== 'authenticated' || previousUserId !== data.user?.id) {
       restoreAppMode(data.user)
       void refreshAnnouncementState()
+      void refreshTutorialProgress({ offerWelcome: true })
     }
   } catch {
     markBackendFailure()
@@ -314,10 +391,14 @@ async function checkSession() {
 
 function handleAuthenticated(user) {
   markBackendSuccess()
+  clearTimeout(tutorialWelcomeTimer)
+  tutorialWelcomeOpen.value = false
+  try { window.sessionStorage.removeItem(tutorialWelcomeStorageKey(user.id)) } catch { /* Session-only fallback. */ }
   currentUser.value = user
   authState.value = 'authenticated'
   restoreAppMode(user)
   void refreshAnnouncementState()
+  void refreshTutorialProgress({ offerWelcome: true })
   if (inviteToken.value) {
     window.history.replaceState({}, '', window.location.pathname)
     inviteToken.value = ''
@@ -342,13 +423,94 @@ async function refreshAnnouncementState() {
   try {
     const items = await request('/api/announcements', { params: { limit: 100 }, cache: 'no-store' })
     if (requestedRevision === announcementStateRevision) {
-      announcementUnreadCount.value = items.filter((item) => !item.readAt).length
+      announcementUnreadCount.value = items.filter(
+        (item) => (item.kind || 'announcement') === 'announcement' && !item.readAt,
+      ).length
     }
   } catch {
     // 公告读取失败不应阻断用户进入核心工作区。
   } finally {
     announcementCheckInFlight = false
   }
+}
+
+function scheduleTutorialWelcome() {
+  clearTimeout(tutorialWelcomeTimer)
+  const userId = currentUser.value?.id
+  if (
+    !userId
+    || hasDismissedTutorialWelcome(userId)
+    || tutorialMilestoneCount.value >= TUTORIAL_MILESTONE_TOTAL
+  ) return
+
+  tutorialWelcomeTimer = window.setTimeout(() => {
+    if (
+      authState.value === 'authenticated'
+      && currentUser.value?.id === userId
+      && !hasDismissedTutorialWelcome(userId)
+    ) {
+      tutorialWelcomeOpen.value = true
+      rememberTutorialWelcomeRead(userId)
+    }
+  }, 420)
+}
+
+async function refreshTutorialProgress({ offerWelcome = false } = {}) {
+  if (authState.value !== 'authenticated') return
+  const requestedUserId = currentUser.value?.id
+  try {
+    const items = await fetchTutorialProgress()
+    if (authState.value !== 'authenticated' || currentUser.value?.id !== requestedUserId) return
+    tutorialProgressItems.value = items
+    if (offerWelcome) scheduleTutorialWelcome()
+  } catch {
+    // 学习进度读取失败不应阻断用户进入核心工作区。
+  }
+}
+
+function handleTutorialProgressChanged(event) {
+  const item = event.detail
+  if (!item?.tutorialId) {
+    void refreshTutorialProgress()
+    return
+  }
+  const nextItems = [
+    item,
+    ...tutorialProgressItems.value.filter((entry) => entry.tutorialId !== item.tutorialId),
+  ]
+  const shouldCelebrate = becameAllTutorialsComplete(tutorialProgressItems.value, nextItems)
+  tutorialProgressItems.value = nextItems
+  if (!shouldCelebrate) return
+
+  tutorialWelcomeOpen.value = false
+  tutorialCenterInitialId.value = ''
+  if (appMode.value !== 'tutorials') tutorialReturnMode.value = appMode.value
+  tutorialCenterCelebrationToken.value += 1
+  appMode.value = 'tutorials'
+}
+
+function openTutorialCenter() {
+  tutorialWelcomeOpen.value = false
+  if (appMode.value !== 'tutorials') tutorialReturnMode.value = appMode.value
+  appMode.value = 'tutorials'
+}
+
+function dismissTutorialWelcome() {
+  rememberTutorialWelcomeRead(currentUser.value?.id)
+  tutorialWelcomeOpen.value = false
+}
+
+function handleTutorialWelcomeExperience() {
+  tutorialWelcomeOpen.value = false
+  tutorialCenterInitialId.value = ''
+  openTutorialCenter()
+}
+
+function closeTutorialCenter() {
+  const nextMode = canUseAppMode(tutorialReturnMode.value) && tutorialReturnMode.value !== 'tutorials'
+    ? tutorialReturnMode.value
+    : 'workbench'
+  appMode.value = nextMode
 }
 
 function openAnnouncementCenter(id = '') {
@@ -366,6 +528,7 @@ function closeAnnouncementCenter() {
 
 function handleStartTutorial(taskId) {
   if (!startGuidedTutorial(taskId)) return
+  tutorialCenterInitialId.value = ''
   selectedAnnouncementId.value = ''
   appMode.value = 'workbench'
 }
@@ -377,15 +540,22 @@ function handleTaskCenterTutorialClick() {
 }
 
 function handleSolutionCenterTutorialClick() {
-  if (isGuidedTutorialStep('open-solution-center')) {
-    completeGuidedTutorialStep('open-solution-center')
-  }
+  const stepId = [
+    'open-solution-center',
+    'pull-open-center-own',
+    'pull-open-center-competitor',
+  ].find((id) => isGuidedTutorialStep(id))
+  if (stepId) completeGuidedTutorialStep(stepId)
 }
 
 function handleWorkbenchTutorialClick() {
-  if (isGuidedTutorialStep('open-workbench-after-publish')) {
-    completeGuidedTutorialStep('open-workbench-after-publish')
-  }
+  const stepId = [
+    'open-workbench-after-publish',
+    'parameter-open-workbench',
+    'pull-open-workbench-competitor',
+    'pull-open-workbench-group',
+  ].find((id) => isGuidedTutorialStep(id))
+  if (stepId) completeGuidedTutorialStep(stepId)
 }
 
 function handleAnnouncementRead(state) {
@@ -403,9 +573,14 @@ function cancelInviteRegistration() {
 }
 
 function handleAuthRequired() {
+  clearTimeout(tutorialWelcomeTimer)
+  tutorialWelcomeOpen.value = false
+  tutorialCenterInitialId.value = ''
+  tutorialCenterCelebrationToken.value = 0
   profileOpen.value = false
   feedbackOpen.value = false
   announcementUnreadCount.value = 0
+  tutorialProgressItems.value = []
   currentUser.value = null
   authState.value = 'guest'
   clearWorkspaceSession()
@@ -428,9 +603,14 @@ async function logout() {
   try {
     await fetchWithTimeout('/api/auth/logout', { method: 'POST' })
   } finally {
+    clearTimeout(tutorialWelcomeTimer)
+    tutorialWelcomeOpen.value = false
+    tutorialCenterInitialId.value = ''
+    tutorialCenterCelebrationToken.value = 0
     profileOpen.value = false
     feedbackOpen.value = false
     announcementUnreadCount.value = 0
+    tutorialProgressItems.value = []
     stopAuthenticatedLoops()
     resetConfigVersionState()
     clearWorkspaceSession()
@@ -453,6 +633,7 @@ watch(appMode, (mode) => {
 onMounted(async () => {
   window.addEventListener('cdp:auth-required', handleAuthRequired)
   window.addEventListener('cdp:announcements-changed', refreshAnnouncementState)
+  window.addEventListener(TUTORIAL_PROGRESS_EVENT, handleTutorialProgressChanged)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await checkSession()
   if (!isDisposed && authState.value === 'authenticated') startAuthenticatedLoops()
@@ -460,8 +641,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   isDisposed = true
+  clearTimeout(tutorialWelcomeTimer)
   window.removeEventListener('cdp:auth-required', handleAuthRequired)
   window.removeEventListener('cdp:announcements-changed', refreshAnnouncementState)
+  window.removeEventListener(TUTORIAL_PROGRESS_EVENT, handleTutorialProgressChanged)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopAuthenticatedLoops()
 })
@@ -502,6 +685,7 @@ onBeforeUnmount(() => {
 }
 
 .app-feedback-link,
+.app-tutorial-link,
 .app-announcement-link {
   display: inline-flex;
   height: 28px;
@@ -519,6 +703,8 @@ onBeforeUnmount(() => {
 }
 
 .app-feedback-link:hover,
+.app-tutorial-link:hover,
+.app-tutorial-link.active,
 .app-announcement-link:hover,
 .app-announcement-link.active {
   color: #fff;
@@ -528,9 +714,34 @@ onBeforeUnmount(() => {
 }
 
 .app-feedback-link:focus-visible,
+.app-tutorial-link:focus-visible,
 .app-announcement-link:focus-visible {
   outline: 2px solid var(--ui-accent-ring);
   outline-offset: 2px;
+}
+
+.app-tutorial-link small {
+  min-width: 27px;
+  padding: 3px 5px;
+  color: #176fc2;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  background: #eaf4ff;
+  border-radius: 999px;
+}
+
+.app-tutorial-link.is-complete {
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+}
+
+.app-tutorial-link:hover small,
+.app-tutorial-link.active small {
+  color: #10243d;
+  background: #fff;
 }
 
 .app-announcement-icon {

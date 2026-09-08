@@ -7,20 +7,21 @@ import { fileURLToPath } from 'node:url'
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const srcDir = dirname(currentDir)
 const appVue = readFileSync(join(srcDir, 'App.vue'), 'utf8')
-const announcementVue = readFileSync(join(currentDir, 'AnnouncementCenter.vue'), 'utf8')
+const tutorialCenterVue = readFileSync(join(currentDir, 'TutorialCenter.vue'), 'utf8')
 const normalModeVue = readFileSync(join(currentDir, 'NormalMode.vue'), 'utf8')
 const solutionCenterVue = readFileSync(join(currentDir, 'SolutionCenter.vue'), 'utf8')
 const dynamicFormVue = readFileSync(join(currentDir, 'DynamicForm.vue'), 'utf8')
 const customFieldDialogVue = readFileSync(join(currentDir, 'CustomFieldEditDialog.vue'), 'utf8')
 const overlayVue = readFileSync(join(currentDir, 'GuidedTutorialOverlay.vue'), 'utf8')
 
-test('方案复用教程从公告入口跨越数据引擎人群圈包和数据引擎取数模板', () => {
-  assert.match(announcementVue, /SOLUTION_REUSE_TUTORIAL_ID/)
-  assert.match(announcementVue, /方案制作 · 共同浏览本品与竞品/)
+test('方案复用教程从独立教程中心跨越数据引擎人群圈包和数据引擎取数模板', () => {
+  assert.match(tutorialCenterVue, /SOLUTION_REUSE_TUTORIAL_ID/)
+  assert.match(tutorialCenterVue, /创建「共同浏览」基础方案|创建共同浏览方案/)
   assert.match(appVue, /data-tutorial-target="open-solution-center"/)
   assert.match(appVue, /data-tutorial-target="open-workbench"/)
-  assert.match(appVue, /completeGuidedTutorialStep\('open-solution-center'\)/)
-  assert.match(appVue, /completeGuidedTutorialStep\('open-workbench-after-publish'\)/)
+  assert.match(appVue, /'open-solution-center'/)
+  assert.match(appVue, /'open-workbench-after-publish'/)
+  assert.match(appVue, /completeGuidedTutorialStep\(stepId\)/)
 })
 
 test('数据引擎人群圈包只在真实草稿和真实自动化成功后推进方案教程', () => {
@@ -55,6 +56,14 @@ test('教程高亮覆盖配置字段、字段编辑和误触恢复', () => {
   assert.match(overlayVue, /'save-analysis-category': 'open-analysis-field'/)
   assert.match(overlayVue, /'change-competitor-brand': 'open-competitor-field'/)
   assert.match(overlayVue, /'confirm-publish-tutorial-solution': 'publish-tutorial-solution'/)
+})
+
+test('形成一对多绑定时会展开第二个节点并把类目滚动到编辑区中央', () => {
+  assert.match(solutionCenterVue, /revealTutorialField\('solution-node-1-leafCates', 1\)/)
+  assert.match(solutionCenterVue, /if \(node\?\.collapsed\)/)
+  assert.match(solutionCenterVue, /node\.collapsed = false/)
+  assert.match(solutionCenterVue, /target\?\.closest\('\.solution-node-scroll'\)/)
+  assert.match(solutionCenterVue, /scrollParent\.scrollTo\(\{ top: Math\.max\(0, nextTop\)/)
 })
 
 test('教程搜索选择器把弹出选项置于遮罩之上，并在选中后先关闭再进入下一步', () => {
@@ -109,6 +118,21 @@ test('共同浏览步骤高亮完整的交并差控制区，并给整个系统�
   assert.match(overlayVue, /scheduleTargetScrollCorrections/)
   assert.match(overlayVue, /targetIsClipped/)
   assert.doesNotMatch(overlayVue, /guided-tutorial-active/)
+})
+
+test('Excel 批量弹窗内的教程卡会避让整个弹窗并限制自身高度', () => {
+  assert.match(overlayVue, /is-dialog-companion/)
+  assert.match(overlayVue, /targetElement\?\.closest\?\.\('\.el-dialog, \.el-message-box'\)/)
+  assert.match(overlayVue, /availableLeft/)
+  assert.match(overlayVue, /availableRight/)
+  assert.match(overlayVue, /max-height: calc\(100vh - 32px\)/)
+})
+
+test('进入共同浏览确认步骤时会重新同步默认交集，无需手动来回切换', () => {
+  assert.match(normalModeVue, /currentStep: guidedTutorialStep/)
+  assert.match(normalModeVue, /\(\) => guidedTutorialStep\.value\?\.id/)
+  assert.match(normalModeVue, /await nextTick\(\)[\s\S]*?syncGuidedTutorialContext\(\)[\s\S]*?flush: 'post'/)
+  assert.match(normalModeVue, /solutionOperator: tutorialNodes\[1\]\?\.operator \|\| ''/)
 })
 
 test('第四章用单独信息块突出少量改参复用整套圈人逻辑', () => {

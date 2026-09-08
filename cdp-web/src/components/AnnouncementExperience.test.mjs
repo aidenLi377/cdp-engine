@@ -32,15 +32,16 @@ test('browser tab uses the X-Data name and supplied brand icon', () => {
   assert.match(indexHtml, /href="\/x-data-icon-03\.png"/)
 })
 
-test('announcement center marks only the opened item as read and separates updates from tutorials', () => {
+test('announcement center is reserved for updates while tutorials have their own entry', () => {
   assert.match(centerVue, /request\('\/api\/announcements'/)
   assert.match(centerVue, /\/api\/announcements\/\$\{encodeURIComponent\(id\)\}/)
   assert.match(centerVue, /\/api\/announcements\/\$\{encodeURIComponent\(id\)\}\/read/)
-  assert.match(centerVue, /unreadCount: items\.value\.filter\(\(item\) => !item\.readAt\)\.length/)
+  assert.match(centerVue, /unreadCount: filteredItems\.value\.filter\(\(item\) => !item\.readAt\)\.length/)
   assert.doesNotMatch(centerVue, /\/api\/announcements\/read-all/)
   assert.match(centerVue, /更新公告/)
-  assert.match(centerVue, /新手教程/)
-  assert.match(centerVue, /aria-label="公告与新手教程"/)
+  assert.doesNotMatch(centerVue, /新手教程/)
+  assert.match(centerVue, /aria-label="更新公告"/)
+  assert.match(appVue, /class="app-tutorial-link"/)
   assert.match(centerVue, /<AnnouncementArticle/)
 })
 

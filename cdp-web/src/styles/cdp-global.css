@@ -3547,6 +3547,7 @@ body,
 }
 
 .app-shell-nav .app-mode-switcher.is-admin::before,
+.app-shell-nav .app-mode-switcher.is-tutorials::before,
 .app-shell-nav .app-mode-switcher.is-announcements::before {
   opacity: 0;
   transform: translate3d(0, 0, 0);
@@ -4749,8 +4750,10 @@ body,
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  width: min(860px, calc(100vw - 32px)) !important;
   height: min(820px, calc(100vh - 32px));
-  max-height: calc(100vh - 44px);
+  max-height: calc(100vh - 32px);
+  margin: 16px auto !important;
   border: 1px solid rgba(29,29,31,0.08);
   border-radius: 20px !important;
   background: #fff !important;
@@ -4779,6 +4782,16 @@ body,
   border-top: 1px solid rgba(29,29,31,0.07);
   background: #fff;
   box-shadow: 0 -10px 24px rgba(29,29,31,0.04);
+}
+
+/* On medium desktop widths, reserve a real side column for the guided lesson.
+   The dialog remains fully usable at 100% browser zoom instead of sitting
+   underneath the tutorial card. */
+@media (min-width: 1100px) and (max-width: 1400px) {
+  body.guided-tutorial-dialog-companion-open .parameter-batch-dialog.el-dialog {
+    width: min(760px, calc(100vw - 420px)) !important;
+    margin: 16px 16px 16px auto !important;
+  }
 }
 
 .parameter-batch-dialog-head {
@@ -4957,6 +4970,109 @@ body,
   text-align: right;
 }
 
+.parameter-batch-equation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  color: #666168;
+  font-size: 10px;
+  line-height: 1.5;
+  border-radius: 10px;
+  background: #f7faff;
+}
+
+.parameter-batch-equation strong {
+  width: 100%;
+  color: #c54f35;
+}
+
+.parameter-batch-groups {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.parameter-batch-group {
+  overflow: hidden;
+  border: 1px solid rgba(35, 118, 217, 0.14);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.parameter-batch-group summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 11px;
+  color: #36475d;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+  background: #f8fbff;
+}
+
+.parameter-batch-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.parameter-batch-group summary::after {
+  content: '+';
+  color: #2376d9;
+  font-size: 15px;
+}
+
+.parameter-batch-group[open] summary::after {
+  content: '−';
+}
+
+.parameter-batch-group summary small {
+  margin-left: auto;
+  color: #8390a2;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.parameter-batch-group > div {
+  display: grid;
+  gap: 1px;
+  padding: 5px;
+  background: #eef2f6;
+}
+
+.parameter-batch-group p {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) minmax(180px, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 8px;
+  color: #596475;
+  font-size: 9px;
+  background: #fff;
+}
+
+.parameter-batch-group p i {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: #fff;
+  font-style: normal;
+  border-radius: 50%;
+  background: #2376d9;
+}
+
+.parameter-batch-group p b {
+  color: #41536a;
+  font-weight: 550;
+  text-align: right;
+}
+
 .parameter-batch-preview {
   overflow: hidden;
   border: 1px solid rgba(29,29,31,0.09);
@@ -5103,6 +5219,84 @@ body,
   .parameter-batch-preview-head,
   .parameter-batch-preview-row {
     min-width: 720px;
+  }
+}
+
+@media (max-height: 860px) {
+  .parameter-batch-dialog .el-dialog__header {
+    padding: 16px 22px 12px;
+  }
+
+  .parameter-batch-dialog .el-dialog__body {
+    padding: 12px 22px 14px;
+  }
+
+  .parameter-batch-dialog .el-dialog__footer {
+    padding: 10px 22px 12px;
+  }
+
+  .parameter-batch-dialog-head h3 {
+    margin-block: 3px;
+    font-size: 19px;
+  }
+
+  .parameter-batch-guide {
+    grid-template-columns: 26px minmax(0, 1fr) 180px;
+    padding: 10px 12px;
+  }
+
+  .parameter-batch-guide-example span {
+    min-height: 17px;
+    padding-block: 2px;
+  }
+
+  .parameter-batch-editor-head {
+    margin: 12px 0 6px;
+  }
+
+  .parameter-batch-textarea .el-textarea__inner {
+    min-height: 84px !important;
+    padding-block: 9px;
+  }
+
+  .parameter-batch-metrics {
+    margin: 7px 0 9px;
+  }
+
+  .parameter-batch-preview-row {
+    min-height: 43px;
+    padding-block: 6px;
+  }
+}
+
+@media (max-height: 720px) {
+  .parameter-batch-guide-example {
+    display: none !important;
+  }
+
+  .parameter-batch-guide {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .parameter-batch-dialog-head p,
+  .parameter-batch-footer > span {
+    display: none;
+  }
+}
+
+/* Width rules must win when a viewport is both narrow and short. */
+@media (max-width: 900px) {
+  .parameter-batch-guide {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .parameter-batch-guide-example,
+  .parameter-batch-footer > span {
+    display: none !important;
+  }
+
+  .parameter-batch-footer {
+    justify-content: flex-end;
   }
 }
 

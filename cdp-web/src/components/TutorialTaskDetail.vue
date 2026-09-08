@@ -6,7 +6,7 @@
         <h1>一次拿到 7 个商品 ID，怎样快速变成可执行圈人条件？</h1>
         <p>用一个真实的购买人群任务，学会把一列商品 ID 一次录入、自动拆分，并完成后续圈人。</p>
       </div>
-      <button type="button" @click="emit('start')">
+      <button type="button" data-tutorial-start @click="emit('start')">
         开始实操教程
         <span aria-hidden="true">→</span>
       </button>
@@ -82,7 +82,7 @@
           <span>关键词</span><span>类目</span><span>品牌</span><span>其他限量字段</span>
         </div>
       </div>
-      <button type="button" @click="emit('start')">从空白圈包画布开始</button>
+      <button type="button" data-tutorial-start @click="emit('start')">从空白圈包画布开始</button>
     </section>
   </article>
 </template>

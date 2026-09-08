@@ -7,7 +7,7 @@
       '--solution-settings-width': `${solutionSettingsWidth}px`,
     }"
   >
-    <aside class="solution-sidebar">
+    <aside class="solution-sidebar" data-tutorial-target="pull-folder-workspace">
       <div class="solution-sidebar-head">
         <div>
           <div class="display-feature-title">数据引擎取数模板</div>
@@ -60,7 +60,7 @@
                 class="solution-sidebar-icon-btn"
                 :icon="RefreshRight"
                 circle
-                @click="loadSolutions"
+                @click="refreshSolutions"
                 :loading="loadingList"
                 aria-label="刷新列表"
               />
@@ -86,6 +86,7 @@
         @select-folder="onFolderSelect"
         @folders-changed="handleFolderChange"
         @share-folder="shareFolder"
+        @tutorial-create-started="handleTutorialFolderCreateStarted"
       />
 
       <div v-if="libraryScope === 'mine'" class="solution-paste-hint" role="note">
@@ -118,7 +119,7 @@
           @drop.prevent.stop="onSolutionDrop($event, item)"
           @dragend="onSolutionDragEnd"
           @click="openSolution(item.id)"
-          :data-tutorial-target="isTutorialWorkbenchDraft(item) ? 'tutorial-workbench-draft' : undefined"
+          :data-tutorial-target="getTutorialSolutionListTarget(item)"
           @keydown.enter.prevent="openSolution(item.id)"
           @keydown.space.prevent="openSolution(item.id)"
         >
@@ -305,6 +306,7 @@
               size="small"
               class="intercom-radio-group"
               :disabled="isReadOnly"
+              :data-tutorial-target="index === 2 ? 'pull-third-intersection' : undefined"
             >
               <el-radio-button value="n">交集 (n)</el-radio-button>
               <el-radio-button value="u">并集 (u)</el-radio-button>
@@ -356,6 +358,7 @@
 	                    class="behavior-card-icon-btn behavior-card-icon-proxy"
 	                    @click.stop="duplicateNode(index)"
 	                    :disabled="isReadOnly"
+	                    :data-tutorial-target="index === 1 ? 'pull-duplicate-node-1' : undefined"
 	                  >
 	                    <el-icon><CopyDocument /></el-icon>
 	                  </el-button>
@@ -503,6 +506,7 @@
                     size="small"
                     :disabled="isReadOnly"
                     @click.stop="editCustomField(cf)"
+                    :data-tutorial-target="getTutorialCustomFieldEditTarget(cf)"
                   >
                     编辑
                   </el-button>
@@ -761,6 +765,10 @@ import { validateSolutionIntegrity } from '../utils/workbenchValidation.js'
 import { usePanelResize } from '../composables/usePanelResize'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import {
+  PARAMETER_BATCH_TUTORIAL_ID,
+  PARAMETER_BATCH_TUTORIAL_VALUES,
+  PULL_ANALYSIS_GROUP_TUTORIAL_ID,
+  PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
@@ -910,6 +918,7 @@ let folderSharePasteRequestId = 0
 let tutorialDraftSyncRunId = 0
 let tutorialDraftSyncTimer = null
 let tutorialDraftSyncAbort = null
+let tutorialFieldRevealTimers = []
 
 const customFields = ref([])
 const filteredCustomFields = computed(() => {
@@ -963,10 +972,87 @@ function isSolutionReuseTutorialActive() {
   return guidedTutorialState.active && guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
 }
 
+function isPullAnalysisTutorialActive() {
+  return guidedTutorialState.active
+    && guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+}
+
+function isParameterBatchTutorialActive() {
+  return guidedTutorialState.active
+    && guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID
+}
+
 function isTutorialWorkbenchDraft(item) {
-  if (!isSolutionReuseTutorialActive() || item?.status !== 'draft') return false
+  if (
+    (!isSolutionReuseTutorialActive() && !isParameterBatchTutorialActive())
+    || item?.status !== 'draft'
+  ) return false
   const expectedId = String(guidedTutorialState.context.workbenchDraftId || '')
   return Boolean(expectedId) && String(item?.id || '') === expectedId
+}
+
+function getTutorialSolutionListTarget(item) {
+  if (isTutorialWorkbenchDraft(item)) return 'tutorial-workbench-draft'
+  if (!isPullAnalysisTutorialActive() || item?.status !== 'draft') return undefined
+  const itemId = String(item?.id || '')
+  if (
+    isGuidedTutorialStep('pull-open-own-draft')
+    && itemId === String(guidedTutorialState.context.pullOwnDraftId || '')
+  ) return 'pull-own-draft'
+  if (
+    isGuidedTutorialStep('pull-open-competitor-draft')
+    && itemId === String(guidedTutorialState.context.pullCompetitorDraftId || '')
+  ) return 'pull-competitor-draft'
+  return undefined
+}
+
+function getTutorialCustomFieldEditTarget(field) {
+  if (!isPullAnalysisTutorialActive()) return undefined
+  if (
+    field?.name === '分析类目'
+    && isGuidedTutorialStep('pull-edit-own-analysis')
+  ) return 'pull-edit-analysis-field'
+  if (
+    field?.name === '本品牌'
+    && (isGuidedTutorialStep('pull-edit-own-brand-field') || isGuidedTutorialStep('pull-edit-unbind-own'))
+  ) return 'pull-edit-own-brand-field'
+  if (
+    field?.name === '竞争品牌'
+    && isGuidedTutorialStep('pull-edit-competitor-field')
+  ) return 'pull-edit-competitor-brand-field'
+  return undefined
+}
+
+function clearTutorialFieldRevealTimers() {
+  tutorialFieldRevealTimers.forEach(timer => window.clearTimeout(timer))
+  tutorialFieldRevealTimers = []
+}
+
+function revealTutorialField(targetName, nodeIndex) {
+  clearTutorialFieldRevealTimers()
+  ;[0, 180, 520].forEach((delay) => {
+    tutorialFieldRevealTimers.push(window.setTimeout(async () => {
+      if (!isSolutionReuseTutorialActive() || !isGuidedTutorialStep('bind-analysis-second')) return
+
+      const node = nodeList.value[nodeIndex]
+      if (node?.collapsed) {
+        node.collapsed = false
+        await nextTick()
+      }
+
+      const target = solutionPageRef.value?.querySelector(`[data-tutorial-target="${targetName}"]`)
+      const scrollParent = target?.closest('.solution-node-scroll')
+      if (!target || !scrollParent) return
+
+      const parentRect = scrollParent.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const nextTop = scrollParent.scrollTop
+        + targetRect.top
+        - parentRect.top
+        - ((scrollParent.clientHeight - targetRect.height) / 2)
+      scrollParent.scrollTo({ top: Math.max(0, nextTop), behavior: delay === 0 ? 'auto' : 'smooth' })
+    }, delay))
+  })
 }
 
 function tutorialBindingMatches(binding, nodeIndex, fieldKey) {
@@ -1023,8 +1109,102 @@ function tutorialSolutionStructureReady() {
     && timeIsReady(competitorNode)
 }
 
+function parameterBatchSolutionStructureReady() {
+  const node = nodeList.value[0]
+  const timeField = node?.schema?.find(field => field.key === 'time' || field.Widget_Type === '日期_切换')
+  const timeKey = timeField?.key || 'time'
+  return nodeList.value.length === 1
+    && node?.packageType === PARAMETER_BATCH_TUTORIAL_VALUES.packageType
+    && nodeFieldValues(node, 'bhv').length === 1
+    && nodeFieldValues(node, 'bhv').includes(PARAMETER_BATCH_TUTORIAL_VALUES.behavior)
+    && nodeFieldValues(node, 'leafCates').includes(PARAMETER_BATCH_TUTORIAL_VALUES.category)
+    && nodeFieldValues(node, 'stdBrand').includes(PARAMETER_BATCH_TUTORIAL_VALUES.initialBrand)
+    && nodeFieldValues(node, 'channel').includes(PARAMETER_BATCH_TUTORIAL_VALUES.channel)
+    && node?.modeData?.[timeKey] === 'recent'
+    && Number(node?.formData?.[timeKey]?.days) === PARAMETER_BATCH_TUTORIAL_VALUES.recentDays
+}
+
+function parameterBatchCustomFieldReady() {
+  const field = customFields.value.find(item => (
+    String(item?.name || '').trim() === PARAMETER_BATCH_TUTORIAL_VALUES.customFieldName
+  ))
+  const bindings = Array.isArray(field?.bindings) ? field.bindings : []
+  return customFields.value.length === 1
+    && bindings.length === 1
+    && tutorialBindingMatches(bindings[0], 0, 'stdBrand')
+}
+
+function parameterBatchIdentityReady() {
+  return String(activeSolution.value?.name || '').trim() === PARAMETER_BATCH_TUTORIAL_VALUES.solutionName
+    && String(activeSolution.value?.defaultCrowdName || '').trim() === PARAMETER_BATCH_TUTORIAL_VALUES.defaultCrowdName
+}
+
+function nodeFieldValues(node, key) {
+  const raw = node?.formData?.[key]
+  return (Array.isArray(raw) ? raw : [raw])
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+}
+
+function pullFieldHasBindings(fieldName, expectedBindings) {
+  const field = customFields.value.find(item => String(item?.name || '').trim() === fieldName)
+  const bindings = Array.isArray(field?.bindings) ? field.bindings : []
+  return bindings.length === expectedBindings.length
+    && expectedBindings.every(([nodeIndex, fieldKey]) => bindings.some(binding => (
+      tutorialBindingMatches(binding, nodeIndex, fieldKey)
+    )))
+}
+
+function pullAnalysisFieldsReady(mode = 'own') {
+  const competitorBindings = mode === 'competitor'
+    ? [[1, 'stdBrand'], [2, 'stdBrand']]
+    : [[1, 'stdBrand']]
+  const ownBindings = mode === 'competitor'
+    ? [[0, 'stdBrand']]
+    : [[0, 'stdBrand'], [2, 'stdBrand']]
+  return pullFieldHasBindings('分析类目', [[0, 'leafCates'], [1, 'leafCates'], [2, 'leafCates']])
+    && pullFieldHasBindings('本品牌', ownBindings)
+    && pullFieldHasBindings('竞争品牌', competitorBindings)
+}
+
+function pullAnalysisStructureReady(mode = 'own') {
+  const [ownBrowse, competitorBrowse, purchaseNode] = nodeList.value
+  const expectedPurchaseBrand = mode === 'competitor'
+    ? SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand
+    : SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand
+  return nodeList.value.length === 3
+    && [ownBrowse, competitorBrowse, purchaseNode].every(node => (
+      node?.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType
+    ))
+    && competitorBrowse?.operator === 'n'
+    && purchaseNode?.operator === 'n'
+    && nodeFieldValues(ownBrowse, 'bhv').includes('浏览')
+    && nodeFieldValues(competitorBrowse, 'bhv').includes('浏览')
+    && nodeFieldValues(purchaseNode, 'bhv').length === 1
+    && nodeFieldValues(purchaseNode, 'bhv').includes('购买')
+    && nodeFieldValues(ownBrowse, 'stdBrand').includes(SOLUTION_REUSE_TUTORIAL_VALUES.ownBrand)
+    && nodeFieldValues(competitorBrowse, 'stdBrand').includes(SOLUTION_REUSE_TUTORIAL_VALUES.initialCompetitorBrand)
+    && nodeFieldValues(purchaseNode, 'stdBrand').includes(expectedPurchaseBrand)
+}
+
+function pullAnalysisIdentityReady(mode = 'own') {
+  const expectedName = mode === 'competitor'
+    ? PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.competitorPurchaseSolutionName
+    : PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.ownPurchaseSolutionName
+  const expectedCrowdName = mode === 'competitor'
+    ? PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.competitorPurchaseCrowdName
+    : PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.ownPurchaseCrowdName
+  return String(activeSolution.value?.name || '').trim() === expectedName
+    && String(activeSolution.value?.defaultCrowdName || '').trim() === expectedCrowdName
+}
+
 function syncTutorialSolutionContext() {
-  if (!isSolutionReuseTutorialActive()) return
+  if (
+    !isSolutionReuseTutorialActive()
+    && !isPullAnalysisTutorialActive()
+    && !isParameterBatchTutorialActive()
+  ) return
+  if (isParameterBatchTutorialActive() && !parameterTutorialInEditor()) return
   updateGuidedTutorialContext({
     solutionId: String(activeSolution.value?.id || guidedTutorialState.context.solutionId || ''),
     solutionName: String(activeSolution.value?.name || ''),
@@ -1036,7 +1216,16 @@ function syncTutorialSolutionContext() {
     })),
     solutionNodeCount: nodeList.value.length,
     solutionOperator: nodeList.value[1]?.operator || '',
+    pullNodeCount: nodeList.value.length,
+    pullOperators: nodeList.value.slice(1).map(node => node?.operator || ''),
   })
+}
+
+function parameterTutorialInEditor() {
+  return ['open-workbench-draft', 'parameter-add-brand-field', 'parameter-name-brand-field',
+    'parameter-bind-brand-field', 'parameter-finish-brand-field', 'parameter-set-identity',
+    'parameter-save-draft', 'parameter-publish-solution', 'parameter-confirm-publish',
+  ].some(isGuidedTutorialStep)
 }
 
 const filteredSolutions = computed(() => {
@@ -1224,15 +1413,20 @@ async function replaceActiveSolutionState(loader) {
   return true
 }
 
-async function loadSolutions({ silent = false, signal } = {}) {
+async function loadSolutions({ silent = false, signal, fresh = false } = {}) {
   loadingList.value = true
   try {
-    solutions.value = await listSolutions(statusFilter.value, libraryScope.value, { signal })
+    solutions.value = await listSolutions(statusFilter.value, libraryScope.value, { signal, fresh })
   } catch (error) {
     if (!silent) ElMessage.error(error.message || '方案列表加载失败')
   } finally {
     loadingList.value = false
   }
+}
+
+async function refreshSolutions() {
+  await loadSolutions({ fresh: true })
+  ElMessage.success(`${libraryScope.value === 'public' ? '公共方案' : '我的方案'}已刷新`)
 }
 
 const TUTORIAL_DRAFT_SYNC_DELAYS = Object.freeze([0, 450, 1000, 1600])
@@ -1384,6 +1578,20 @@ async function openSolution(solutionId) {
         })
         completeGuidedTutorialStep('open-workbench-draft')
       }
+      if (
+        isPullAnalysisTutorialActive()
+        && isGuidedTutorialStep('pull-open-own-draft')
+        && String(detail?.id || '') === String(guidedTutorialState.context.pullOwnDraftId || '')
+      ) {
+        completeGuidedTutorialStep('pull-open-own-draft')
+      }
+      if (
+        isPullAnalysisTutorialActive()
+        && isGuidedTutorialStep('pull-open-competitor-draft')
+        && String(detail?.id || '') === String(guidedTutorialState.context.pullCompetitorDraftId || '')
+      ) {
+        completeGuidedTutorialStep('pull-open-competitor-draft')
+      }
     } catch (error) {
       if (error.name !== 'AbortError') {
         ElMessage.error(error.message || '方案详情加载失败')
@@ -1442,13 +1650,20 @@ async function addNodeFromSelector() {
   pendingPackageType.value = ''
 }
 
-function duplicateNode(index) {
+async function duplicateNode(index) {
   if (isReadOnly.value) return
   const source = nodeList.value[index]
   if (!source) return
 
+  const isPullTutorialCopy = isPullAnalysisTutorialActive()
+    && isGuidedTutorialStep('pull-duplicate-competitor-node')
+    && index === 1
+
   const duplicated = cloneNodeForDuplicate(source, index)
   insertNodeAtPosition(nodeList.value, duplicated, index)
+  if (isPullTutorialCopy) {
+    completeGuidedTutorialStep('pull-duplicate-competitor-node')
+  }
 
   // Check custom fields that bind to source node
   const relatedCfs = customFields.value.filter(cf =>
@@ -1456,11 +1671,35 @@ function duplicateNode(index) {
   )
   if (relatedCfs.length > 0) {
     const names = relatedCfs.map(cf => cf.name).join('、')
-    ElMessageBox.confirm(
-      `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（${getNodeDisplayName(duplicated, index + 1)}）的对应字段绑定到这些自定义字段？`,
-      '复制节点',
-      { confirmButtonText: '自动绑定', cancelButtonText: '跳过', type: 'info' }
-    ).then(() => {
+    const shouldForceSkip = isPullTutorialCopy
+    try {
+      await ElMessageBox.confirm(
+        shouldForceSkip
+          ? `自定义字段「${names}」绑定了源节点。新节点将改为“购买本品”，业务用途不同，因此先不继承原绑定，稍后按字段含义重新绑定。`
+          : `自定义字段「${names}」绑定了源节点的字段，是否也将新节点（${getNodeDisplayName(duplicated, index + 1)}）的对应字段绑定到这些自定义字段？`,
+        '复制节点',
+        {
+          confirmButtonText: shouldForceSkip ? '跳过并继续' : '自动绑定',
+          cancelButtonText: '跳过',
+          type: 'info',
+          distinguishCancelAndClose: true,
+          showCancelButton: !shouldForceSkip,
+          showClose: !shouldForceSkip,
+          closeOnClickModal: !shouldForceSkip,
+          closeOnPressEscape: !shouldForceSkip,
+        },
+      )
+      if (shouldForceSkip) {
+        // Element Plus resolves before its exit transition has completely
+        // removed the teleported overlay. Keep the tutorial on the dialog
+        // step until it is gone, then let the overlay locate node 3 cleanly.
+        window.setTimeout(() => {
+          if (isGuidedTutorialStep('pull-skip-auto-bind')) {
+            completeGuidedTutorialStep('pull-skip-auto-bind')
+          }
+        }, 320)
+        return
+      }
       relatedCfs.forEach(cf => {
         const sourceBinding = (cf.bindings || []).find(b => b.nodeId === source.id)
         if (sourceBinding) {
@@ -1468,7 +1707,7 @@ function duplicateNode(index) {
         }
       })
       ElMessage.success(`已自动绑定 ${relatedCfs.length} 个自定义字段到新节点`)
-    }).catch(() => {})
+    } catch {}
   }
 }
 
@@ -1540,6 +1779,36 @@ async function saveDraft() {
     ) {
       completeGuidedTutorialStep('save-tutorial-draft')
     }
+    if (isGuidedTutorialStep('parameter-save-draft')) {
+      if (
+        parameterBatchSolutionStructureReady()
+        && parameterBatchCustomFieldReady()
+        && parameterBatchIdentityReady()
+      ) {
+        completeGuidedTutorialStep('parameter-save-draft')
+      } else {
+        ElMessage.warning('请先核对购买节点、竞争品牌字段和方案名称')
+      }
+    }
+    const pullSaveMode = isGuidedTutorialStep('pull-save-own-draft')
+      ? 'own'
+      : isGuidedTutorialStep('pull-save-competitor-draft')
+        ? 'competitor'
+        : ''
+    if (pullSaveMode) {
+      if (
+        pullAnalysisStructureReady(pullSaveMode)
+        && pullAnalysisFieldsReady(pullSaveMode)
+        && pullAnalysisIdentityReady(pullSaveMode)
+      ) {
+        updateGuidedTutorialContext(pullSaveMode === 'own'
+          ? { pullOwnDraftId: String(updated?.id || activeSolution.value?.id || '') }
+          : { pullCompetitorDraftId: String(updated?.id || activeSolution.value?.id || '') })
+        completeGuidedTutorialStep(`pull-save-${pullSaveMode}-draft`)
+      } else {
+        ElMessage.warning('请先按教程核对三个交集节点、三个自定义字段及方案名称')
+      }
+    }
     if (saveBtnRef.value?.$el) {
       saveBtnRef.value.$el.classList.add('success-flash')
       setTimeout(() => saveBtnRef.value.$el.classList.remove('success-flash'), 600)
@@ -1578,6 +1847,35 @@ async function publishDraft() {
   }
   if (publishingTutorial) completeGuidedTutorialStep('publish-tutorial-solution')
 
+  const parameterPublishingTutorial = isGuidedTutorialStep('parameter-publish-solution')
+    && parameterBatchSolutionStructureReady()
+    && parameterBatchCustomFieldReady()
+    && parameterBatchIdentityReady()
+  if (isGuidedTutorialStep('parameter-publish-solution') && !parameterPublishingTutorial) {
+    ElMessage.warning('请先核对购买节点、竞争品牌字段和两个名称')
+    return
+  }
+  if (parameterPublishingTutorial) {
+    completeGuidedTutorialStep('parameter-publish-solution')
+  }
+
+  const pullPublishMode = isGuidedTutorialStep('pull-publish-own')
+    ? 'own'
+    : isGuidedTutorialStep('pull-publish-competitor')
+      ? 'competitor'
+      : ''
+  const pullPublishingTutorial = Boolean(pullPublishMode)
+    && pullAnalysisStructureReady(pullPublishMode)
+    && pullAnalysisFieldsReady(pullPublishMode)
+    && pullAnalysisIdentityReady(pullPublishMode)
+  if (pullPublishMode && !pullPublishingTutorial) {
+    ElMessage.warning('请先按教程核对三个交集节点、三个自定义字段及两个名称')
+    return
+  }
+  if (pullPublishingTutorial) {
+    completeGuidedTutorialStep(`pull-publish-${pullPublishMode}`)
+  }
+
   try {
     await ElMessageBox.confirm(
       `即将发布“${String(activeSolution.value.name || '').trim()}”，包含 ${validation.summary.nodeCount} 个组件、${customFields.value.length} 个自定义字段。发布后将成为正式方案，是否继续？`,
@@ -1614,6 +1912,31 @@ async function publishDraft() {
         })),
       })
       completeGuidedTutorialStep('confirm-publish-tutorial-solution')
+    }
+    if (
+      parameterPublishingTutorial
+      && isGuidedTutorialStep('parameter-confirm-publish')
+    ) {
+      updateGuidedTutorialContext({
+        solutionId: String(published?.id || activeSolution.value?.id || ''),
+        solutionName: String(published?.name || ''),
+        defaultCrowdName: String(published?.defaultCrowdName || ''),
+        customFields: customFields.value.map(field => ({
+          name: field.name,
+          bindings: (field.bindings || []).map(binding => ({ ...binding })),
+        })),
+      })
+      completeGuidedTutorialStep('parameter-confirm-publish')
+    }
+    if (
+      pullPublishingTutorial
+      && isGuidedTutorialStep(`pull-confirm-publish-${pullPublishMode}`)
+    ) {
+      const publishedId = String(published?.id || activeSolution.value?.id || '')
+      updateGuidedTutorialContext(pullPublishMode === 'own'
+        ? { pullOwnSolutionId: publishedId, pullOwnDraftId: '' }
+        : { pullCompetitorSolutionId: publishedId, pullCompetitorDraftId: '' })
+      completeGuidedTutorialStep(`pull-confirm-publish-${pullPublishMode}`)
     }
     if (publishBtnRef.value?.$el) {
       publishBtnRef.value.$el.classList.add('publish-ring')
@@ -1745,6 +2068,7 @@ function startCreateCustomField() {
     'add-analysis-field',
     'add-own-brand-field',
     'add-competitor-brand-field',
+    'parameter-add-brand-field',
   ]
   const stepId = addSteps.find(step => isGuidedTutorialStep(step))
   if (stepId) completeGuidedTutorialStep(stepId)
@@ -1771,6 +2095,11 @@ function onFieldClickForBinding(nodeId, fieldKey) {
     'bind-analysis-second',
     'bind-own-brand',
     'bind-competitor-brand',
+    'pull-bind-own-analysis',
+    'pull-bind-own-brand',
+    'pull-unbind-own-node',
+    'pull-bind-competitor-node',
+    'parameter-bind-brand-field',
   ].find(step => isGuidedTutorialStep(step))
 
   if (creatingCustomFieldStep.value === 1) {
@@ -1798,6 +2127,26 @@ function onFieldClickForBinding(nodeId, fieldKey) {
       && creatingCustomFieldBindings.value.some(binding => tutorialBindingMatches(binding, 0, 'leafCates')),
     'bind-own-brand': tutorialBindingMatches({ nodeId, fieldKey }, 0, 'stdBrand'),
     'bind-competitor-brand': tutorialBindingMatches({ nodeId, fieldKey }, 1, 'stdBrand'),
+    'pull-bind-own-analysis': tutorialBindingMatches({ nodeId, fieldKey }, 2, 'leafCates')
+      && creatingCustomFieldBindings.value.length === 3
+      && [0, 1, 2].every(nodeIndex => creatingCustomFieldBindings.value.some(binding => (
+        tutorialBindingMatches(binding, nodeIndex, 'leafCates')
+      ))),
+    'pull-bind-own-brand': tutorialBindingMatches({ nodeId, fieldKey }, 2, 'stdBrand')
+      && creatingCustomFieldBindings.value.length === 2
+      && [0, 2].every(nodeIndex => creatingCustomFieldBindings.value.some(binding => (
+        tutorialBindingMatches(binding, nodeIndex, 'stdBrand')
+      ))),
+    'pull-unbind-own-node': tutorialBindingMatches({ nodeId, fieldKey }, 2, 'stdBrand')
+      && creatingCustomFieldBindings.value.length === 1
+      && creatingCustomFieldBindings.value.some(binding => tutorialBindingMatches(binding, 0, 'stdBrand')),
+    'pull-bind-competitor-node': tutorialBindingMatches({ nodeId, fieldKey }, 2, 'stdBrand')
+      && creatingCustomFieldBindings.value.length === 2
+      && [1, 2].every(nodeIndex => creatingCustomFieldBindings.value.some(binding => (
+        tutorialBindingMatches(binding, nodeIndex, 'stdBrand')
+      ))),
+    'parameter-bind-brand-field': tutorialBindingMatches({ nodeId, fieldKey }, 0, 'stdBrand')
+      && creatingCustomFieldBindings.value.length === 1,
   }
   if (tutorialStep && tutorialMatches[tutorialStep]) completeGuidedTutorialStep(tutorialStep)
 }
@@ -1813,18 +2162,43 @@ function finishCreateCustomField() {
     'finish-analysis-field': '分析类目',
     'finish-own-brand-field': '本品牌',
     'finish-competitor-brand-field': '竞争品牌',
+    'parameter-finish-brand-field': PARAMETER_BATCH_TUTORIAL_VALUES.customFieldName,
   }
   const tutorialFinishStep = Object.keys(tutorialFinishNames).find(step => isGuidedTutorialStep(step))
   const tutorialExpectedName = tutorialFinishNames[tutorialFinishStep]
+  const pullFinishRules = {
+    'pull-save-own-analysis': { name: '分析类目', bindings: [[0, 'leafCates'], [1, 'leafCates'], [2, 'leafCates']] },
+    'pull-save-own-brand': { name: '本品牌', bindings: [[0, 'stdBrand'], [2, 'stdBrand']] },
+    'pull-save-own-unbind': { name: '本品牌', bindings: [[0, 'stdBrand']] },
+    'pull-save-competitor-field': { name: '竞争品牌', bindings: [[1, 'stdBrand'], [2, 'stdBrand']] },
+  }
+  const pullFinishStep = Object.keys(pullFinishRules).find(step => isGuidedTutorialStep(step))
+  const pullFinishRule = pullFinishRules[pullFinishStep]
   if (
     tutorialExpectedName
-    && !tutorialCustomFieldIsValid(
-      { name, bindings: creatingCustomFieldBindings.value },
-      tutorialExpectedName,
-    )
+    && !(tutorialFinishStep === 'parameter-finish-brand-field'
+      ? name === PARAMETER_BATCH_TUTORIAL_VALUES.customFieldName
+        && creatingCustomFieldBindings.value.length === 1
+        && tutorialBindingMatches(creatingCustomFieldBindings.value[0], 0, 'stdBrand')
+      : tutorialCustomFieldIsValid(
+          { name, bindings: creatingCustomFieldBindings.value },
+          tutorialExpectedName,
+        ))
   ) {
     ElMessage.warning(`请按引导完成“${tutorialExpectedName}”的正确节点与字段绑定`)
     return
+  }
+  if (pullFinishRule) {
+    const bindings = creatingCustomFieldBindings.value
+    const valid = name === pullFinishRule.name
+      && bindings.length === pullFinishRule.bindings.length
+      && pullFinishRule.bindings.every(([nodeIndex, fieldKey]) => bindings.some(binding => (
+        tutorialBindingMatches(binding, nodeIndex, fieldKey)
+      )))
+    if (!valid) {
+      ElMessage.warning(`请先按引导完成“${pullFinishRule.name}”的节点绑定关系`)
+      return
+    }
   }
   if (checkDuplicateCustomFieldName(name, editingCustomFieldId.value)) {
     ElMessage.warning(`自定义字段名称「${name}」已存在，请使用其他名称`)
@@ -1865,6 +2239,7 @@ function finishCreateCustomField() {
   editingCustomFieldId.value = null
   cancelCreateCustomField()
   if (tutorialFinishStep) completeGuidedTutorialStep(tutorialFinishStep)
+  if (pullFinishStep) completeGuidedTutorialStep(pullFinishStep)
 }
 
 function editCustomField(cf) {
@@ -1875,6 +2250,16 @@ function editCustomField(cf) {
   creatingCustomFieldName.value = cf.name
   creatingCustomFieldType.value = cf.type
   creatingCustomFieldBindings.value = [...(cf.bindings || [])]
+  const pullEditSteps = {
+    'pull-edit-own-analysis': '分析类目',
+    'pull-edit-own-brand-field': '本品牌',
+    'pull-edit-unbind-own': '本品牌',
+    'pull-edit-competitor-field': '竞争品牌',
+  }
+  const pullEditStep = Object.keys(pullEditSteps).find(step => (
+    isGuidedTutorialStep(step) && cf.name === pullEditSteps[step]
+  ))
+  if (pullEditStep) completeGuidedTutorialStep(pullEditStep)
 }
 
 function removeCustomField(cfId) {
@@ -2070,9 +2455,15 @@ watch(
     () => guidedTutorialState.taskId,
     () => guidedTutorialState.stepIndex,
     () => guidedTutorialState.context.workbenchDraftId,
+    () => guidedTutorialState.context.pullOwnDraftId,
+    () => guidedTutorialState.context.pullCompetitorDraftId,
   ],
   async ([active, taskId], [previousActive, previousTaskId] = []) => {
-    if (!active || taskId !== SOLUTION_REUSE_TUTORIAL_ID) return
+    const isReuseTutorial = taskId === SOLUTION_REUSE_TUTORIAL_ID
+    const isPullTutorial = taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+    const isParameterTutorial = taskId === PARAMETER_BATCH_TUTORIAL_ID
+    if (!active || (!isReuseTutorial && !isPullTutorial && !isParameterTutorial)) return
+    if (isParameterTutorial && !parameterTutorialInEditor()) return
     const tutorialSessionChanged = active !== previousActive || taskId !== previousTaskId
     if (tutorialSessionChanged && activeSolution.value?.status === 'draft' && hasUnsavedChanges.value) {
       await saveDraft()
@@ -2081,11 +2472,17 @@ watch(
     statusFilter.value = 'all'
     selectedFolderId.value = null
     searchKeyword.value = ''
-    if (isGuidedTutorialStep('open-workbench-draft')) {
-      void syncTutorialWorkbenchDraft()
-    } else if (tutorialSessionChanged) {
-      void loadSolutions()
+    if (isReuseTutorial && isGuidedTutorialStep('bind-analysis-second')) {
+      revealTutorialField('solution-node-1-leafCates', 1)
+    } else {
+      clearTutorialFieldRevealTimers()
     }
+    if ((isReuseTutorial || isParameterTutorial) && isGuidedTutorialStep('open-workbench-draft')) {
+      void syncTutorialWorkbenchDraft()
+    } else if (tutorialSessionChanged || isPullTutorial) {
+      void Promise.all([loadSolutions({ fresh: true }), loadFolders()])
+    }
+    syncTutorialSolutionContext()
   },
   { immediate: true },
 )
@@ -2135,10 +2532,10 @@ watch(
   { deep: true },
 )
 
-async function loadFolders() {
+async function loadFolders({ fresh = false } = {}) {
   loadingFolders.value = true
   try {
-    folderTree.value = await listFolders(libraryScope.value)
+    folderTree.value = await listFolders(libraryScope.value, { fresh })
   } catch (error) {
     ElMessage.error(error.message || '文件夹列表加载失败')
   } finally {
@@ -2287,8 +2684,19 @@ async function handleFolderChange(event) {
   if (libraryScope.value === 'public' && !canManagePublicSolutions.value) return
   try {
     if (event.action === 'create') {
-      await createFolder(event.name, event.parentId, libraryScope.value)
+      const created = await createFolder(event.name, event.parentId, libraryScope.value)
       ElMessage.success('文件夹已创建')
+      if (isPullAnalysisTutorialActive() && isGuidedTutorialStep('pull-name-folder')) {
+        if (String(event.name || '').trim() !== PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.folderName) {
+          ElMessage.warning('请使用教程提供的方案组名称，便于后续准确识别')
+        } else {
+          updateGuidedTutorialContext({
+            pullFolderId: String(created?.id || ''),
+            pullFolderMemberIds: [],
+          })
+          completeGuidedTutorialStep('pull-name-folder')
+        }
+      }
     } else if (event.action === 'rename') {
       await updateFolder(event.id, event.name)
       ElMessage.success('文件夹已重命名')
@@ -2308,8 +2716,25 @@ async function handleFolderChange(event) {
       }
       ElMessage.success('方案已移动')
     }
-    await loadFolders()
-    await loadSolutions()
+    await loadFolders({ fresh: true })
+    await loadSolutions({ fresh: true })
+    if (isPullAnalysisTutorialActive() && isGuidedTutorialStep('pull-move-three-solutions')) {
+      const folderId = String(guidedTutorialState.context.pullFolderId || '')
+      const requiredIds = [
+        guidedTutorialState.context.pullBaseSolutionId,
+        guidedTutorialState.context.pullOwnSolutionId,
+        guidedTutorialState.context.pullCompetitorSolutionId,
+      ].map(value => String(value || '')).filter(Boolean)
+      const memberIds = requiredIds.filter(requiredId => solutions.value.some(solution => (
+        String(solution?.id || '') === requiredId
+        && String(solution?.folderId || '') === folderId
+        && solution?.status === 'published'
+      )))
+      updateGuidedTutorialContext({ pullFolderMemberIds: memberIds })
+      if (requiredIds.length === 3 && memberIds.length === 3) {
+        completeGuidedTutorialStep('pull-move-three-solutions')
+      }
+    }
   } catch (error) {
     ElMessage.error(error.message || '操作失败')
   }
@@ -2463,10 +2888,17 @@ onMounted(async () => {
 onActivated(startFolderSharePasteListener)
 onDeactivated(stopFolderSharePasteListener)
 
+function handleTutorialFolderCreateStarted() {
+  if (isPullAnalysisTutorialActive() && isGuidedTutorialStep('pull-create-folder')) {
+    completeGuidedTutorialStep('pull-create-folder')
+  }
+}
+
 onBeforeUnmount(() => {
   tutorialDraftSyncRunId += 1
   tutorialDraftSyncAbort?.abort()
   if (tutorialDraftSyncTimer) window.clearTimeout(tutorialDraftSyncTimer)
+  clearTutorialFieldRevealTimers()
   clearTimeout(solutionSessionTimer)
   persistSolutionSession()
   window.removeEventListener('beforeunload', persistSolutionSession)

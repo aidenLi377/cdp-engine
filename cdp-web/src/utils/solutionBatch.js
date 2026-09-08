@@ -13,6 +13,46 @@ export function collectUniqueCustomFieldNames(solutions) {
   return [...names]
 }
 
+export function analyzeBatchCustomFieldCompatibility(solutions) {
+  const source = Array.isArray(solutions) ? solutions : []
+  const groups = new Map()
+
+  source.forEach((solution) => {
+    const solutionId = String(solution?.id || solution?.name || '')
+    ;(Array.isArray(solution?.customFields) ? solution.customFields : []).forEach((field) => {
+      const name = normalizeParameterName(field?.name)
+      if (!name) return
+      if (!groups.has(name)) {
+        groups.set(name, {
+          name,
+          types: new Set(),
+          solutionIds: new Set(),
+          bindingCount: 0,
+        })
+      }
+      const group = groups.get(name)
+      const type = normalizeParameterName(field?.type)
+      if (type) group.types.add(type)
+      if (solutionId) group.solutionIds.add(solutionId)
+      group.bindingCount += Array.isArray(field?.bindings) ? field.bindings.length : 0
+    })
+  })
+
+  return [...groups.values()].map((group) => {
+    const types = [...group.types]
+    return {
+      name: group.name,
+      type: types.length === 1 ? types[0] : types.join(' / '),
+      types,
+      compatible: types.length <= 1,
+      solutionCount: group.solutionIds.size,
+      totalSolutionCount: source.length,
+      coverageComplete: source.length > 0 && group.solutionIds.size === source.length,
+      bindingCount: group.bindingCount,
+    }
+  })
+}
+
 export function buildBatchCustomFieldSections(entries, buildSections) {
   const sectionMap = new Map()
 

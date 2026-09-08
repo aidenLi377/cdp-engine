@@ -62,27 +62,37 @@ test('copy and automation dialogs require a package scope choice', () => {
   assert.match(normalModeVue, /await sendMessageToDatabankExtension\(getGeneratedJsonText\(\)\)/)
 })
 
-test('parameter batch entry is limited to a single solution session', () => {
+test('parameter batch supports a single solution and an unexpanded combination session', () => {
   assert.match(normalModeVue, /function canBatchParameterSection\(section\)/)
   assert.match(normalModeVue, /workbenchMode\.value === 'solution-use'/)
-  assert.match(normalModeVue, /&& !batchMode\.value/)
+  assert.match(normalModeVue, /&& !isParameterBatch\.value/)
   assert.match(normalModeVue, /:show-batch-action="canBatchParameterSection\(editingCfSection\)"/)
   assert.match(normalModeVue, /@batch="openParameterBatchFromEditor"/)
   assert.doesNotMatch(normalModeVue, /class="cf-parameter-batch-trigger"/)
   assert.match(customFieldDialogVue, /class="cf-edit-batch-action"/)
   assert.match(customFieldDialogVue, /Excel 批量/)
-  assert.match(normalModeVue, /批量参数只能从正在使用的单个方案中创建/)
+  assert.match(normalModeVue, /expandCombinationParameterRows/)
+  assert.match(normalModeVue, /parameterBatchRows\.value\.length \* parameterBatchSourceCount\.value/)
+  assert.match(normalModeVue, /同名字段先聚合，再按每个方案自己的绑定关系生效/)
+})
+
+test('combination parameter batch keeps the companion tutorial beside the dialog at desktop widths', () => {
+  assert.match(globalCss, /guided-tutorial-dialog-companion-open \.parameter-batch-dialog\.el-dialog/)
+  assert.match(globalCss, /width: min\(760px, calc\(100vw - 420px\)\) !important/)
+  assert.match(globalCss, /margin: 16px 16px 16px auto !important/)
 })
 
 test('parameter batch dialog keeps its actions visible while rows scroll', () => {
   assert.match(globalCss, /\.parameter-batch-dialog\.el-dialog \{[^}]*display: flex;[^}]*flex-direction: column;/s)
+  assert.match(globalCss, /\.parameter-batch-dialog\.el-dialog \{[^}]*height: min\(820px, calc\(100vh - 32px\)\);[^}]*margin: 16px auto !important;/s)
   assert.match(globalCss, /\.parameter-batch-dialog \.el-dialog__body \{[^}]*flex: 1 1 auto;[^}]*min-height: 0;[^}]*overflow-y: auto;/s)
   assert.match(globalCss, /\.parameter-batch-dialog \.el-dialog__footer \{[^}]*flex: 0 0 auto;[^}]*background: #fff;/s)
+  assert.match(globalCss, /@media \(max-height: 860px\)[\s\S]*?\.parameter-batch-preview-row \{[^}]*min-height: 43px;/s)
 })
 
 test('Excel parameter rows become independent entries on the same solution', () => {
   assert.match(normalModeVue, /buildParameterBatchRows/)
-  assert.match(normalModeVue, /每一行生成 1 个人群包/)
+  assert.match(normalModeVue, /每一行生成 \{\{ parameterBatchSourceCount \}\} 个人群包/)
   assert.match(normalModeVue, /syncCustomFieldValue\(nodes, customFieldId, customFields, cloneValue\(row\.values\)\)/)
   assert.match(normalModeVue, /parameterBatchValues: cloneValue\(row\.values\)/)
   assert.match(normalModeVue, /batchKind\.value = 'parameter'/)
@@ -92,6 +102,7 @@ test('Excel parameter rows become independent entries on the same solution', () 
 test('the row-specific parameter cannot be overwritten by shared batch edits', () => {
   assert.match(normalModeVue, /function isParameterBatchSection\(section\)/)
   assert.match(normalModeVue, /该参数由 Excel 行独立控制/)
+  assert.match(normalModeVue, /activeBatchEntry\?\.parameterBatchSourceRow \|\| 1/)
   assert.match(normalModeVue, /是本次按行拆分的参数，不能同步覆盖/)
   assert.match(normalModeVue, /其余参数修改一次，同步写入/)
 })

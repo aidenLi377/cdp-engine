@@ -496,7 +496,9 @@ let dmpTutorialPrepared = false
 
 function prepareDmpTutorialWorkspace() {
   dmpTutorialPrepared = true
-  selectedTags.value = selectedTags.value.filter((tagId) => !DMP_TUTORIAL_TAG_IDS.includes(String(tagId)))
+  // 教程必须从一张干净的标签画布开始，避免账号上次保留的任意标签
+  // 混入本次 4 个示例标签，导致数量和画像结构与引导不一致。
+  selectedTags.value = []
   tagSearch.value = ''
   dmpCrowd.value = ''
   dmpBatchMode.value = false

@@ -6,7 +6,7 @@
         <h1>竞品换了，怎样不用重搭条件就完成共同浏览圈人？</h1>
         <p>从一张空白圈包画布开始，亲手做出“共同浏览本品与竞品”方案；再只改两个业务参数，完成第二次真实圈人。</p>
       </div>
-      <button type="button" @click="emit('start')">
+      <button type="button" data-tutorial-start @click="emit('start')">
         开始制作方案
         <span aria-hidden="true">→</span>
       </button>
@@ -97,7 +97,7 @@
         <h2>把这份共同浏览方案扩展成完整拉力分析方案组</h2>
         <p>后续只需替换竞品参数，就能同时驱动“共同浏览”“浏览后购买本品”“浏览后购买竞品”三份关联方案。</p>
       </div>
-      <button type="button" @click="emit('start')">从干净圈包画布开始</button>
+      <button type="button" data-tutorial-start @click="emit('start')">从干净圈包画布开始</button>
     </footer>
   </article>
 </template>

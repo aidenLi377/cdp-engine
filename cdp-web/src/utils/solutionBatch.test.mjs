@@ -2,9 +2,47 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  analyzeBatchCustomFieldCompatibility,
   buildBatchCustomFieldSections,
   collectUniqueCustomFieldNames,
 } from './solutionBatch.js'
+
+test('combination preview reports field coverage, type compatibility and binding totals', () => {
+  const solutions = [
+    {
+      id: 'browse',
+      customFields: [
+        { name: '分析类目', type: '搜索多选', bindings: [{}, {}] },
+        { name: '本品牌', type: '搜索多选', bindings: [{}] },
+      ],
+    },
+    {
+      id: 'buy-own',
+      customFields: [
+        { name: '分析类目', type: '搜索多选', bindings: [{}, {}, {}] },
+        { name: '本品牌', type: '搜索多选', bindings: [{}, {}] },
+      ],
+    },
+    {
+      id: 'buy-competitor',
+      customFields: [
+        { name: '分析类目', type: '搜索多选', bindings: [{}, {}, {}] },
+        { name: '本品牌', type: '搜索单选', bindings: [{}] },
+      ],
+    },
+  ]
+
+  const rows = analyzeBatchCustomFieldCompatibility(solutions)
+  const category = rows.find(row => row.name === '分析类目')
+  const ownBrand = rows.find(row => row.name === '本品牌')
+
+  assert.equal(category.solutionCount, 3)
+  assert.equal(category.coverageComplete, true)
+  assert.equal(category.bindingCount, 8)
+  assert.equal(category.compatible, true)
+  assert.equal(ownBrand.bindingCount, 4)
+  assert.equal(ownBrand.compatible, false)
+})
 
 test('batch parameter names deduplicate only by trimmed display name', () => {
   const solutions = [

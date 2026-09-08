@@ -46,6 +46,7 @@
         :folders="publishedFolderTree"
         :batch-counts="publishedBatchCountByFolder"
         :show-batch-badges="true"
+        :tutorial-batch-folder-id="tutorialBatchFolderId"
         read-only
         @select-folder="onPublishedFolderSelect"
         @batch-apply="openBatchPreviewForFolder"
@@ -71,7 +72,7 @@
             active: currentSolution?.id === item.id && workbenchMode === 'solution-use' && !batchMode,
             'batch-member': batchMode && batchEntries.some(entry => entry.id === item.id),
           }"
-          :data-tutorial-target="isTutorialPublishedSolution(item) ? 'load-tutorial-solution' : undefined"
+          :data-tutorial-target="getTutorialPublishedSolutionTarget(item)"
           @click="loadPublishedSolution(item)"
         >
           <div class="solution-list-item-head">
@@ -218,6 +219,7 @@
                 class="workbench-toolbar-icon-btn"
                 size="small"
                 text
+                data-tutorial-target="pull-save-as-solution"
                 @click="saveAsNewDerivedDraft"
                 :disabled="nodeList.length === 0"
                 :loading="savingDraft"
@@ -295,7 +297,7 @@
         请先从左侧选择一个已发布方案
       </div>
       <div v-else class="solution-use-area" data-tutorial-target="solution-use-area">
-        <div v-if="batchMode" class="batch-compact-rail">
+        <div v-if="batchMode" class="batch-compact-rail" data-tutorial-target="pull-package-tabs">
           <span class="batch-compact-label">人群包</span>
           <div class="batch-compact-tabs" role="tablist" aria-label="切换人群包">
             <button
@@ -310,6 +312,7 @@
               ]"
               :aria-selected="entryIndex === activeBatchIndex"
               :title="`来源方案：${entry.solutionName || '未命名方案'}`"
+              :data-tutorial-target="`pull-batch-package-${entryIndex}`"
               :disabled="databankAutomating"
               @click="activateBatchEntry(entryIndex)"
             >
@@ -336,7 +339,12 @@
           </span>
         </div>
 
-        <div v-if="customFieldSections.length > 0" class="cf-cards-bar" ref="cfCardsBarRef">
+        <div
+          v-if="customFieldSections.length > 0"
+          class="cf-cards-bar"
+          ref="cfCardsBarRef"
+          :data-tutorial-target="batchMode ? 'pull-aggregate-parameters' : undefined"
+        >
           <div
             v-for="(section, cfIndex) in cfVisibleSections"
             :key="section.customFieldId"
@@ -374,7 +382,7 @@
 	              </span>
                 <span v-if="batchMode" class="batch-parameter-scope">
                   {{ isParameterBatchSection(section)
-                    ? `当前第 ${activeBatchIndex + 1} 行`
+                    ? `当前第 ${activeBatchEntry?.parameterBatchSourceRow || 1} 行`
                     : `适用于 ${section.entryCount || 0}/${batchEntries.length} 个包` }}
                 </span>
 	            </div>
@@ -680,7 +688,7 @@
           </el-button>
           <el-button
             class="intercom-btn-outlined databank-automation-button"
-            data-tutorial-target="start-automation"
+            :data-tutorial-target="getTutorialAutomationTarget()"
             size="small"
             :disabled="databankAutomating"
             @click="handleDataBankCommand('auto')"
@@ -740,7 +748,7 @@
   >
     <template #header>
       <div class="parameter-batch-dialog-head">
-        <div class="parameter-batch-kicker">EXCEL PASTE · SINGLE SOLUTION</div>
+        <div class="parameter-batch-kicker">EXCEL PASTE · {{ batchMode ? 'COMBINATION' : 'SINGLE SOLUTION' }}</div>
         <h3>批量设置 · {{ parameterBatchSection?.name || '方案参数' }}</h3>
         <p>保留当前方案中的时间、品类等参数，只按 Excel 的行拆分人群包。</p>
       </div>
@@ -750,7 +758,7 @@
       <div class="parameter-batch-guide-index">01</div>
       <div>
         <strong>从 Excel 直接复制并粘贴</strong>
-        <span>每一行生成 1 个人群包；同一行的多个单元格作为该参数的多个选项。</span>
+        <span>每一行生成 {{ parameterBatchSourceCount }} 个人群包；同一行的多个单元格作为该参数的多个选项。</span>
       </div>
       <div class="parameter-batch-guide-example" aria-label="粘贴格式示例">
         <span>品牌1</span><span>品牌2</span>
@@ -779,6 +787,7 @@
       :rows="5"
       resize="none"
       class="parameter-batch-textarea"
+      :data-tutorial-target="['parameter-paste-brands', 'combo-paste'].some(isGuidedTutorialStep) ? 'parameter-batch-input' : undefined"
       placeholder="点击这里，从 Excel 复制后直接粘贴（Ctrl + V）"
       @input="refreshParameterBatchRows"
     />
@@ -789,16 +798,36 @@
       <div :class="{ 'has-error': parameterBatchInvalidCount > 0 }">
         <strong>{{ parameterBatchInvalidCount }}</strong><span>需处理</span>
       </div>
-      <p v-if="parameterBatchRows.length > 100">单次最多生成 100 个人群包，请分批粘贴。</p>
+      <p v-if="parameterBatchTaskCount > 100">单次最多生成 100 个人群包，请分批粘贴。</p>
       <p v-else-if="parameterBatchRows.length">已自动检查空值、行内重复、重复行、选项匹配和每行数量限制。</p>
       <p v-else>粘贴后会先预览，不会立即执行建包。</p>
     </div>
 
+    <p v-if="batchMode" class="parameter-batch-equation" aria-live="polite">
+      {{ parameterBatchRows.length }} 行参数 × {{ parameterBatchSourceCount }} 个方案 = {{ parameterBatchTaskCount }} 个建包任务。
+      同名字段先聚合，再按每个方案自己的绑定关系生效。
+      <strong v-if="parameterBatchSection?.entryCount !== parameterBatchSourceCount">该字段未覆盖全部方案，请先补齐绑定，避免生成条件重复的人群包。</strong>
+    </p>
+    <div v-if="batchMode && parameterBatchRows.length" class="parameter-batch-groups">
+      <details v-for="row in parameterBatchRows" :key="`group-${row.id}`" class="parameter-batch-group">
+        <summary>
+          <span>{{ row.values.join(' + ') }}</span>
+          <small>{{ parameterBatchSourceCount }} 个包 · 点击核对</small>
+        </summary>
+        <div>
+          <p v-for="(source, sourceIndex) in batchEntries" :key="source.id">
+            <i>{{ sourceIndex + 1 }}</i>
+            <span>{{ source.solutionName }}</span>
+            <b>{{ parameterBatchSection?.name }}：{{ row.values.join('、') }}</b>
+          </p>
+        </div>
+      </details>
+    </div>
     <div v-if="parameterBatchRows.length" class="parameter-batch-preview">
       <div class="parameter-batch-preview-head">
         <span>行</span>
         <span>{{ parameterBatchSection?.name || '参数值' }}</span>
-        <span>人群包名称</span>
+        <span>{{ batchMode ? '分组名称' : '人群包名称' }}</span>
         <span>校验</span>
         <span></span>
       </div>
@@ -836,10 +865,11 @@
           <el-button class="intercom-btn-outlined" @click="parameterBatchDialogVisible = false">取消</el-button>
           <el-button
             class="batch-dialog-primary"
+            :data-tutorial-target="['parameter-create-tasks', 'combo-create'].some(isGuidedTutorialStep) ? 'parameter-create-tasks' : undefined"
             :loading="parameterBatchCreating"
             :disabled="!parameterBatchCanCreate"
             @click="createParameterBatchEntries"
-          >生成 {{ parameterBatchRows.length }} 个建包任务</el-button>
+          >生成 {{ parameterBatchTaskCount }} 个建包任务</el-button>
         </div>
       </div>
     </template>
@@ -862,6 +892,7 @@
       </div>
     </template>
 
+    <div data-tutorial-target="pull-batch-preview">
     <div class="batch-dialog-summary">
       <div class="batch-dialog-stat">
         <strong>{{ batchPreviewSolutions.length }}</strong>
@@ -912,6 +943,21 @@
       这些方案暂未配置可聚合的自定义参数，进入后仍可逐包查看详情。
     </div>
 
+    <div v-if="batchPreviewCompatibility.length" class="batch-compatibility-list">
+      <div
+        v-for="field in batchPreviewCompatibility"
+        :key="field.name"
+        class="batch-compatibility-row"
+        :class="{ 'is-error': !field.compatible }"
+      >
+        <strong>{{ field.name }}</strong>
+        <span>{{ field.solutionCount }}/{{ field.totalSolutionCount }} 个方案</span>
+        <span>{{ field.bindingCount }} 处绑定</span>
+        <small>{{ field.compatible ? (field.type || '同类型') : `类型冲突：${field.type}` }}</small>
+      </div>
+    </div>
+    </div>
+
     <template #footer>
       <div class="batch-dialog-footer">
         <el-button class="intercom-btn-outlined" @click="batchPreviewVisible = false">取消</el-button>
@@ -919,6 +965,7 @@
           class="batch-dialog-primary"
           :loading="batchLoading"
           :disabled="batchPreviewHasInvalidNames"
+          data-tutorial-target="pull-enter-group-action"
           @click="enterBatchMode"
         >
           进入组合圈包模式
@@ -1000,7 +1047,12 @@
           <small>{{ activeBatchEntry?.crowdName || '当前人群包' }}</small>
         </span>
       </el-radio>
-      <el-radio value="all" class="batch-automation-option">
+      <el-radio
+        value="all"
+        class="batch-automation-option"
+        data-tutorial-target="pull-batch-all"
+        @change="handleBatchAllScopeChange"
+      >
         <span>
           <strong>圈完全部人群包</strong>
           <small>按下方顺序依次执行 {{ batchEntries.length }} 个包</small>
@@ -1011,7 +1063,7 @@
     <div v-if="batchAutomationScope === 'all'" class="batch-run-queue">
       <div class="batch-dialog-section-head">
         <span>执行队列</span>
-        <small>串行执行，失败时暂停</small>
+        <small>串行执行，失败项会保留并可单独重试</small>
       </div>
       <div
         v-for="(entry, index) in batchEntries"
@@ -1029,6 +1081,7 @@
         <el-button class="intercom-btn-outlined" @click="batchAutomationDialogVisible = false">取消</el-button>
         <el-button
           class="batch-dialog-primary"
+          data-tutorial-target="pull-confirm-batch-run"
           @click="confirmBatchAutomation"
         >
           开始自动化圈人
@@ -1069,6 +1122,7 @@ import {
 } from '../utils/solutionState.js'
 import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 import {
+  analyzeBatchCustomFieldCompatibility,
   buildBatchCustomFieldSections as composeBatchCustomFieldSections,
   collectUniqueCustomFieldNames,
 } from '../utils/solutionBatch.js'
@@ -1078,6 +1132,8 @@ import {
   isBatchableParameterSection,
 } from '../utils/parameterBatch.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
+import { expandCombinationParameterRows } from '../utils/combinationParameterBatch.js'
+import { matchesTutorialBrandColumn, getParameterTutorialProgress } from '../utils/parameterBatchTutorial.js'
 import {
   readSessionWorkspace,
   removeSessionWorkspace,
@@ -1085,6 +1141,12 @@ import {
 } from '../utils/sessionWorkspace.js'
 import { validateWorkbenchOutput } from '../utils/workbenchValidation.js'
 import {
+  PARAMETER_BATCH_TUTORIAL_ID,
+  COMBINATION_BATCH_TUTORIAL_ID,
+  COMBINATION_BATCH_BRANDS,
+  PARAMETER_BATCH_TUTORIAL_VALUES,
+  PULL_ANALYSIS_GROUP_TUTORIAL_ID,
+  PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
@@ -1159,23 +1221,85 @@ function isSolutionReuseTutorialActive() {
   return guidedTutorialState.active && guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID
 }
 
+function isPullAnalysisTutorialActive() {
+  return guidedTutorialState.active
+    && guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID
+}
+
+function isParameterBatchTutorialActive() {
+  return guidedTutorialState.active
+    && guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID
+}
+
 function getTutorialPackageTarget(packageType) {
-  if (isSolutionReuseTutorialActive() && packageType === CATEGORY_PUBLIC_PACKAGE) return 'add-category-public'
+  if (
+    (isSolutionReuseTutorialActive() || isParameterBatchTutorialActive())
+    && packageType === CATEGORY_PUBLIC_PACKAGE
+  ) return 'add-category-public'
   if (packageType === CATEGORY_ITEM_PACKAGE) return 'add-category-item'
   return undefined
 }
 
+function getTutorialPublishedSolutionTarget(item) {
+  if (isParameterBatchTutorialActive()) {
+    const expectedId = String(guidedTutorialState.context.solutionId || '')
+    const matches = expectedId
+      ? String(item?.id || '') === expectedId
+      : String(item?.name || '').trim() === PARAMETER_BATCH_TUTORIAL_VALUES.solutionName
+    return matches ? 'load-tutorial-solution' : undefined
+  }
+  if (isSolutionReuseTutorialActive()) {
+    const expectedId = String(guidedTutorialState.context.solutionId || '')
+    const expectedName = isParameterBatchTutorialActive()
+      ? PARAMETER_BATCH_TUTORIAL_VALUES.solutionName
+      : SOLUTION_REUSE_TUTORIAL_VALUES.solutionName
+    if ((expectedId && String(item?.id || '') === expectedId)
+      || String(item?.name || '').trim() === expectedName) {
+      return 'load-tutorial-solution'
+    }
+  }
+  if (!isPullAnalysisTutorialActive()) return undefined
+  const itemId = String(item?.id || '')
+  const itemName = String(item?.name || '').trim()
+  if (isGuidedTutorialStep('pull-load-base-solution')) {
+    const expectedId = String(guidedTutorialState.context.pullBaseSolutionId || '')
+    if ((expectedId && itemId === expectedId) || itemName === PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.baseSolutionName) {
+      return 'pull-load-base-solution'
+    }
+  }
+  if (isGuidedTutorialStep('pull-load-own-solution')) {
+    const expectedId = String(guidedTutorialState.context.pullOwnSolutionId || '')
+    if ((expectedId && itemId === expectedId) || itemName === PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.ownPurchaseSolutionName) {
+      return 'pull-load-own-solution'
+    }
+  }
+  return undefined
+}
+
 function isTutorialPublishedSolution(item) {
-  if (!isSolutionReuseTutorialActive()) return false
-  const expectedId = String(guidedTutorialState.context.solutionId || '')
-  return (expectedId && String(item?.id || '') === expectedId)
-    || String(item?.name || '').trim() === SOLUTION_REUSE_TUTORIAL_VALUES.solutionName
+  return getTutorialPublishedSolutionTarget(item) === 'load-tutorial-solution'
 }
 
 function getTutorialCustomFieldTarget(section) {
-  if (!isSolutionReuseTutorialActive()) return undefined
-  if (section?.name === '分析类目') return 'edit-analysis-field'
-  if (section?.name === '竞争品牌') return 'edit-competitor-field'
+  if (
+    guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID
+    && isGuidedTutorialStep('combo-open-field')
+    && batchMode.value
+    && section?.name === '竞争品牌'
+  ) {
+    return 'combo-edit-competitor'
+  }
+  if (isParameterBatchTutorialActive() && !batchMode.value) {
+    if (section?.name === PARAMETER_BATCH_TUTORIAL_VALUES.customFieldName) return 'parameter-edit-brand'
+  }
+  if (isSolutionReuseTutorialActive()) {
+    if (section?.name === '分析类目') return 'edit-analysis-field'
+    if (section?.name === '竞争品牌') return 'edit-competitor-field'
+  }
+  if (isPullAnalysisTutorialActive() && batchMode.value) {
+    if (section?.name === '分析类目') return 'pull-edit-batch-analysis'
+    if (section?.name === '竞争品牌') return 'pull-edit-batch-competitor'
+  }
   return undefined
 }
 
@@ -1198,6 +1322,7 @@ const { listFolders } = useFoldersApi()
 const { listPackages } = usePackagesApi()
 const {
   state: guidedTutorialState,
+  currentStep: guidedTutorialStep,
   completeStep: completeGuidedTutorialStep,
   isStep: isGuidedTutorialStep,
   updateContext: updateGuidedTutorialContext,
@@ -1338,12 +1463,44 @@ const batchPreviewParameterNames = computed(() => {
   return collectUniqueCustomFieldNames(batchPreviewSolutions.value)
 })
 
+const tutorialBatchFolderId = computed(() => {
+  const recordedId = String(guidedTutorialState.context.pullFolderId || '')
+  if (recordedId && folderTreeContains(publishedFolderTree.value, recordedId)) return recordedId
+  if (guidedTutorialState.taskId !== COMBINATION_BATCH_TUTORIAL_ID) return recordedId
+  return findFolderIdByName(
+    publishedFolderTree.value,
+    PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.folderName,
+  ) || ''
+})
+
+const batchPreviewCompatibility = computed(() => (
+  analyzeBatchCustomFieldCompatibility(batchPreviewSolutions.value)
+))
+
 const batchPreviewHasInvalidNames = computed(() =>
-  batchPreviewSolutions.value.some((solution) => !String(solution?.defaultCrowdName || '').trim()),
+  batchPreviewSolutions.value.some((solution) => !String(solution?.defaultCrowdName || '').trim())
+    || batchPreviewCompatibility.value.some(field => !field.compatible),
 )
+
+function pullAggregationReady(rows = batchPreviewCompatibility.value) {
+  const expected = new Map([
+    ['分析类目', 8],
+    ['本品牌', 4],
+    ['竞争品牌', 4],
+  ])
+  return rows.length === 3 && [...expected].every(([name, bindingCount]) => {
+    const row = rows.find(item => item.name === name)
+    return row?.compatible
+      && row.coverageComplete
+      && row.solutionCount === 3
+      && row.bindingCount === bindingCount
+  })
+}
 
 const activeBatchEntry = computed(() => batchEntries.value[activeBatchIndex.value] || null)
 const isParameterBatch = computed(() => batchMode.value && batchKind.value === 'parameter')
+const parameterBatchSourceCount = computed(() => batchMode.value ? batchEntries.value.length : 1)
+const parameterBatchTaskCount = computed(() => parameterBatchRows.value.length * parameterBatchSourceCount.value)
 const parameterBatchTotalValues = computed(() => (
   parameterBatchRows.value.reduce((total, row) => total + row.values.length, 0)
 ))
@@ -1352,9 +1509,39 @@ const parameterBatchInvalidCount = computed(() => (
 ))
 const parameterBatchCanCreate = computed(() => (
   parameterBatchRows.value.length > 0
-  && parameterBatchRows.value.length <= 100
+  && parameterBatchTaskCount.value <= 100
+  && (!batchMode.value || parameterBatchSection.value?.entryCount === parameterBatchSourceCount.value)
   && parameterBatchInvalidCount.value === 0
+  && (!isParameterBatchTutorialActive() || parameterTutorialBrandRowsReady())
+  && (guidedTutorialState.taskId !== COMBINATION_BATCH_TUTORIAL_ID || comboRowsReady())
 ))
+
+function comboRowsReady() {
+  const rows = parameterBatchRows.value
+  return rows.length === 3 && rows.every(row => row.valid && row.values.length === 1)
+    && COMBINATION_BATCH_BRANDS.every(brand => rows.some(row => row.values[0] === brand))
+}
+
+watch(() => [guidedTutorialState.active, guidedTutorialState.stepIndex, batchMode.value, batchEntries.value.length], () => {
+  if (['combo-open-group', 'combo-confirm-group'].some(isGuidedTutorialStep)) leftPanelMode.value = 'solutions'
+})
+
+function parameterTutorialBrandRowsReady() {
+  return matchesTutorialBrandColumn(parameterBatchRows.value.map(row => row.values))
+    && parameterBatchRows.value.every(row => row.valid && !getParameterBatchNameIssue(row))
+}
+
+function parameterTutorialEntriesReady() {
+  return batchKind.value === 'parameter'
+    && matchesTutorialBrandColumn(batchEntries.value.map(entry => entry.parameterBatchValues))
+}
+
+function getTutorialAutomationTarget() {
+  if (isGuidedTutorialStep('parameter-start-automation')) return 'parameter-start-automation'
+  if (isGuidedTutorialStep('combo-start-automation')) return 'combo-start-automation'
+  if (['pull-run-baseline', 'pull-run-second'].some(isGuidedTutorialStep)) return 'pull-run-batch'
+  return 'start-automation'
+}
 
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
 const canUndo = computed(() => !batchMode.value && historyPos.value > 0)
@@ -1415,6 +1602,16 @@ function getBindingNode(binding) {
   return nodeList.value.find((node) => node.id === binding?.nodeId)
 }
 
+function findFolderIdByName(folders, folderName) {
+  const expectedName = String(folderName || '').trim()
+  for (const folder of folders || []) {
+    if (String(folder?.name || '').trim() === expectedName) return String(folder.id || '')
+    const nested = findFolderIdByName(folder?.children || [], expectedName)
+    if (nested) return nested
+  }
+  return ''
+}
+
 function isParameterBatchSection(section) {
   return isParameterBatch.value
     && String(section?.name || '').trim() === parameterBatchFieldName.value
@@ -1430,7 +1627,7 @@ function getSectionDisplayBindings(section) {
 function canBatchParameterSection(section) {
   return workbenchMode.value === 'solution-use'
     && Boolean(currentSolution.value)
-    && !batchMode.value
+    && !isParameterBatch.value
     && Array.isArray(section?.bindings)
     && section.bindings.length > 0
     && isBatchableParameterSection(section)
@@ -1460,32 +1657,67 @@ function refreshParameterBatchRows() {
   parameterBatchRows.value = buildParameterBatchRows(parameterBatchText.value, {
     allowedValues: collectBatchAllowedValues(section),
     maxItems: getParameterBatchLimit(section),
-    baseName: String(crowdNameInput.value || currentSolution.value?.defaultCrowdName || '人群包').trim(),
+    baseName: batchMode.value
+      ? '组合人群'
+      : String(crowdNameInput.value || currentSolution.value?.defaultCrowdName || '人群包').trim(),
   }).map((row) => ({
     ...row,
     crowdName: existingNames.get(JSON.stringify(row.values)) || row.crowdName,
   }))
+  if (isParameterBatchTutorialActive()) {
+    updateGuidedTutorialContext({
+      parameterBatchRows: parameterBatchRows.value.map(row => [...row.values]),
+      parameterBatchError: parameterTutorialBrandRowsReady()
+        ? ''
+        : '请完整粘贴教程提供的 4 行品牌，并保持一行一个品牌。',
+    })
+    if (isGuidedTutorialStep('parameter-paste-brands') && parameterTutorialBrandRowsReady()) {
+      completeGuidedTutorialStep('parameter-paste-brands')
+    }
+  }
 }
+
+watch(() => parameterBatchRows.value, () => {
+  if (isGuidedTutorialStep('combo-paste') && comboRowsReady()) completeGuidedTutorialStep('combo-paste')
+})
 
 function openParameterBatch(section) {
   if (!canBatchParameterSection(section)) return
+  const preserveTutorialInput = (
+    isParameterBatchTutorialActive()
+      || guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID
+  )
+    && section.customFieldId === parameterBatchSection.value?.customFieldId
   parameterBatchSection.value = section
-  parameterBatchText.value = ''
-  parameterBatchRows.value = []
+  if (!preserveTutorialInput) {
+    parameterBatchText.value = ''
+    parameterBatchRows.value = []
+  }
   parameterBatchDialogVisible.value = true
 }
 
 async function openParameterBatchFromEditor() {
-  const section = editingCfSection.value
+  const section = customFieldSections.value.find(item => item.customFieldId === editingCfSection.value?.customFieldId) || editingCfSection.value
   if (!canBatchParameterSection(section)) return
   cfEditDialogVisible.value = false
   await nextTick()
   openParameterBatch(section)
+  if (isGuidedTutorialStep('combo-open-excel') && section.name === '竞争品牌') completeGuidedTutorialStep('combo-open-excel')
+  if (isGuidedTutorialStep('parameter-open-excel')) {
+    completeGuidedTutorialStep('parameter-open-excel')
+    refreshParameterBatchRows()
+  }
 }
 
 function clearParameterBatchInput() {
   parameterBatchText.value = ''
   parameterBatchRows.value = []
+  if (isParameterBatchTutorialActive()) {
+    updateGuidedTutorialContext({
+      parameterBatchRows: [],
+      parameterBatchError: '请完整粘贴教程提供的 4 行品牌，并保持一行一个品牌。',
+    })
+  }
 }
 
 function removeParameterBatchRow(rowId) {
@@ -1762,12 +1994,70 @@ function openCfEditDialog(section) {
     }
   }
   cfEditDialogVisible.value = true
+  if (
+    section?.name === PARAMETER_BATCH_TUTORIAL_VALUES.customFieldName
+    && isGuidedTutorialStep('parameter-open-brand-editor')
+  ) {
+    completeGuidedTutorialStep('parameter-open-brand-editor')
+  }
   if (section?.name === '分析类目' && isGuidedTutorialStep('open-analysis-field')) {
     completeGuidedTutorialStep('open-analysis-field')
   }
   if (section?.name === '竞争品牌' && isGuidedTutorialStep('open-competitor-field')) {
     completeGuidedTutorialStep('open-competitor-field')
   }
+  if (section?.name === '分析类目' && isGuidedTutorialStep('pull-open-batch-analysis')) {
+    completeGuidedTutorialStep('pull-open-batch-analysis')
+  }
+  if (section?.name === '竞争品牌' && isGuidedTutorialStep('pull-open-batch-competitor')) {
+    completeGuidedTutorialStep('pull-open-batch-competitor')
+  }
+  if (section?.name === '竞争品牌' && isGuidedTutorialStep('combo-open-field')) {
+    completeGuidedTutorialStep('combo-open-field')
+  }
+}
+
+function pullBatchValueApplied(fieldName, expectedValue) {
+  if (batchEntries.value.length !== 3) return false
+  return batchEntries.value.every((entry) => {
+    const fields = Array.isArray(entry?.record?.customFields) ? entry.record.customFields : []
+    const field = fields.find(item => String(item?.name || '').trim() === fieldName)
+    const bindings = Array.isArray(field?.bindings) ? field.bindings : []
+    if (!field || bindings.length === 0) return false
+    return bindings.every((binding) => {
+      const node = entry.nodes.find(item => item.id === binding.nodeId)
+      return getArray(node?.formData?.[binding.fieldKey]).map(String).includes(expectedValue)
+    })
+  })
+}
+
+async function applyPullTutorialFinalCrowdNames() {
+  const names = PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.finalCrowdNames
+  if (!Array.isArray(names) || names.length !== batchEntries.value.length) return
+
+  const nameBySolution = new Map([
+    [PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.baseSolutionName, names[0]],
+    [PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.ownPurchaseSolutionName, names[1]],
+    [PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.competitorPurchaseSolutionName, names[2]],
+  ])
+
+  batchEntries.value.forEach((entry, index) => {
+    const crowdName = nameBySolution.get(String(entry.solutionName || '').trim()) || names[index]
+    entry.crowdName = crowdName
+    entry.generatedJson = null
+    entry.record = {
+      ...entry.record,
+      defaultCrowdName: crowdName,
+    }
+  })
+  const activeEntry = activeBatchEntry.value
+  if (activeEntry) crowdNameInput.value = activeEntry.crowdName
+  batchEntries.value = [...batchEntries.value]
+  updateGuidedTutorialContext({
+    pullBatchPackageNames: batchEntries.value.map(entry => entry.crowdName),
+  })
+  await nextTick()
+  await buildFinalJson()
 }
 
 function tutorialCustomFieldApplied(fieldName) {
@@ -1836,7 +2126,25 @@ function applyCustomFieldValue(customFieldId, value) {
 
 async function onCfDialogSave({ customFieldId, value }) {
   if (batchMode.value) {
-    applyBatchCustomFieldValue(editingCfSection.value?.name, value)
+    const fieldName = String(editingCfSection.value?.name || '').trim()
+    applyBatchCustomFieldValue(fieldName, value)
+    if (
+      fieldName === '分析类目'
+      && isGuidedTutorialStep('pull-save-batch-category')
+      && pullBatchValueApplied('分析类目', PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.batchCategory)
+    ) {
+      updateGuidedTutorialContext({ pullBatchCategoryApplied: true })
+      completeGuidedTutorialStep('pull-save-batch-category')
+    }
+    if (
+      fieldName === '竞争品牌'
+      && isGuidedTutorialStep('pull-save-batch-competitor')
+      && pullBatchValueApplied('竞争品牌', PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.batchCompetitorBrand)
+    ) {
+      updateGuidedTutorialContext({ pullBatchCompetitorApplied: true })
+      await applyPullTutorialFinalCrowdNames()
+      completeGuidedTutorialStep('pull-save-batch-competitor')
+    }
     return
   }
 
@@ -1974,6 +2282,12 @@ function toggleLeftPanelMode() {
   if (leftPanelMode.value === 'solutions' && isGuidedTutorialStep('open-solution-picker')) {
     completeGuidedTutorialStep('open-solution-picker')
   }
+  if (leftPanelMode.value === 'solutions' && isGuidedTutorialStep('pull-open-picker-base')) {
+    completeGuidedTutorialStep('pull-open-picker-base')
+  }
+  if (leftPanelMode.value === 'solutions' && isGuidedTutorialStep('pull-open-picker-group')) {
+    completeGuidedTutorialStep('pull-open-picker-group')
+  }
 }
 
 function onNameManualEdit(value) {
@@ -2063,6 +2377,10 @@ function clearCanvas() {
 }
 
 function prepareCleanGuidedTutorialWorkbench() {
+  if (guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID) {
+    leftPanelMode.value = 'solutions'
+    return
+  }
   const hadContent = nodeList.value.length > 0
     || Boolean(currentSolution.value)
     || Boolean(String(crowdNameInput.value || '').trim())
@@ -2285,9 +2603,26 @@ function openBatchPreview() {
   batchPreviewVisible.value = true
 }
 
-function openBatchPreviewForFolder(folderId) {
+async function openBatchPreviewForFolder(folderId) {
   selectedPublishedFolderId.value = folderId
   openBatchPreview()
+  if (
+    guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID
+    && isGuidedTutorialStep('combo-open-group')
+    && String(folderId || '') === tutorialBatchFolderId.value
+  ) {
+    await nextTick()
+    completeGuidedTutorialStep('combo-open-group')
+    return
+  }
+  if (
+    isPullAnalysisTutorialActive()
+    && isGuidedTutorialStep('pull-open-group-preview')
+    && String(folderId || '') === String(guidedTutorialState.context.pullFolderId || '')
+  ) {
+    await nextTick()
+    completeGuidedTutorialStep('pull-open-group-preview')
+  }
 }
 
 function persistActiveBatchEntry() {
@@ -2338,10 +2673,48 @@ async function activateBatchEntry(index, options = {}) {
 
   await nextTick()
   if (rebuild) await buildFinalJson()
+
+  if (isGuidedTutorialStep('pull-inspect-group-packages')) {
+    const visited = [...new Set([
+      ...(guidedTutorialState.context.pullVisitedPackageIndexes || []),
+      index,
+    ])].sort((a, b) => a - b)
+    updateGuidedTutorialContext({ pullVisitedPackageIndexes: visited })
+    if (visited.length === batchEntries.value.length) {
+      completeGuidedTutorialStep('pull-inspect-group-packages')
+    }
+  }
 }
 
 async function enterBatchMode() {
   if (batchLoading.value || batchPreviewSolutions.value.length < 2) return
+  if (isGuidedTutorialStep('pull-enter-group')) {
+    const expectedIds = [
+      guidedTutorialState.context.pullBaseSolutionId,
+      guidedTutorialState.context.pullOwnSolutionId,
+      guidedTutorialState.context.pullCompetitorSolutionId,
+    ].map(value => String(value || '')).filter(Boolean)
+    const previewIds = batchPreviewSolutions.value.map(item => String(item?.id || ''))
+    if (
+      expectedIds.length !== 3
+      || previewIds.length !== 3
+      || expectedIds.some(id => !previewIds.includes(id))
+      || !pullAggregationReady()
+    ) {
+      ElMessage.warning('方案组必须包含本教程生成的三个方案，且同名字段类型一致')
+      return
+    }
+  }
+  if (isGuidedTutorialStep('combo-confirm-group')) {
+    const allHaveCompetitorField = batchPreviewSolutions.value.length === 3
+      && batchPreviewSolutions.value.every((solution) => (
+        (solution?.customFields || []).some(field => String(field?.name || '').trim() === '竞争品牌')
+      ))
+    if (!allHaveCompetitorField) {
+      ElMessage.warning('方案组必须包含三份方案，且每份方案都有“竞争品牌”自定义字段')
+      return
+    }
+  }
   const shouldContinue = await confirmReplaceCanvas(
     '当前圈包画布已有内容，进入组合圈包模式后会替换现有状态，是否继续？',
     '进入组合圈包模式',
@@ -2382,6 +2755,34 @@ async function enterBatchMode() {
     await activateBatchEntry(0, { skipPersist: true })
     resetHistory()
     ElMessage.success(`已加载 ${entries.length} 个人群包，参数已按名称聚合`)
+    if (isGuidedTutorialStep('pull-enter-group')) {
+      const compatibility = analyzeBatchCustomFieldCompatibility(entries.map(entry => entry.record))
+      updateGuidedTutorialContext({
+        pullNodeCount: entries.reduce((sum, entry) => sum + entry.nodes.length, 0),
+        pullBatchStatus: 'idle',
+        pullBatchCompletedCount: 0,
+        pullBatchFailedNames: [],
+        pullBatchError: '',
+        pullBatchCategoryApplied: false,
+        pullBatchCompetitorApplied: false,
+        pullBatchCompatibility: compatibility,
+        pullBatchPackageNames: entries.map(entry => entry.crowdName),
+        pullVisitedPackageIndexes: [0],
+        pullBatchRound: '',
+        pullBaselineStatus: 'idle',
+        pullBaselineCompletedCount: 0,
+        pullBaselineFailedNames: [],
+        pullBaselineError: '',
+        pullSecondStatus: 'idle',
+        pullSecondCompletedCount: 0,
+        pullSecondFailedNames: [],
+        pullSecondError: '',
+      })
+      completeGuidedTutorialStep('pull-enter-group')
+    }
+    if (isGuidedTutorialStep('combo-confirm-group')) {
+      completeGuidedTutorialStep('combo-confirm-group')
+    }
   } catch (error) {
     resetBatchContext()
     ElMessage.error(error?.message || '组合方案加载失败，请稍后重试')
@@ -2392,6 +2793,32 @@ async function enterBatchMode() {
 
 async function createParameterBatchEntries() {
   if (parameterBatchCreating.value || !parameterBatchCanCreate.value) return
+  if (batchMode.value && !isParameterBatch.value) {
+    parameterBatchCreating.value = true
+    try {
+      persistActiveBatchEntry()
+      const fieldName = String(parameterBatchSection.value?.name || '').trim()
+      const entries = expandCombinationParameterRows(cloneValue(batchEntries.value), cloneValue(parameterBatchRows.value), fieldName, syncCustomFieldValue)
+      batchEntries.value = entries
+      batchKind.value = 'parameter'
+      parameterBatchFieldName.value = fieldName
+      parameterBatchFieldId.value = String(parameterBatchSection.value?.customFieldId || '')
+      parameterBatchDialogVisible.value = false
+      await activateBatchEntry(0, { skipPersist: true })
+      resetHistory()
+      if (isGuidedTutorialStep('combo-create')) completeGuidedTutorialStep('combo-create')
+      ElMessage.success(`已生成 ${entries.length} 个建包任务，请选择自动化圈人并圈完全部人群包`)
+    } catch (error) {
+      ElMessage.error(error?.message || '组合批量展开失败，请检查参数')
+    } finally {
+      parameterBatchCreating.value = false
+    }
+    return
+  }
+  if (isParameterBatchTutorialActive() && !parameterTutorialBrandRowsReady()) {
+    ElMessage.warning('本次教程请粘贴提供的 4 个竞争品牌，每行一个')
+    return
+  }
   if (workbenchMode.value !== 'solution-use' || !currentSolution.value || batchMode.value) {
     ElMessage.warning('批量参数只能从正在使用的单个方案中创建')
     return
@@ -2449,6 +2876,17 @@ async function createParameterBatchEntries() {
     parameterBatchDialogVisible.value = false
     await activateBatchEntry(0, { skipPersist: true })
     resetHistory()
+    if (isParameterBatchTutorialActive() && isGuidedTutorialStep('parameter-create-tasks')) {
+      updateGuidedTutorialContext({
+        parameterBatchRows: parameterBatchRows.value.map(row => [...row.values]),
+        parameterBatchPackageNames: entries.map(entry => entry.crowdName),
+        parameterBatchStatus: 'idle',
+        parameterBatchCompletedCount: 0,
+        parameterBatchFailedNames: [],
+        parameterBatchError: '',
+      })
+      completeGuidedTutorialStep('parameter-create-tasks')
+    }
     ElMessage.success(`已按 ${entries.length} 行生成 ${entries.length} 个建包任务`)
   } catch (error) {
     resetBatchContext()
@@ -2626,6 +3064,16 @@ async function saveWorkbenchDraft() {
 async function saveAsNewDerivedDraft() {
   if (!isDerivedSolutionSession.value || nodeList.value.length === 0) return
 
+  const pullCopyMode = isGuidedTutorialStep('pull-save-own-copy')
+    ? 'own'
+    : isGuidedTutorialStep('pull-save-competitor-copy')
+      ? 'competitor'
+      : ''
+  const expectedPullName = pullCopyMode === 'own'
+    ? PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.ownPurchaseSolutionName
+    : PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.competitorPurchaseSolutionName
+  if (pullCopyMode) completeGuidedTutorialStep(`pull-save-${pullCopyMode}-copy`)
+
   try {
     const { value } = await ElMessageBox.prompt(
       '请输入新方案名称',
@@ -2633,15 +3081,26 @@ async function saveAsNewDerivedDraft() {
       {
         confirmButtonText: '保存',
         cancelButtonText: '取消',
-        inputValue: String(crowdNameInput.value || currentSolution.value?.name || DEFAULT_DRAFT_NAME).trim(),
-        inputPattern: /\S+/,
-        inputErrorMessage: '方案名称不能为空',
+        inputValue: pullCopyMode
+          ? ''
+          : String(crowdNameInput.value || currentSolution.value?.name || DEFAULT_DRAFT_NAME).trim(),
+        inputValidator: pullCopyMode
+          ? input => String(input || '').trim() === expectedPullName || '请粘贴教程提供的完整方案名称'
+          : input => Boolean(String(input || '').trim()) || '方案名称不能为空',
+        closeOnClickModal: !pullCopyMode,
+        closeOnPressEscape: !pullCopyMode,
       },
     )
 
     savingDraft.value = true
-    await createDraft(buildDraftPayload(value))
+    const created = await createDraft(buildDraftPayload(value))
     ElMessage.success('当前圈包画布已另存为新方案草稿')
+    if (pullCopyMode && isGuidedTutorialStep(`pull-name-${pullCopyMode}-draft`)) {
+      updateGuidedTutorialContext(pullCopyMode === 'own'
+        ? { pullOwnDraftId: String(created?.id || '') }
+        : { pullCompetitorDraftId: String(created?.id || '') })
+      completeGuidedTutorialStep(`pull-name-${pullCopyMode}-draft`)
+    }
   } catch (error) {
     if (error !== 'cancel' && error?.message !== 'cancel') {
       ElMessage.error(error.message || '另存为新方案失败')
@@ -2701,7 +3160,24 @@ let loadSolutionAbort = null
 
 async function loadPublishedSolution(item) {
   if (!item?.id) return
-  if (currentSolution.value?.id === item.id && workbenchMode.value === 'solution-use' && !batchMode.value) return
+  if (currentSolution.value?.id === item.id && workbenchMode.value === 'solution-use' && !batchMode.value) {
+    const target = getTutorialPublishedSolutionTarget(item)
+    if (target === 'load-tutorial-solution') {
+      updateGuidedTutorialContext({
+        solutionId: String(item.id),
+        solutionNodeCount: nodeList.value.length,
+        solutionStructureChanged: false,
+      })
+      completeGuidedTutorialStep('load-tutorial-solution')
+    } else if (target === 'pull-load-base-solution') {
+      updateGuidedTutorialContext({ pullBaseSolutionId: String(item.id) })
+      completeGuidedTutorialStep('pull-load-base-solution')
+    } else if (target === 'pull-load-own-solution') {
+      updateGuidedTutorialContext({ pullOwnSolutionId: String(item.id) })
+      completeGuidedTutorialStep('pull-load-own-solution')
+    }
+    return
+  }
 
   const shouldContinue = await confirmReplaceCanvas(
     batchMode.value
@@ -2731,6 +3207,15 @@ async function loadPublishedSolution(item) {
         solutionStructureChanged: false,
       })
       completeGuidedTutorialStep('load-tutorial-solution')
+    }
+    const pullTarget = getTutorialPublishedSolutionTarget(detail)
+    if (pullTarget === 'pull-load-base-solution') {
+      updateGuidedTutorialContext({ pullBaseSolutionId: String(detail?.id || '') })
+      completeGuidedTutorialStep('pull-load-base-solution')
+    }
+    if (pullTarget === 'pull-load-own-solution') {
+      updateGuidedTutorialContext({ pullOwnSolutionId: String(detail?.id || '') })
+      completeGuidedTutorialStep('pull-load-own-solution')
     }
   } catch (error) {
     if (error.name !== 'AbortError') {
@@ -3088,8 +3573,39 @@ function handleDataBankCommand(command) {
       return
     }
     if (batchMode.value) {
+      if (isGuidedTutorialStep('combo-start-automation')) {
+        if (batchEntries.value.length !== 9 || !isParameterBatch.value) {
+          ElMessage.warning('请先生成教程指定的九个建包任务')
+          return
+        }
+        batchAutomationScope.value = 'current'
+        batchAutomationDialogVisible.value = true
+        completeGuidedTutorialStep('combo-start-automation')
+        return
+      }
+      if (isGuidedTutorialStep('parameter-start-automation')) {
+        if (!parameterTutorialEntriesReady()) {
+          ElMessage.warning('请先生成教程指定的 4 个竞争品牌建包任务')
+          return
+        }
+        batchAutomationScope.value = 'current'
+        batchAutomationDialogVisible.value = true
+        completeGuidedTutorialStep('parameter-start-automation')
+        return
+      }
       batchAutomationScope.value = 'current'
+      if (isGuidedTutorialStep('pull-run-second')) {
+        batchEntries.value.forEach((entry) => { entry.automationStatus = 'idle' })
+        batchEntries.value = [...batchEntries.value]
+      }
       batchAutomationDialogVisible.value = true
+      if (isGuidedTutorialStep('pull-run-baseline')) {
+        updateGuidedTutorialContext({ pullBatchRound: 'baseline' })
+        completeGuidedTutorialStep('pull-run-baseline')
+      } else if (isGuidedTutorialStep('pull-run-second')) {
+        updateGuidedTutorialContext({ pullBatchRound: 'second' })
+        completeGuidedTutorialStep('pull-run-second')
+      }
       return
     }
     void startAutoDataBankFlow()
@@ -3106,8 +3622,128 @@ function getAutomationStatusLabel(status) {
 }
 
 function confirmBatchAutomation() {
+  if (isGuidedTutorialStep('combo-confirm-run')) {
+    if (batchAutomationScope.value !== 'all' || batchEntries.value.length !== 9 || !isParameterBatch.value) {
+      ElMessage.warning('请生成九个教程任务，并选择圈完全部人群包')
+      return
+    }
+    updateGuidedTutorialContext({ comboCompletedCount: 0, comboError: '' })
+    completeGuidedTutorialStep('combo-confirm-run')
+  }
+  if (isGuidedTutorialStep('parameter-confirm-run')) {
+    if (!parameterTutorialEntriesReady()) {
+      ElMessage.warning('四个建包任务与教程品牌不一致，请重新生成')
+      return
+    }
+    if (batchAutomationScope.value !== 'all') {
+      ElMessage.warning('本次教程要一次圈完四个包，请先选择“圈完全部人群包”')
+      return
+    }
+    updateGuidedTutorialContext({
+      parameterBatchStatus: 'running',
+      parameterBatchCompletedCount: 0,
+      parameterBatchFailedNames: [],
+      parameterBatchError: '',
+    })
+    completeGuidedTutorialStep('parameter-confirm-run')
+  }
+  const tutorialRound = isGuidedTutorialStep('pull-confirm-baseline')
+    ? 'baseline'
+    : isGuidedTutorialStep('pull-confirm-second')
+      ? 'second'
+      : ''
+  if (tutorialRound) {
+    if (batchAutomationScope.value !== 'all') {
+      ElMessage.warning('本次教程要一次圈完三个包，请先选择“圈完全部人群包”')
+      return
+    }
+    updateGuidedTutorialContext({
+      pullBatchStatus: 'running',
+      pullBatchCompletedCount: batchEntries.value.filter(entry => entry.automationStatus === 'success').length,
+      pullBatchFailedNames: [],
+      pullBatchError: '',
+      pullBatchRound: tutorialRound,
+      ...(tutorialRound === 'baseline'
+        ? {
+            pullBaselineStatus: 'running',
+            pullBaselineCompletedCount: 0,
+            pullBaselineFailedNames: [],
+            pullBaselineError: '',
+          }
+        : {
+            pullSecondStatus: 'running',
+            pullSecondCompletedCount: 0,
+            pullSecondFailedNames: [],
+            pullSecondError: '',
+          }),
+    })
+    completeGuidedTutorialStep(
+      tutorialRound === 'baseline' ? 'pull-confirm-baseline' : 'pull-confirm-second',
+    )
+  }
   batchAutomationDialogVisible.value = false
   void startBatchAutomationFlow(batchAutomationScope.value)
+}
+
+function syncPullBatchTutorialStatus(errorMessage = '') {
+  const succeeded = batchEntries.value.filter(entry => entry.automationStatus === 'success')
+  const failed = batchEntries.value.filter(entry => entry.automationStatus === 'failed')
+  const running = batchEntries.value.some(entry => entry.automationStatus === 'running')
+  const allSucceeded = batchEntries.value.length > 0 && succeeded.length === batchEntries.value.length
+  if (isGuidedTutorialStep('combo-wait')) {
+    updateGuidedTutorialContext({ comboCompletedCount: succeeded.length, comboError: errorMessage })
+    if (batchEntries.value.length === 9 && allSucceeded) completeGuidedTutorialStep('combo-wait')
+    return
+  }
+  const status = allSucceeded
+    ? 'completed'
+    : running
+      ? 'running'
+      : failed.length > 0
+        ? (succeeded.length > 0 ? 'partial' : 'failed')
+        : 'idle'
+  if (isParameterBatchTutorialActive()) {
+    const progress = getParameterTutorialProgress(batchEntries.value, {
+      batchKind: batchKind.value,
+      running: databankAutomating.value,
+      errorMessage,
+    })
+    updateGuidedTutorialContext(progress)
+    if (progress.parameterBatchStatus === 'completed' && isGuidedTutorialStep('parameter-wait-automation')) {
+      completeGuidedTutorialStep('parameter-wait-automation')
+    }
+    return
+  }
+  if (!isPullAnalysisTutorialActive()) return
+  const round = guidedTutorialState.context.pullBatchRound
+  const roundPatch = round === 'baseline'
+    ? {
+        pullBaselineStatus: status,
+        pullBaselineCompletedCount: succeeded.length,
+        pullBaselineFailedNames: failed.map(entry => entry.crowdName || entry.solutionName || '未命名人群包'),
+        pullBaselineError: errorMessage,
+      }
+    : round === 'second'
+      ? {
+          pullSecondStatus: status,
+          pullSecondCompletedCount: succeeded.length,
+          pullSecondFailedNames: failed.map(entry => entry.crowdName || entry.solutionName || '未命名人群包'),
+          pullSecondError: errorMessage,
+        }
+      : {}
+  updateGuidedTutorialContext({
+    pullBatchStatus: status,
+    pullBatchCompletedCount: succeeded.length,
+    pullBatchFailedNames: failed.map(entry => entry.crowdName || entry.solutionName || '未命名人群包'),
+    pullBatchError: errorMessage,
+    ...roundPatch,
+  })
+  if (allSucceeded && round === 'baseline' && isGuidedTutorialStep('pull-wait-baseline')) {
+    completeGuidedTutorialStep('pull-wait-baseline')
+  }
+  if (allSucceeded && round === 'second' && isGuidedTutorialStep('pull-wait-second')) {
+    completeGuidedTutorialStep('pull-wait-second')
+  }
 }
 
 async function startBatchAutomationFlow(scope = 'current') {
@@ -3115,7 +3751,18 @@ async function startBatchAutomationFlow(scope = 'current') {
 
   const targetIndexes = scope === 'all'
     ? batchEntries.value.map((_entry, index) => index)
-    : [activeBatchIndex.value]
+    : scope === 'failed'
+      ? batchEntries.value
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry }) => entry.automationStatus === 'failed')
+          .map(({ index }) => index)
+      : [activeBatchIndex.value]
+  if (targetIndexes.length === 0) {
+    syncPullBatchTutorialStatus()
+    ElMessage.info('当前没有需要重试的失败任务')
+    return
+  }
+  const keepRunningAfterFailure = isPullAnalysisTutorialActive() || isParameterBatchTutorialActive() || guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID
   databankAutomating.value = true
   const pendingMessage = ElMessage({
     message: `正在自动化圈人：0 / ${targetIndexes.length}`,
@@ -3124,18 +3771,31 @@ async function startBatchAutomationFlow(scope = 'current') {
   })
 
   let completed = 0
+  let lastErrorMessage = ''
   try {
     for (const index of targetIndexes) {
       const entry = batchEntries.value[index]
       entry.automationStatus = 'running'
       batchEntries.value = [...batchEntries.value]
-      await activateBatchEntry(index)
+      syncPullBatchTutorialStatus()
+      try {
+        await activateBatchEntry(index)
+      } catch (error) {
+        entry.automationStatus = 'failed'
+        lastErrorMessage = error?.message || '任务准备失败，请稍后重试'
+        syncPullBatchTutorialStatus(lastErrorMessage)
+        if (keepRunningAfterFailure) continue
+        throw error
+      }
       pendingMessage.close()
 
       if (!ensureGeneratedOutputReady('自动化执行')) {
         entry.automationStatus = 'failed'
         batchEntries.value = [...batchEntries.value]
-        throw new Error('生成接口暂未就绪，请稍后重试')
+        lastErrorMessage = '生成接口暂未就绪，请稍后重试'
+        syncPullBatchTutorialStatus(lastErrorMessage)
+        if (keepRunningAfterFailure) continue
+        throw new Error(lastErrorMessage)
       }
 
       const currentPendingMessage = ElMessage({
@@ -3155,12 +3815,21 @@ async function startBatchAutomationFlow(scope = 'current') {
         entry.automationStatus = 'failed'
         currentPendingMessage.close()
         batchEntries.value = [...batchEntries.value]
+        lastErrorMessage = error?.message || '自动化圈人失败'
+        syncPullBatchTutorialStatus(lastErrorMessage)
+        if (keepRunningAfterFailure) continue
         throw error
       }
       batchEntries.value = [...batchEntries.value]
+      syncPullBatchTutorialStatus()
     }
 
-    ElMessage.success(`已完成 ${completed} 个人群包的自动化圈人`)
+    const failedCount = targetIndexes.filter(index => batchEntries.value[index]?.automationStatus === 'failed').length
+    if (failedCount > 0) {
+      ElMessage.warning(`已完成 ${completed} 个，${failedCount} 个执行失败，可仅重试失败任务`)
+    } else {
+      ElMessage.success(`已完成 ${completed} 个人群包的自动化圈人`)
+    }
   } catch (error) {
     ElMessage.error(
       `${activeBatchEntry.value?.crowdName || '当前人群包'}执行失败：${error?.message || '请稍后重试'}`,
@@ -3168,7 +3837,12 @@ async function startBatchAutomationFlow(scope = 'current') {
   } finally {
     pendingMessage.close()
     databankAutomating.value = false
+    syncPullBatchTutorialStatus(lastErrorMessage)
   }
+}
+
+function retryPullAnalysisBatch() {
+  void startBatchAutomationFlow('failed')
 }
 
 async function startAutoDataBankFlow() {
@@ -3202,6 +3876,19 @@ async function startAutoDataBankFlow() {
     return { ok: false, error: errorMessage }
   } finally {
     databankAutomating.value = false
+  }
+}
+
+function handleBatchAllScopeChange() {
+  if (batchAutomationScope.value !== 'all') return
+  if (isGuidedTutorialStep('parameter-select-all')) {
+    completeGuidedTutorialStep('parameter-select-all')
+  } else if (isGuidedTutorialStep('combo-select-all')) {
+    completeGuidedTutorialStep('combo-select-all')
+  } else if (isGuidedTutorialStep('pull-select-all-baseline')) {
+    completeGuidedTutorialStep('pull-select-all-baseline')
+  } else if (isGuidedTutorialStep('pull-select-all-second')) {
+    completeGuidedTutorialStep('pull-select-all-second')
   }
 }
 
@@ -3517,6 +4204,42 @@ function handleKeydown(event) {
 
 function syncGuidedTutorialContext() {
   if (!guidedTutorialState.active) return
+  if (guidedTutorialState.taskId === PARAMETER_BATCH_TUTORIAL_ID) {
+    const tutorialNode = nodeList.value.find(
+      node => node.packageType === PARAMETER_BATCH_TUTORIAL_VALUES.packageType,
+    )
+    const timeField = tutorialNode?.schema?.find(
+      field => field.key === 'time' || field.Widget_Type === '日期_切换',
+    )
+    const timeKey = timeField?.key || 'time'
+    updateGuidedTutorialContext({
+      nodeCount: nodeList.value.length,
+      behaviors: Array.isArray(tutorialNode?.formData?.bhv)
+        ? [...tutorialNode.formData.bhv]
+        : [],
+      recentDays: tutorialNode?.formData?.[timeKey]?.days ?? null,
+      dateMode: tutorialNode?.modeData?.[timeKey] || '',
+      dateRange: Array.isArray(tutorialNode?.formData?.[timeKey]?.dateRange)
+        ? [...tutorialNode.formData[timeKey].dateRange]
+        : [],
+      audienceName: String(crowdNameInput.value || ''),
+      solutionId: String(currentSolution.value?.id || guidedTutorialState.context.solutionId || ''),
+      solutionName: String(currentSolution.value?.name || ''),
+      defaultCrowdName: String(crowdNameInput.value || ''),
+    })
+    return
+  }
+  if (guidedTutorialState.taskId === PULL_ANALYSIS_GROUP_TUTORIAL_ID) {
+    updateGuidedTutorialContext({
+      pullNodeCount: batchMode.value
+        ? batchEntries.value.reduce((sum, entry) => sum + (entry.nodes?.length || 0), 0)
+        : nodeList.value.length,
+      pullOperators: nodeList.value.slice(1).map(node => node?.operator || ''),
+      solutionName: String(currentSolution.value?.name || ''),
+      defaultCrowdName: String(crowdNameInput.value || ''),
+    })
+    return
+  }
   if (guidedTutorialState.taskId === SOLUTION_REUSE_TUTORIAL_ID) {
     const tutorialNodes = nodeList.value.filter(
       node => node.packageType === SOLUTION_REUSE_TUTORIAL_VALUES.packageType,
@@ -3575,6 +4298,18 @@ watch(
   [nodeList, crowdNameInput],
   syncGuidedTutorialContext,
   { deep: true, immediate: true },
+)
+
+watch(
+  () => guidedTutorialStep.value?.id,
+  async () => {
+    // Some tutorial actions both mutate the canvas and advance the step in the
+    // same event loop. Re-read the rendered canvas on step entry so a default
+    // operator such as intersection is not left behind in stale tutorial state.
+    await nextTick()
+    syncGuidedTutorialContext()
+  },
+  { flush: 'post' },
 )
 
 watch(
@@ -3681,6 +4416,7 @@ onMounted(async () => {
   window.addEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.addEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
   window.addEventListener('cdp:tutorial-confirm-solution-automation', handleSolutionTutorialAutomationConfirmed)
+  window.addEventListener('cdp:tutorial-retry-pull-batch', retryPullAnalysisBatch)
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
@@ -3709,10 +4445,23 @@ onMounted(async () => {
 
 onActivated(() => {
   if (
-    isSolutionReuseTutorialActive()
+    (isSolutionReuseTutorialActive() || isParameterBatchTutorialActive())
     && ['open-solution-picker', 'load-tutorial-solution'].some(step => isGuidedTutorialStep(step))
   ) {
-    void loadPublishedSolutions()
+    void loadPublishedSolutions({ fresh: true })
+  }
+  if (
+    isPullAnalysisTutorialActive()
+    && [
+      'pull-open-picker-base',
+      'pull-load-base-solution',
+      'pull-load-own-solution',
+      'pull-open-picker-group',
+      'pull-open-group-preview',
+    ].some(step => isGuidedTutorialStep(step))
+  ) {
+    publishedLibraryScope.value = 'mine'
+    void loadPublishedSolutions({ fresh: true })
   }
 })
 
@@ -3728,6 +4477,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.removeEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
   window.removeEventListener('cdp:tutorial-confirm-solution-automation', handleSolutionTutorialAutomationConfirmed)
+  window.removeEventListener('cdp:tutorial-retry-pull-batch', retryPullAnalysisBatch)
   window.removeEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   if (cfResizeObserver) {
     cfResizeObserver.disconnect()
@@ -3737,6 +4487,45 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.batch-compatibility-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.batch-compatibility-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) auto auto minmax(100px, .9fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 12px;
+  color: #2e4f68;
+  background: linear-gradient(105deg, rgba(232, 245, 255, .86), rgba(248, 252, 255, .98));
+  border: 1px solid rgba(93, 158, 209, .26);
+  border-radius: 10px;
+}
+
+.batch-compatibility-row strong {
+  color: #103552;
+}
+
+.batch-compatibility-row span,
+.batch-compatibility-row small {
+  font-size: 12px;
+}
+
+.batch-compatibility-row small {
+  color: #648096;
+  text-align: right;
+}
+
+.batch-compatibility-row.is-error {
+  color: #984a35;
+  background: #fff4ee;
+  border-color: #f0b49f;
+}
+
 .tutorial-copy-source .behavior-card {
   animation: tutorial-copy-source 420ms cubic-bezier(.2, .8, .2, 1) both;
 }
