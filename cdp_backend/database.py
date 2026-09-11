@@ -284,6 +284,34 @@ CREATE TABLE IF NOT EXISTS tutorial_progress (
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS tutorial_checkpoints (
+    user_id          TEXT NOT NULL,
+    tutorial_id      TEXT NOT NULL,
+    step_id          TEXT NOT NULL,
+    step_index       INTEGER NOT NULL DEFAULT 0,
+    step_title       TEXT NOT NULL DEFAULT '',
+    app_mode         TEXT NOT NULL DEFAULT 'workbench',
+    context_json     TEXT NOT NULL DEFAULT '{}',
+    session_json     TEXT NOT NULL DEFAULT '{}',
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY(user_id, tutorial_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS tutorial_step_checkpoints (
+    user_id          TEXT NOT NULL,
+    tutorial_id      TEXT NOT NULL,
+    step_id          TEXT NOT NULL,
+    step_index       INTEGER NOT NULL DEFAULT 0,
+    step_title       TEXT NOT NULL DEFAULT '',
+    app_mode         TEXT NOT NULL DEFAULT 'workbench',
+    context_json     TEXT NOT NULL DEFAULT '{}',
+    session_json     TEXT NOT NULL DEFAULT '{}',
+    updated_at       TEXT NOT NULL,
+    PRIMARY KEY(user_id, tutorial_id, step_id),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_solutions_status ON solutions(status);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder ON solutions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_updated ON solutions(updated_at);
@@ -341,6 +369,10 @@ CREATE INDEX IF NOT EXISTS idx_announcement_assets_created
     ON announcement_assets(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tutorial_progress_user_completed
     ON tutorial_progress(user_id, completed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tutorial_checkpoints_user_updated
+    ON tutorial_checkpoints(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tutorial_step_checkpoints_user_tutorial
+    ON tutorial_step_checkpoints(user_id, tutorial_id, step_index);
 """
 
 MIGRATION_COLUMNS = {
@@ -436,4 +468,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 11")
+        conn.execute("PRAGMA user_version = 12")

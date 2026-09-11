@@ -4285,9 +4285,13 @@ watch(
   () => guidedTutorialState.active,
   async (active) => {
     if (!active) return
-    leftPanelMode.value = 'packages'
-    pkgSearch.value = ''
-    prepareCleanGuidedTutorialWorkbench()
+    if (guidedTutorialState.resumed) {
+      await restoreWorkbenchSession()
+    } else {
+      leftPanelMode.value = 'packages'
+      pkgSearch.value = ''
+      prepareCleanGuidedTutorialWorkbench()
+    }
     await nextTick()
     syncGuidedTutorialContext()
   },

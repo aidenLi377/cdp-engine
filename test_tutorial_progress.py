@@ -62,6 +62,69 @@ class TutorialProgressApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["code"], "INVALID_TUTORIAL_ID")
 
+    def test_checkpoint_is_saved_per_account_and_removed_on_completion(self):
+        tutorial_id = "category-item-behavior-split"
+        payload = {
+            "stepId": "select-behavior",
+            "stepIndex": 3,
+            "stepTitle": "选择行为",
+            "appMode": "workbench",
+            "context": {"nodeCount": 1},
+            "sessionSnapshot": {"cdp.session.workbench.v1": "saved"},
+        }
+        saved = self.learner_a.put(
+            f"/api/tutorial-checkpoints/{tutorial_id}", json=payload
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["stepId"], "select-behavior")
+        self.assertEqual(saved.get_json()["context"]["nodeCount"], 1)
+        self.assertEqual(
+            saved.get_json()["stepCheckpoints"]["select-behavior"]["stepIndex"], 3
+        )
+        self.assertEqual(len(self.learner_a.get("/api/tutorial-checkpoints").get_json()), 1)
+        self.assertEqual(self.learner_b.get("/api/tutorial-checkpoints").get_json(), [])
+
+        completed = self.learner_a.post(
+            f"/api/tutorial-progress/{tutorial_id}/complete"
+        )
+        self.assertEqual(completed.status_code, 200)
+        self.assertEqual(self.learner_a.get("/api/tutorial-checkpoints").get_json(), [])
+
+    def test_each_reached_step_keeps_its_own_recovery_snapshot(self):
+        tutorial_id = "dmp-batch-profile-comparison"
+        for index, step_id in enumerate(("open-task-center", "select-dmp-tags")):
+            response = self.learner_a.put(
+                f"/api/tutorial-checkpoints/{tutorial_id}",
+                json={
+                    "stepId": step_id,
+                    "stepIndex": index,
+                    "stepTitle": step_id,
+                    "appMode": "task-center",
+                    "context": {"selectedTagIds": [str(index)]},
+                    "sessionSnapshot": {"checkpoint": step_id},
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+
+        item = self.learner_a.get("/api/tutorial-checkpoints").get_json()[0]
+        self.assertEqual(item["stepId"], "select-dmp-tags")
+        self.assertEqual(set(item["stepCheckpoints"]), {
+            "open-task-center",
+            "select-dmp-tags",
+        })
+        self.assertEqual(
+            item["stepCheckpoints"]["open-task-center"]["sessionSnapshot"],
+            {"checkpoint": "open-task-center"},
+        )
+
+    def test_checkpoint_rejects_invalid_shapes(self):
+        response = self.learner_a.put(
+            "/api/tutorial-checkpoints/category-item-behavior-split",
+            json={"stepId": "select-behavior", "stepIndex": -1, "context": []},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_TUTORIAL_CHECKPOINT")
+
 
 if __name__ == "__main__":
     unittest.main()

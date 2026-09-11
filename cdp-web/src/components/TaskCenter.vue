@@ -526,6 +526,59 @@ function prepareDmpTutorialWorkspace() {
   })
 }
 
+function restoreDmpTutorialWorkspace() {
+  dmpTutorialPrepared = true
+  const context = guidedTutorialState.context || {}
+  const stored = readSessionWorkspace(TASK_SESSION_KEY, props.sessionOwnerId) || {}
+  const audienceNames = Array.isArray(context.audienceNames)
+    ? context.audienceNames.map(name => String(name || '').trim()).filter(Boolean)
+    : []
+  const restoredTags = Array.isArray(context.selectedTagIds)
+    ? context.selectedTagIds.map(String)
+    : []
+  const restoredMetrics = DMP_COMPARISON_METRICS.filter(metric => (
+    Array.isArray(context.comparisonMetrics) && context.comparisonMetrics.includes(metric)
+  ))
+
+  selectedTags.value = restoredTags
+  tagSearch.value = ''
+  dmpCrowd.value = ''
+  dmpBatchMode.value = audienceNames.length > 0 || stored.dmpBatchMode === true
+  dmpBatchText.value = audienceNames.join('\n') || String(stored.dmpBatchText || '')
+  dmpBatchDraft.value = audienceNames.join('\n') || String(stored.dmpBatchDraft || dmpBatchText.value)
+  selectedComparisonTaskKeys.value = Array.isArray(stored.selectedComparisonTaskKeys)
+    ? stored.selectedComparisonTaskKeys.map(String)
+    : []
+  comparisonHistoryCollapsed.value = stored.comparisonHistoryCollapsed === true
+  comparisonLabelOrders.value = stored.comparisonLabelOrders
+    && typeof stored.comparisonLabelOrders === 'object'
+    && !Array.isArray(stored.comparisonLabelOrders)
+      ? Object.fromEntries(
+        Object.entries(stored.comparisonLabelOrders)
+          .filter(([, order]) => Array.isArray(order))
+          .map(([fingerprint, order]) => [fingerprint, order.map(String)]),
+      )
+      : {}
+  comparisonMetrics.value = restoredMetrics.length
+    ? restoredMetrics
+    : DMP_COMPARISON_METRICS.filter(metric => stored.comparisonMetrics?.includes(metric))
+  if (!comparisonMetrics.value.length) comparisonMetrics.value = ['覆盖人数']
+
+  const comparisonSteps = new Set([
+    'select-comparison-crowds',
+    'select-comparison-metrics',
+    'inspect-comparison-table',
+    'open-label-order',
+    'sort-label-order',
+    'sort-audience-order',
+    'copy-comparison-table',
+    'dmp-tutorial-complete',
+  ])
+  monitorView.value = comparisonSteps.has(guidedTutorialStep.value?.id)
+    ? 'comparison'
+    : (MONITOR_VIEWS.has(stored.monitorView) ? stored.monitorView : 'result')
+}
+
 function syncDmpTutorialTags() {
   if (!isDmpTutorialActive.value) return
   const selected = [...selectedTags.value].map(String)
@@ -580,7 +633,10 @@ watch(
       dmpTutorialPrepared = false
       return
     }
-    if (step?.id === 'select-dmp-tags' && !dmpTutorialPrepared) prepareDmpTutorialWorkspace()
+    if (!dmpTutorialPrepared) {
+      if (guidedTutorialState.resumed) restoreDmpTutorialWorkspace()
+      else if (step?.id === 'select-dmp-tags') prepareDmpTutorialWorkspace()
+    }
   },
   { immediate: true },
 )

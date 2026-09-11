@@ -36,6 +36,33 @@
         <strong>{{ detailMeta?.businessProblem }}</strong>
         <i v-if="isCompleted(selectedId)">已完成打卡</i>
       </div>
+      <section v-if="selectedCheckpoint" class="tutorial-resume">
+        <div class="tutorial-resume__copy">
+          <span>{{ isCompleted(selectedId) ? '本次重新练习已保存' : '已保存上次实操' }}</span>
+          <strong>上次做到 {{ checkpointStepIndex + 1 }}/{{ selectedTutorialSteps.length }}：{{ selectedCheckpoint.stepTitle }}</strong>
+          <p>选择一个已走过的步骤继续。系统会先恢复此前的页面与参数，再把高亮定位到该步骤。</p>
+        </div>
+        <div class="tutorial-resume__timeline" aria-label="选择教程恢复步骤">
+          <button
+            v-for="(step, index) in selectedTutorialSteps"
+            :key="step.id"
+            type="button"
+            :class="{ current: index === checkpointStepIndex, reached: index <= checkpointStepIndex }"
+            :disabled="index > checkpointStepIndex"
+            :title="index <= checkpointStepIndex ? `从第 ${index + 1} 步继续：${step.title}` : `完成第 ${checkpointStepIndex + 1} 步后解锁`"
+            @click="resumeFromStep(step.id, index)"
+          >
+            <i>{{ index < checkpointStepIndex ? '✓' : index + 1 }}</i>
+            <span>{{ step.title }}</span>
+          </button>
+        </div>
+        <div class="tutorial-resume__actions">
+          <button type="button" class="is-secondary" @click="startTutorial(selectedId, { fresh: true })">重新开始</button>
+          <button type="button" class="is-primary" @click="resumeFromStep(selectedCheckpoint.stepId, checkpointStepIndex)">
+            {{ isCompleted(selectedId) ? '继续本次练习 →' : '继续上次进度 →' }}
+          </button>
+        </div>
+      </section>
       <Transition name="tutorial-start-guide">
         <div v-if="startGuideVisible" class="tutorial-center__start-guide" role="status">
           <span>已为你选好任务</span>
@@ -55,6 +82,10 @@
           <p>
             每个教程都要求你亲手完成真实操作。系统会记录账号进度，并告诉你已经掌握了什么、能解决哪类业务问题。
           </p>
+          <div class="tutorial-hero__recovery-note" role="note">
+            <i aria-hidden="true">↻</i>
+            <span><strong>中断不用重来</strong>进度会按步骤自动保存，返回对应教程即可选择上次步骤继续。</span>
+          </div>
           <div class="tutorial-hero__actions">
             <button
               v-if="nextId"
@@ -300,6 +331,7 @@ import {
   PARAMETER_BATCH_TUTORIAL_ID,
   PULL_ANALYSIS_GROUP_TUTORIAL_ID,
   SOLUTION_REUSE_TUTORIAL_ID,
+  GUIDED_TUTORIAL_STEPS,
 } from '../utils/guidedTutorialConfig.js'
 import {
   TUTORIAL_CATALOG,
@@ -310,7 +342,10 @@ import {
   nextTutorialId,
 } from '../utils/tutorialCatalog.js'
 import {
+  TUTORIAL_CHECKPOINT_EVENT,
   TUTORIAL_PROGRESS_EVENT,
+  clearTutorialCheckpoint,
+  fetchTutorialCheckpoints,
   fetchTutorialProgress,
 } from '../utils/tutorialProgress.js'
 
@@ -322,6 +357,7 @@ const props = defineProps({
 })
 
 const progressItems = ref([])
+const checkpointItems = ref([])
 const selectedId = ref('')
 const detailMainRef = ref(null)
 const startGuideVisible = ref(false)
@@ -363,6 +399,17 @@ const progressDashOffset = computed(() => {
 })
 const detailComponent = computed(() => detailComponents[selectedId.value] || null)
 const detailMeta = computed(() => TUTORIAL_CATALOG.find((item) => item.id === selectedId.value) || null)
+const selectedCheckpoint = computed(() => (
+  checkpointItems.value.find(item => item.tutorialId === selectedId.value) || null
+))
+const selectedTutorialSteps = computed(() => GUIDED_TUTORIAL_STEPS[selectedId.value] || [])
+const checkpointStepIndex = computed(() => {
+  const checkpoint = selectedCheckpoint.value
+  if (!checkpoint) return 0
+  const byId = selectedTutorialSteps.value.findIndex(step => step.id === checkpoint.stepId)
+  const index = byId >= 0 ? byId : Number(checkpoint.stepIndex) || 0
+  return Math.min(Math.max(index, 0), Math.max(selectedTutorialSteps.value.length - 1, 0))
+})
 
 function isCompleted(id) {
   return completedIds.value.has(id)
@@ -390,10 +437,38 @@ function openDetail(id) {
   selectedId.value = id
 }
 
-function startTutorial(id) {
+async function startTutorial(id, options = {}) {
   if (!isUnlocked(id)) return
   startGuideVisible.value = false
-  emit('start-tutorial', id)
+  if (options.fresh && selectedCheckpoint.value) {
+    try {
+      await clearTutorialCheckpoint(id)
+      checkpointItems.value = checkpointItems.value.filter(item => item.tutorialId !== id)
+    } catch {
+      // A network retry must not prevent the user from restarting locally.
+    }
+  }
+  const latestCheckpoint = options.fresh ? null : selectedCheckpoint.value
+  const history = latestCheckpoint?.stepCheckpoints
+  const historicalCheckpoint = options.stepId && history && typeof history === 'object'
+    ? history[options.stepId]
+    : null
+  const checkpoint = historicalCheckpoint && typeof historicalCheckpoint === 'object'
+    ? historicalCheckpoint
+    : latestCheckpoint
+  emit('start-tutorial', checkpoint
+    ? {
+        tutorialId: id,
+        checkpoint,
+        stepId: options.stepId || checkpoint.stepId,
+        stepIndex: Number.isInteger(options.stepIndex) ? options.stepIndex : checkpointStepIndex.value,
+      }
+    : id)
+}
+
+function resumeFromStep(stepId, stepIndex) {
+  if (stepIndex > checkpointStepIndex.value) return
+  startTutorial(selectedId.value, { stepId, stepIndex })
 }
 
 async function guideToStartButton(id) {
@@ -438,9 +513,10 @@ async function loadProgress() {
   if (loadPromise) return loadPromise
   loading.value = true
   errorMessage.value = ''
-  loadPromise = fetchTutorialProgress()
-    .then((items) => {
-      progressItems.value = items
+  loadPromise = Promise.all([fetchTutorialProgress(), fetchTutorialCheckpoints()])
+    .then(([progress, checkpoints]) => {
+      progressItems.value = progress
+      checkpointItems.value = checkpoints
     })
     .catch((error) => {
       errorMessage.value = error.message || '学习进度暂时无法读取'
@@ -464,8 +540,22 @@ function handleProgressChanged(event) {
   ]
 }
 
+function handleCheckpointChanged(event) {
+  const item = event.detail
+  if (!item?.tutorialId) return
+  if (item.deleted) {
+    checkpointItems.value = checkpointItems.value.filter(entry => entry.tutorialId !== item.tutorialId)
+    return
+  }
+  checkpointItems.value = [
+    item,
+    ...checkpointItems.value.filter(entry => entry.tutorialId !== item.tutorialId),
+  ]
+}
+
 onMounted(() => {
   window.addEventListener(TUTORIAL_PROGRESS_EVENT, handleProgressChanged)
+  window.addEventListener(TUTORIAL_CHECKPOINT_EVENT, handleCheckpointChanged)
   void loadProgress()
 })
 
@@ -477,6 +567,7 @@ onActivated(() => {
 onBeforeUnmount(() => {
   clearTimeout(startGuideTimer)
   window.removeEventListener(TUTORIAL_PROGRESS_EVENT, handleProgressChanged)
+  window.removeEventListener(TUTORIAL_CHECKPOINT_EVENT, handleCheckpointChanged)
 })
 </script>
 
@@ -501,12 +592,30 @@ onBeforeUnmount(() => {
 .tutorial-center__start-guide button { display: grid; width: 24px; height: 24px; appearance: none; place-items: center; color: #aeb9c7; font: inherit; background: rgba(255, 255, 255, .08); border: 0; border-radius: 50%; cursor: pointer; }
 .tutorial-center__detail :deep([data-tutorial-start]) { position: relative; min-height: 46px !important; padding: 0 22px !important; color: #fff !important; font-weight: 700 !important; background: #172033 !important; border: 1px solid #172033 !important; border-radius: 11px !important; box-shadow: 0 12px 26px rgba(23, 32, 51, .18) !important; transition: transform .2s ease, box-shadow .2s ease !important; }
 .tutorial-center__detail :deep([data-tutorial-start]:hover) { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(23, 32, 51, .24) !important; }
+.tutorial-resume { display: grid; max-width: 1120px; box-sizing: border-box; margin: 20px auto 0; padding: 18px 20px; grid-template-columns: minmax(230px, .7fr) minmax(360px, 1.4fr) auto; align-items: center; gap: 20px; background: #f1f7ff; border: 1px solid #cfe2f6; border-radius: 14px; }
+.tutorial-resume__copy span { color: #2376d9; font-size: 9px; font-weight: 750; letter-spacing: .08em; }
+.tutorial-resume__copy strong { display: block; margin-top: 5px; color: #152a45; font-size: 14px; line-height: 1.35; }
+.tutorial-resume__copy p { margin: 5px 0 0; color: #65758a; font-size: 10px; line-height: 1.55; }
+.tutorial-resume__timeline { display: flex; min-width: 0; gap: 5px; overflow-x: auto; padding: 5px 2px; }
+.tutorial-resume__timeline button { display: grid; min-width: 34px; max-width: 96px; appearance: none; place-items: center; gap: 4px; padding: 0; color: #95a0af; background: transparent; border: 0; cursor: not-allowed; }
+.tutorial-resume__timeline button i { display: grid; width: 26px; height: 26px; place-items: center; color: #7c899a; font-size: 9px; font-style: normal; background: #fff; border: 1px solid #dce5ee; border-radius: 50%; }
+.tutorial-resume__timeline button span { width: 100%; overflow: hidden; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.tutorial-resume__timeline button.reached { color: #536a83; cursor: pointer; }
+.tutorial-resume__timeline button.reached i { color: #2376d9; border-color: #9bc7ef; }
+.tutorial-resume__timeline button.current i { color: #fff; background: #2376d9; border-color: #2376d9; box-shadow: 0 0 0 4px rgba(35, 118, 217, .12); }
+.tutorial-resume__actions { display: flex; flex-direction: column; gap: 7px; }
+.tutorial-resume__actions button { min-width: 112px; height: 34px; appearance: none; padding: 0 12px; font: inherit; font-size: 9px; font-weight: 680; border-radius: 8px; cursor: pointer; }
+.tutorial-resume__actions .is-primary { color: #fff; background: #172033; border: 1px solid #172033; }
+.tutorial-resume__actions .is-secondary { color: #5f6d80; background: #fff; border: 1px solid #d7e0e9; }
 .tutorial-center__detail.is-entry-guided :deep([data-tutorial-start]:first-of-type) { animation: tutorial-start-pulse 1.35s ease-in-out 3; box-shadow: 0 0 0 5px rgba(239, 101, 61, .2), 0 16px 34px rgba(23, 32, 51, .25) !important; }
 .tutorial-hero { display: grid; box-sizing: border-box; max-width: 1240px; min-height: 0; margin: 0 auto; padding: 24px 32px; grid-template-columns: minmax(0, 1fr) 132px; align-items: center; gap: 32px; overflow: hidden; background: #eaf4ff; border: 1px solid #d4e8fb; border-radius: 18px; }
 .tutorial-hero__copy { max-width: 760px; }
 .tutorial-kicker { display: inline-flex; padding: 5px 8px; color: #176fc2; font-size: 8px; font-weight: 650; background: #fff; border: 1px solid #c9e2f8; border-radius: 999px; }
 .tutorial-hero h1 { max-width: 720px; margin: 12px 0 7px; color: #10243d; font-size: clamp(26px, 2.2vw, 34px); font-weight: 680; line-height: 1.08; letter-spacing: -.05em; }
 .tutorial-hero p { max-width: 720px; margin: 0; color: #52667f; font-size: 11px; line-height: 1.65; }
+.tutorial-hero__recovery-note { display: inline-flex; align-items: center; gap: 8px; margin-top: 10px; color: #526b86; font-size: 9px; line-height: 1.4; }
+.tutorial-hero__recovery-note i { display: grid; width: 20px; height: 20px; flex: 0 0 20px; place-items: center; color: #2376d9; font-size: 12px; font-style: normal; background: rgba(255, 255, 255, .82); border: 1px solid #c9e2f8; border-radius: 50%; }
+.tutorial-hero__recovery-note strong { margin-right: 6px; color: #176fc2; font-weight: 700; }
 .tutorial-hero__actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 .tutorial-primary-action { display: inline-flex; height: 42px; appearance: none; align-items: center; gap: 14px; padding: 0 18px; color: #fff; font: inherit; font-size: 11px; font-weight: 700; background: #172033; border: 0; border-radius: 10px; cursor: pointer; box-shadow: 0 10px 24px rgba(23, 32, 51, .18); transition: transform .2s ease, box-shadow .2s ease; }
 .tutorial-primary-action:hover { transform: translateY(-1px); }

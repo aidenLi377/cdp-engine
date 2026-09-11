@@ -899,6 +899,25 @@ def register_routes(
             return error_response("INVALID_TUTORIAL_ID", str(exc), 400)
         return jsonify(item)
 
+    @app.route("/api/tutorial-checkpoints")
+    def list_tutorial_checkpoints():
+        return jsonify(tutorial_progress_store.list_checkpoints(g.current_user["id"]))
+
+    @app.route("/api/tutorial-checkpoints/<tutorial_id>", methods=["PUT", "DELETE"])
+    def tutorial_checkpoint(tutorial_id: str):
+        try:
+            if request.method == "DELETE":
+                tutorial_progress_store.delete_checkpoint(
+                    g.current_user["id"], tutorial_id
+                )
+                return jsonify({"ok": True})
+            item = tutorial_progress_store.save_checkpoint(
+                g.current_user["id"], tutorial_id, request.get_json(silent=True) or {}
+            )
+        except TutorialProgressValidationError as exc:
+            return error_response("INVALID_TUTORIAL_CHECKPOINT", str(exc), 400)
+        return jsonify(item)
+
     @app.route("/api/announcement-assets/<asset_id>")
     def announcement_asset(asset_id: str):
         allow_unpublished = g.current_user.get("role") == "super_admin"

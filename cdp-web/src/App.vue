@@ -204,6 +204,8 @@ import {
 import {
   TUTORIAL_PROGRESS_EVENT,
   fetchTutorialProgress,
+  restoreTutorialSessionSnapshot,
+  tutorialSnapshotAppMode,
 } from './utils/tutorialProgress.js'
 
 const NormalMode = defineAsyncComponent(() => import('./components/NormalMode.vue'))
@@ -526,11 +528,23 @@ function closeAnnouncementCenter() {
   appMode.value = nextMode
 }
 
-function handleStartTutorial(taskId) {
-  if (!startGuidedTutorial(taskId)) return
+function handleStartTutorial(payload) {
+  const tutorialId = typeof payload === 'string' ? payload : payload?.tutorialId
+  const checkpoint = typeof payload === 'object' ? payload?.checkpoint : null
+  if (checkpoint?.sessionSnapshot) restoreTutorialSessionSnapshot(checkpoint.sessionSnapshot)
+  if (!startGuidedTutorial(tutorialId, checkpoint
+    ? {
+        resume: true,
+        stepId: payload.stepId,
+        stepIndex: payload.stepIndex,
+        context: checkpoint.context,
+      }
+    : {})) return
   tutorialCenterInitialId.value = ''
   selectedAnnouncementId.value = ''
-  appMode.value = 'workbench'
+  appMode.value = checkpoint
+    ? tutorialSnapshotAppMode(checkpoint.sessionSnapshot, checkpoint.appMode || 'workbench')
+    : 'workbench'
 }
 
 function handleTaskCenterTutorialClick() {

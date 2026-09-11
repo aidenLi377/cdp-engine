@@ -387,16 +387,20 @@ const systemDialogConfirmLabel = ref('')
 let targetElement = null
 let mutationObserver = null
 let targetResizeObserver = null
+let cardResizeObserver = null
 let refreshFrame = 0
 let targetTrackingFrame = 0
 let targetTrackingDeadline = 0
 let lastResolvedSelector = ''
+let scrollOnNextTarget = false
 let tutorialNameCopyResetTimer = 0
 let targetScrollCorrectionTimers = []
 let dialogHandoffTimers = []
 const DEFAULT_FOCUS_GAP = 8
 const DEFAULT_FOCUS_RADIUS = 12
 const VIEWPORT_MARGIN = 16
+const VIEWPORT_TOP_SAFE = 84
+const TARGET_SCROLL_INSET = 14
 const CARD_WIDTH = 372
 const DIALOG_COMPANION_MIN_WIDTH = 286
 const targetRecoveryStepMap = Object.freeze({
@@ -1048,19 +1052,47 @@ const cardStyle = computed(() => {
     }
   }
 
-  const rightSpace = window.innerWidth - rect.right
-  const leftSpace = rect.left
-  let left = rect.right + 20
-  let top = Math.min(Math.max(rect.top, VIEWPORT_MARGIN), window.innerHeight - estimatedHeight - VIEWPORT_MARGIN)
-
-  if (rightSpace < width + 36 && leftSpace >= width + 36) left = rect.left - width - 20
-  else if (rightSpace < width + 36) {
-    left = Math.min(Math.max(rect.left, VIEWPORT_MARGIN), window.innerWidth - width - VIEWPORT_MARGIN)
-    top = rect.bottom + 20
-    if (top + estimatedHeight > window.innerHeight - VIEWPORT_MARGIN) top = Math.max(VIEWPORT_MARGIN, rect.top - estimatedHeight - 20)
+  const gap = 18
+  const minCardWidth = Math.min(286, window.innerWidth - (VIEWPORT_MARGIN * 2))
+  const horizontalTop = Math.min(
+    Math.max(rect.top + (rect.height / 2) - (estimatedHeight / 2), VIEWPORT_MARGIN),
+    window.innerHeight - estimatedHeight - VIEWPORT_MARGIN,
+  )
+  const rightWidth = window.innerWidth - rect.right - gap - VIEWPORT_MARGIN
+  const leftWidth = rect.left - gap - VIEWPORT_MARGIN
+  if (rightWidth >= minCardWidth) {
+    width = Math.min(width, rightWidth)
+    return {
+      top: `${horizontalTop}px`,
+      left: `${rect.right + gap}px`,
+      width: `${width}px`,
+      maxHeight: `${window.innerHeight - (VIEWPORT_MARGIN * 2)}px`,
+    }
+  }
+  if (leftWidth >= minCardWidth) {
+    width = Math.min(width, leftWidth)
+    return {
+      top: `${horizontalTop}px`,
+      left: `${rect.left - gap - width}px`,
+      width: `${width}px`,
+      maxHeight: `${window.innerHeight - (VIEWPORT_MARGIN * 2)}px`,
+    }
   }
 
-  return { top: `${top}px`, left: `${left}px`, width: `${width}px` }
+  const availableBelow = window.innerHeight - rect.bottom - gap - VIEWPORT_MARGIN
+  const availableAbove = rect.top - gap - VIEWPORT_MARGIN
+  const useBelow = availableBelow >= 132 || availableBelow >= availableAbove
+  const availableHeight = Math.max(96, useBelow ? availableBelow : availableAbove)
+  const left = Math.min(
+    Math.max(rect.left + (rect.width / 2) - (width / 2), VIEWPORT_MARGIN),
+    window.innerWidth - width - VIEWPORT_MARGIN,
+  )
+  return {
+    top: `${useBelow ? rect.bottom + gap : Math.max(VIEWPORT_MARGIN, rect.top - gap - Math.min(estimatedHeight, availableHeight))}px`,
+    left: `${left}px`,
+    width: `${width}px`,
+    maxHeight: `${availableHeight}px`,
+  }
 })
 
 function rectStyle(rect) {
@@ -1129,52 +1161,75 @@ function scheduleDialogHandoffCorrections() {
   })
 }
 
-function getScrollableAncestor(element) {
+function getScrollableAncestors(element) {
+  const ancestors = []
   let parent = element?.parentElement
   while (parent && parent !== document.body) {
     const style = window.getComputedStyle(parent)
-    if (/(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) {
-      return parent
+    const scrollsY = /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1
+    const scrollsX = /(auto|scroll)/.test(style.overflowX) && parent.scrollWidth > parent.clientWidth + 1
+    if (scrollsY || scrollsX) {
+      ancestors.push(parent)
     }
     parent = parent.parentElement
   }
-  return null
+  return ancestors
 }
 
-function centerTargetInView(element, behavior = 'smooth') {
-  if (!element) return
-  const scrollParent = getScrollableAncestor(element)
-  if (!scrollParent) {
-    element.scrollIntoView({ behavior, block: 'center', inline: 'nearest' })
-    return
+function visibleBoundsForTarget(element) {
+  const bounds = {
+    top: VIEWPORT_TOP_SAFE,
+    right: window.innerWidth - VIEWPORT_MARGIN,
+    bottom: window.innerHeight - VIEWPORT_MARGIN,
+    left: VIEWPORT_MARGIN,
   }
-  const parentRect = scrollParent.getBoundingClientRect()
-  const targetBounds = element.getBoundingClientRect()
-  const nextTop = scrollParent.scrollTop
-    + targetBounds.top
-    - parentRect.top
-    - ((scrollParent.clientHeight - targetBounds.height) / 2)
-  scrollParent.scrollTo({ top: Math.max(0, nextTop), behavior })
+  getScrollableAncestors(element).forEach((ancestor) => {
+    const rect = ancestor.getBoundingClientRect()
+    bounds.top = Math.max(bounds.top, rect.top + TARGET_SCROLL_INSET)
+    bounds.right = Math.min(bounds.right, rect.right - TARGET_SCROLL_INSET)
+    bounds.bottom = Math.min(bounds.bottom, rect.bottom - TARGET_SCROLL_INSET)
+    bounds.left = Math.max(bounds.left, rect.left + TARGET_SCROLL_INSET)
+  })
+  return bounds
+}
+
+function centerTargetInView(element, behavior = 'auto') {
+  if (!element) return
+  const ancestors = getScrollableAncestors(element)
+  ancestors.forEach((scrollParent) => {
+    const parentRect = scrollParent.getBoundingClientRect()
+    const targetBounds = element.getBoundingClientRect()
+    const canScrollY = scrollParent.scrollHeight > scrollParent.clientHeight + 1
+    const canScrollX = scrollParent.scrollWidth > scrollParent.clientWidth + 1
+    const top = canScrollY
+      ? scrollParent.scrollTop + targetBounds.top - parentRect.top - ((scrollParent.clientHeight - targetBounds.height) / 2)
+      : scrollParent.scrollTop
+    const left = canScrollX
+      ? scrollParent.scrollLeft + targetBounds.left - parentRect.left - ((scrollParent.clientWidth - targetBounds.width) / 2)
+      : scrollParent.scrollLeft
+    scrollParent.scrollTo({ top: Math.max(0, top), left: Math.max(0, left), behavior })
+  })
+  const rect = element.getBoundingClientRect()
+  const visible = visibleBoundsForTarget(element)
+  if (rect.top < visible.top || rect.bottom > visible.bottom) {
+    const delta = rect.top + (rect.height / 2) - (visible.top + ((visible.bottom - visible.top) / 2))
+    window.scrollBy({ top: delta, behavior })
+  }
 }
 
 function targetIsClipped(element) {
   if (!element) return true
   const rect = element.getBoundingClientRect()
-  const scrollParent = getScrollableAncestor(element)
-  const visibleTop = Math.max(
-    VIEWPORT_MARGIN,
-    scrollParent?.getBoundingClientRect().top ?? VIEWPORT_MARGIN,
-  )
-  const visibleBottom = Math.min(
-    window.innerHeight - VIEWPORT_MARGIN,
-    scrollParent?.getBoundingClientRect().bottom ?? (window.innerHeight - VIEWPORT_MARGIN),
-  )
-  return rect.top < visibleTop || rect.bottom > visibleBottom
+  const visible = visibleBoundsForTarget(element)
+  return rect.top < visible.top
+    || rect.bottom > visible.bottom
+    || rect.left < visible.left
+    || rect.right > visible.right
 }
 
 function scheduleTargetScrollCorrections(element) {
   clearTargetScrollCorrections()
-  ;[260, 620].forEach((delay) => {
+  ;[120, 360, 760, 1200].forEach((delay) => {
     const timer = window.setTimeout(() => {
       if (element !== targetElement || !targetIsClipped(element)) return
       centerTargetInView(element, 'auto')
@@ -1185,6 +1240,7 @@ function scheduleTargetScrollCorrections(element) {
 }
 
 function findTarget({ scroll = false } = {}) {
+  if (scroll) scrollOnNextTarget = true
   cancelAnimationFrame(refreshFrame)
   refreshFrame = requestAnimationFrame(() => {
     // Element Plus confirmation dialogs are teleported to <body>. Open the
@@ -1208,6 +1264,7 @@ function findTarget({ scroll = false } = {}) {
       : tutorialTargetSelector.value
     if (selector !== lastResolvedSelector) {
       lastResolvedSelector = selector || ''
+      scrollOnNextTarget = true
       targetRect.value = null
       targetResizeObserver?.disconnect()
       targetElement = null
@@ -1228,12 +1285,13 @@ function findTarget({ scroll = false } = {}) {
     // animation's starting coordinates.
     if (messageBoxTarget && targetChanged) trackTargetPosition(1200)
 
-    if ((scroll || dialogJustClosed) && targetElement) {
-      centerTargetInView(targetElement)
+    if ((scrollOnNextTarget || dialogJustClosed) && targetElement) {
+      centerTargetInView(targetElement, 'auto')
       scheduleTargetScrollCorrections(targetElement)
       // The paste preview expands and the canvas scrolls at the same time. Keep
       // following the live button rect until both motions have fully settled.
       trackTargetPosition()
+      scrollOnNextTarget = false
     }
     updateTargetRect()
     if (dialogJustClosed) scheduleDialogHandoffCorrections()
@@ -1438,8 +1496,17 @@ watch(
   { immediate: true },
 )
 
+watch(cardRef, (next, previous) => {
+  if (previous) cardResizeObserver?.unobserve(previous)
+  if (next) cardResizeObserver?.observe(next)
+})
+
 onMounted(() => {
   targetResizeObserver = new ResizeObserver(updateTargetRect)
+  cardResizeObserver = new ResizeObserver(() => {
+    if (targetRect.value) targetRect.value = { ...targetRect.value }
+  })
+  if (cardRef.value) cardResizeObserver.observe(cardRef.value)
   mutationObserver = new MutationObserver((mutations) => {
     const dialogSelector = '.is-message-box, .el-overlay-message-box, .el-message-box'
     const shouldRefresh = mutations.some((mutation) => {
@@ -1471,6 +1538,7 @@ onBeforeUnmount(() => {
   }
   mutationObserver?.disconnect()
   targetResizeObserver?.disconnect()
+  cardResizeObserver?.disconnect()
   window.removeEventListener('resize', handleViewportChange)
   window.removeEventListener('scroll', handleViewportChange, true)
 })

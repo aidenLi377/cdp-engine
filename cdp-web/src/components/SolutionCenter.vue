@@ -2465,13 +2465,23 @@ watch(
     if (!active || (!isReuseTutorial && !isPullTutorial && !isParameterTutorial)) return
     if (isParameterTutorial && !parameterTutorialInEditor()) return
     const tutorialSessionChanged = active !== previousActive || taskId !== previousTaskId
-    if (tutorialSessionChanged && activeSolution.value?.status === 'draft' && hasUnsavedChanges.value) {
+    const isResuming = tutorialSessionChanged && guidedTutorialState.resumed
+    if (isResuming) {
+      const stored = readSessionWorkspace(SOLUTION_SESSION_KEY, props.sessionOwnerId)
+      if (stored?.version === SOLUTION_SESSION_VERSION) {
+        libraryScope.value = ['mine', 'public'].includes(stored.libraryScope) ? stored.libraryScope : 'mine'
+        statusFilter.value = ['all', 'draft', 'published'].includes(stored.statusFilter) ? stored.statusFilter : 'all'
+        await restoreSolutionSession(stored)
+      }
+    } else if (tutorialSessionChanged && activeSolution.value?.status === 'draft' && hasUnsavedChanges.value) {
       await saveDraft()
     }
-    libraryScope.value = 'mine'
-    statusFilter.value = 'all'
-    selectedFolderId.value = null
-    searchKeyword.value = ''
+    if (!isResuming) {
+      libraryScope.value = 'mine'
+      statusFilter.value = 'all'
+      selectedFolderId.value = null
+      searchKeyword.value = ''
+    }
     if (isReuseTutorial && isGuidedTutorialStep('bind-analysis-second')) {
       revealTutorialField('solution-node-1-leafCates', 1)
     } else {
@@ -2479,7 +2489,7 @@ watch(
     }
     if ((isReuseTutorial || isParameterTutorial) && isGuidedTutorialStep('open-workbench-draft')) {
       void syncTutorialWorkbenchDraft()
-    } else if (tutorialSessionChanged || isPullTutorial) {
+    } else if (!isResuming && (tutorialSessionChanged || isPullTutorial)) {
       void Promise.all([loadSolutions({ fresh: true }), loadFolders()])
     }
     syncTutorialSolutionContext()

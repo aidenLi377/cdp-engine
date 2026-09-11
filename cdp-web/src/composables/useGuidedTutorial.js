@@ -8,12 +8,19 @@ import {
   PULL_ANALYSIS_GROUP_TUTORIAL_VALUES,
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
-import { recordTutorialCompletion } from '../utils/tutorialProgress.js'
+import {
+  captureTutorialSessionSnapshot,
+  clearTutorialCheckpoint,
+  recordTutorialCheckpoint,
+  recordTutorialCompletion,
+  tutorialSnapshotAppMode,
+} from '../utils/tutorialProgress.js'
 
 const tutorialState = reactive({
   active: false,
   taskId: '',
   stepIndex: 0,
+  resumed: false,
   context: {
     nodeCount: 0,
     behaviors: [],
@@ -99,6 +106,37 @@ const tutorialState = reactive({
 
 const steps = computed(() => GUIDED_TUTORIAL_STEPS[tutorialState.taskId] || [])
 const currentStep = computed(() => steps.value[tutorialState.stepIndex] || null)
+let checkpointTimer = 0
+
+function cloneSerializable(value, fallback = {}) {
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return fallback
+  }
+}
+
+function persistCurrentCheckpoint({ immediate = false } = {}) {
+  if (typeof window === 'undefined' || !tutorialState.active || !tutorialState.taskId || !currentStep.value) return
+  window.clearTimeout(checkpointTimer)
+  const save = () => {
+    if (!tutorialState.active || !tutorialState.taskId || !currentStep.value) return
+    const sessionSnapshot = captureTutorialSessionSnapshot()
+    const stepCheckpoint = {
+      stepId: currentStep.value.id,
+      stepIndex: tutorialState.stepIndex,
+      stepTitle: currentStep.value.title || '',
+      appMode: tutorialSnapshotAppMode(sessionSnapshot, 'workbench'),
+      context: cloneSerializable(tutorialState.context),
+      sessionSnapshot,
+    }
+    void recordTutorialCheckpoint(tutorialState.taskId, stepCheckpoint).catch(() => {
+      // A temporary sync error must never block the interactive tutorial.
+    })
+  }
+  if (immediate) save()
+  else checkpointTimer = window.setTimeout(save, 360)
+}
 
 function resetContext() {
   Object.assign(tutorialState.context, {
@@ -184,19 +222,33 @@ function resetContext() {
   })
 }
 
-export function startGuidedTutorial(taskId = CATEGORY_ITEM_TUTORIAL_ID) {
+export function startGuidedTutorial(taskId = CATEGORY_ITEM_TUTORIAL_ID, options = {}) {
   if (!GUIDED_TUTORIAL_STEPS[taskId]) return false
   resetContext()
   tutorialState.taskId = taskId
-  tutorialState.stepIndex = 0
+  const requestedStepId = String(options?.stepId || '')
+  const requestedIndex = GUIDED_TUTORIAL_STEPS[taskId].findIndex(step => step.id === requestedStepId)
+  const fallbackIndex = Number.isInteger(options?.stepIndex) ? options.stepIndex : 0
+  tutorialState.stepIndex = Math.min(
+    Math.max(requestedIndex >= 0 ? requestedIndex : fallbackIndex, 0),
+    GUIDED_TUTORIAL_STEPS[taskId].length - 1,
+  )
+  if (options?.context && typeof options.context === 'object') {
+    Object.assign(tutorialState.context, cloneSerializable(options.context))
+  }
+  tutorialState.resumed = options?.resume === true
   tutorialState.active = true
+  persistCurrentCheckpoint({ immediate: true })
   return true
 }
 
-export function stopGuidedTutorial() {
+export function stopGuidedTutorial({ saveCheckpoint = true } = {}) {
+  if (saveCheckpoint) persistCurrentCheckpoint({ immediate: true })
+  else if (typeof window !== 'undefined') window.clearTimeout(checkpointTimer)
   tutorialState.active = false
   tutorialState.taskId = ''
   tutorialState.stepIndex = 0
+  tutorialState.resumed = false
   resetContext()
 }
 
@@ -205,6 +257,7 @@ export function completeGuidedTutorialStep(stepId) {
   if (tutorialState.stepIndex < steps.value.length - 1) {
     tutorialState.stepIndex += 1
   }
+  persistCurrentCheckpoint()
   return true
 }
 
@@ -213,6 +266,7 @@ export function goToGuidedTutorialStep(stepId) {
   const index = steps.value.findIndex((step) => step.id === stepId)
   if (index < 0) return false
   tutorialState.stepIndex = index
+  persistCurrentCheckpoint()
   return true
 }
 
@@ -243,8 +297,9 @@ export function finishGuidedTutorial() {
     void recordTutorialCompletion(completedTaskId).catch(() => {
       // Progress synchronization must never prevent the user from finishing the tutorial.
     })
+    void clearTutorialCheckpoint(completedTaskId).catch(() => {})
   }
-  stopGuidedTutorial()
+  stopGuidedTutorial({ saveCheckpoint: false })
   return true
 }
 
