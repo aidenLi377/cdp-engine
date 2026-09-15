@@ -13,6 +13,8 @@ const DATABANK_PARAM_TRIGGER_XPATH =
   '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div[3]/span[2]'
 const DATABANK_TEXTAREA_XPATH = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div/span/textarea'
 const DATABANK_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/button[1]'
+const DATABANK_CALCULATE_COUNT_XPATH =
+  '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[2]/div[3]/div/div/span'
 
 class FakeElement {
   constructor(tagName, text = '') {
@@ -145,11 +147,17 @@ function createContentHarness(options = {}) {
   let rerenderCount = 0
   let triggerClickAt = null
   let triggerClickCount = 0
+  let calculateClickCount = 0
 
   const trigger = new FakeElement('span', '参数粘贴')
   const loadingMask = new FakeElement('div')
   loadingMask.className = 'next-loading-mask'
   const unrelatedConfirm = new FakeButtonElement('确定')
+  const calculateCountControl = new FakeElement('span', '计算人数')
+  calculateCountControl.isConnected = false
+  calculateCountControl.click = () => {
+    calculateClickCount += 1
+  }
   const followupDialogRoot = new FakeElement('div')
   followupDialogRoot.className = 'el-dialog'
   followupDialogRoot.setAttribute('role', 'dialog')
@@ -221,6 +229,7 @@ function createContentHarness(options = {}) {
       dialogOpen = false
       followupDialogOpen = true
       followupDialogRoot.isConnected = true
+      calculateCountControl.isConnected = true
     }
 
     return { root, textarea: nextTextarea, confirm: nextConfirm }
@@ -253,8 +262,10 @@ function createContentHarness(options = {}) {
     evaluate(xpath) {
       const node =
         xpath === DATABANK_PARAM_TRIGGER_XPATH ? trigger
-          : xpath === DATABANK_TEXTAREA_XPATH ? (dialogOpen ? textarea : null)
-            : xpath === DATABANK_CONFIRM_XPATH ? (dialogOpen ? dialogConfirm : null)
+            : xpath === DATABANK_TEXTAREA_XPATH ? (dialogOpen ? textarea : null)
+              : xpath === DATABANK_CONFIRM_XPATH ? (dialogOpen ? dialogConfirm : null)
+                : xpath === DATABANK_CALCULATE_COUNT_XPATH && calculateCountControl.isConnected
+                  ? calculateCountControl
               : null
       return { singleNodeValue: node }
     },
@@ -343,6 +354,7 @@ function createContentHarness(options = {}) {
         rerenderCount,
         triggerClickAt,
         triggerClickCount,
+        calculateClickCount,
         now,
       }
     },
@@ -362,6 +374,22 @@ test('content automation clicks shortly after the loading mask clears and the pa
   assert.ok(response.trail.some((entry) => entry.step === 'page_initialized'))
   assert.ok(harness.getState().triggerClickAt >= pageLoadingUntilMs)
   assert.ok(harness.getState().triggerClickAt < pageLoadingUntilMs + 1000)
+  assert.equal(harness.getState().calculateClickCount, 0)
+})
+
+test('content automation clicks calculate count after import confirmation when requested', async () => {
+  const harness = createContentHarness()
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText: '{"crowdName":"calculate-count"}',
+    autoCalculate: true,
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.autoCalculated, true)
+  assert.equal(harness.getState().calculateClickCount, 1)
+  assert.ok(response.trail.some((entry) => entry.step === 'clicked_calculate_count'))
 })
 
 test('unrelated page text changes do not postpone a ready paste trigger', async () => {

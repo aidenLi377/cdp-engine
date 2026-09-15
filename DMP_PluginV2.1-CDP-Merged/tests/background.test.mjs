@@ -146,6 +146,7 @@ test('background waits for the databank page to report ready before sending auto
     type: 'CDP_AUTOMATE_DATABANK',
     pageUrl: 'http://127.0.0.1:5173/',
     jsonText: '{"crowdName":"demo"}',
+    autoCalculate: true,
   })
 
   assert.deepEqual(harness.messageTrail, [
@@ -155,6 +156,7 @@ test('background waits for the databank page to report ready before sending auto
     'AUTOMATE_DATABANK',
   ])
   assert.equal(response.ok, true)
+  assert.equal(harness.sentPayloads.at(-1).autoCalculate, true)
 })
 
 test('background focuses the databank tab during automation so the page is not throttled in the background', async () => {

@@ -65,15 +65,20 @@ test('single-field overflow policy is enabled only while using a solution', () =
   assert.match(normalModeVue, /if \(workbenchMode\.value !== 'solution-use' \|\| batchMode\.value\) return \[\]/)
 })
 
-test('solution-use blocks multiple overflow fields and previews a custom-field edit before applying it', () => {
+test('solution-use defers overflow splitting until all other parameters are complete', () => {
   assert.match(dynamicFormVue, /overflowPolicy: \{ type: String, default: 'legacy' \}/)
-  assert.match(dynamicFormVue, /props\.overflowPolicy === 'solution-use' && allOverflows\.length > 1/g)
-  assert.match(dynamicFormVue, /一次只能处理一个超限字段，请先删除多余超限值/g)
+  assert.match(dynamicFormVue, /function deferSolutionUseOverflow\(node, allOverflows\)/)
+  assert.match(dynamicFormVue, /deferred: true/)
+  assert.match(dynamicFormVue, /请先完成其他参数，再点击页面顶部的“确认拆分”/)
   assert.match(normalModeVue, /const previewNodes = cloneValue\(nodeList\.value\)/)
   assert.match(normalModeVue, /syncCustomFieldValue\(\s*previewNodes,/)
   assert.match(normalModeVue, /if \(overflowFieldKeys\.length > 1\)/)
-  assert.match(normalModeVue, /applyCustomFieldValue\(customFieldId, value\)[\s\S]*handleOverflowSplit\(/)
-  assert.match(normalModeVue, /请返回参数区删减，或重新保存该参数并确认拆分/)
+  assert.match(normalModeVue, /最后确认拆分 · \{\{ deferredSolutionSplitSummary\.nodeCount \}\} 处/)
+  assert.match(normalModeVue, /function confirmDeferredSolutionSplit\(\)/)
+  assert.match(normalModeVue, /参数已完成，确认拆分/)
+  assert.match(normalModeVue, /拆分节点继承当前全部参数/)
+  assert.match(normalModeVue, /if \(payload\?\.deferred\) return/)
+  assert.match(normalModeVue, /请先完成其余参数，再点击页面顶部“最后确认拆分”/)
 })
 
 test('overflow clones inherit custom-field bindings so later edits stay synchronized', () => {

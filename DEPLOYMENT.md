@@ -160,6 +160,49 @@ git push origin main
 - Gunicorn：2 个同步 worker，绑定 `127.0.0.1:5000`；
 - 进程异常退出后由 systemd 自动重启。
 
+### AI 自然语言圈包配置
+
+自然语言入口位于系统内的 **圈包工作台 → AI圈人**。API Key 只保存在后端环境变量中，不会返回给浏览器。最低配置如下：
+
+```bash
+CDP_AI_API_KEY=<服务端密钥>
+CDP_AI_MODEL=<模型名称>
+CDP_AI_BASE_URL=https://api.openai.com/v1
+CDP_AI_API_STYLE=responses
+CDP_AI_OUTPUT_MODE=json_schema
+CDP_AI_MAX_INPUT_TOKENS=128000
+```
+
+生产环境可将以上 `CDP_AI_*` 内容写入 `/srv/cdp/shared/ai.env`（建议权限 `600`），程序只会从该文件读取允许的 AI 配置，不会接受 `SECRET_KEY` 等核心服务设置。也可以继续写入 `/etc/cdp/cdp.env`；系统环境变量优先级更高。更新后执行 `sudo systemctl restart cdp`。登录系统并打开“AI圈人”，顶部显示“**大模型已连接**”即可直接试用。
+
+本地开发环境会读取仓库根目录中已被 Git 忽略的 `.env`，且不会覆盖已经存在的系统环境变量。也可以在启动后端的同一个 PowerShell 窗口中临时设置：
+
+```powershell
+$env:CDP_AI_API_KEY="<服务端密钥>"
+$env:CDP_AI_MODEL="<模型名称>"
+$env:CDP_AI_BASE_URL="https://api.openai.com/v1"
+$env:CDP_AI_API_STYLE="responses"
+$env:CDP_AI_OUTPUT_MODE="json_schema"
+python app.py
+```
+
+前端仍按原方式启动。不要把真实密钥写入 `.env.example`、前端环境变量或提交记录。
+
+也支持 OpenAI-compatible 服务：将 `CDP_AI_BASE_URL` 改为服务地址，并按服务能力设置 `CDP_AI_API_STYLE=chat_completions`；若不支持 JSON Schema，可设置 `CDP_AI_OUTPUT_MODE=json_object`。仅限可信内网且确实不要求密钥的服务，才可设置 `CDP_AI_ALLOW_NO_API_KEY=true`。
+
+可选参数：
+
+| 变量 | 默认值 | 说明 |
+|---|---:|---|
+| `CDP_AI_TIMEOUT_SECONDS` | `60` | 单次模型请求超时，范围 1–300 秒 |
+| `CDP_AI_MAX_INPUT_TOKENS` | `128000` | 模型输入上下文预算；应按实际模型与网关上限配置 |
+| `CDP_AI_MAX_OUTPUT_TOKENS` | `4000` | 结构化意图最大输出 token 数 |
+| `CDP_AI_TOKEN_FIELD` | `max_tokens` | 兼容接口的输出预算字段；Kimi-K3 可设为 `max_completion_tokens` |
+| `CDP_AI_REASONING_EFFORT` | 空 | 推理强度；Kimi-K3 可设为 `max` |
+| `CDP_AI_THINKING_MODE` | 空 | 兼容接口的思考开关；支持时可设为 `enabled` 或 `disabled` |
+
+模型负责把自然语言整理为结构化意图；组件选择、账号权限追问、实时选项校验、节点拆分和 DMP JSON 仍由后端规则编译器决定。第一版只生成方案概览，用户明确确认后才替换到工作台。
+
 ## 7. 自动回滚与数据保护
 
 发布脚本会执行以下保护：

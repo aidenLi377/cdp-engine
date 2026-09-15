@@ -2197,6 +2197,19 @@ html.is-panel-resizing * {
   }
 }
 
+.workbench-compact-action.pending-split.el-button {
+  border: 1px solid #ffb38a;
+  background: #fff5ed;
+  color: #d94b16;
+  font-weight: 700;
+}
+
+.workbench-compact-action.pending-split.el-button:hover {
+  border-color: #ff7a45;
+  background: #ffeadc;
+  color: #b9380a;
+}
+
 .cf-parameter-row-badge {
   flex-shrink: 0;
   color: #b54d31;
@@ -4746,6 +4759,39 @@ body,
   transform: translateY(-1px);
 }
 
+.batch-recovery-bar {
+  display: flex;
+  min-height: 52px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 3px 8px 7px;
+  padding: 9px 11px 9px 14px;
+  color: #70421f;
+  background: #fff9ef;
+  border: 1px solid #f1d6aa;
+  border-left: 3px solid #e39132;
+  border-radius: 10px;
+}
+
+.batch-recovery-bar > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.batch-recovery-bar span {
+  color: #b56a20;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .08em;
+}
+
+.batch-recovery-bar strong { font-size: 11px; }
+.batch-recovery-bar small { color: #8d725b; font-size: 9px; }
+.batch-recovery-bar .el-button { flex: 0 0 auto; }
+
 .parameter-batch-dialog.el-dialog {
   display: flex;
   flex-direction: column;
@@ -5334,69 +5380,182 @@ body,
   background: rgba(255,107,74,0.10);
 }
 
-.batch-automation-scope {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  width: 100%;
+.batch-automation-picker {
+  min-width: 0;
 }
 
-.batch-automation-option.el-radio {
+.batch-automation-picker-head {
   display: flex;
   align-items: center;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 62px;
-  height: auto;
-  margin: 0 !important;
-  padding: 12px 14px;
-  border: 1px solid rgba(29,29,31,0.08);
-  border-radius: 15px;
-  background: rgba(255,255,255,0.78);
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.batch-automation-option.el-radio.is-checked {
-  border-color: rgba(40,165,101,0.38);
-  background: #fff;
-  box-shadow: inset 3px 0 0 rgba(40,165,101,0.72), 0 8px 20px rgba(29,29,31,0.06);
-}
-
-.batch-automation-option .el-radio__label {
+.batch-automation-picker-head .el-checkbox {
   min-width: 0;
-  flex: 1;
-  padding-left: 10px;
-  white-space: normal;
+  height: 28px;
 }
 
-.batch-automation-option .el-radio__label > span {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 4px;
-}
-
-.batch-automation-option strong {
+.batch-automation-picker-head .el-checkbox__label {
+  overflow: hidden;
   color: #29272a;
-  font-size: 12px;
+  font-size: 13px;
+  text-overflow: ellipsis;
 }
 
-.batch-automation-option small {
+.batch-automation-picker-head > span {
+  flex: 0 0 auto;
+  color: #258358;
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.batch-automation-picker-hint {
+  margin: 2px 0 12px 24px;
   color: #908c91;
   font-size: 10px;
   line-height: 1.45;
+}
+
+.automation-single-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 2px 2px 0;
+}
+
+.automation-single-summary span {
+  flex: 0 0 auto;
+  color: #9a969b;
+  font-size: 10px;
+}
+
+.automation-single-summary strong {
+  overflow: hidden;
+  color: #302d31;
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-dialog-footer {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.automation-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.automation-calculate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  color: #aaa6ab;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: .01em;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.automation-calculate-toggle > span {
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.automation-calculate-toggle:hover:not(:disabled) {
+  color: #6e696f;
+  border-color: rgba(29,29,31,.09);
+  background: rgba(29,29,31,.025);
+}
+
+.automation-calculate-toggle.is-active {
+  color: #5d595e;
+  border-color: rgba(29,29,31,.10);
+  background: rgba(29,29,31,.04);
+}
+
+.automation-calculate-toggle.is-active > span {
+  border-color: #2f9b62;
+  background: #2f9b62;
+  box-shadow: 0 0 0 2px rgba(47,155,98,.10);
+}
+
+.automation-calculate-toggle:focus-visible {
+  outline: 2px solid rgba(29,29,31,.35);
+  outline-offset: 2px;
+}
+
+.automation-calculate-toggle:disabled {
+  cursor: default;
+  opacity: .45;
 }
 
 .batch-run-queue {
   margin-top: 18px;
 }
 
-.batch-run-queue-row span {
+.batch-automation-picker .batch-run-queue {
+  max-height: min(360px, 48vh);
+  margin-top: 0;
+  padding: 2px;
+  overflow-y: auto;
+}
+
+.batch-run-queue-row.is-selectable {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  min-height: 46px;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  cursor: pointer;
+  transition: border-color .16s ease, background-color .16s ease, box-shadow .16s ease;
+}
+
+.batch-run-queue-row.is-selectable:hover,
+.batch-run-queue-row.is-selectable.is-selected {
+  border-color: rgba(40,165,101,.26);
+  background: rgba(40,165,101,.035);
+}
+
+.batch-run-queue-row.is-selectable.is-selected {
+  box-shadow: inset 3px 0 0 rgba(40,165,101,.72);
+}
+
+.batch-run-queue-row.is-selectable .el-checkbox__label {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 10px;
+  white-space: normal;
+}
+
+.batch-run-queue-row .el-checkbox__label > span {
   color: #989399;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 9px;
 }
 
-.batch-run-queue-row strong {
+.batch-run-queue-row .el-checkbox__label > strong {
   overflow: hidden;
   color: #3b383c;
   font-size: 11px;
@@ -5404,7 +5563,7 @@ body,
   white-space: nowrap;
 }
 
-.batch-run-queue-row small {
+.batch-run-queue-row .el-checkbox__label > small {
   color: #989399;
   font-size: 9px;
 }

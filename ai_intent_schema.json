@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cdp.local/schemas/ai-audience-intent-v1.json",
+  "title": "CDP AI 圈包意图",
+  "description": "大模型只负责把自然语言整理成此结构；后端编译器负责组件选择、账号权限、参数校验、节点拆分和DMP结构生成。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["conditions"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "solutionId": {
+      "type": ["string", "null"],
+      "maxLength": 100,
+      "description": "当用户点名公共方案或业务语义与某个公共方案高度一致时，逐字复制公共方案知识中的ID；未命中时省略或为null。"
+    },
+    "audienceName": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/condition"
+      }
+    }
+  },
+  "$defs": {
+    "numberRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": {"type": ["number", "null"], "minimum": 0},
+        "max": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "maxLength": 80},
+        "displayName": {"type": "string", "maxLength": 100},
+        "relation": {
+          "type": "string",
+          "enum": ["intersect", "union", "exclude", "n", "u", "d"],
+          "description": "与前面全部节点的关系；首个条件会忽略此值。"
+        },
+        "component": {
+          "type": "string",
+          "enum": [
+            "类目公域行为",
+            "类目商品行为",
+            "AIPL状态",
+            "商品行为",
+            "预测购买力",
+            "预测年龄",
+            "预测城市等级",
+            "大快消策略人群",
+            "快消策略人群3.0",
+            "预测性别",
+            "月均消费金额",
+            "关键词搜索"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["unspecified", "public", "own_brand", "own_store"]
+        },
+        "brand": {"type": "string"},
+        "canUseBrandAccount": {
+          "type": ["boolean", "null"],
+          "description": "仅表示当前用户能否使用匹配到的品牌账号登录数据引擎；未知时必须为null或省略。"
+        },
+        "needsFineGrainedCount": {
+          "type": "boolean"
+        },
+        "behaviors": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "behaviorMatch": {
+          "type": "string",
+          "enum": ["any", "all"],
+          "default": "any",
+          "description": "any表示同节点并集；all表示拆成多个节点后交集。"
+        },
+        "categories": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "brands": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "channels": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "titleKeywords": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "searchKeywords": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "productIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "purchaseCount": {"$ref": "#/$defs/numberRange"},
+        "purchaseAmount": {"$ref": "#/$defs/numberRange"},
+        "itemPrice": {"$ref": "#/$defs/numberRange"},
+        "browseDays": {"$ref": "#/$defs/numberRange"},
+        "recentDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 366,
+          "description": "以昨天为结束日向前计算的完整天数，不包含今天"
+        },
+        "dateRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"type": "string", "format": "date"},
+          "description": "闭区间固定日期，结束日最晚为昨天，不得包含今天或未来日期"
+        },
+        "aiplStatuses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        },
+        "attributes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"}
+        }
+      }
+    }
+  },
+  "x-business-examples": [
+    {
+      "utterance": "圈最近30天浏览过或者购买过乳液面霜的人",
+      "intent": {
+        "schemaVersion": 1,
+        "conditions": [{
+          "behaviors": ["浏览", "购买"],
+          "behaviorMatch": "any",
+          "categories": ["美容护肤/美体/精油>乳液/面霜"],
+          "recentDays": 30
+        }]
+      }
+    },
+    {
+      "utterance": "圈我们IPSA店里既浏览又购买过商品123456的人",
+      "intent": {
+        "schemaVersion": 1,
+        "conditions": [{
+          "scope": "own_store",
+          "brand": "IPSA",
+          "canUseBrandAccount": null,
+          "behaviors": ["浏览", "购买"],
+          "behaviorMatch": "all",
+          "productIds": ["123456"]
+        }]
+      }
+    }
+  ]
+}

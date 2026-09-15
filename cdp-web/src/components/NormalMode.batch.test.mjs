@@ -53,13 +53,23 @@ test('batch mode locks raw package details and names to keep shared parameters a
   assert.match(dynamicFormVue, /:disabled="props\.readonly"/)
 })
 
-test('copy and automation dialogs require a package scope choice', () => {
+test('copy dialog chooses a source while batch automation directly lists a default-selected queue', () => {
   assert.match(normalModeVue, /选择要复制的人群包参数/)
   assert.match(normalModeVue, /v-model="batchCopyIndex"/)
-  assert.match(normalModeVue, /仅圈当前人群包/)
-  assert.match(normalModeVue, /圈完全部人群包/)
+  assert.doesNotMatch(normalModeVue, /仅圈当前人群包/)
+  assert.doesNotMatch(normalModeVue, /圈完全部人群包/)
+  assert.match(normalModeVue, /确认要圈的人群包/)
+  assert.match(normalModeVue, /已默认全部选中/)
+  assert.match(normalModeVue, /batchAutomationSelectedIndexes/)
+  assert.match(normalModeVue, /toggleBatchAutomationEntry/)
   assert.match(normalModeVue, /for \(const index of targetIndexes\)/)
   assert.match(normalModeVue, /await sendMessageToDatabankExtension\(getGeneratedJsonText\(\)\)/)
+  assert.match(normalModeVue, /class="automation-calculate-toggle"/)
+  assert.match(normalModeVue, /:aria-pressed="databankAutoCalculate"/)
+  assert.match(normalModeVue, /是否需要自动计算人数/)
+  assert.match(normalModeVue, /autoCalculate: autoCalculate === true/)
+  assert.match(normalModeVue, /AUTO_CALCULATE_EXTENSION_VERSION = '2\.2\.2'/)
+  assert.match(normalModeVue, /payload\.autoCalculated !== true/)
 })
 
 test('parameter batch supports a single solution and an unexpanded combination session', () => {
@@ -105,4 +115,30 @@ test('the row-specific parameter cannot be overwritten by shared batch edits', (
   assert.match(normalModeVue, /activeBatchEntry\?\.parameterBatchSourceRow \|\| 1/)
   assert.match(normalModeVue, /是本次按行拆分的参数，不能同步覆盖/)
   assert.match(normalModeVue, /其余参数修改一次，同步写入/)
+})
+
+test('formal batch automation preserves successes and retries only failed or interrupted packages', () => {
+  assert.match(normalModeVue, /class="batch-recovery-bar"/)
+  assert.match(normalModeVue, /成功结果会保留，恢复时只重新提交未完成的包/)
+  assert.match(normalModeVue, /openBatchAutomationDialog\('failed'\)/)
+  assert.match(normalModeVue, /entry\.automationStatus === 'failed'/)
+  assert.match(normalModeVue, /startBatchAutomationFlow\('failed'\)/)
+  assert.match(normalModeVue, /可仅重试失败任务/)
+})
+
+test('a running package restored after interruption is converted into an actionable failed item', () => {
+  assert.match(normalModeVue, /const wasInterrupted = entry\?\.automationStatus === 'running'/)
+  assert.match(normalModeVue, /automationStatus: wasInterrupted \? 'failed'/)
+  assert.match(normalModeVue, /automationInterrupted: wasInterrupted/)
+  assert.match(normalModeVue, /上次执行在完成前中断，请仅重试该任务/)
+})
+
+test('one package failure does not stop the remaining formal batch queue', () => {
+  const automationFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function startBatchAutomationFlow'),
+    normalModeVue.indexOf('function retryPullAnalysisBatch'),
+  )
+  assert.match(automationFlow, /for \(const index of targetIndexes\)/)
+  assert.match(automationFlow, /任务准备失败[\s\S]*?continue/)
+  assert.match(automationFlow, /自动化圈人失败[\s\S]*?continue/)
 })

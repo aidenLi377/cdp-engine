@@ -9,6 +9,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DATABANK_PARAM_TRIGGER_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[1]/div[1]/div[3]/span[2]';
   const DATABANK_TEXTAREA_XPATH = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div/span/textarea';
   const DATABANK_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/button[1]';
+  const DATABANK_CALCULATE_COUNT_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[2]/div[3]/div/div/span';
 
   // -- Crowd flow XPaths (new) --
   const CROWD_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[1]/div[2]/span/input';
@@ -21,6 +22,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const PARAM_DIALOG_SETTLE_MS = 700;
   const PARAM_VALUE_SETTLE_MS = 900;
   const PARAM_COMPLETION_SETTLE_MS = 1500;
+  const CALCULATE_COUNT_READY_TIMEOUT_MS = 30000;
   const PARAM_TRIGGER_STABLE_CHECKS = 2;
   const PARAM_TRIGGER_POLL_MS = 250;
   const PARAM_TRIGGER_READY_TIMEOUT_MS = 90000;
@@ -442,7 +444,22 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return { step: 'preflight_ok', message: '页面状态校验通过' };
   }
 
-  async function automateDatabank(jsonText) {
+  async function clickCalculateCount(trail) {
+    const calculateNode = await waitForLocator(
+      () => {
+        const target = getNodeByXpath(DATABANK_CALCULATE_COUNT_XPATH);
+        const control = target?.closest?.('button, [role="button"], a') || target;
+        return isNodeInteractive(control) ? control : null;
+      },
+      '计算人数按钮',
+      CALCULATE_COUNT_READY_TIMEOUT_MS,
+      250
+    );
+    clickNode(calculateNode);
+    trail.push({ step: 'clicked_calculate_count' });
+  }
+
+  async function automateDatabank(jsonText, autoCalculate) {
     const trail = [];
     console.info('[Databank Automation][content] param paste start');
     trail.push(await runPreflightChecks());
@@ -463,8 +480,16 @@ if (!window.__databankAutomationContentScriptLoaded) {
     await waitForImportDialogClosed(importDialogRoot);
     trail.push({ step: 'dialog_closed' });
     await sleep(PARAM_COMPLETION_SETTLE_MS);
+    if (autoCalculate === true) {
+      await clickCalculateCount(trail);
+    }
     console.info('[Databank Automation][content] param paste success');
-    return { ok: true, trail, message: '参数已自动导入' };
+    return {
+      ok: true,
+      trail,
+      autoCalculated: autoCalculate === true,
+      message: autoCalculate === true ? '参数已自动导入并已触发人数计算' : '参数已自动导入',
+    };
   }
 
   // === 人群包搜索/匹配/推送流程 (new) ===
@@ -927,7 +952,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
       }
       window.__databankAutomationRunning = true;
       beginAutomationRun(message.runId);
-      automateDatabank(String(message.jsonText || ''))
+      automateDatabank(String(message.jsonText || ''), message.autoCalculate === true)
         .then((result) => sendResponse(result))
         .catch((error) => {
           console.error('[Databank Automation] param paste failed:', error);

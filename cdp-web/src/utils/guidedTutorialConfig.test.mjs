@@ -134,7 +134,6 @@ test('多竞品组合批量教程覆盖三行展开九包与全量执行', () =>
     'combo-paste',
     'combo-create',
     'combo-start-automation',
-    'combo-select-all',
     'combo-confirm-run',
     'combo-wait',
     'combo-complete',

@@ -34,7 +34,7 @@ test('data engine is an icon link before copy and automation owns the former act
 test('save draft is a compact secondary toolbar action', () => {
   assert.match(normalModeVue, /class="workbench-compact-action save-draft"/)
   assert.match(normalModeVue, />\s*存草稿\s*</)
-  assert.doesNotMatch(normalModeVue, /class="intercom-btn-primary[^"]*"[^>]*\n[\s\S]*?saveWorkbenchDraft/)
+  assert.doesNotMatch(normalModeVue, /class="intercom-btn-primary[^"]*"[^>]*@click="saveWorkbenchDraft"/s)
   assert.match(css, /\.workbench-compact-action\.save-draft\.el-button \{[^}]*color: #5f6368 !important;/s)
 })
 
@@ -43,6 +43,9 @@ test('workbench toolbar stays on one line without widening the canvas', () => {
   assert.match(css, /\.panel-toolbar \{[^}]*flex-wrap: nowrap;/s)
   assert.match(css, /\.workbench-toolbar-copy \{[^}]*min-width: 0;/s)
   assert.match(css, /\.workbench-toolbar-actions \{[^}]*min-width: 0;/s)
+  assert.doesNotMatch(normalModeVue, /databank-auto-calculate-inline/)
+  assert.doesNotMatch(css, /\.databank-auto-calculate-inline/)
+  assert.match(css, /\.automation-calculate-toggle \{[^}]*height: 22px;[^}]*font-size: 9px;/s)
 })
 
 test('workbench phase status is a compact breathing-light indicator', () => {

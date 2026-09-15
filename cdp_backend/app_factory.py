@@ -20,6 +20,21 @@ from .announcement_store import (
     AnnouncementStore,
     AnnouncementValidationError,
 )
+from .ai_component_catalog import (
+    AiComponentCatalog,
+    CatalogLookupError,
+    CatalogValidationError,
+)
+from .ai_chat_service import AiChatRequestError, AiChatService
+from .ai_intent_compiler import AiIntentCompiler, IntentValidationError
+from .ai_model_client import (
+    AiModelClient,
+    AiNotConfiguredError,
+    AiProviderError,
+    AiResponseError,
+)
+from .ai_solution_knowledge import AiSolutionKnowledge
+from .ai_system_knowledge import AiSystemKnowledge
 from .constants import BASE_DIR, DB_PATH
 from .dimension_store import (
     DimensionConflictError,
@@ -72,6 +87,58 @@ from .user_store import (
 from .validator import ConfigValidationError
 
 
+AI_ENVIRONMENT_KEYS = {
+    "CDP_AI_API_KEY",
+    "CDP_AI_MODEL",
+    "CDP_AI_BASE_URL",
+    "CDP_AI_API_STYLE",
+    "CDP_AI_OUTPUT_MODE",
+    "CDP_AI_TIMEOUT_SECONDS",
+    "CDP_AI_MAX_INPUT_TOKENS",
+    "CDP_AI_MAX_OUTPUT_TOKENS",
+    "CDP_AI_TOKEN_FIELD",
+    "CDP_AI_REASONING_EFFORT",
+    "CDP_AI_THINKING_MODE",
+    "CDP_AI_ALLOW_NO_API_KEY",
+}
+
+
+def load_local_environment() -> None:
+    """Load ignored environment settings without overriding the process.
+
+    Local development reads the project ``.env``. Production may read only
+    the allow-listed AI settings from a persistent file outside each release;
+    all core production settings continue to come from systemd.
+    """
+
+    production = os.environ.get("FLASK_ENV", "development") == "production"
+    env_path = (
+        Path(os.environ.get("CDP_AI_ENV_PATH", "/srv/cdp/shared/ai.env"))
+        if production
+        else Path(__file__).resolve().parent.parent / ".env"
+    )
+    if not env_path.is_file():
+        return
+    try:
+        lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+            continue
+        if production and key not in AI_ENVIRONMENT_KEYS:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 def is_production() -> bool:
     return os.environ.get("FLASK_ENV", "development") == "production"
 
@@ -98,6 +165,7 @@ def configure_logging(app: Flask, production: bool) -> None:
 
 
 def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
+    load_local_environment()
     app = Flask(__name__)
     production = is_production()
     secret_key = os.environ.get("SECRET_KEY")
@@ -108,6 +176,36 @@ def create_app(test_config: dict | None = None) -> tuple[Flask, ConfigEngine]:
     app.config["SECRET_KEY"] = secret_key if secret_key else "dev-secret-change-in-production"
     app.config["JSON_AS_ASCII"] = False
     app.config["DB_PATH"] = os.environ.get("CDP_DB_PATH", DB_PATH)
+    app.config["AI_API_KEY"] = os.environ.get("CDP_AI_API_KEY", "")
+    app.config["AI_MODEL"] = os.environ.get("CDP_AI_MODEL", "")
+    app.config["AI_BASE_URL"] = os.environ.get(
+        "CDP_AI_BASE_URL", "https://api.openai.com/v1"
+    )
+    app.config["AI_API_STYLE"] = os.environ.get("CDP_AI_API_STYLE", "responses")
+    app.config["AI_OUTPUT_MODE"] = os.environ.get(
+        "CDP_AI_OUTPUT_MODE", "json_schema"
+    )
+    app.config["AI_TIMEOUT_SECONDS"] = float(
+        os.environ.get("CDP_AI_TIMEOUT_SECONDS", "60")
+    )
+    app.config["AI_MAX_INPUT_TOKENS"] = int(
+        os.environ.get("CDP_AI_MAX_INPUT_TOKENS", "128000")
+    )
+    app.config["AI_MAX_OUTPUT_TOKENS"] = int(
+        os.environ.get("CDP_AI_MAX_OUTPUT_TOKENS", "4000")
+    )
+    app.config["AI_TOKEN_FIELD"] = os.environ.get(
+        "CDP_AI_TOKEN_FIELD", "max_tokens"
+    )
+    app.config["AI_REASONING_EFFORT"] = os.environ.get(
+        "CDP_AI_REASONING_EFFORT", ""
+    )
+    app.config["AI_THINKING_MODE"] = os.environ.get(
+        "CDP_AI_THINKING_MODE", ""
+    )
+    app.config["AI_ALLOW_NO_API_KEY"] = os.environ.get(
+        "CDP_AI_ALLOW_NO_API_KEY", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
     app.config["EXTENSION_DIR"] = os.environ.get(
         "CDP_EXTENSION_DIR",
         os.path.join(BASE_DIR, "DMP_PluginV2.1-CDP-Merged"),
@@ -198,6 +296,18 @@ def register_routes(
     announcement_store: AnnouncementStore,
     tutorial_progress_store: TutorialProgressStore,
 ) -> None:
+    ai_component_catalog = AiComponentCatalog(engine)
+    ai_intent_compiler = AiIntentCompiler(engine, ai_component_catalog)
+    ai_model_client = AiModelClient.from_config(app.config)
+    ai_solution_knowledge = AiSolutionKnowledge(solution_store)
+    ai_system_knowledge = AiSystemKnowledge(announcement_store)
+    ai_chat_service = AiChatService(
+        ai_model_client,
+        ai_component_catalog,
+        ai_intent_compiler,
+        ai_solution_knowledge,
+        ai_system_knowledge,
+    )
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
     config_dependent_endpoints = {
@@ -205,6 +315,14 @@ def register_routes(
         "get_all_package_meta",
         "get_package_meta",
         "get_package_meta_alias",
+        "get_ai_components",
+        "get_ai_component",
+        "search_ai_component_options",
+        "resolve_ai_brand_account",
+        "recommend_ai_component",
+        "get_ai_intent_schema",
+        "compile_ai_intent",
+        "chat_with_ai_audience_planner",
         "generate_json_alias",
         "generate",
         "batch_generate",
@@ -521,6 +639,43 @@ def register_routes(
             )
         updated["dataCounts"] = user_store.get_user_data_counts(user_id)
         return jsonify(updated)
+
+    @app.route("/api/admin/tutorial-progress")
+    def admin_list_tutorial_progress():
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        return jsonify(tutorial_progress_store.list_all())
+
+    @app.route("/api/admin/users/<user_id>/tutorial-progress", methods=["PUT"])
+    def admin_update_tutorial_progress(user_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "教程进度格式不正确", 400)
+        tutorial_ids = payload.get("completedTutorialIds")
+        if not isinstance(tutorial_ids, list):
+            return error_response("INVALID_REQUEST", "completedTutorialIds 必须是数组", 400)
+        before = tutorial_progress_store.list_for_user(user_id)
+        try:
+            items = tutorial_progress_store.replace_for_user(user_id, tutorial_ids)
+        except TutorialProgressValidationError as exc:
+            return error_response("INVALID_TUTORIAL_PROGRESS", str(exc), 400)
+        before_ids = sorted(item["tutorialId"] for item in before)
+        after_ids = sorted(item["tutorialId"] for item in items)
+        if before_ids != after_ids:
+            user_store.record_audit(
+                g.current_user["id"],
+                "USER_TUTORIAL_PROGRESS_UPDATED",
+                target_user_id=user_id,
+                details={"before": before_ids, "after": after_ids},
+            )
+        return jsonify({"userId": user_id, "items": items})
 
     @app.route("/api/admin/users/<user_id>", methods=["DELETE"])
     def admin_delete_user(user_id: str):
@@ -1486,6 +1641,153 @@ def register_routes(
     @app.route("/api/meta/<package_name>")
     def get_package_meta(package_name: str):
         return metadata_response(engine.get_package_meta(package_name))
+
+    @app.route("/api/ai/components")
+    def get_ai_components():
+        return metadata_response(ai_component_catalog.get_catalog())
+
+    @app.route("/api/ai/components/<path:component_name>")
+    def get_ai_component(component_name: str):
+        try:
+            return metadata_response(ai_component_catalog.get_component(component_name))
+        except CatalogLookupError:
+            return error_response("COMPONENT_NOT_FOUND", "未找到该行为或属性组件", 404)
+
+    @app.route("/api/ai/options/search", methods=["POST"])
+    def search_ai_component_options():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "选项搜索参数格式不正确", 400)
+        component_name = payload.get("component")
+        field_key = payload.get("field")
+        query = payload.get("query", "")
+        limit = payload.get("limit", 20)
+        if not isinstance(component_name, str) or not component_name.strip():
+            return error_response("COMPONENT_REQUIRED", "请选择需要查询的组件", 400)
+        if not isinstance(field_key, str) or not field_key.strip():
+            return error_response("FIELD_REQUIRED", "请选择需要查询的字段", 400)
+        if not isinstance(query, str):
+            return error_response("INVALID_QUERY", "搜索内容必须是文字", 400)
+        if isinstance(limit, bool) or not isinstance(limit, int):
+            return error_response("INVALID_LIMIT", "返回数量必须是整数", 400)
+        try:
+            return jsonify(
+                ai_component_catalog.search_options(
+                    component_name.strip(),
+                    field_key.strip(),
+                    query,
+                    limit,
+                )
+            )
+        except CatalogLookupError:
+            return error_response("OPTION_SOURCE_NOT_FOUND", "未找到该组件字段的选项", 404)
+        except (TypeError, ValueError):
+            return error_response("INVALID_LIMIT", "返回数量必须是1至50之间的整数", 400)
+
+    @app.route("/api/ai/accounts/resolve", methods=["POST"])
+    def resolve_ai_brand_account():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("brand", ""), str):
+            return error_response("INVALID_REQUEST", "请输入需要分析的品牌", 400)
+        can_use_account = payload.get("canUseBrandAccount")
+        if can_use_account is not None and not isinstance(can_use_account, bool):
+            return error_response("INVALID_REQUEST", "账号使用权限必须是是、否或待确认", 400)
+        return jsonify(
+            ai_component_catalog.resolve_brand_account(
+                payload.get("brand", ""),
+                can_use_account,
+            )
+        )
+
+    @app.route("/api/ai/components/recommend", methods=["POST"])
+    def recommend_ai_component():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "圈选意图格式不正确", 400)
+        try:
+            return jsonify(ai_component_catalog.recommend_component(payload))
+        except CatalogLookupError:
+            return error_response("COMPONENT_NOT_FOUND", "未找到指定的属性组件", 404)
+        except CatalogValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+
+    @app.route("/api/ai/intent-schema")
+    def get_ai_intent_schema():
+        return metadata_response(ai_intent_compiler.get_schema())
+
+    @app.route("/api/ai/status")
+    def get_ai_status():
+        response = jsonify(
+            {
+                **ai_model_client.status(),
+                **ai_solution_knowledge.status(),
+                **ai_system_knowledge.status(),
+            }
+        )
+        response.cache_control.no_store = True
+        return response
+
+    @app.route("/api/ai/category-preferences", methods=["GET", "PUT"])
+    def ai_category_preferences():
+        if request.method == "GET":
+            response = jsonify(
+                {
+                    "preferences": user_store.list_ai_category_preferences(
+                        g.current_user["id"]
+                    )
+                }
+            )
+            response.cache_control.no_store = True
+            return response
+
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "类目偏好格式不正确", 400)
+        preferences = payload.get("preferences")
+        mode = str(payload.get("mode") or "upsert").strip().lower()
+        if mode not in {"merge", "upsert"}:
+            return error_response("INVALID_REQUEST", "类目偏好保存方式不正确", 400)
+        try:
+            saved = user_store.save_ai_category_preferences(
+                g.current_user["id"],
+                preferences,
+                preserve_existing=mode == "merge",
+            )
+        except ValueError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify({"preferences": saved})
+
+    @app.route("/api/ai/chat", methods=["POST"])
+    def chat_with_ai_audience_planner():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "对话参数格式不正确", 400)
+        try:
+            return jsonify(ai_chat_service.chat(payload))
+        except AiChatRequestError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        except AiNotConfiguredError:
+            return error_response(
+                "AI_NOT_CONFIGURED",
+                "AI模型尚未配置，请联系管理员完成服务器配置后重试",
+                503,
+            )
+        except AiProviderError as exc:
+            app.logger.warning("AI provider request failed: %s", exc)
+            return error_response("AI_PROVIDER_ERROR", str(exc), 502)
+        except AiResponseError as exc:
+            app.logger.warning("AI response validation failed: %s", exc)
+            return error_response("AI_RESPONSE_INVALID", str(exc), 502)
+
+    @app.route("/api/ai/compile", methods=["POST"])
+    def compile_ai_intent():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "圈包意图格式不正确", 400)
+        try:
+            return jsonify(ai_intent_compiler.compile(payload))
+        except (IntentValidationError, CatalogValidationError) as exc:
+            return error_response("INVALID_INTENT", str(exc), 400)
 
     @app.route("/api/package_meta")
     def get_package_meta_alias():

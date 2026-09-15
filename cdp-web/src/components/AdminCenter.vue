@@ -1049,6 +1049,10 @@
       <AnnouncementAdminPanel :is-system-owner="isSystemOwner" />
     </div>
 
+    <div v-if="canManageAccounts && activeSection === 'tutorial-progress'" class="admin-section-stack">
+      <TutorialProgressAdminPanel :users="users" :current-user-id="currentUserId" />
+    </div>
+
     <div v-if="isSystemOwner && activeSection === 'feedback'" class="admin-section-stack">
       <FeedbackAdminPanel />
     </div>
@@ -1285,6 +1289,7 @@ import {
 import DataSafetyPanel from './DataSafetyPanel.vue'
 import FeedbackAdminPanel from './FeedbackAdminPanel.vue'
 import AnnouncementAdminPanel from './AnnouncementAdminPanel.vue'
+import TutorialProgressAdminPanel from './TutorialProgressAdminPanel.vue'
 import { useCdpShared } from '../composables/useCdpShared.js'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
 import { request } from '../utils/apiClient.js'
@@ -1541,6 +1546,11 @@ const navigationItems = computed(() => {
         label: '用户方案数据',
         description: '查看每位用户的个人方案、文件夹与任务记录，必要时复制到公共方案库。',
       },
+      {
+        id: 'tutorial-progress',
+        label: '教程进度管理',
+        description: '查看所有账号的学习完成情况，并逐项校正教程打卡进度。',
+      },
     ] : []),
     {
       id: 'config',
@@ -1679,6 +1689,7 @@ function auditActionLabel(action) {
     USER_DELETED: '注销账号',
     USER_SOLUTION_PROMOTED: '迁移公共方案',
     USER_DATA_VIEWED: '查看用户数据',
+    USER_TUTORIAL_PROGRESS_UPDATED: '调整教程进度',
     INVITE_CREATED: '创建邀请',
     INVITE_REVOKED: '撤销邀请',
     DATABASE_BACKUP_CREATED: '创建数据库备份',

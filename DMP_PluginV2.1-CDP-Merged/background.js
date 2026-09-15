@@ -262,7 +262,7 @@ async function sendMessageWithRetry(tabId, message, retries) {
 }
 
 // Run DataBank parameter paste flow
-async function runDatabankParam(senderTab, jsonText, sendResponse) {
+async function runDatabankParam(senderTab, jsonText, autoCalculate, sendResponse) {
   let tab = null;
   try {
     tab = await createTab(DATABANK_PARAM_URL);
@@ -273,6 +273,7 @@ async function runDatabankParam(senderTab, jsonText, sendResponse) {
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK,
       jsonText: jsonText,
+      autoCalculate: autoCalculate === true,
     });
     log('info', 'databank param flow done', result);
     if (senderTab?.id) {
@@ -542,7 +543,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: 'jsonText 不能为空' });
       return;
     }
-    runDatabankParam(senderTab, jsonText, sendResponse);
+    runDatabankParam(senderTab, jsonText, message.autoCalculate === true, sendResponse);
     return true;
   }
 

@@ -312,6 +312,19 @@ CREATE TABLE IF NOT EXISTS tutorial_step_checkpoints (
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS ai_category_preferences (
+    user_id       TEXT NOT NULL,
+    field         TEXT NOT NULL DEFAULT 'category',
+    query_key     TEXT NOT NULL,
+    query_text    TEXT NOT NULL DEFAULT '',
+    leaf_key      TEXT NOT NULL DEFAULT '',
+    option_value  TEXT NOT NULL,
+    option_label  TEXT NOT NULL DEFAULT '',
+    updated_at    TEXT NOT NULL,
+    PRIMARY KEY(user_id, field, query_key),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_solutions_status ON solutions(status);
 CREATE INDEX IF NOT EXISTS idx_solutions_folder ON solutions(folder_id);
 CREATE INDEX IF NOT EXISTS idx_solutions_updated ON solutions(updated_at);
@@ -373,6 +386,8 @@ CREATE INDEX IF NOT EXISTS idx_tutorial_checkpoints_user_updated
     ON tutorial_checkpoints(user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tutorial_step_checkpoints_user_tutorial
     ON tutorial_step_checkpoints(user_id, tutorial_id, step_index);
+CREATE INDEX IF NOT EXISTS idx_ai_category_preferences_user_updated
+    ON ai_category_preferences(user_id, updated_at DESC);
 """
 
 MIGRATION_COLUMNS = {
@@ -468,4 +483,4 @@ def init_db(db_path: str | None = None) -> None:
                WHERE updated_at IS NULL"""
         )
         conn.executescript(POST_MIGRATION_DDL)
-        conn.execute("PRAGMA user_version = 12")
+        conn.execute("PRAGMA user_version = 13")

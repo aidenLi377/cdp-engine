@@ -102,9 +102,10 @@
     >
       <div class="workbench-section-head">
         <div>
-          <div class="display-feature-title">行为组件库</div>
+          <div class="display-feature-title">选择圈人方式</div>
         </div>
       </div>
+
 
       <el-input
         v-model="pkgSearch"
@@ -194,6 +195,14 @@
 
         <div class="workbench-secondary-actions">
           <template v-if="workbenchMode === 'solution-use'">
+            <el-button
+              v-if="!batchMode && deferredSolutionSplitSummary"
+              class="workbench-compact-action pending-split"
+              size="small"
+              @click="confirmDeferredSolutionSplit"
+            >
+              最后确认拆分 · {{ deferredSolutionSplitSummary.nodeCount }} 处
+            </el-button>
             <el-button
               v-if="batchMode"
               class="workbench-compact-action danger"
@@ -322,6 +331,19 @@
             </button>
           </div>
           <span class="batch-compact-meta">{{ batchEntries.length }} 包 · {{ customFieldSections.length }} 参数</span>
+        </div>
+        <div v-if="batchMode && batchFailedCount > 0" class="batch-recovery-bar" role="status">
+          <div>
+            <span>批量任务可恢复</span>
+            <strong>{{ batchSucceededCount }} 个已完成，{{ batchFailedCount }} 个{{ batchInterruptedCount ? '因中断未完成' : '执行失败' }}</strong>
+            <small>成功结果会保留，恢复时只重新提交未完成的包。</small>
+          </div>
+          <el-button
+            class="intercom-btn-primary"
+            size="small"
+            :disabled="databankAutomating"
+            @click="openBatchFailureRecovery"
+          >重试 {{ batchFailedCount }} 个未完成项</el-button>
         </div>
 
         <div
@@ -517,7 +539,7 @@
 
     <div v-else key="free-build" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
       <div v-if="nodeList.length === 0" class="empty-hint display-body-light">
-        请从左侧点击添加行为组件，或直接加载已发布方案
+        点击右下角 AI 图标，或从左侧手动添加行为组件
       </div>
 
       <div v-if="nodeList.length > 0" class="canvas-with-minimap" data-tutorial-target="split-result">
@@ -1022,7 +1044,7 @@
 
   <el-dialog
     v-model="batchAutomationDialogVisible"
-    width="560px"
+    :width="batchMode ? '600px' : '440px'"
     class="intercom-dialog batch-composer-dialog"
     :close-on-click-modal="false"
     destroy-on-close
@@ -1031,64 +1053,85 @@
       <div class="batch-dialog-title-row">
         <span class="batch-dialog-sigil is-run">▶</span>
         <div>
-          <div class="batch-dialog-kicker">AUTOMATION SCOPE</div>
-          <h3>自动化圈人</h3>
+          <div class="batch-dialog-kicker">{{ batchMode ? 'READY QUEUE' : 'READY TO RUN' }}</div>
+          <h3>{{ batchMode ? '确认要圈的人群包' : '自动化圈人' }}</h3>
         </div>
       </div>
     </template>
 
-    <el-radio-group
-      v-model="batchAutomationScope"
-      class="batch-automation-scope"
-    >
-      <el-radio value="current" class="batch-automation-option">
-        <span>
-          <strong>仅圈当前人群包</strong>
-          <small>{{ activeBatchEntry?.crowdName || '当前人群包' }}</small>
-        </span>
-      </el-radio>
-      <el-radio
-        value="all"
-        class="batch-automation-option"
-        data-tutorial-target="pull-batch-all"
-        @change="handleBatchAllScopeChange"
-      >
-        <span>
-          <strong>圈完全部人群包</strong>
-          <small>按下方顺序依次执行 {{ batchEntries.length }} 个包</small>
-        </span>
-      </el-radio>
-    </el-radio-group>
-
-    <div v-if="batchAutomationScope === 'all'" class="batch-run-queue">
-      <div class="batch-dialog-section-head">
-        <span>执行队列</span>
-        <small>串行执行，失败项会保留并可单独重试</small>
+    <div v-if="batchMode" class="batch-automation-picker">
+      <div class="batch-automation-picker-head">
+        <el-checkbox
+          :model-value="batchAutomationAllSelected"
+          :indeterminate="batchAutomationPartiallySelected"
+          data-tutorial-target="pull-batch-queue"
+          @change="toggleAllBatchAutomationEntries"
+        >
+          <strong>{{ batchAutomationScope === 'failed' ? '全选待重试项' : '全选本次人群包' }}</strong>
+        </el-checkbox>
+        <span>已选 {{ batchAutomationSelectedCount }} / {{ visibleBatchAutomationEntries.length }}</span>
       </div>
-      <div
-        v-for="(entry, index) in batchEntries"
-        :key="entry.id"
-        class="batch-run-queue-row"
-      >
-        <span>{{ String(index + 1).padStart(2, '0') }}</span>
-        <strong>{{ entry.crowdName || '未命名人群包' }}</strong>
-        <small>{{ getAutomationStatusLabel(entry.automationStatus) }}</small>
+      <p class="batch-automation-picker-hint">
+        {{ batchAutomationScope === 'failed'
+          ? `已保留 ${batchSucceededCount} 个成功结果，默认选中全部失败或中断项`
+          : '已默认全部选中；取消勾选本次不需要执行的人群包' }}
+      </p>
+
+      <div class="batch-run-queue" role="list" aria-label="待圈人群包">
+        <el-checkbox
+          v-for="row in visibleBatchAutomationEntries"
+          :key="row.entry.id || row.index"
+          class="batch-run-queue-row is-selectable"
+          :class="{ 'is-selected': isBatchAutomationEntrySelected(row.index) }"
+          :model-value="isBatchAutomationEntrySelected(row.index)"
+          @change="checked => toggleBatchAutomationEntry(row.index, checked)"
+        >
+          <span>{{ String(row.index + 1).padStart(2, '0') }}</span>
+          <strong>{{ row.entry.crowdName || '未命名人群包' }}</strong>
+          <small :title="row.entry.automationError || ''">{{ getAutomationStatusLabel(row.entry.automationStatus) }}</small>
+        </el-checkbox>
       </div>
     </div>
 
+    <div v-else class="automation-single-summary">
+      <span>当前人群包</span>
+      <strong>{{ crowdNameInput || DEFAULT_CROWD_NAME }}</strong>
+    </div>
+
     <template #footer>
-      <div class="batch-dialog-footer">
-        <el-button class="intercom-btn-outlined" @click="batchAutomationDialogVisible = false">取消</el-button>
-        <el-button
-          class="batch-dialog-primary"
-          data-tutorial-target="pull-confirm-batch-run"
-          @click="confirmBatchAutomation"
+      <div class="batch-dialog-footer automation-dialog-footer">
+        <button
+          type="button"
+          class="automation-calculate-toggle"
+          :class="{ 'is-active': databankAutoCalculate }"
+          :aria-pressed="databankAutoCalculate"
+          aria-label="是否需要自动计算人数"
+          title="参数导入后自动点击计算人数"
+          :disabled="databankAutomating"
+          @click="databankAutoCalculate = !databankAutoCalculate"
         >
-          开始自动化圈人
-        </el-button>
+          <span aria-hidden="true"></span>
+          算人数
+        </button>
+        <div class="automation-dialog-actions">
+          <el-button class="intercom-btn-outlined" @click="batchAutomationDialogVisible = false">取消</el-button>
+          <el-button
+            class="batch-dialog-primary"
+            data-tutorial-target="pull-confirm-batch-run"
+            :disabled="databankAutomating || (batchMode && batchAutomationSelectedCount === 0)"
+            @click="confirmBatchAutomation"
+          >
+            {{ batchMode
+              ? (batchAutomationScope === 'failed'
+                ? `确定并重试 ${batchAutomationSelectedCount} 个包`
+                : `确定并开始圈选 ${batchAutomationSelectedCount} 个包`)
+              : '开始自动化圈人' }}
+          </el-button>
+        </div>
       </div>
     </template>
   </el-dialog>
+
 </template>
 
 <script setup>
@@ -1153,6 +1196,7 @@ import {
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
+  aiCommand: { type: Object, default: null },
 })
 
 const workbenchLeftPanelRef = ref(null)
@@ -1213,7 +1257,9 @@ const MAX_HISTORY = 20
 const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_MESSAGE_TYPE = 'CDP_AUTOMATE_DATABANK'
 const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
-const EXTENSION_RESPONSE_TIMEOUT_MS = 70000
+const EXTENSION_RESPONSE_TIMEOUT_MS = 170000
+const EXTENSION_PING_TIMEOUT_MS = 3500
+const AUTO_CALCULATE_EXTENSION_VERSION = '2.2.2'
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
 
@@ -1383,6 +1429,8 @@ const batchCopyIndex = ref(0)
 const batchCopying = ref(false)
 const batchAutomationDialogVisible = ref(false)
 const batchAutomationScope = ref('current')
+const batchAutomationSelectedIndexes = ref([])
+const databankAutoCalculate = ref(false)
 const parameterBatchDialogVisible = ref(false)
 const parameterBatchSection = ref(null)
 const parameterBatchText = ref('')
@@ -1498,6 +1546,22 @@ function pullAggregationReady(rows = batchPreviewCompatibility.value) {
 }
 
 const activeBatchEntry = computed(() => batchEntries.value[activeBatchIndex.value] || null)
+const batchSucceededCount = computed(() => batchEntries.value.filter(entry => entry.automationStatus === 'success').length)
+const batchFailedCount = computed(() => batchEntries.value.filter(entry => entry.automationStatus === 'failed').length)
+const batchInterruptedCount = computed(() => batchEntries.value.filter(entry => entry.automationInterrupted === true).length)
+const visibleBatchAutomationEntries = computed(() => (
+  batchEntries.value
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => batchAutomationScope.value !== 'failed' || entry.automationStatus === 'failed')
+))
+const batchAutomationSelectedCount = computed(() => batchAutomationSelectedIndexes.value.length)
+const batchAutomationAllSelected = computed(() => (
+  visibleBatchAutomationEntries.value.length > 0
+  && batchAutomationSelectedCount.value === visibleBatchAutomationEntries.value.length
+))
+const batchAutomationPartiallySelected = computed(() => (
+  batchAutomationSelectedCount.value > 0 && !batchAutomationAllSelected.value
+))
 const isParameterBatch = computed(() => batchMode.value && batchKind.value === 'parameter')
 const parameterBatchSourceCount = computed(() => batchMode.value ? batchEntries.value.length : 1)
 const parameterBatchTaskCount = computed(() => parameterBatchRows.value.length * parameterBatchSourceCount.value)
@@ -1546,6 +1610,18 @@ function getTutorialAutomationTarget() {
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
 const canUndo = computed(() => !batchMode.value && historyPos.value > 0)
 const canRedo = computed(() => !batchMode.value && historyPos.value < historyStack.value.length - 1)
+const deferredSolutionSplitSummary = computed(() => {
+  if (workbenchMode.value !== 'solution-use' || batchMode.value) return null
+  const overflows = nodeList.value.flatMap(node => collectNodeOverflows(node).map(item => ({
+    ...item,
+    nodeId: node.id,
+  })))
+  if (overflows.length === 0) return null
+  return {
+    nodeCount: new Set(overflows.map(item => item.nodeId)).size,
+    fieldCount: new Set(overflows.map(item => item.fieldKey)).size,
+  }
+})
 const customFieldSections = computed(() =>
   batchMode.value
     ? buildBatchCustomFieldSections()
@@ -2168,34 +2244,9 @@ async function onCfDialogSave({ customFieldId, value }) {
 
   if (overflows.length > 0) {
     const overflow = overflows[0]
-    const chunkCount = overflow.fieldKey === 'leafCates'
-      ? chunkBySecondaryCategory(overflow.allValues, overflow.limit).length
-      : Math.ceil(overflow.allValues.length / overflow.limit)
     const affectedNodes = new Set(overflows.map(item => item.nodeId)).size
-    try {
-      await ElMessageBox.confirm(
-        `「${overflow.fieldLabel}」已填写 ${overflow.effectiveCount} 项，单个组件最多 ${overflow.limit} 项。将把 ${affectedNodes} 个关联组件各拆分为 ${chunkCount} 个并集组件，是否继续？`,
-        '参数超限，需要拆分',
-        { confirmButtonText: '确认拆分', cancelButtonText: '返回修改', type: 'warning' },
-      )
-    } catch {
-      ElMessage.info('未应用本次修改，请删减参数后再保存')
-      return
-    }
-
     applyCustomFieldValue(customFieldId, value)
-    overflows.forEach((item) => {
-      handleOverflowSplit({
-        nodeId: item.nodeId,
-        overflows: [{
-          fieldKey: item.fieldKey,
-          fieldLabel: item.fieldLabel,
-          allValues: item.allValues,
-          limit: item.limit,
-        }],
-      })
-    })
-    ElMessage.success(`已按「${overflow.fieldLabel}」拆分并同步到 ${affectedNodes} 个组件`)
+    ElMessage.info(`「${overflow.fieldLabel}」的完整 ${overflow.effectiveCount} 项已同步到 ${affectedNodes} 个组件。请完成其他参数后，再点击顶部“最后确认拆分”`)
     return
   }
 
@@ -2340,6 +2391,7 @@ function resetBatchContext() {
   batchCopyDialogVisible.value = false
   batchAutomationDialogVisible.value = false
   batchAutomationScope.value = 'current'
+  batchAutomationSelectedIndexes.value = []
   parameterBatchDialogVisible.value = false
   parameterBatchSection.value = null
   parameterBatchText.value = ''
@@ -2807,7 +2859,7 @@ async function createParameterBatchEntries() {
       await activateBatchEntry(0, { skipPersist: true })
       resetHistory()
       if (isGuidedTutorialStep('combo-create')) completeGuidedTutorialStep('combo-create')
-      ElMessage.success(`已生成 ${entries.length} 个建包任务，请选择自动化圈人并圈完全部人群包`)
+      ElMessage.success(`已生成 ${entries.length} 个建包任务，点击自动化圈人即可核对并开始`)
     } catch (error) {
       ElMessage.error(error?.message || '组合批量展开失败，请检查参数')
     } finally {
@@ -2981,6 +3033,7 @@ function duplicateNode(index) {
 }
 
 function handleOverflowSplit(payload) {
+  if (payload?.deferred) return
   const { nodeId, overflows } = payload
   const srcIndex = nodeList.value.findIndex(n => n.id === nodeId)
   if (srcIndex < 0) return
@@ -3024,6 +3077,49 @@ function handleOverflowSplit(payload) {
     setCurrentCustomFields(nextFields)
   }
   markDerivedStructureChange()
+}
+
+async function confirmDeferredSolutionSplit() {
+  const overflows = getUnresolvedSolutionUseOverflows()
+  if (overflows.length === 0) return
+  const distinctFields = [...new Map(overflows.map(item => [item.fieldKey, item])).values()]
+  if (distinctFields.length > 1) {
+    const fieldList = distinctFields
+      .map(item => `「${item.fieldLabel}」${item.allValues.length}/${item.limit}`)
+      .join('、')
+    ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能拆分一个字段，请先删减其他超限值`)
+    return
+  }
+
+  const overflow = distinctFields[0]
+  const nodeGroups = new Map()
+  overflows.forEach((item) => {
+    if (!nodeGroups.has(item.nodeId)) nodeGroups.set(item.nodeId, [])
+    nodeGroups.get(item.nodeId).push({
+      fieldKey: item.fieldKey,
+      fieldLabel: item.fieldLabel,
+      allValues: item.allValues,
+      limit: item.limit,
+    })
+  })
+  const chunkCount = overflow.fieldKey === 'leafCates'
+    ? chunkBySecondaryCategory(overflow.allValues, overflow.limit).length
+    : Math.ceil(overflow.allValues.length / overflow.limit)
+
+  try {
+    await ElMessageBox.confirm(
+      `请确认品牌、分析类目、行为、渠道和日期等其余参数均已完成。继续后将把「${overflow.fieldLabel}」拆成每组最多 ${overflow.limit} 项，并让拆分节点继承当前全部参数。`,
+      '最后确认拆分',
+      { confirmButtonText: '参数已完成，确认拆分', cancelButtonText: '继续填写参数', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  nodeGroups.forEach((nodeOverflows, nodeId) => {
+    handleOverflowSplit({ nodeId, overflows: nodeOverflows })
+  })
+  ElMessage.success(`已将 ${nodeGroups.size} 个关联组件各拆为 ${chunkCount} 组，所有其余参数已完整继承`)
 }
 
 function buildDraftWorkbenchFieldIds(nodes) {
@@ -3132,6 +3228,59 @@ async function confirmReplaceCanvas(
     return false
   }
 }
+
+async function applyAiAudiencePlan({ nodes, audienceName, workflow } = {}) {
+  if (!Array.isArray(nodes) || nodes.length === 0) {
+    ElMessage.warning('AI方案中没有可应用的工作台节点')
+    return
+  }
+  const confirmed = await confirmReplaceCanvas(
+    '当前画布已有内容，应用AI方案会替换现有状态，是否继续？',
+    '应用AI圈包方案',
+    '确认替换',
+  )
+  if (!confirmed) return
+
+  snapshotPaused.value = true
+  try {
+    const hydratedNodes = await hydrateNodes(nodes)
+    if (hydratedNodes.some(node => node._hydrationError)) {
+      throw new Error('部分AI节点加载失败，请检查组件配置后重试')
+    }
+    resetWorkbenchContext()
+    nodeList.value = hydratedNodes
+    nodeRefs.value = {}
+    activeNodeIndex.value = 0
+    crowdNameInput.value = String(audienceName || '').trim()
+    resetHistory()
+    await nextTick()
+    const workflowName = String(workflow?.shortTitle || workflow?.title || '').trim()
+    const nextHint = workflow?.applicationMode === 'staged'
+      ? `，已按“${workflowName}”路径准备基础方案`
+      : '，可继续修改或计算人数'
+    ElMessage.success(`AI方案已应用：${hydratedNodes.length}个节点${nextHint}`)
+  } catch (error) {
+    ElMessage.error(error.message || 'AI方案应用失败，请稍后重试')
+  } finally {
+    snapshotPaused.value = false
+  }
+}
+
+let queuedAiCommand = null
+let lastAiCommandToken = ''
+
+async function consumeAiCommand(command) {
+  const token = String(command?.token || '')
+  if (!token || token === lastAiCommandToken || command?.action !== 'apply_ai_audience_plan') return
+  if (sessionRestorePending) {
+    queuedAiCommand = command
+    return
+  }
+  lastAiCommandToken = token
+  await applyAiAudiencePlan(command.payload || {})
+}
+
+watch(() => props.aiCommand, command => { void consumeAiCommand(command) }, { deep: true, immediate: true })
 
 async function setWorkbenchFromSolution(record) {
   snapshotPaused.value = true
@@ -3300,7 +3449,10 @@ async function buildFinalJson() {
           payload[key] = { val: { days: value?.days }, min: 'recent' }
         } else if (mode === 'range' && Array.isArray(value?.dateRange) && value.dateRange.length === 2) {
           payload[key] = {
-            val: { start: value.dateRange[0], end: value.dateRange[1] },
+            val: {
+              start: String(value.dateRange[0]).replaceAll('-', ''),
+              end: String(value.dateRange[1]).replaceAll('-', ''),
+            },
             min: 'range',
           }
         }
@@ -3461,7 +3613,7 @@ function ensureGeneratedOutputReady(actionLabel = '继续') {
     const fieldList = distinctFields.map(item => `「${item.fieldLabel}」${item.allValues.length}/${item.limit}`).join('、')
     const instruction = distinctFields.length > 1
       ? '一次只能处理一个超限字段，请先删除其余字段的多余值'
-      : '请返回参数区删减，或重新保存该参数并确认拆分'
+      : '请先完成其余参数，再点击页面顶部“最后确认拆分”'
     ElMessage.warning(`${actionLabel}前发现超限字段：${fieldList}。${instruction}`)
     return false
   }
@@ -3517,7 +3669,60 @@ function goToDataBank() {
   window.open(DATABANK_URL, '_blank', 'noopener,noreferrer')
 }
 
-function sendMessageToDatabankExtension(jsonText) {
+function isExtensionVersionAtLeast(version, minimumVersion) {
+  const actual = String(version || '').split('.').slice(0, 3).map(Number)
+  const expected = String(minimumVersion || '').split('.').slice(0, 3).map(Number)
+  if (actual.length === 0 || actual.some(Number.isNaN)) return false
+  while (actual.length < 3) actual.push(0)
+  while (expected.length < 3) expected.push(0)
+  for (let index = 0; index < 3; index += 1) {
+    if (actual[index] !== expected[index]) return actual[index] > expected[index]
+  }
+  return true
+}
+
+function getDatabankExtensionVersion() {
+  return new Promise((resolve, reject) => {
+    const requestId = `ping_auto_calculate_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const cleanup = (handler, timer) => {
+      window.removeEventListener('message', handler)
+      window.clearTimeout(timer)
+    }
+    const handleMessage = (event) => {
+      if (event.source !== window) return
+      const payload = event.data
+      if (payload?.source !== EXTENSION_BRIDGE_SOURCE || payload?.requestId !== requestId) return
+      cleanup(handleMessage, timeoutId)
+      resolve(String(payload.version || ''))
+    }
+    const timeoutId = window.setTimeout(() => {
+      cleanup(handleMessage, timeoutId)
+      reject(new Error('未检测到自动化插件'))
+    }, EXTENSION_PING_TIMEOUT_MS)
+
+    window.addEventListener('message', handleMessage)
+    window.postMessage({
+      source: 'cdp-web',
+      type: EXTENSION_MESSAGE_TYPE,
+      requestId,
+      jsonText: '{}',
+    }, window.location.origin)
+  })
+}
+
+async function ensureAutoCalculateExtensionReady() {
+  if (!databankAutoCalculate.value) return true
+  try {
+    const version = await getDatabankExtensionVersion()
+    if (isExtensionVersionAtLeast(version, AUTO_CALCULATE_EXTENSION_VERSION)) return true
+    ElMessage.warning(`自动计算人数需要 V${AUTO_CALCULATE_EXTENSION_VERSION} 插件；当前为 V${version || '未知'}，请更新并重新加载插件`)
+  } catch {
+    ElMessage.warning(`未检测到 V${AUTO_CALCULATE_EXTENSION_VERSION} 插件，请更新并重新加载后再试`)
+  }
+  return false
+}
+
+function sendMessageToDatabankExtension(jsonText, autoCalculate = databankAutoCalculate.value) {
   return new Promise((resolve, reject) => {
     const requestId = `databank_${Date.now()}_${Math.random().toString(36).slice(2)}`
 
@@ -3537,6 +3742,10 @@ function sendMessageToDatabankExtension(jsonText) {
         reject(new Error(payload.error || '自动化圈人失败'))
         return
       }
+      if (autoCalculate === true && payload.autoCalculated !== true) {
+        reject(new Error(`插件未确认人数计算，请重新加载 V${AUTO_CALCULATE_EXTENSION_VERSION} 插件后重试`))
+        return
+      }
       resolve(payload)
     }
 
@@ -3552,6 +3761,7 @@ function sendMessageToDatabankExtension(jsonText) {
         type: EXTENSION_MESSAGE_TYPE,
         requestId,
         jsonText,
+        autoCalculate: autoCalculate === true,
       },
       window.location.origin,
     )
@@ -3578,8 +3788,7 @@ function handleDataBankCommand(command) {
           ElMessage.warning('请先生成教程指定的九个建包任务')
           return
         }
-        batchAutomationScope.value = 'current'
-        batchAutomationDialogVisible.value = true
+        openBatchAutomationDialog('all')
         completeGuidedTutorialStep('combo-start-automation')
         return
       }
@@ -3588,17 +3797,15 @@ function handleDataBankCommand(command) {
           ElMessage.warning('请先生成教程指定的 4 个竞争品牌建包任务')
           return
         }
-        batchAutomationScope.value = 'current'
-        batchAutomationDialogVisible.value = true
+        openBatchAutomationDialog('all')
         completeGuidedTutorialStep('parameter-start-automation')
         return
       }
-      batchAutomationScope.value = 'current'
       if (isGuidedTutorialStep('pull-run-second')) {
         batchEntries.value.forEach((entry) => { entry.automationStatus = 'idle' })
         batchEntries.value = [...batchEntries.value]
       }
-      batchAutomationDialogVisible.value = true
+      openBatchAutomationDialog(batchFailedCount.value > 0 ? 'failed' : 'all')
       if (isGuidedTutorialStep('pull-run-baseline')) {
         updateGuidedTutorialContext({ pullBatchRound: 'baseline' })
         completeGuidedTutorialStep('pull-run-baseline')
@@ -3608,8 +3815,39 @@ function handleDataBankCommand(command) {
       }
       return
     }
-    void startAutoDataBankFlow()
+    batchAutomationDialogVisible.value = true
   }
+}
+
+function openBatchFailureRecovery() {
+  if (!batchMode.value || batchFailedCount.value === 0) return
+  openBatchAutomationDialog('failed')
+}
+
+function openBatchAutomationDialog(scope = 'all') {
+  batchAutomationScope.value = scope === 'failed' ? 'failed' : 'all'
+  batchAutomationSelectedIndexes.value = batchEntries.value
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => batchAutomationScope.value !== 'failed' || entry.automationStatus === 'failed')
+    .map(({ index }) => index)
+  batchAutomationDialogVisible.value = true
+}
+
+function isBatchAutomationEntrySelected(index) {
+  return batchAutomationSelectedIndexes.value.includes(index)
+}
+
+function toggleBatchAutomationEntry(index, checked) {
+  const selected = new Set(batchAutomationSelectedIndexes.value)
+  if (checked) selected.add(index)
+  else selected.delete(index)
+  batchAutomationSelectedIndexes.value = [...selected].sort((a, b) => a - b)
+}
+
+function toggleAllBatchAutomationEntries(checked) {
+  batchAutomationSelectedIndexes.value = checked
+    ? visibleBatchAutomationEntries.value.map(row => row.index)
+    : []
 }
 
 function getAutomationStatusLabel(status) {
@@ -3621,10 +3859,16 @@ function getAutomationStatusLabel(status) {
   }[status] || '等待执行'
 }
 
-function confirmBatchAutomation() {
+async function confirmBatchAutomation() {
+  if (!(await ensureAutoCalculateExtensionReady())) return
+  if (!batchMode.value) {
+    batchAutomationDialogVisible.value = false
+    void startAutoDataBankFlow()
+    return
+  }
   if (isGuidedTutorialStep('combo-confirm-run')) {
-    if (batchAutomationScope.value !== 'all' || batchEntries.value.length !== 9 || !isParameterBatch.value) {
-      ElMessage.warning('请生成九个教程任务，并选择圈完全部人群包')
+    if (batchEntries.value.length !== 9 || !isParameterBatch.value || batchAutomationSelectedCount.value !== 9) {
+      ElMessage.warning('请保留九个人群包全部勾选后再开始')
       return
     }
     updateGuidedTutorialContext({ comboCompletedCount: 0, comboError: '' })
@@ -3635,8 +3879,8 @@ function confirmBatchAutomation() {
       ElMessage.warning('四个建包任务与教程品牌不一致，请重新生成')
       return
     }
-    if (batchAutomationScope.value !== 'all') {
-      ElMessage.warning('本次教程要一次圈完四个包，请先选择“圈完全部人群包”')
+    if (batchAutomationSelectedCount.value !== 4) {
+      ElMessage.warning('本次教程要一次圈完四个包，请保留四项全部勾选')
       return
     }
     updateGuidedTutorialContext({
@@ -3653,8 +3897,8 @@ function confirmBatchAutomation() {
       ? 'second'
       : ''
   if (tutorialRound) {
-    if (batchAutomationScope.value !== 'all') {
-      ElMessage.warning('本次教程要一次圈完三个包，请先选择“圈完全部人群包”')
+    if (batchAutomationSelectedCount.value !== 3) {
+      ElMessage.warning('本次教程要一次圈完三个包，请保留三项全部勾选')
       return
     }
     updateGuidedTutorialContext({
@@ -3682,7 +3926,7 @@ function confirmBatchAutomation() {
     )
   }
   batchAutomationDialogVisible.value = false
-  void startBatchAutomationFlow(batchAutomationScope.value)
+  void startBatchAutomationFlow(batchAutomationScope.value, batchAutomationSelectedIndexes.value)
 }
 
 function syncPullBatchTutorialStatus(errorMessage = '') {
@@ -3746,23 +3990,26 @@ function syncPullBatchTutorialStatus(errorMessage = '') {
   }
 }
 
-async function startBatchAutomationFlow(scope = 'current') {
+async function startBatchAutomationFlow(scope = 'current', selectedIndexes = null) {
   if (databankAutomating.value || !batchMode.value) return
 
-  const targetIndexes = scope === 'all'
-    ? batchEntries.value.map((_entry, index) => index)
-    : scope === 'failed'
-      ? batchEntries.value
-          .map((entry, index) => ({ entry, index }))
-          .filter(({ entry }) => entry.automationStatus === 'failed')
-          .map(({ index }) => index)
-      : [activeBatchIndex.value]
+  const targetIndexes = Array.isArray(selectedIndexes)
+    ? [...new Set(selectedIndexes)]
+        .filter(index => Number.isInteger(index) && index >= 0 && index < batchEntries.value.length)
+        .sort((a, b) => a - b)
+    : scope === 'all'
+      ? batchEntries.value.map((_entry, index) => index)
+      : scope === 'failed'
+        ? batchEntries.value
+            .map((entry, index) => ({ entry, index }))
+            .filter(({ entry }) => entry.automationStatus === 'failed')
+            .map(({ index }) => index)
+        : [activeBatchIndex.value]
   if (targetIndexes.length === 0) {
     syncPullBatchTutorialStatus()
     ElMessage.info('当前没有需要重试的失败任务')
     return
   }
-  const keepRunningAfterFailure = isPullAnalysisTutorialActive() || isParameterBatchTutorialActive() || guidedTutorialState.taskId === COMBINATION_BATCH_TUTORIAL_ID
   databankAutomating.value = true
   const pendingMessage = ElMessage({
     message: `正在自动化圈人：0 / ${targetIndexes.length}`,
@@ -3776,6 +4023,8 @@ async function startBatchAutomationFlow(scope = 'current') {
     for (const index of targetIndexes) {
       const entry = batchEntries.value[index]
       entry.automationStatus = 'running'
+      entry.automationError = ''
+      entry.automationInterrupted = false
       batchEntries.value = [...batchEntries.value]
       syncPullBatchTutorialStatus()
       try {
@@ -3783,19 +4032,19 @@ async function startBatchAutomationFlow(scope = 'current') {
       } catch (error) {
         entry.automationStatus = 'failed'
         lastErrorMessage = error?.message || '任务准备失败，请稍后重试'
+        entry.automationError = lastErrorMessage
         syncPullBatchTutorialStatus(lastErrorMessage)
-        if (keepRunningAfterFailure) continue
-        throw error
+        continue
       }
       pendingMessage.close()
 
       if (!ensureGeneratedOutputReady('自动化执行')) {
         entry.automationStatus = 'failed'
-        batchEntries.value = [...batchEntries.value]
         lastErrorMessage = '生成接口暂未就绪，请稍后重试'
+        entry.automationError = lastErrorMessage
+        batchEntries.value = [...batchEntries.value]
         syncPullBatchTutorialStatus(lastErrorMessage)
-        if (keepRunningAfterFailure) continue
-        throw new Error(lastErrorMessage)
+        continue
       }
 
       const currentPendingMessage = ElMessage({
@@ -3809,6 +4058,7 @@ async function startBatchAutomationFlow(scope = 'current') {
           throw new Error(result?.error || result?.message || '自动化圈人失败')
         }
         entry.automationStatus = 'success'
+        entry.automationError = ''
         completed += 1
         currentPendingMessage.close()
       } catch (error) {
@@ -3816,9 +4066,9 @@ async function startBatchAutomationFlow(scope = 'current') {
         currentPendingMessage.close()
         batchEntries.value = [...batchEntries.value]
         lastErrorMessage = error?.message || '自动化圈人失败'
+        entry.automationError = lastErrorMessage
         syncPullBatchTutorialStatus(lastErrorMessage)
-        if (keepRunningAfterFailure) continue
-        throw error
+        continue
       }
       batchEntries.value = [...batchEntries.value]
       syncPullBatchTutorialStatus()
@@ -3876,19 +4126,6 @@ async function startAutoDataBankFlow() {
     return { ok: false, error: errorMessage }
   } finally {
     databankAutomating.value = false
-  }
-}
-
-function handleBatchAllScopeChange() {
-  if (batchAutomationScope.value !== 'all') return
-  if (isGuidedTutorialStep('parameter-select-all')) {
-    completeGuidedTutorialStep('parameter-select-all')
-  } else if (isGuidedTutorialStep('combo-select-all')) {
-    completeGuidedTutorialStep('combo-select-all')
-  } else if (isGuidedTutorialStep('pull-select-all-baseline')) {
-    completeGuidedTutorialStep('pull-select-all-baseline')
-  } else if (isGuidedTutorialStep('pull-select-all-second')) {
-    completeGuidedTutorialStep('pull-select-all-second')
   }
 }
 
@@ -4115,7 +4352,17 @@ async function restoreWorkbenchSession() {
           hydrateNodes(entry?.nodes || []),
           hydrateNodes(entry?.sourceNodes || entry?.nodes || []),
         ])
-        restoredEntries.push({ ...cloneValue(entry), nodes, sourceNodes })
+        const wasInterrupted = entry?.automationStatus === 'running'
+        restoredEntries.push({
+          ...cloneValue(entry),
+          nodes,
+          sourceNodes,
+          automationStatus: wasInterrupted ? 'failed' : (entry?.automationStatus || 'idle'),
+          automationInterrupted: wasInterrupted || entry?.automationInterrupted === true,
+          automationError: wasInterrupted
+            ? '上次执行在完成前中断，请仅重试该任务'
+            : String(entry?.automationError || ''),
+        })
       }
       batchEntries.value = restoredEntries
       activeBatchIndex.value = Math.min(
@@ -4124,7 +4371,9 @@ async function restoreWorkbenchSession() {
       )
       batchFolderName.value = String(stored.batch.folderName || '')
       batchSourceFolderId.value = stored.batch.sourceFolderId || null
-      batchAutomationScope.value = stored.batch.automationScope === 'all' ? 'all' : 'current'
+      batchAutomationScope.value = ['all', 'failed'].includes(stored.batch.automationScope)
+        ? stored.batch.automationScope
+        : 'current'
       batchKind.value = stored.batch.kind === 'parameter' ? 'parameter' : 'solutions'
       parameterBatchFieldName.value = String(stored.batch.parameterFieldName || '')
       parameterBatchFieldId.value = String(stored.batch.parameterFieldId || '')
@@ -4427,6 +4676,11 @@ onMounted(async () => {
   await Promise.all([loadPackages(), loadPublishedSolutions()])
   const restored = await restoreWorkbenchSession()
   sessionRestorePending = false
+  if (queuedAiCommand) {
+    const command = queuedAiCommand
+    queuedAiCommand = null
+    await consumeAiCommand(command)
+  }
   if (guidedTutorialState.active) {
     leftPanelMode.value = 'packages'
     pkgSearch.value = ''
@@ -4491,6 +4745,105 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.ai-library-launcher {
+  position: relative;
+  display: grid;
+  width: 100%;
+  grid-template-columns: 43px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 11px;
+  min-height: 82px;
+  margin: 1px 0 15px;
+  padding: 12px 12px 12px 13px;
+  overflow: hidden;
+  color: #20283a;
+  font: inherit;
+  text-align: left;
+  background:
+    radial-gradient(circle at 100% 0, rgba(63, 112, 255, .16), transparent 44%),
+    linear-gradient(145deg, #f8faff, #eef3ff);
+  border: 1px solid rgba(63, 112, 255, .22);
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(45, 66, 115, .08), inset 0 1px 0 rgba(255, 255, 255, .9);
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+
+.ai-library-launcher::after {
+  position: absolute;
+  right: -28px;
+  bottom: -38px;
+  width: 88px;
+  height: 88px;
+  content: '';
+  border: 1px solid rgba(63, 112, 255, .12);
+  border-radius: 50%;
+  box-shadow: 0 0 0 12px rgba(63, 112, 255, .025);
+}
+
+.ai-library-launcher:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(63, 112, 255, .42);
+  box-shadow: 0 15px 34px rgba(45, 66, 115, .13), inset 0 1px 0 #fff;
+}
+
+.ai-library-launcher:focus-visible {
+  outline: 3px solid rgba(63, 112, 255, .2);
+  outline-offset: 2px;
+}
+
+.ai-library-launcher:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.ai-library-sigil {
+  position: relative;
+  display: grid;
+  width: 43px;
+  height: 43px;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(145deg, #4a79ff, #315dd8);
+  border-radius: 13px 13px 4px 13px;
+  box-shadow: 0 8px 18px rgba(63, 112, 255, .24);
+}
+
+.ai-library-sigil b {
+  z-index: 1;
+  font: 800 10px/1 "DIN Alternate", ui-monospace, monospace;
+  letter-spacing: .08em;
+}
+
+.ai-library-sigil i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 255, 255, .8);
+  border-radius: 50%;
+}
+
+.ai-library-sigil i:nth-child(1) { transform: translate(-11px, -10px); }
+.ai-library-sigil i:nth-child(2) { transform: translate(12px, -4px); }
+.ai-library-sigil i:nth-child(3) { transform: translate(8px, 12px); background: #ffbd98; }
+
+.ai-library-copy { display: grid; min-width: 0; gap: 2px; }
+.ai-library-copy strong { color: #1a2131; font-size: 15px; font-weight: 720; letter-spacing: -.02em; }
+.ai-library-copy small { overflow: hidden; color: #707a91; font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.ai-library-kicker { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 1px; color: #4969bc; font: 700 8px/1.3 "DIN Alternate", ui-monospace, monospace; letter-spacing: .08em; }
+.ai-library-kicker i { width: 5px; height: 5px; background: #3f70ff; border-radius: 50%; box-shadow: 0 0 0 3px rgba(63, 112, 255, .1); animation: ai-library-online 1.8s ease-in-out infinite; }
+.ai-library-arrow { z-index: 1; color: #6e82b7; font-size: 17px; transition: color .2s ease, transform .2s ease; }
+.ai-library-launcher:hover:not(:disabled) .ai-library-arrow { color: #315fdc; transform: translate(2px, -2px); }
+
+.package-library-divider { display: flex; align-items: center; gap: 9px; margin: 0 0 10px; color: #9399a7; font-size: 9px; }
+.package-library-divider::before, .package-library-divider::after { height: 1px; flex: 1; content: ''; background: #e6e8ed; }
+.package-library-divider span { flex: 0 0 auto; }
+
+@keyframes ai-library-online {
+  0%, 100% { opacity: .45; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
 .batch-compatibility-list {
   display: grid;
   gap: 8px;

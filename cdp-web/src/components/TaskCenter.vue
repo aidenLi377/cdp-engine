@@ -343,14 +343,16 @@ import {
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
-const EXPECTED_EXTENSION_VERSION = '2.2.1'
+const EXPECTED_EXTENSION_VERSION = '2.2.4'
 const TASK_SESSION_KEY = 'task-center.v1'
 const COMPLETION_TOAST_DURATION_MS = 4000
 const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
+  aiCommand: { type: Object, default: null },
 })
+const emit = defineEmits(['ai-execution-status'])
 
 const {
   state: guidedTutorialState,
@@ -408,6 +410,11 @@ const dmpBatchDraft = ref(String(taskSessionState.dmpBatchDraft ?? dmpBatchText.
 const databankAutoApply = ref(false)
 databankAutoApply.value = taskSessionState.databankAutoApply === true
 const selectedTags = ref(taskSessionState.selectedTags || loadPersisted('selectedTags', ['160571', '114555', '114554', '213510', '150663']))
+const aiPreferredTagOrder = ref(
+  Array.isArray(taskSessionState.aiPreferredTagOrder)
+    ? taskSessionState.aiPreferredTagOrder.map(String)
+    : [],
+)
 const tagSearch = ref(String(taskSessionState.tagSearch || ''))
 const monitorView = ref(MONITOR_VIEWS.has(taskSessionState.monitorView) ? taskSessionState.monitorView : 'result')
 const historyQuery = ref(String(taskSessionState.historyQuery || ''))
@@ -443,6 +450,7 @@ watch(
     dmpBatchDraft,
     databankAutoApply,
     selectedTags,
+    aiPreferredTagOrder,
     tagSearch,
     monitorView,
     historyQuery,
@@ -736,6 +744,7 @@ function persistTaskSession() {
     dmpBatchDraft: dmpBatchDraft.value,
     databankAutoApply: databankAutoApply.value,
     selectedTags: [...selectedTags.value],
+    aiPreferredTagOrder: [...aiPreferredTagOrder.value],
     tagSearch: tagSearch.value,
     monitorView: monitorView.value,
     historyQuery: historyQuery.value,
@@ -924,6 +933,9 @@ function resumeCompletionToast(reason) {
 function viewHistoryTask(task) {
   closeCompletionToast()
   monitorView.value = 'result'
+  aiPreferredTagOrder.value = task?.type === 'dmp' && Array.isArray(task?.tagIds)
+    ? task.tagIds.map(String)
+    : []
   phases.value = task?.type === 'databank'
     ? (task?.autoApply ? databankAutoPhases : databankManualPhases)
     : dmpPhases
@@ -967,11 +979,31 @@ function userError(msg) {
 
 const normalizedTaskResults = computed(() => normalizeResultRows(taskResults.value))
 const resultColumns = computed(() => visibleResultColumns(normalizedTaskResults.value, dmpSettings.value.columnVisibility))
-const orderedSelectedTagIds = computed(() => orderTagIdsByDictionary(selectedTags.value, tagDictionary))
+const baseTagDictionaryIndex = new Map(
+  tagDictionary.map((tag, index) => [String(tag.tagId), index]),
+)
+const effectiveTagDictionary = computed(() => {
+  if (!aiPreferredTagOrder.value.length) return tagDictionary
+  const preferredIndex = new Map(
+    aiPreferredTagOrder.value.map((tagId, index) => [String(tagId), index]),
+  )
+  return [...tagDictionary].sort((left, right) => {
+    const leftRank = preferredIndex.get(String(left.tagId))
+    const rightRank = preferredIndex.get(String(right.tagId))
+    if (leftRank !== undefined && rightRank !== undefined) return leftRank - rightRank
+    if (leftRank !== undefined) return -1
+    if (rightRank !== undefined) return 1
+    return (baseTagDictionaryIndex.get(String(left.tagId)) || 0)
+      - (baseTagDictionaryIndex.get(String(right.tagId)) || 0)
+  })
+})
+const orderedSelectedTagIds = computed(() => (
+  orderTagIdsByDictionary(selectedTags.value, effectiveTagDictionary.value)
+))
 
 function normalizeResultRows(results) {
   const normalizedRows = Array.isArray(results) ? results.map(normalizeResultRow) : []
-  return orderResultRowsByDictionary(normalizedRows, tagDictionary)
+  return orderResultRowsByDictionary(normalizedRows, effectiveTagDictionary.value)
 }
 
 function historyColumns(results) {
@@ -1657,6 +1689,172 @@ async function executeBatch(names, type, options = {}, run) {
   return { completed, failed, completedNames, failedNames }
 }
 
+let pendingAiCommand = null
+let lastAiCommandToken = ''
+
+function reportAiExecution(command, status, message, details = {}) {
+  const token = String(command?.token || '')
+  if (!token) return
+  emit('ai-execution-status', {
+    token,
+    status,
+    message,
+    ...details,
+  })
+}
+
+function normalizeAiTagName(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[()]/g, match => match === '(' ? '（' : '）')
+    .replace(/\s+/g, '')
+}
+
+function resolveAiTagIds(tagIds, tagNames) {
+  const dictionaryById = new Map(
+    tagDictionary.map(tag => [String(tag.tagId), tag]),
+  )
+  const dictionaryByName = new Map(
+    tagDictionary.map(tag => [normalizeAiTagName(tag.tagName), String(tag.tagId)]),
+  )
+  const selected = []
+  const missing = []
+  for (const rawId of Array.isArray(tagIds) ? tagIds : []) {
+    const tagId = String(rawId || '').trim()
+    if (dictionaryById.has(tagId) && !selected.includes(tagId)) selected.push(tagId)
+    else if (tagId) missing.push(`标签ID ${tagId}`)
+  }
+  if (selected.length) return { selected, missing }
+  for (const rawName of Array.isArray(tagNames) ? tagNames : []) {
+    const normalized = normalizeAiTagName(rawName)
+    const tagId = dictionaryByName.get(normalized)
+    if (tagId && !selected.includes(tagId)) selected.push(tagId)
+    else if (!tagId) missing.push(String(rawName || '').trim())
+  }
+  return { selected, missing }
+}
+
+function newestCompletedTaskKeys(crowdNames) {
+  const remaining = new Set(crowdNames.map(name => String(name).trim()))
+  const keys = []
+  for (let index = 0; index < taskHistory.value.length; index += 1) {
+    const task = taskHistory.value[index]
+    const crowdName = String(task?.crowdName || task?.name || '').trim()
+    if (!remaining.has(crowdName) || !isComparisonReadyTask(task)) continue
+    keys.push(historyTaskKey(task, index))
+    remaining.delete(crowdName)
+  }
+  return keys
+}
+
+async function consumeAiCommand(command) {
+  const token = String(command?.token || '')
+  if (!token || token === lastAiCommandToken || command?.action !== 'prepare_dmp_batch_profile') return
+  if (extensionState.value === 'checking') {
+    pendingAiCommand = command
+    reportAiExecution(command, 'preparing', '正在检查达摩盘任务执行器。')
+    return
+  }
+
+  const names = [...new Set(
+    (Array.isArray(command.crowdNames) ? command.crowdNames : [])
+      .map(name => String(name || '').trim())
+      .filter(Boolean),
+  )]
+  const resolvedTags = resolveAiTagIds(command.tagIds, command.tagNames)
+  dmpBatchText.value = names.join('\n')
+  dmpBatchDraft.value = dmpBatchText.value
+  dmpBatchMode.value = names.length > 1
+  aiPreferredTagOrder.value = [...resolvedTags.selected]
+  selectedTags.value = resolvedTags.selected
+  const requestedMetrics = DMP_COMPARISON_METRICS.filter(metric => command.comparisonMetrics?.includes(metric))
+  comparisonMetrics.value = requestedMetrics.length ? requestedMetrics : ['人群占比', 'Rebase']
+  monitorView.value = 'result'
+
+  if (taskRunning.value !== null) {
+    pendingAiCommand = command
+    reportAiExecution(command, 'queued', '已有取数任务正在执行，本次任务正在排队。')
+    ElMessage.warning('已有取数任务正在执行，本次 AI 任务已保留在输入区')
+    return
+  }
+
+  if (names.length < 2 && command.autoOpenComparison !== false) {
+    lastAiCommandToken = token
+    reportAiExecution(command, 'failed', '横向对比至少需要两个人群包。')
+    ElMessage.error('横向对比至少需要两个人群包，AI 已保留当前输入')
+    return
+  }
+  if (resolvedTags.missing.length) {
+    lastAiCommandToken = token
+    reportAiExecution(command, 'failed', `画像标签匹配失败：${resolvedTags.missing.join('、')}`)
+    ElMessage.error(`这些画像标签未在系统中找到：${resolvedTags.missing.join('、')}`)
+    return
+  }
+  if (!selectedTags.value.length) {
+    lastAiCommandToken = token
+    reportAiExecution(command, 'failed', '没有找到可执行的画像标签。')
+    ElMessage.error('AI 没有提供可执行的画像标签')
+    return
+  }
+  if (!extConnected.value) {
+    pendingAiCommand = command
+    reportAiExecution(command, 'waiting', '画像条件已填好，正在等待任务执行器连接。')
+    ElMessage.error('任务执行器未连接，AI 已填好全部条件；连接后会自动开始')
+    return
+  }
+
+  pendingAiCommand = null
+  lastAiCommandToken = token
+  reportAiExecution(command, 'running', `正在批量获取 ${names.length} 个人群包的达摩盘画像。`)
+  ElMessage.success(`AI 已发起 ${names.length} 个人群包的达摩盘批量取数`)
+  try {
+    const summary = await runDmp()
+    const completed = Number(summary?.completed || 0)
+    const failed = Number(summary?.failed || 0)
+    const completedNames = Array.isArray(summary?.completedNames) ? summary.completedNames : names
+    let comparisonOpened = false
+    if (command.autoOpenComparison !== false && completed >= 2) {
+      const comparisonKeys = newestCompletedTaskKeys(completedNames)
+      if (comparisonKeys.length >= 2) {
+        selectedComparisonTaskKeys.value = comparisonKeys
+        comparisonHistoryCollapsed.value = true
+        monitorView.value = 'comparison'
+        comparisonOpened = true
+        ElMessage.success('批量取数完成，已生成横向对比')
+      } else {
+        ElMessage.warning('取数已完成，但可用于横向对比的成功结果不足两个')
+      }
+    }
+    const status = summary?.cancelled
+      ? 'cancelled'
+      : completed > 0 && failed > 0
+        ? 'partial'
+        : completed > 0
+          ? 'completed'
+          : 'failed'
+    const message = status === 'cancelled'
+      ? `任务已终止；已完成 ${completed} 个，未完成 ${Math.max(0, names.length - completed)} 个。`
+      : status === 'partial'
+        ? `取数部分完成：成功 ${completed} 个，失败 ${failed} 个。`
+        : status === 'completed'
+          ? `达摩盘画像取数已完成：${completed} 个人群包${comparisonOpened ? '，横向对比已打开。' : '。'}`
+          : (summary?.error || `达摩盘画像取数失败，共 ${failed || names.length} 个人群包未完成。`)
+    reportAiExecution(command, status, message, {
+      completed,
+      failed,
+      completedNames,
+      failedNames: Array.isArray(summary?.failedNames) ? summary.failedNames : [],
+      comparisonOpened,
+    })
+  } catch (error) {
+    reportAiExecution(command, 'failed', `达摩盘画像取数失败：${userError(error?.message || '未知错误')}`)
+  } finally {
+    dmpBatchMode.value = false
+  }
+}
+
+watch(() => props.aiCommand, command => { void consumeAiCommand(command) }, { deep: true, immediate: true })
+
 async function retryTask() {
   const task = activeTask.value; if (!task) return
   if (task.type === 'databank') {
@@ -1780,6 +1978,11 @@ async function checkExtension(manual = false) {
       extensionEverConnected = true
       extensionState.value = 'connected'
       if (!wasConnected || !dmpSettingsLoaded.value) await loadDmpSettings(true)
+      if (pendingAiCommand && taskRunning.value === null) {
+        const command = pendingAiCommand
+        pendingAiCommand = null
+        void consumeAiCommand(command)
+      }
       if (manual) ElMessage.success('扩展连接正常')
       return
     }
@@ -1808,6 +2011,11 @@ onMounted(async () => {
   window.addEventListener('beforeunload', persistTaskSession)
   loadHistory()
   await checkExtension()
+  if (pendingAiCommand) {
+    const command = pendingAiCommand
+    pendingAiCommand = null
+    await consumeAiCommand(command)
+  }
   extensionTimer = setInterval(checkExtension, 15000)
 })
 

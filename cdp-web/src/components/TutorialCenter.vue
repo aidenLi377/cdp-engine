@@ -354,6 +354,7 @@ const props = defineProps({
   initialTutorialId: { type: String, default: '' },
   focusStartToken: { type: Number, default: 0 },
   celebrationToken: { type: Number, default: 0 },
+  syncedProgressItems: { type: Array, default: () => [] },
 })
 
 const progressItems = ref([])
@@ -488,6 +489,14 @@ async function guideToStartButton(id) {
     startGuideVisible.value = false
   }, 9000)
 }
+
+watch(
+  () => props.syncedProgressItems,
+  (items) => {
+    if (Array.isArray(items)) progressItems.value = items
+  },
+  { immediate: true },
+)
 
 watch(
   () => props.focusStartToken,

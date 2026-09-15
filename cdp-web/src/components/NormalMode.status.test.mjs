@@ -52,7 +52,7 @@ test('behavior date editor does not expose the removed restore-status affordance
 })
 
 test('DataBank automation leaves more headroom than the extension bridge timeout', () => {
-  assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 70000/)
+  assert.match(normalModeVue, /const EXTENSION_RESPONSE_TIMEOUT_MS = 170000/)
 })
 
 test('official parity outputs keep the official default name and copy indentation', () => {

@@ -35,6 +35,10 @@ outputs/
 tmp/
 output/
 
+# Local AI research sources and generated regression transcripts
+AI神画学习资料/
+AI对话导出/
+
 # IDE
 .vscode/
 .idea/

@@ -27,6 +27,8 @@ class TutorialProgressApiTests(unittest.TestCase):
         users = UserStore(self.db_path)
         users.create_user("learner-a", "learner-password", "Learner A")
         users.create_user("learner-b", "learner-password", "Learner B")
+        self.learner_a_user = users.get_by_username("learner-a")
+        self.learner_b_user = users.get_by_username("learner-b")
         self.learner_a = self._client("learner-a")
         self.learner_b = self._client("learner-b")
 
@@ -61,6 +63,71 @@ class TutorialProgressApiTests(unittest.TestCase):
         response = self.learner_a.post("/api/tutorial-progress/NOT_VALID!/complete")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["code"], "INVALID_TUTORIAL_ID")
+
+    def test_admin_can_list_and_replace_any_users_tutorial_progress(self):
+        first_id = "dmp-batch-profile-comparison"
+        second_id = "category-item-behavior-split"
+        self.assertEqual(
+            self.learner_b.post(f"/api/tutorial-progress/{first_id}/complete").status_code,
+            200,
+        )
+
+        overview = self.learner_a.get("/api/admin/tutorial-progress")
+        self.assertEqual(overview.status_code, 200)
+        self.assertTrue(any(
+            item["userId"] == self.learner_b_user["id"]
+            and item["tutorialId"] == first_id
+            for item in overview.get_json()
+        ))
+
+        updated = self.learner_a.put(
+            f"/api/admin/users/{self.learner_b_user['id']}/tutorial-progress",
+            json={"completedTutorialIds": [first_id, second_id]},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(
+            {item["tutorialId"] for item in updated.get_json()["items"]},
+            {first_id, second_id},
+        )
+        self.assertEqual(
+            {item["tutorialId"] for item in self.learner_b.get("/api/tutorial-progress").get_json()},
+            {first_id, second_id},
+        )
+
+        removed = self.learner_a.put(
+            f"/api/admin/users/{self.learner_b_user['id']}/tutorial-progress",
+            json={"completedTutorialIds": [second_id]},
+        )
+        self.assertEqual(removed.status_code, 200)
+        self.assertEqual(
+            [item["tutorialId"] for item in self.learner_b.get("/api/tutorial-progress").get_json()],
+            [second_id],
+        )
+
+    def test_regular_user_cannot_manage_other_users_tutorial_progress(self):
+        self.assertEqual(
+            self.learner_b.get("/api/admin/tutorial-progress").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.learner_b.put(
+                f"/api/admin/users/{self.learner_a_user['id']}/tutorial-progress",
+                json={"completedTutorialIds": []},
+            ).status_code,
+            403,
+        )
+
+    def test_admin_tutorial_progress_update_validates_target_and_payload(self):
+        missing = self.learner_a.put(
+            "/api/admin/users/missing/tutorial-progress",
+            json={"completedTutorialIds": []},
+        )
+        self.assertEqual(missing.status_code, 404)
+        invalid = self.learner_a.put(
+            f"/api/admin/users/{self.learner_b_user['id']}/tutorial-progress",
+            json={"completedTutorialIds": "all"},
+        )
+        self.assertEqual(invalid.status_code, 400)
 
     def test_checkpoint_is_saved_per_account_and_removed_on_completion(self):
         tutorial_id = "category-item-behavior-split"

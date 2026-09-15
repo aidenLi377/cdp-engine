@@ -4,6 +4,8 @@ const QUICK_RANGE_DEFINITIONS = [
     items: [
       { key: 'recent180Days', label: '最近180天' },
       { key: 'previous180Days', label: '上一个180天' },
+      { key: 'recent1Year', label: '近一年' },
+      { key: 'previous1Year', label: '前一年' },
     ],
   },
   {
@@ -29,6 +31,14 @@ function addCalendarDays(value, amount) {
   return date
 }
 
+function addCalendarYears(value, amount) {
+  const date = startOfLocalDay(value)
+  const targetYear = date.getFullYear() + amount
+  const targetMonth = date.getMonth()
+  const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+  return new Date(targetYear, targetMonth, Math.min(date.getDate(), lastDayOfTargetMonth))
+}
+
 export function formatQuickDateValue(value) {
   const year = value.getFullYear()
   const month = String(value.getMonth() + 1).padStart(2, '0')
@@ -38,9 +48,9 @@ export function formatQuickDateValue(value) {
 
 export function getQuickRangeSelectableStart(referenceDate = new Date()) {
   const today = startOfLocalDay(referenceDate)
-  const rollingYearStart = addCalendarDays(today, -366)
+  const previousYearStart = addCalendarYears(today, -2)
   const completeMonthsStart = new Date(today.getFullYear(), today.getMonth() - 12, 1)
-  return completeMonthsStart < rollingYearStart ? completeMonthsStart : rollingYearStart
+  return completeMonthsStart < previousYearStart ? completeMonthsStart : previousYearStart
 }
 
 export function getQuickDateRange(preset, referenceDate = new Date()) {
@@ -54,6 +64,12 @@ export function getQuickDateRange(preset, referenceDate = new Date()) {
   } else if (preset === 'previous180Days') {
     end = addCalendarDays(today, -181)
     start = addCalendarDays(end, -179)
+  } else if (preset === 'recent1Year') {
+    start = addCalendarYears(today, -1)
+    end = addCalendarDays(today, -1)
+  } else if (preset === 'previous1Year') {
+    start = addCalendarYears(today, -2)
+    end = addCalendarDays(addCalendarYears(today, -1), -1)
   } else if (preset === 'recent6Months') {
     start = new Date(today.getFullYear(), today.getMonth() - 6, 1)
     end = new Date(today.getFullYear(), today.getMonth(), 0)

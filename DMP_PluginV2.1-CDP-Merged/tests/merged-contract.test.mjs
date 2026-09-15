@@ -11,7 +11,7 @@ const manifest = JSON.parse(read('manifest.json'))
 
 test('merged manifest preserves DMP Copilot and adds CDP task execution surfaces', () => {
   assert.equal(manifest.manifest_version, 3)
-  assert.equal(manifest.version, '2.2.1')
+  assert.equal(manifest.version, '2.2.4')
   assert.equal(manifest.background.service_worker, 'background.js')
   for (const permission of ['storage', 'clipboardWrite', 'tabs', 'scripting']) {
     assert.ok(manifest.permissions.includes(permission), `missing permission: ${permission}`)
@@ -54,6 +54,11 @@ test('original DMP Copilot capabilities remain present', () => {
   }
   assert.match(panel, /DMP 美妆洞察 Copilot/)
   assert.match(panel, /right-panel/)
+  assert.match(panel, /id="xdata-entry-link"/)
+  assert.match(panel, /href="https:\/\/duruo377\.top\/"/)
+  assert.match(panel, /target="_blank"/)
+  assert.match(panel, /rel="noopener noreferrer"/)
+  assert.match(content, /#xdata-entry-link/)
 })
 
 test('CDP message bridge and automation handlers use renamed collision-free files', () => {

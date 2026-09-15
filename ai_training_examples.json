@@ -1,0 +1,547 @@
+{
+  "schemaVersion": 1,
+  "businessTimeSemantics": [
+    {
+      "name": "YTD",
+      "meaning": "从数据截止日所在年份的1月1日到数据截止日",
+      "defaultCutoff": "昨天",
+      "examples": ["YTD", "今年YTD", "年初至今", "本年累计"]
+    },
+    {
+      "name": "去年YTD",
+      "meaning": "从数据截止日上一年的1月1日，到上一年与数据截止日相同月日",
+      "defaultCutoff": "昨天的去年同期日",
+      "examples": ["去年YTD", "YTD去年", "上年YTD", "去年年初至同期"]
+    },
+    {
+      "name": "MTD",
+      "meaning": "从数据截止日所在月份的1日到数据截止日",
+      "defaultCutoff": "昨天",
+      "examples": ["MTD", "本月MTD", "月初至今", "本月累计"]
+    },
+    {
+      "name": "去年MTD",
+      "meaning": "从数据截止日上一年同月的1日，到上一年与数据截止日相同月日",
+      "defaultCutoff": "昨天的去年同期日",
+      "examples": ["去年MTD", "MTD去年", "上年MTD", "去年同月月初至同期"]
+    }
+  ],
+  "rules": [
+    "所有动态周期均以数据截止日为准，数据截止日默认是昨天，绝不包含今天。",
+    "用户明确给出固定开始日和结束日时，以固定日期为准，不再按运行当天滚动。",
+    "商品价格对应itemPrice；消费金额对应purchaseAmount，两者不能混淆。",
+    "商品标题词对应titleKeywords，不能当成类目、品牌或商品ID。",
+    "类目公域行为可以同时使用正式类目、标准品牌、渠道、标题关键词与商品价格筛选，不需要品牌账号。",
+    "用户说出清晰商品类型时，先用实时类目维表寻找唯一的正式类目路径；唯一命中就自动使用，只有存在多个同等合理候选时才让用户确认。",
+    "用户没有指定销售渠道时默认使用天猫，不默认所有销售渠道。"
+    ,"只有关键词搜索和商品行为是私域圈包行为，人数可以精确到个位数；类目公域行为小于2000不展示具体人数且按千为单位展示。"
+    ,"关键词搜索是平台首页精准搜索，不包含购物车或店铺内搜索；结果已经与品牌自己的历史AIPL资产总量取交集，不额外添加AIPL节点。"
+    ,"搜索词和商品行为同时出现时，一般使用关键词搜索与商品行为两个节点取交集；商品行为选择所有销售渠道时不绑定单店账号，但仍表示当前品牌在天猫、淘宝、国际等渠道的私域汇总数据。"
+    ,"商品行为选择支持账号的具体渠道并选中账号时，看到的是该店铺的私域数据；选择所有销售渠道时，看到的是整个品牌的跨渠道汇总私域数据。"
+    ,"官旗或官方旗舰店是明确的店铺级信号：使用商品行为、天猫渠道并选择对应品牌官方旗舰店账号；官旗本身不代表当前用户有账号权限，权限未知时仍要确认。"
+    ,"只指定全球购、天猫国际自营（实时维表正式名为天猫国际直营）、天猫国际或淘宝集市，且没有官旗、自店或具体账号信号时，商品行为使用该渠道下的品牌级汇总，shop为ALL，不询问单店账号权限。"
+    ,"已确认的人群包命名系列XT_2508香水搜索浏览{渠道}表示：2025年8月首页精准搜索迪奥香水，与对应渠道浏览香水/香水用品类目商品取交集；ttl表示所有销售渠道，副本后缀不改变圈选语义。"
+    ,"关键词搜索与商品行为可以组成通用交集：用户说搜索某关键词，并浏览、收藏、加购、预售、购买或退款时，关键词搜索节点在前，对应商品行为节点在后，compute为(0)n(1)；行为词必须原样落到商品行为，不得一律改成浏览或购买。"
+    ,"已确认的人群包命名系列“2025年9月第1周搜索迪奥{商品行为}”表示：2025-09-01至2025-09-07首页精准搜索迪奥，与天猫DIOR迪奥官方旗舰店针对全部商品发生该行为的人取交集。商品行为可替换为浏览、收藏、加购、预售、购买、退款；未说明账号权限时必须先确认，不能因包名已出现品牌就擅自假定有权限。"
+  ],
+  "examples": [
+    {
+      "id": "category-public-dior-rouge-previous-ytd-20250831",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年1月1日至8月31日，在天猫购买过Dior/迪奥唇彩/唇蜜/唇釉/唇泥/唇霜类目商品，标题含惊艳唇釉且商品价格不低于200元的人群。",
+      "dateSemantics": {
+        "period": "去年YTD",
+        "referenceCurrentDate": "2026-09-01",
+        "latestSelectableDate": "2026-08-31",
+        "resolvedRange": ["2025-01-01", "2025-08-31"]
+      },
+      "naturalLanguageVariants": [
+        "圈2025年1月1日至8月31日，在天猫购买过Dior惊艳唇釉、商品价格不低于200元的人，类目选唇彩/唇蜜/唇釉/唇泥/唇霜。",
+        "找一下2025年YTD截至8月底的迪奥惊艳唇釉购买人群，天猫渠道，唇部彩妆里的唇釉类目，商品价格至少200元。",
+        "我要去年YTD的Dior惊艳唇釉消费者；按2025/01/01-2025/08/31固定统计，天猫，单件商品价格200元以上。",
+        "天猫上2025年前8个月买过200元及以上迪奥惊艳唇釉的人。"
+      ],
+      "dynamicNaturalLanguageVariants": [
+        {
+          "utterance": "圈去年YTD在天猫买过Dior惊艳唇釉的人，唇彩/唇蜜/唇釉/唇泥/唇霜类目，商品价格至少200元。",
+          "period": "previous_ytd"
+        }
+      ],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_迪奥惊艳唇釉ytd去年",
+        "conditions": [
+          {
+            "component": "类目公域行为",
+            "behaviors": ["购买"],
+            "categories": ["彩妆/香水/美妆工具>唇部彩妆>唇彩/唇蜜/唇釉/唇泥/唇霜"],
+            "brands": ["Dior/迪奥"],
+            "channels": ["天猫"],
+            "titleKeywords": ["惊艳唇釉"],
+            "itemPrice": {"min": 200, "max": null},
+            "dateRange": ["2025-01-01", "2025-08-31"]
+          }
+        ]
+      },
+      "criticalMappings": [
+        "使用类目公域行为，不使用商品行为",
+        "购买是行为",
+        "惊艳唇釉是商品标题关键词",
+        "200元是商品价格下限且包含200，不是累计消费金额",
+        "Dior/迪奥是标准品牌",
+        "天猫是渠道"
+      ],
+      "sourcePackage": {
+        "crowdName": "XT_迪奥惊艳唇釉ytd去年",
+        "list": [
+          {
+            "op": null,
+            "lv2MetadataIdMap": null,
+            "extra": {"status": "NORMAL"},
+            "index": null,
+            "selectionLv2": null,
+            "selectionLv3": {
+              "dateValue": {"from": "20250101", "to": "20250831"},
+              "bhv": ["18919#|#CATE_PUBLIC_PAY"],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "leafCates": ["50010807#|#50010807"],
+              "extraFilters": {
+                "stdBrand": ["29478"],
+                "price": {"op": "OPEN_OPEN"},
+                "channel": ["16772#|#4"],
+                "itemprice": {"op": "OPEN_CLOSE", "min": 200},
+                "title": ["惊艳唇釉"],
+                "frequency": {"op": "OPEN_OPEN"}
+              }
+            },
+            "selectionLv1": ["COMMON_TOUCH", "PUBLIC_CATE_BHV"],
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "id": "category-public-chanel-lip-glaze-previous-ytd",
+      "source": "用户确认的自然语言业务规则",
+      "businessMeaning": "上一年1月1日至数据截止日的去年同期日，在天猫购买过Chanel/香奈儿双效持色唇釉的人群；系统应从“唇釉”自动推断正式唇部彩妆类目。",
+      "dateSemantics": {
+        "period": "去年YTD",
+        "referenceCurrentDate": "2026-09-14",
+        "latestSelectableDate": "2026-09-13",
+        "resolvedRange": ["2025-01-01", "2025-09-13"]
+      },
+      "naturalLanguageVariants": [],
+      "dynamicNaturalLanguageVariants": [
+        {
+          "utterance": "我想想看香奈儿双效持色唇釉去年YTD的人",
+          "period": "previous_ytd"
+        },
+        {
+          "utterance": "帮我看去年YTD买过Chanel双效持色唇釉的人",
+          "period": "previous_ytd"
+        },
+        {
+          "utterance": "去年YTD的香奈儿双效持色唇釉消费者，渠道按默认",
+          "period": "previous_ytd"
+        }
+      ],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "香奈儿双效持色唇釉去年YTD人群",
+        "conditions": [
+          {
+            "component": "类目公域行为",
+            "behaviors": ["购买"],
+            "categories": ["彩妆/香水/美妆工具>唇部彩妆>唇彩/唇蜜/唇釉/唇泥/唇霜"],
+            "brands": ["Chanel/香奈儿"],
+            "channels": ["天猫"],
+            "titleKeywords": ["双效持色唇釉"],
+            "dateRange": ["2025-01-01", "2025-09-13"]
+          }
+        ]
+      },
+      "criticalMappings": [
+        "使用类目公域行为",
+        "未明确行为的商品消费者语境按购买处理",
+        "从唇釉唯一推断正式类目路径，不要求用户搜索",
+        "香奈儿映射为正式品牌Chanel/香奈儿",
+        "双效持色唇釉是商品标题关键词",
+        "未指定渠道时默认天猫",
+        "去年YTD按运行日动态计算且不包含今天"
+      ]
+    },
+    {
+      "id": "private-search-dior-fragrance-browse-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月1日至8月31日，在平台首页精准搜索过“迪奥香水”，同时在所有销售渠道浏览过香水/香水用品类目商品的人群。关键词搜索与商品行为均为私域行为，两个节点取交集；商品行为汇总Dior品牌在天猫、淘宝、国际等渠道的数据，但不绑定某一个Dior店铺账号。",
+      "dateSemantics": {
+        "period": "固定日期",
+        "resolvedRange": ["2025-08-01", "2025-08-31"]
+      },
+      "naturalLanguageVariants": [
+        "XT_2508香水搜索浏览ttl_副本",
+        "圈2025年8月在首页精准搜索过“迪奥香水”，并且浏览过香水类目商品的人；商品行为用所有销售渠道，不选账号。",
+        "我要2508香水搜索浏览TTL：搜索词迪奥香水，搜索用户和所有销售渠道下浏览香水/香水用品的人取交集。",
+        "找2025-08-01到2025-08-31搜过迪奥香水且浏览香水商品的人，关键词搜索和商品行为做交集，商品行为不要绑店铺账号。",
+        "虽然是Dior业务，但商品行为选所有销售渠道、不使用Dior账号；圈2025年8月首页搜索迪奥香水并浏览香水类目的人。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览ttl_副本",
+        "conditions": [
+          {
+            "id": "search-dior-fragrance",
+            "displayName": "首页精准搜索迪奥香水",
+            "component": "关键词搜索",
+            "searchKeywords": ["迪奥香水"],
+            "dateRange": ["2025-08-01", "2025-08-31"]
+          },
+          {
+            "id": "browse-fragrance",
+            "displayName": "所有销售渠道浏览香水类目",
+            "relation": "intersect",
+            "component": "商品行为",
+            "scope": "own_brand",
+            "behaviors": ["浏览"],
+            "categories": ["彩妆/香水/美妆工具>香水/香水用品"],
+            "channels": ["所有销售渠道"],
+            "dateRange": ["2025-08-01", "2025-08-31"]
+          }
+        ]
+      },
+      "criticalMappings": [
+        "关键词搜索节点在前，商品行为浏览节点在后，两个节点取交集",
+        "搜索词迪奥香水写入searchKeywords，不是商品标题关键词",
+        "关键词搜索只包含平台首页的精准搜索",
+        "关键词搜索结果已经与品牌历史AIPL资产总量相交，不额外生成AIPL节点",
+        "商品行为渠道选择所有销售渠道，因此汇总Dior品牌的跨渠道私域数据，不选择某一个Dior店铺账号，也不询问具体店铺账号权限",
+        "商品行为浏览的类目为彩妆/香水/美妆工具>香水/香水用品",
+        "关键词搜索和商品行为都是私域数据，人数可以精确到个位数"
+      ],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览ttl_副本",
+        "list": [
+          {
+            "op": null,
+            "lv2MetadataIdMap": null,
+            "extra": {"status": "NORMAL"},
+            "index": null,
+            "selectionLv2": null,
+            "selectionLv3": {
+              "dateValue": {"from": "20250801", "to": "20250831"},
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "searchs": ["迪奥香水"],
+              "contType": "bhv"
+            },
+            "selectionLv1": ["FIELD", "SEARCH"],
+            "fromPoolId": 0
+          },
+          {
+            "op": null,
+            "lv2MetadataIdMap": null,
+            "extra": {"status": "NORMAL"},
+            "index": null,
+            "selectionLv2": ["16596#|#ALL"],
+            "selectionLv3": {
+              "dateValue": {"from": "20250801", "to": "20250831"},
+              "bhv": ["16628#|#VIEW_ITEM"],
+              "cate": "201834201#|#201834201",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "keywords": null,
+              "selectedGoodsType": "1",
+              "dayFrequency": {"op": "OPEN_OPEN"}
+            },
+            "selectionLv1": ["COMMODITY", "ITEM"],
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-official-store-fragrance-browse-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月1日至8月31日，在平台首页精准搜索过“迪奥香水”，同时在天猫DIOR迪奥官方旗舰店浏览过香水/香水用品类目商品的人群。关键词搜索与商品行为两个私域节点取交集；“官旗”明确要求天猫渠道和对应品牌官方旗舰店账号，且用户已明确确认能使用该账号。",
+      "dateSemantics": {
+        "period": "固定日期",
+        "resolvedRange": ["2025-08-01", "2025-08-31"]
+      },
+      "naturalLanguageVariants": [
+        "圈2025年8月首页精准搜索过“迪奥香水”，并浏览Dior官旗香水类目的人；我可以使用Dior官旗账号。",
+        "我要XT_2508香水搜索浏览官旗：搜索迪奥香水的人，交集天猫DIOR迪奥官方旗舰店浏览香水商品的人，我有权限使用官旗账号。",
+        "找2025-08-01到2025-08-31搜过迪奥香水且浏览迪奥官方旗舰店香水类目的人；账号我能登录。",
+        "2508首页精确搜迪奥香水，再看过Dior官旗香水商品，我能使用该官旗账号圈包。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览官旗",
+        "conditions": [
+          {
+            "id": "search-dior-fragrance",
+            "displayName": "首页精准搜索迪奥香水",
+            "component": "关键词搜索",
+            "searchKeywords": ["迪奥香水"],
+            "dateRange": ["2025-08-01", "2025-08-31"]
+          },
+          {
+            "id": "browse-dior-official-store-fragrance",
+            "displayName": "Dior官旗浏览香水类目",
+            "relation": "intersect",
+            "component": "商品行为",
+            "scope": "own_store",
+            "brand": "Dior",
+            "canUseBrandAccount": true,
+            "behaviors": ["浏览"],
+            "categories": ["彩妆/香水/美妆工具>香水/香水用品"],
+            "channels": ["天猫"],
+            "dateRange": ["2025-08-01", "2025-08-31"]
+          }
+        ]
+      },
+      "criticalMappings": [
+        "关键词搜索节点在前，Dior官旗商品浏览节点在后，两个节点取交集",
+        "官旗明确使用商品行为，不能改成类目公域行为或类目商品行为",
+        "官旗明确使用天猫渠道，不能使用所有销售渠道",
+        "商品行为绑定实时账号DIOR迪奥官方旗舰店 香水与美容品",
+        "用户明确确认能使用该账号后canUseBrandAccount才为true；未确认时必须询问",
+        "关键词搜索与商品行为都是私域数据，人数可以精确到个位数"
+      ],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览官旗",
+        "list": [
+          {
+            "op": null,
+            "lv2MetadataIdMap": null,
+            "extra": {"status": "NORMAL"},
+            "index": null,
+            "selectionLv2": null,
+            "selectionLv3": {
+              "dateValue": {"from": "20250801", "to": "20250831"},
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "searchs": ["迪奥香水"],
+              "contType": "bhv"
+            },
+            "selectionLv1": ["FIELD", "SEARCH"],
+            "fromPoolId": 0
+          },
+          {
+            "op": null,
+            "lv2MetadataIdMap": null,
+            "extra": {"status": "NORMAL"},
+            "index": null,
+            "selectionLv2": ["16612#|#4"],
+            "selectionLv3": {
+              "dateValue": {"from": "20250801", "to": "20250831"},
+              "bhv": ["16625#|#VIEW_ITEM"],
+              "cate": "201834201#|#201834201",
+              "shop": "376414317#|#376414317",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "keywords": null,
+              "selectedGoodsType": "1",
+              "dayFrequency": {"op": "OPEN_OPEN"}
+            },
+            "selectionLv1": ["COMMODITY", "ITEM"],
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-fragrance-browse-global-purchase-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月首页精准搜索过迪奥香水，同时在全球购渠道浏览香水/香水用品类目商品的人。两个私域节点取交集；全球购只指定渠道、未指定店铺，商品行为使用该渠道品牌汇总shop=ALL。",
+      "dateSemantics": {"period": "固定日期", "resolvedRange": ["2025-08-01", "2025-08-31"]},
+      "naturalLanguageVariants": [
+        "XT_2508香水搜索浏览全球购_副本",
+        "圈2025年8月首页搜索迪奥香水，并浏览全球购渠道香水商品的人。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览全球购_副本",
+        "conditions": [
+          {"component": "关键词搜索", "searchKeywords": ["迪奥香水"], "dateRange": ["2025-08-01", "2025-08-31"]},
+          {"relation": "intersect", "component": "商品行为", "scope": "own_brand", "behaviors": ["浏览"], "categories": ["彩妆/香水/美妆工具>香水/香水用品"], "channels": ["全球购"], "dateRange": ["2025-08-01", "2025-08-31"]}
+        ]
+      },
+      "criticalMappings": ["2508表示2025年8月", "搜索词为迪奥香水", "全球购渠道商品浏览与关键词搜索取交集", "未指定具体店铺时shop=ALL且不询问账号权限"],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览全球购_副本",
+        "list": [
+          {"selectionLv2": null, "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "dateType": "ABSOLUTE_DATE_RANGE", "searchs": ["迪奥香水"], "contType": "bhv"}, "selectionLv1": ["FIELD", "SEARCH"], "fromPoolId": 0},
+          {"selectionLv2": ["16616#|#5"], "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "bhv": ["16626#|#VIEW_ITEM"], "cate": "201834201#|#201834201", "shop": "ALL", "dateType": "ABSOLUTE_DATE_RANGE", "keywords": null, "selectedGoodsType": "1", "dayFrequency": {"op": "OPEN_OPEN"}}, "selectionLv1": ["COMMODITY", "ITEM"], "fromPoolId": 1}
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-fragrance-browse-tmall-global-direct-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月首页精准搜索过迪奥香水，同时在天猫国际自营渠道浏览香水/香水用品类目商品的人。两个私域节点取交集；未指定具体店铺，商品行为使用渠道品牌汇总shop=ALL。",
+      "dateSemantics": {"period": "固定日期", "resolvedRange": ["2025-08-01", "2025-08-31"]},
+      "naturalLanguageVariants": [
+        "XT_2508香水搜索浏览天猫国际自营_副本",
+        "找2025年8月搜过迪奥香水，并在天猫国际自营浏览香水类目的人。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览天猫国际自营_副本",
+        "conditions": [
+          {"component": "关键词搜索", "searchKeywords": ["迪奥香水"], "dateRange": ["2025-08-01", "2025-08-31"]},
+          {"relation": "intersect", "component": "商品行为", "scope": "own_brand", "behaviors": ["浏览"], "categories": ["彩妆/香水/美妆工具>香水/香水用品"], "channels": ["天猫国际直营"], "dateRange": ["2025-08-01", "2025-08-31"]}
+        ]
+      },
+      "criticalMappings": ["包名中的天猫国际自营对应实时维表正式选项天猫国际直营，不能降级成天猫国际或天猫", "渠道ID为16604#|#13", "浏览行为ID为16629#|#VIEW_ITEM", "未指定具体店铺时shop=ALL"],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览天猫国际自营_副本",
+        "list": [
+          {"selectionLv2": null, "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "dateType": "ABSOLUTE_DATE_RANGE", "searchs": ["迪奥香水"], "contType": "bhv"}, "selectionLv1": ["FIELD", "SEARCH"], "fromPoolId": 0},
+          {"selectionLv2": ["16604#|#13"], "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "bhv": ["16629#|#VIEW_ITEM"], "cate": "201834201#|#201834201", "shop": "ALL", "dateType": "ABSOLUTE_DATE_RANGE", "keywords": null, "selectedGoodsType": "1", "dayFrequency": {"op": "OPEN_OPEN"}}, "selectionLv1": ["COMMODITY", "ITEM"], "fromPoolId": 1}
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-fragrance-browse-tmall-global-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月首页精准搜索过迪奥香水，同时在天猫国际渠道浏览香水/香水用品类目商品的人。两个私域节点取交集；未指定具体店铺，商品行为使用渠道品牌汇总shop=ALL。",
+      "dateSemantics": {"period": "固定日期", "resolvedRange": ["2025-08-01", "2025-08-31"]},
+      "naturalLanguageVariants": [
+        "XT_2508香水搜索浏览天猫国际_副本",
+        "圈8月首页搜迪奥香水又在天猫国际看过香水商品的人，按2025年。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览天猫国际_副本",
+        "conditions": [
+          {"component": "关键词搜索", "searchKeywords": ["迪奥香水"], "dateRange": ["2025-08-01", "2025-08-31"]},
+          {"relation": "intersect", "component": "商品行为", "scope": "own_brand", "behaviors": ["浏览"], "categories": ["彩妆/香水/美妆工具>香水/香水用品"], "channels": ["天猫国际"], "dateRange": ["2025-08-01", "2025-08-31"]}
+        ]
+      },
+      "criticalMappings": ["天猫国际不能与天猫国际自营混淆", "渠道ID为16600#|#1", "浏览行为ID为16623#|#VIEW_ITEM", "未指定具体店铺时shop=ALL"],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览天猫国际_副本",
+        "list": [
+          {"selectionLv2": null, "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "dateType": "ABSOLUTE_DATE_RANGE", "searchs": ["迪奥香水"], "contType": "bhv"}, "selectionLv1": ["FIELD", "SEARCH"], "fromPoolId": 0},
+          {"selectionLv2": ["16600#|#1"], "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "bhv": ["16623#|#VIEW_ITEM"], "cate": "201834201#|#201834201", "shop": "ALL", "dateType": "ABSOLUTE_DATE_RANGE", "keywords": null, "selectedGoodsType": "1", "dayFrequency": {"op": "OPEN_OPEN"}}, "selectionLv1": ["COMMODITY", "ITEM"], "fromPoolId": 1}
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-fragrance-browse-taobao-marketplace-202508",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年8月首页精准搜索过迪奥香水，同时在淘宝集市渠道浏览香水/香水用品类目商品的人。两个私域节点取交集；未指定具体店铺，商品行为使用渠道品牌汇总shop=ALL。",
+      "dateSemantics": {"period": "固定日期", "resolvedRange": ["2025-08-01", "2025-08-31"]},
+      "naturalLanguageVariants": [
+        "XT_2508香水搜索浏览淘宝集市_副本",
+        "2025年8月搜索迪奥香水并浏览淘宝集市香水商品的人。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "XT_2508香水搜索浏览淘宝集市_副本",
+        "conditions": [
+          {"component": "关键词搜索", "searchKeywords": ["迪奥香水"], "dateRange": ["2025-08-01", "2025-08-31"]},
+          {"relation": "intersect", "component": "商品行为", "scope": "own_brand", "behaviors": ["浏览"], "categories": ["彩妆/香水/美妆工具>香水/香水用品"], "channels": ["淘宝集市"], "dateRange": ["2025-08-01", "2025-08-31"]}
+        ]
+      },
+      "criticalMappings": ["淘宝集市渠道商品浏览与关键词搜索取交集", "渠道ID为16620#|#3", "浏览行为ID为16627#|#VIEW_ITEM", "未指定具体店铺时shop=ALL"],
+      "sourcePackage": {
+        "crowdName": "XT_2508香水搜索浏览淘宝集市_副本",
+        "list": [
+          {"selectionLv2": null, "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "dateType": "ABSOLUTE_DATE_RANGE", "searchs": ["迪奥香水"], "contType": "bhv"}, "selectionLv1": ["FIELD", "SEARCH"], "fromPoolId": 0},
+          {"selectionLv2": ["16620#|#3"], "selectionLv3": {"dateValue": {"from": "20250801", "to": "20250831"}, "bhv": ["16627#|#VIEW_ITEM"], "cate": "201834201#|#201834201", "shop": "ALL", "dateType": "ABSOLUTE_DATE_RANGE", "keywords": null, "selectedGoodsType": "1", "dayFrequency": {"op": "OPEN_OPEN"}}, "selectionLv1": ["COMMODITY", "ITEM"], "fromPoolId": 1}
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "id": "private-search-dior-official-store-purchase-week1-202509",
+      "source": "用户确认的标准人群包JSON",
+      "businessMeaning": "2025年9月第1周，在平台首页精准搜索过迪奥，同时在天猫DIOR迪奥官方旗舰店购买过任意商品的人。关键词搜索与商品行为两个私域节点取交集；购买节点不限制商品类目。",
+      "dateSemantics": {
+        "period": "2025年9月第1周",
+        "resolvedRange": ["2025-09-01", "2025-09-07"]
+      },
+      "naturalLanguageVariants": [
+        "圈2025年9月1日至7日在首页精准搜索过迪奥，并在Dior官旗购买过任意商品的人；我可以使用Dior官旗账号。",
+        "2025年9月第1周，搜迪奥的人和天猫迪奥官旗购买用户取交集，我有官旗账号权限。",
+        "找2025年9月第一周搜索词为迪奥、又在DIOR官方旗舰店成交过的人，不限商品类目；账号可以登录。"
+      ],
+      "dynamicNaturalLanguageVariants": [],
+      "canonicalIntent": {
+        "schemaVersion": 1,
+        "audienceName": "2025年9月第1周搜索迪奥购买_副本",
+        "conditions": [
+          {
+            "id": "search-dior",
+            "displayName": "首页精准搜索迪奥",
+            "component": "关键词搜索",
+            "searchKeywords": ["迪奥"],
+            "dateRange": ["2025-09-01", "2025-09-07"]
+          },
+          {
+            "id": "purchase-dior-official-store",
+            "displayName": "Dior官旗购买任意商品",
+            "relation": "intersect",
+            "component": "商品行为",
+            "scope": "own_store",
+            "brand": "Dior",
+            "canUseBrandAccount": true,
+            "behaviors": ["购买"],
+            "channels": ["天猫"],
+            "dateRange": ["2025-09-01", "2025-09-07"]
+          }
+        ]
+      },
+      "criticalMappings": [
+        "关键词搜索迪奥节点在前，天猫Dior官旗商品行为购买节点在后，两个节点取交集",
+        "第1周固定为2025-09-01至2025-09-07，日期格式必须输出yyyyMMdd",
+        "未指定商品类目表示cate=ALL，不能自动补成香水或其他类目",
+        "购买行为ID为16709#|#PAY，并带金额与频次不限参数",
+        "官旗绑定实时账号DIOR迪奥官方旗舰店 香水与美容品",
+        "浏览、收藏、加购、预售、购买、退款都沿用同一节点结构，只替换商品行为及其渠道对应ID"
+      ],
+      "sourcePackage": {
+        "crowdName": "2025年9月第1周搜索迪奥购买_副本",
+        "list": [
+          {
+            "selectionLv2": null,
+            "selectionLv3": {
+              "dateValue": {"from": "20250901", "to": "20250907"},
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "searchs": ["迪奥"],
+              "contType": "bhv"
+            },
+            "selectionLv1": ["FIELD", "SEARCH"],
+            "fromPoolId": 0
+          },
+          {
+            "selectionLv2": ["16612#|#4"],
+            "selectionLv3": {
+              "dateValue": {"from": "20250901", "to": "20250907"},
+              "bhv": ["16709#|#PAY"],
+              "cate": "ALL",
+              "shop": "376414317#|#376414317",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "money": {"op": "OPEN_OPEN"},
+              "keywords": null,
+              "selectedGoodsType": "1",
+              "frequency": {"op": "OPEN_OPEN"}
+            },
+            "selectionLv1": ["COMMODITY", "ITEM"],
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)n(1)"
+      }
+    }
+  ]
+}

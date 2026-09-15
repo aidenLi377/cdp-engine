@@ -98,7 +98,7 @@
             type="button"
             title="提交用户反馈"
             aria-label="提交用户反馈"
-            @click="feedbackOpen = true"
+            @click="openFeedback()"
           >
             <el-icon><ChatDotRound /></el-icon>
             <span>反馈</span>
@@ -119,6 +119,7 @@
           <NormalMode
             v-if="appMode === 'workbench'"
             :session-owner-id="currentUser?.id"
+            :ai-command="aiWorkbenchCommand"
           />
           <SolutionCenter
             v-else-if="appMode === 'solutions'"
@@ -128,6 +129,8 @@
           <TaskCenter
             v-else-if="appMode === 'task-center'"
             :session-owner-id="currentUser?.id"
+            :ai-command="aiTaskCommand"
+            @ai-execution-status="handleAiExecutionStatus"
           />
           <AdminCenter
             v-else-if="appMode === 'admin'"
@@ -141,6 +144,7 @@
             :initial-tutorial-id="tutorialCenterInitialId"
             :focus-start-token="tutorialCenterFocusToken"
             :celebration-token="tutorialCenterCelebrationToken"
+            :synced-progress-items="tutorialProgressItems"
             @close="closeTutorialCenter"
             @start-tutorial="handleStartTutorial"
           />
@@ -159,7 +163,11 @@
         @close="profileOpen = false"
         @updated="handleProfileUpdated"
       />
-      <FeedbackDrawer :open="feedbackOpen" @close="feedbackOpen = false" />
+      <FeedbackDrawer
+        :open="feedbackOpen"
+        :prefill="feedbackPrefill"
+        @close="feedbackOpen = false"
+      />
       <TutorialWelcomeDialog
         :open="tutorialWelcomeOpen"
         :progress-items="tutorialProgressItems"
@@ -167,6 +175,20 @@
         @experience="handleTutorialWelcomeExperience"
       />
       <GuidedTutorialOverlay />
+      <AiFloatingLauncher
+        :owner-id="currentUser?.id"
+        :hidden="aiDrawerVisible"
+        @open="openAiAudience()"
+      />
+      <AiAudienceDrawer
+        v-model="aiDrawerVisible"
+        :existing-node-count="aiExistingNodeCount"
+        :execution-state="aiTaskExecutionState"
+        @apply="handleAiWorkbenchApply"
+        @execute="handleAiExecute"
+        @reset-execution="resetAiExecution"
+        @request-feedback="handleAiFeedback"
+      />
     </div>
   </el-config-provider>
 </template>
@@ -181,6 +203,8 @@ import ProfileDialog from './components/ProfileDialog.vue'
 import FeedbackDrawer from './components/FeedbackDrawer.vue'
 import GuidedTutorialOverlay from './components/GuidedTutorialOverlay.vue'
 import TutorialWelcomeDialog from './components/TutorialWelcomeDialog.vue'
+import AiAudienceDrawer from './components/AiAudienceDrawer.vue'
+import AiFloatingLauncher from './components/AiFloatingLauncher.vue'
 import {
   completeGuidedTutorialStep,
   isGuidedTutorialStep,
@@ -225,6 +249,86 @@ const authState = ref('checking')
 const currentUser = ref(null)
 const profileOpen = ref(false)
 const feedbackOpen = ref(false)
+const feedbackPrefill = ref(null)
+const aiDrawerVisible = ref(false)
+const aiExistingNodeCount = ref(0)
+const aiWorkbenchCommand = ref(null)
+const aiTaskCommand = ref(null)
+const aiTaskExecutionState = ref(null)
+let aiCommandSequence = 0
+
+function openFeedback(prefill = null) {
+  feedbackPrefill.value = prefill
+  feedbackOpen.value = true
+}
+
+function openAiAudience(context = {}) {
+  aiExistingNodeCount.value = Number(context?.existingNodeCount || 0)
+  aiDrawerVisible.value = true
+}
+
+function handleAiFeedback(action = {}) {
+  openFeedback({
+    category: action.category || 'suggestion',
+    message: action.prefillMessage || action.message || '申请新增商品行为品牌账号',
+  })
+}
+
+function handleAiWorkbenchApply(payload = {}) {
+  aiCommandSequence += 1
+  aiWorkbenchCommand.value = {
+    token: `workbench-${Date.now()}-${aiCommandSequence}`,
+    action: 'apply_ai_audience_plan',
+    payload,
+  }
+  appMode.value = 'workbench'
+  aiDrawerVisible.value = false
+}
+
+function handleAiExecute(operation = {}) {
+  if (operation.action !== 'prepare_dmp_batch_profile') return
+  aiCommandSequence += 1
+  const token = `dmp-${Date.now()}-${aiCommandSequence}`
+  aiTaskCommand.value = {
+    ...operation,
+    token,
+  }
+  aiTaskExecutionState.value = {
+    token,
+    status: 'queued',
+    message: '取数任务已提交，正在进入达摩盘执行流程。',
+  }
+  appMode.value = 'task-center'
+  aiDrawerVisible.value = false
+}
+
+function handleAiExecutionStatus(update = {}) {
+  const token = String(update?.token || '')
+  if (!token || token !== String(aiTaskCommand.value?.token || '')) return
+  aiTaskExecutionState.value = {
+    ...(aiTaskExecutionState.value || {}),
+    ...update,
+    token,
+  }
+  if (['completed', 'partial', 'failed', 'cancelled'].includes(String(update?.status || ''))) {
+    aiTaskCommand.value = null
+  }
+}
+
+function resetAiExecution() {
+  aiTaskCommand.value = null
+  aiTaskExecutionState.value = null
+}
+
+function handleAiShortcut(event) {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
+  event.preventDefault()
+  openAiAudience()
+}
+
+function handleOpenFeedback(event) {
+  openFeedback({ ...(event.detail || {}), requestId: Date.now() })
+}
 const announcementUnreadCount = ref(0)
 const tutorialProgressItems = ref([])
 const tutorialWelcomeOpen = ref(false)
@@ -237,8 +341,10 @@ const tutorialReturnMode = ref('workbench')
 const inviteToken = ref(new URLSearchParams(window.location.search).get('invite') || '')
 let healthTimer = null
 let sessionTimer = null
+let tutorialProgressTimer = null
 let healthCheckInFlight = false
 let sessionCheckInFlight = false
+let tutorialProgressCheckInFlight = false
 let configVersionCheckInFlight = false
 let announcementCheckInFlight = false
 let announcementStateRevision = 0
@@ -346,16 +452,20 @@ async function checkConfigVersion() {
 function stopAuthenticatedLoops() {
   clearInterval(healthTimer)
   clearInterval(sessionTimer)
+  clearInterval(tutorialProgressTimer)
   healthTimer = null
   sessionTimer = null
+  tutorialProgressTimer = null
 }
 
 function startAuthenticatedLoops() {
   stopAuthenticatedLoops()
   if (document.hidden || authState.value !== 'authenticated') return
   checkHealth()
+  void refreshTutorialProgress()
   healthTimer = setInterval(checkHealth, 30000)
   sessionTimer = setInterval(checkSession, 60000)
+  tutorialProgressTimer = setInterval(() => void refreshTutorialProgress(), 3000)
 }
 
 async function checkSession() {
@@ -458,8 +568,9 @@ function scheduleTutorialWelcome() {
 }
 
 async function refreshTutorialProgress({ offerWelcome = false } = {}) {
-  if (authState.value !== 'authenticated') return
+  if (authState.value !== 'authenticated' || tutorialProgressCheckInFlight) return
   const requestedUserId = currentUser.value?.id
+  tutorialProgressCheckInFlight = true
   try {
     const items = await fetchTutorialProgress()
     if (authState.value !== 'authenticated' || currentUser.value?.id !== requestedUserId) return
@@ -467,6 +578,8 @@ async function refreshTutorialProgress({ offerWelcome = false } = {}) {
     if (offerWelcome) scheduleTutorialWelcome()
   } catch {
     // 学习进度读取失败不应阻断用户进入核心工作区。
+  } finally {
+    tutorialProgressCheckInFlight = false
   }
 }
 
@@ -623,6 +736,10 @@ async function logout() {
     tutorialCenterCelebrationToken.value = 0
     profileOpen.value = false
     feedbackOpen.value = false
+    aiDrawerVisible.value = false
+    aiWorkbenchCommand.value = null
+    aiTaskCommand.value = null
+    aiTaskExecutionState.value = null
     announcementUnreadCount.value = 0
     tutorialProgressItems.value = []
     stopAuthenticatedLoops()
@@ -647,6 +764,8 @@ watch(appMode, (mode) => {
 onMounted(async () => {
   window.addEventListener('cdp:auth-required', handleAuthRequired)
   window.addEventListener('cdp:announcements-changed', refreshAnnouncementState)
+  window.addEventListener('cdp:open-feedback', handleOpenFeedback)
+  window.addEventListener('keydown', handleAiShortcut)
   window.addEventListener(TUTORIAL_PROGRESS_EVENT, handleTutorialProgressChanged)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   await checkSession()
@@ -658,6 +777,8 @@ onBeforeUnmount(() => {
   clearTimeout(tutorialWelcomeTimer)
   window.removeEventListener('cdp:auth-required', handleAuthRequired)
   window.removeEventListener('cdp:announcements-changed', refreshAnnouncementState)
+  window.removeEventListener('cdp:open-feedback', handleOpenFeedback)
+  window.removeEventListener('keydown', handleAiShortcut)
   window.removeEventListener(TUTORIAL_PROGRESS_EVENT, handleTutorialProgressChanged)
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   stopAuthenticatedLoops()

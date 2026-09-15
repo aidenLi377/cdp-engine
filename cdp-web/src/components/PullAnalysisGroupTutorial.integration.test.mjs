@@ -92,9 +92,10 @@ test('多竞品教程必须由用户点击应用方案组合后才进入参数�
   assert.doesNotMatch(normalModeVue, /batchMode\.value[\s\S]{0,250}completeGuidedTutorialStep\('combo-confirm-group'\)/)
 })
 
-test('多竞品九包从发起到确认均提供独立高亮步骤', () => {
+test('多竞品九包从发起到默认全选确认均提供独立高亮步骤', () => {
   assert.match(normalModeVue, /isGuidedTutorialStep\('combo-start-automation'\)/)
-  assert.match(normalModeVue, /isGuidedTutorialStep\('combo-select-all'\)/)
+  assert.match(normalModeVue, /openBatchAutomationDialog\('all'\)/)
+  assert.match(normalModeVue, /batchAutomationSelectedIndexes/)
   assert.match(normalModeVue, /isGuidedTutorialStep\('combo-confirm-run'\)/)
   assert.match(normalModeVue, /completeGuidedTutorialStep\('combo-confirm-run'\)/)
 })

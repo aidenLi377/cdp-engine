@@ -49,6 +49,75 @@ class TutorialProgressStore:
             for row in rows
         ]
 
+    def list_all(self) -> list[dict]:
+        """Return completion rows for every account for the admin overview."""
+        with get_db(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT user_id, tutorial_id, completed_at, updated_at
+                   FROM tutorial_progress
+                   ORDER BY user_id, completed_at DESC"""
+            ).fetchall()
+        return [
+            {
+                "userId": row["user_id"],
+                "tutorialId": row["tutorial_id"],
+                "completedAt": row["completed_at"],
+                "updatedAt": row["updated_at"],
+            }
+            for row in rows
+        ]
+
+    def replace_for_user(self, user_id: str, tutorial_ids: list[str]) -> list[dict]:
+        """Replace one account's completed tutorials while preserving prior timestamps."""
+        if not isinstance(tutorial_ids, list):
+            raise TutorialProgressValidationError("completedTutorialIds 必须是数组")
+        if len(tutorial_ids) > 100:
+            raise TutorialProgressValidationError("教程数量超过限制")
+
+        validated_ids = list(dict.fromkeys(
+            self._validate_tutorial_id(tutorial_id)
+            for tutorial_id in tutorial_ids
+        ))
+        next_ids = set(validated_ids)
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            existing_ids = {
+                row["tutorial_id"]
+                for row in conn.execute(
+                    "SELECT tutorial_id FROM tutorial_progress WHERE user_id = ?",
+                    (user_id,),
+                ).fetchall()
+            }
+            removed_ids = existing_ids - next_ids
+            added_ids = next_ids - existing_ids
+
+            if removed_ids:
+                placeholders = ",".join("?" for _ in removed_ids)
+                conn.execute(
+                    f"DELETE FROM tutorial_progress WHERE user_id = ? AND tutorial_id IN ({placeholders})",
+                    (user_id, *sorted(removed_ids)),
+                )
+
+            for tutorial_id in validated_ids:
+                if tutorial_id not in added_ids:
+                    continue
+                conn.execute(
+                    """INSERT INTO tutorial_progress (
+                           user_id, tutorial_id, completed_at, updated_at
+                       ) VALUES (?, ?, ?, ?)""",
+                    (user_id, tutorial_id, now, now),
+                )
+                conn.execute(
+                    "DELETE FROM tutorial_checkpoints WHERE user_id = ? AND tutorial_id = ?",
+                    (user_id, tutorial_id),
+                )
+                conn.execute(
+                    "DELETE FROM tutorial_step_checkpoints WHERE user_id = ? AND tutorial_id = ?",
+                    (user_id, tutorial_id),
+                )
+
+        return self.list_for_user(user_id)
+
     def mark_complete(self, user_id: str, tutorial_id: str) -> dict:
         validated_id = self._validate_tutorial_id(tutorial_id)
         now = _utc_now()

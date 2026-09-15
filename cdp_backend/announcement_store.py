@@ -286,6 +286,28 @@ class AnnouncementStore:
             ).fetchall()
         return [self._public_item(row, include_content=False) for row in rows]
 
+    def list_published_content(self, kind: str, limit: int = 100) -> list[dict]:
+        """Return published content for internal knowledge consumers.
+
+        Unlike the user-facing listing this does not attach per-user read state,
+        and it includes the article blocks needed by the AI knowledge layer.
+        """
+        normalized_kind = str(kind or "").strip()
+        if normalized_kind not in self.KINDS:
+            raise AnnouncementValidationError("内容类型不正确")
+        limit = max(1, min(int(limit), 300))
+        with get_db(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT announcements.*
+                   FROM announcements
+                   WHERE announcements.status = 'published'
+                     AND announcements.kind = ?
+                   ORDER BY announcements.published_at DESC
+                   LIMIT ?""",
+                (normalized_kind, limit),
+            ).fetchall()
+        return [self._public_item(row) for row in rows]
+
     def get_published(self, announcement_id: str, user_id: str) -> dict:
         with get_db(self.db_path) as conn:
             row = conn.execute(

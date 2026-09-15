@@ -31,7 +31,7 @@ function createHarness() {
         } else if (payload.type === 'CDP_CANCEL_TASK') {
           callback({ ok: true, cancelled: true, closedTabs: 2 })
         } else {
-          callback({ ok: true, trail: [{ step: 'done' }] })
+          callback({ ok: true, trail: [{ step: 'done' }], autoCalculated: payload.autoCalculate === true })
         }
       },
     },
@@ -74,9 +74,12 @@ test('bridge forwards DataBank payload and returns the correlated response', () 
     type: 'CDP_AUTOMATE_DATABANK',
     requestId: 'request-1',
     jsonText: '{"demo":true}',
+    autoCalculate: true,
   })
   assert.equal(harness.forwarded[0].type, 'CDP_AUTOMATE_DATABANK')
   assert.equal(harness.forwarded[0].jsonText, '{"demo":true}')
+  assert.equal(harness.forwarded[0].autoCalculate, true)
+  assert.equal(harness.posted[0].payload.autoCalculated, true)
   assert.equal(harness.forwarded[0].pageUrl, 'http://127.0.0.1:5173/')
   assert.equal(harness.posted[0].payload.requestId, 'request-1')
   assert.equal(harness.posted[0].payload.ok, true)

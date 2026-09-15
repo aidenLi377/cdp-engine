@@ -79,7 +79,7 @@ test('task center keeps single run actions and adds batch paste entry points', (
 })
 
 test('task center requires the fixed extension patch version', () => {
-  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.1'/)
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.4'/)
   assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
   assert.match(source, /actual\[index\] < expected\[index\]/)
 })
@@ -228,6 +228,23 @@ test('DMP tutorial starts from a completely clean tag selection', () => {
   const preparation = source.match(/function prepareDmpTutorialWorkspace\(\) \{[\s\S]*?\n\}/)?.[0] || ''
   assert.match(preparation, /selectedTags\.value = \[\]/)
   assert.doesNotMatch(preparation, /selectedTags\.value\.filter/)
+})
+
+test('AI DMP execution preserves the confirmed tag order through extraction and results', () => {
+  assert.match(source, /const aiPreferredTagOrder = ref\(/)
+  assert.match(source, /aiPreferredTagOrder\.value = \[\.\.\.resolvedTags\.selected\]/)
+  assert.match(source, /orderTagIdsByDictionary\(selectedTags\.value, effectiveTagDictionary\.value\)/)
+  assert.match(source, /orderResultRowsByDictionary\(normalizedRows, effectiveTagDictionary\.value\)/)
+  assert.match(source, /aiPreferredTagOrder: \[\.\.\.aiPreferredTagOrder\.value\]/)
+})
+
+test('AI DMP execution reports running and terminal outcomes back to the drawer', () => {
+  assert.match(source, /defineEmits\(\['ai-execution-status'\]\)/)
+  assert.match(source, /reportAiExecution\(command, 'preparing'/)
+  assert.match(source, /reportAiExecution\(command, 'waiting'/)
+  assert.match(source, /reportAiExecution\(command, 'running'/)
+  assert.match(source, /status === 'completed'/)
+  assert.match(source, /comparisonOpened/)
 })
 
 test('tutorial recovers when a temporary operation surface is dismissed', () => {

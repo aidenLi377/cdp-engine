@@ -15,6 +15,7 @@ test('system management exposes direct functional sections without a task dashbo
   assert.match(adminCenterVue, /id: 'users'[\s\S]*label: '用户与权限'/)
   assert.match(adminCenterVue, /id: 'invites'[\s\S]*label: '邀请管理'/)
   assert.match(adminCenterVue, /id: 'plans'[\s\S]*label: '用户方案数据'/)
+  assert.match(adminCenterVue, /id: 'tutorial-progress'[\s\S]*label: '教程进度管理'/)
   assert.match(adminCenterVue, /id: 'config'[\s\S]*label: '维表与配置'/)
   assert.match(adminCenterVue, /id: 'releases'[\s\S]*label: '配置发布记录'/)
   assert.match(adminCenterVue, /id: 'logs'[\s\S]*label: '操作日志'/)

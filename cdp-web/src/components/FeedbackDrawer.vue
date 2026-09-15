@@ -104,7 +104,10 @@ import {
 } from '@element-plus/icons-vue'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 
-defineProps({ open: { type: Boolean, default: false } })
+const props = defineProps({
+  open: { type: Boolean, default: false },
+  prefill: { type: Object, default: null },
+})
 defineEmits(['close'])
 
 const categories = [
@@ -212,6 +215,15 @@ function reset() {
   submitted.value = false
   errorMessage.value = ''
 }
+
+watch(() => props.prefill, (value) => {
+  if (!value) return
+  const allowedCategories = new Set(categories.map(item => item.value))
+  if (allowedCategories.has(value.category)) category.value = value.category
+  if (typeof value.message === 'string') message.value = value.message.slice(0, 2000)
+  submitted.value = false
+  errorMessage.value = ''
+})
 
 watch(() => submitted.value, (value) => {
   if (!value) return

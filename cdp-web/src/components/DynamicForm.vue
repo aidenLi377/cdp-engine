@@ -610,17 +610,25 @@ function onFieldPaste(node, field, event) {
   }
 }
 
+function deferSolutionUseOverflow(node, allOverflows) {
+  if (props.overflowPolicy !== 'solution-use') return false
+  if (allOverflows.length > 1) {
+    const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
+    ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
+    return true
+  }
+  emit('overflow-split', { nodeId: node.id, overflows: allOverflows, deferred: true })
+  ElMessage.info('超限值已保留。请先完成其他参数，再点击页面顶部的“确认拆分”')
+  return true
+}
+
 function handleListInputWithOverflow(key, node) {
   handleListInput(key, node, ({ field, uniqueArr, limit }) => {
     node.formData[field.key] = uniqueArr
     const allOverflows = collectNodeOverflows(node)
     if (allOverflows.length === 0) return
 
-    if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
-      const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
-      ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
-      return
-    }
+    if (deferSolutionUseOverflow(node, allOverflows)) return
 
     const totalNodes = allOverflows.reduce((prod, o) => {
     const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
@@ -655,11 +663,7 @@ function handleMultiSelectChangeWithOverflow(key, node) {
     const allOverflows = collectNodeOverflows(node)
     if (allOverflows.length === 0) return
 
-    if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
-      const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
-      ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
-      return
-    }
+    if (deferSolutionUseOverflow(node, allOverflows)) return
 
     const totalNodes = allOverflows.reduce((prod, o) => {
     const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length
@@ -769,11 +773,7 @@ function applyPaste(node, field) {
     return
   }
 
-  if (props.overflowPolicy === 'solution-use' && allOverflows.length > 1) {
-    const fieldList = allOverflows.map(o => `「${o.fieldLabel}」${o.allValues.length}/${o.limit}`).join('、')
-    ElMessage.warning(`当前有多个字段超限：${fieldList}。一次只能处理一个超限字段，请先删除多余超限值`)
-    return
-  }
+  if (deferSolutionUseOverflow(node, allOverflows)) return
 
   const totalNodes = allOverflows.reduce((prod, o) => {
     const effLen = o.fieldKey === 'leafCates' ? countUniqueSecondaryCategories(o.allValues) : o.allValues.length

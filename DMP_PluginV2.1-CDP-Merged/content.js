@@ -1159,7 +1159,7 @@ function initDragFeature(wrapper) {
     let initialMouseX = 0, initialMouseY = 0;
 
     header.addEventListener('mousedown', (e) => {
-        if (e.target.id === 'copilot-close' || e.target.id === 'copilot-minimize' || e.target.id === 'heartbeat-dot') return;
+        if (e.target.closest?.('#copilot-close, #copilot-minimize, #heartbeat-dot, #xdata-entry-link')) return;
         isDrag = true;
         initialMouseX = e.clientX - currentX;
         initialMouseY = e.clientY - currentY;

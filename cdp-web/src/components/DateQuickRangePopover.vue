@@ -38,7 +38,7 @@
         </button>
       </section>
 
-      <div class="date-quick-range-note">日周期不含今天，月周期不含本月</div>
+      <div class="date-quick-range-note">日周期以昨天为结束日，月周期不含本月</div>
     </div>
   </el-popover>
 </template>

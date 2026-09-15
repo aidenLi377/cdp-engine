@@ -24,6 +24,29 @@ test('previous 180 days immediately precedes the recent period', () => {
   )
 })
 
+test('one-year presets end yesterday and form two adjacent calendar-year periods', () => {
+  assert.deepEqual(
+    getQuickDateRange('recent1Year', referenceDate),
+    ['20250803', '20260802'],
+  )
+  assert.deepEqual(
+    getQuickDateRange('previous1Year', referenceDate),
+    ['20240803', '20250802'],
+  )
+})
+
+test('one-year presets clamp leap-day anniversaries without crossing into March', () => {
+  const leapDay = new Date(2024, 1, 29, 8, 0)
+  assert.deepEqual(
+    getQuickDateRange('recent1Year', leapDay),
+    ['20230228', '20240228'],
+  )
+  assert.deepEqual(
+    getQuickDateRange('previous1Year', leapDay),
+    ['20220228', '20230227'],
+  )
+})
+
 test('six-month presets use complete months and exclude the current month', () => {
   assert.deepEqual(
     getQuickDateRange('recent6Months', referenceDate),
@@ -35,15 +58,15 @@ test('six-month presets use complete months and exclude the current month', () =
   )
 })
 
-test('selectable history covers the start of twelve complete months', () => {
+test('selectable history covers the start of the previous rolling year', () => {
   assert.equal(
     formatQuickDateValue(getQuickRangeSelectableStart(referenceDate)),
-    '20250801',
+    '20240803',
   )
 
   assert.equal(
     formatQuickDateValue(getQuickRangeSelectableStart(new Date(2026, 0, 1))),
-    '20241231',
+    '20240101',
   )
 })
 
@@ -54,6 +77,8 @@ test('quick range groups expose UI labels without changing the date range shape'
       items: [
         { key: 'recent180Days', label: '最近180天', dateRange: ['20260204', '20260802'] },
         { key: 'previous180Days', label: '上一个180天', dateRange: ['20250808', '20260203'] },
+        { key: 'recent1Year', label: '近一年', dateRange: ['20250803', '20260802'] },
+        { key: 'previous1Year', label: '前一年', dateRange: ['20240803', '20250802'] },
       ],
     },
     {

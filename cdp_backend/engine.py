@@ -407,6 +407,15 @@ class ConfigEngine:
             elif cleaned_val in ["", None, []]:
                 state = "isEmpty"
 
+            # The workbench keeps fixed ranges in ISO form for display, while
+            # the data-engine import contract requires compact YYYYMMDD dates.
+            # Normalize at this final shared boundary so AI-applied nodes,
+            # manual nodes, and API callers all produce the same JSON shape.
+            for date_key in ("start", "end"):
+                date_value = vars_dict.get(date_key)
+                if isinstance(date_value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value):
+                    vars_dict[date_key] = date_value.replace("-", "")
+
             if state != "isEmpty":
                 final_val = self._translate_value(current_pkg, key, cleaned_val, payload)
                 # 类目商品行为的商品ID在前端按列表承载，以支持批量粘贴和自动拆分。

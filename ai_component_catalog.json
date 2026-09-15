@@ -1,0 +1,463 @@
+{
+  "schemaVersion": 1,
+  "description": "CDP AI 与 MCP 共用的组件业务能力目录。实时字段、选项和显隐矩阵由 ConfigEngine 合并，本文件只维护业务语义与选择规则。",
+  "operatorSemantics": {
+    "n": "交集",
+    "u": "并集",
+    "d": "差集",
+    "multiBehaviorInOneNode": "union",
+    "multiBehaviorExplanation": "同一节点多选行为表示任一行为命中；用户明确要求既发生行为A又发生行为B时，必须拆成两个节点并使用交集。",
+    "ambiguousAndPolicy": "用户只说‘行为A和行为B’且无法判断任一或同时满足时，必须追问。"
+  },
+  "globalPolicies": {
+    "defaultBehaviorComponent": "类目公域行为",
+    "ownStoreComponent": "商品行为",
+    "ownStoreSignals": [
+      "自店",
+      "本店",
+      "我们店",
+      "我们的店",
+      "旗舰店",
+      "店铺账号",
+      "账号内"
+    ],
+    "ownBrandPolicy": {
+      "withOwnStoreSignal": "商品行为",
+      "withProductIds": "商品行为",
+      "withoutOwnStoreOrProductIds": "类目公域行为"
+    },
+    "accountPolicy": {
+      "askBrandBeforeCommodity": true,
+      "resolveAgainstLiveAccounts": true,
+      "requireCurrentUserAccessConfirmation": true,
+      "unknownAccessAction": "ask_user",
+      "deniedAccessFallback": "有商品ID时使用类目商品行为；没有商品ID时使用类目公域行为",
+      "missingAccountAction": "open_feedback",
+      "missingAccountFallback": "有商品ID时使用类目商品行为；没有商品ID时使用类目公域行为",
+      "missingAccountMessage": "未找到该品牌对应的商品行为账号，请引导用户点击反馈提交账号配置申请。",
+      "feedbackCategory": "suggestion"
+    },
+    "unavailableAccountProductIdPolicy": {
+      "strategy": "category_item_only",
+      "description": "用户只提供商品ID，但没有已配置账号或当前用户不能使用对应品牌账号时，直接使用类目商品行为按商品ID筛选。",
+      "components": ["类目商品行为"],
+      "requiredContext": ["商品ID", "行为"],
+      "businessMeaning": "类目商品行为可以直接保留指定商品ID条件，不需要再叠加类目公域行为。"
+    },
+    "countPolicy": {
+      "categoryPublicSuppressionThreshold": 2000,
+      "categoryPublicSuppressedMeaning": "人数小于2000时平台不展示具体人数，不代表人数为0。",
+      "categoryPublicDisplayGranularity": "类目公域行为的人数按千为单位展示。",
+      "privateBehaviorComponents": ["关键词搜索", "商品行为"],
+      "privateBehaviorPrecision": "关键词搜索与商品行为使用私域数据，人群人数可以精确展示到个位数。",
+      "commodityDetail": "商品行为可以精确展示到个位数，包括几百人或更小规模的人群。",
+      "smallAudiencePreference": "自店或自店商品ID场景需要精细人数时优先商品行为。"
+    },
+    "attributePolicy": {
+      "inferOrdinalMeaning": false,
+      "explanation": "购买力L1-L5、城市等级1-6由用户明确给出；AI不自行推断高低方向，缺少具体档位时追问。"
+    }
+  },
+  "components": {
+    "类目公域行为": {
+      "group": "behavior",
+      "scope": "public_category",
+      "purpose": "分析公域市场中用户对类目、标准品牌或商品标题发生的行为，是没有自店或指定商品ID要求时的默认行为组件。",
+      "priority": 100,
+      "strongSignals": [
+        "类目",
+        "品类",
+        "竞品",
+        "标准品牌",
+        "公域",
+        "行业人群",
+        "全域品牌行为"
+      ],
+      "negativeSignals": [
+        "自店",
+        "本店",
+        "店铺账号",
+        "指定自店商品ID",
+        "需要查看几百人的精细结果"
+      ],
+      "behaviors": [
+        "购买",
+        "预售",
+        "浏览",
+        "收藏",
+        "加购",
+        "评论"
+      ],
+      "behaviorFieldRules": {
+        "购买": [
+          "frequency",
+          "price",
+          "itemprice"
+        ],
+        "预售": [],
+        "浏览": [
+          "itemprice"
+        ],
+        "收藏": [
+          "itemprice"
+        ],
+        "加购": [
+          "itemprice"
+        ],
+        "评论": [
+          "itemprice"
+        ]
+      },
+      "businessFieldMeanings": {
+        "frequency": "购买行为下的消费频次",
+        "price": "购买行为下的消费金额",
+        "itemprice": "发生行为的商品价格",
+        "title": "发生行为的商品标题关键词，不是用户搜索词"
+      },
+      "defaultRecentDaysByBehavior": {
+        "购买": 366,
+        "预售": 180,
+        "浏览": 30,
+        "收藏": 90,
+        "加购": 90,
+        "评论": 366
+      },
+      "multipleBehaviorDefault": "选择多个行为时使用其中最短的默认周期；同节点多行为语义为并集。",
+      "limits": {
+        "secondaryCategories": 10,
+        "brands": 10,
+        "titleKeywords": 10,
+        "recentDays": 366,
+        "fixedDateRangeDays": 366
+      },
+      "countVisibility": {
+        "mode": "suppressed_below_threshold",
+        "threshold": 2000,
+        "suppressedIsZero": false
+      },
+      "clarifications": [
+        "用户说本品牌但未说明自店或商品ID时，默认按标准品牌走类目公域行为；如用户要求精细小规模人数，应提醒2000人阈值并询问是否改用自店账号。",
+        "用户把消费金额与商品价格混用时，询问限制的是累计消费还是单个商品价格。"
+      ]
+    },
+    "类目商品行为": {
+      "group": "behavior",
+      "scope": "public_item",
+      "purpose": "分析没有自店账号要求的明确商品ID公域行为；自店指定商品ID应改用商品行为。",
+      "priority": 70,
+      "strongSignals": [
+        "外部商品ID",
+        "竞品商品ID",
+        "公域指定商品"
+      ],
+      "negativeSignals": [
+        "自店商品ID",
+        "店铺账号",
+        "累计金额",
+        "购买笔数"
+      ],
+      "behaviors": [
+        "购买",
+        "预售",
+        "浏览",
+        "收藏",
+        "加购",
+        "评论"
+      ],
+      "limits": {
+        "productIdsPerNode": 1,
+        "recentDays": 366
+      },
+      "overflowPolicy": "多个商品ID拆成多个节点并使用并集。",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "商品行为": {
+      "group": "behavior",
+      "scope": "own_store",
+      "purpose": "分析品牌私域商品行为。所有销售渠道汇总当前品牌在天猫、淘宝、国际等渠道的数据且不选择单店账号；选择支持账号的具体渠道并绑定账号时，分析的是该店铺的数据。人数可以精确到个位数。",
+      "priority": 110,
+      "strongSignals": [
+        "自店",
+        "本店",
+        "我们店",
+        "官旗",
+        "官方旗舰店",
+        "旗舰店",
+        "指定账号",
+        "自店商品ID",
+        "退款",
+        "几百人",
+        "精细人数"
+      ],
+      "negativeSignals": [
+        "纯竞品公域",
+        "没有账号要求的行业类目"
+      ],
+      "behaviors": [
+        "浏览",
+        "收藏",
+        "加购",
+        "预售",
+        "购买",
+        "退款"
+      ],
+      "behaviorFieldRules": {
+        "浏览": [
+          "dayFrequency"
+        ],
+        "购买": [
+          "frequency",
+          "money"
+        ],
+        "收藏": [],
+        "加购": [],
+        "预售": [],
+        "退款": []
+      },
+      "behaviorLanguageRules": {
+        "看过/浏览": "浏览",
+        "收藏过": "收藏",
+        "加购物车/加购": "加购",
+        "预售/预购": "预售",
+        "买过/购买/成交": "购买",
+        "退款/退货退款": "退款"
+      },
+      "businessFieldMeanings": {
+        "dayFrequency": "发生浏览行为的天数",
+        "frequency": "购买笔数",
+        "money": "指定时间窗口内的累计购买金额，包含边界值",
+        "keywords": "发生行为的商品标题关键词，不是用户搜索词",
+        "shop": "品牌对应的店铺账号"
+      },
+      "accountPolicy": {
+        "brandRequired": true,
+        "resolveLiveAccount": true,
+        "currentUserAccessRequired": true,
+        "officialFlagshipIntent": "用户说官旗或官方旗舰店时，明确使用商品行为、天猫渠道并解析该品牌对应的官方旗舰店账号；官旗只确定目标店铺，不能代替当前用户账号权限确认。",
+        "channelAggregateException": "用户只指定全球购、天猫国际自营（实时正式渠道名为天猫国际直营）、天猫国际或淘宝集市等平台渠道，且未点名官旗、自店或具体账号时，使用该渠道下的品牌级汇总，shop为ALL，不要求单店账号权限确认。",
+        "allSalesChannelsException": "渠道选择所有销售渠道时不选择单一店铺账号，也不要求具体店铺账号权限确认；数据仍属于当前品牌，是多个销售渠道的品牌级汇总。",
+        "unknownAccessAction": "ask_user",
+        "deniedAccessFallback": "有商品ID时使用类目商品行为；没有商品ID时使用类目公域行为",
+        "missingAccountAction": "open_feedback"
+      },
+      "channelAccountRules": {
+        "天猫": "可选择已配置的实际旗舰店账号；用户说官旗或官方旗舰店时固定使用天猫并选择对应品牌官旗，选定后得到该店铺的私域数据",
+        "全球购/天猫国际自营（正式名天猫国际直营）/天猫国际/淘宝集市": "只指定渠道且未点名具体店铺时使用shop=ALL，得到该渠道下的品牌级汇总私域数据；点名具体店铺时才绑定账号",
+        "所有销售渠道": "不指定单一店铺账号，汇总当前品牌在天猫、淘宝、国际等全部可用销售渠道的私域数据"
+      },
+      "dataScope": {
+        "allSalesChannels": "品牌级跨渠道汇总私域数据",
+        "specificChannelWithAccount": "单店级私域数据"
+      },
+      "productRules": {
+        "defaultType": "任意品牌商品",
+        "idType": "指定商品ID",
+        "productIdsRequireIdType": true
+      },
+      "limits": {
+        "categories": 1,
+        "titleKeywords": 5,
+        "productIds": 50,
+        "recentDays": 366
+      },
+      "countVisibility": {
+        "mode": "exact_private_counts",
+        "precision": "ones",
+        "supportsHundreds": true
+      },
+      "clarifications": [
+        "决定使用商品行为后，若用户未给品牌，先询问品牌。",
+        "品牌账号已配置后，还要确认当前用户能否使用该品牌账号登录数据引擎；不能使用且有商品ID时改用类目商品行为。",
+        "用户只提供商品ID但账号不可用时，直接使用类目商品行为，不叠加类目公域行为。",
+        "品牌存在多个账号时让用户选择；没有账号时引导点击反馈。",
+        "用户说本品牌且有商品ID需求时优先商品行为。"
+      ]
+    },
+    "AIPL状态": {
+      "group": "lifecycle",
+      "scope": "category_lifecycle",
+      "purpose": "按类目分析用户所处的认知、兴趣、购买、忠诚阶段，不等同于一次具体行为。",
+      "priority": 90,
+      "strongSignals": [
+        "AIPL",
+        "A人群",
+        "I人群",
+        "P人群",
+        "L人群",
+        "认知阶段",
+        "兴趣阶段",
+        "忠诚阶段"
+      ],
+      "negativeSignals": [
+        "只描述一次购买行为"
+      ],
+      "statuses": [
+        "认知",
+        "兴趣",
+        "购买",
+        "忠诚"
+      ],
+      "countVisibility": {
+        "mode": "platform_dependent"
+      },
+      "clarifications": [
+        "用户只说购买人群时不要自动解释成AIPL购买阶段。"
+      ]
+    },
+    "关键词搜索": {
+      "group": "search",
+      "scope": "private_platform_search",
+      "purpose": "分析在平台首页通过精准关键词搜索触达品牌的人群；不包含购物车内或店铺内搜索，并且圈选结果与当前品牌自己的历史AIPL资产总量取交集。",
+      "priority": 95,
+      "strongSignals": [
+        "搜索过",
+        "搜过",
+        "搜索词",
+        "关键词搜索"
+      ],
+      "negativeSignals": [
+        "商品标题包含",
+        "标题关键词"
+      ],
+      "limits": {
+        "keywords": 20,
+        "recentDays": 366
+      },
+      "searchDefinition": {
+        "matchMode": "精准搜索",
+        "included": "平台首页搜索行为",
+        "excluded": ["购物车搜索单品", "店铺内搜索单品"],
+        "assetBoundary": "通过搜索关键词触达品牌的人群，与自己的历史AIPL资产总量取交集"
+      },
+      "combinationPolicy": {
+        "usuallyCombinedWith": "商品行为",
+        "defaultRelation": "intersect",
+        "explanation": "用户同时要求关键词搜索与商品浏览、收藏、加购、预售、购买或退款时，建立关键词搜索节点和对应商品行为节点，并用交集连接；必须保留用户指定的行为。"
+      },
+      "countVisibility": {
+        "mode": "exact_private_counts",
+        "precision": "ones"
+      },
+      "clarifications": [
+        "区分用户搜索词与发生行为的商品标题关键词。"
+      ]
+    },
+    "预测购买力": {
+      "group": "attribute",
+      "scope": "user_attribute",
+      "purpose": "按用户预测购买力档位筛选。",
+      "priority": 60,
+      "strongSignals": [
+        "购买力",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "interpretationPolicy": "只接受用户明确指定的档位，不推断高低方向。",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "预测年龄": {
+      "group": "attribute",
+      "scope": "user_attribute",
+      "purpose": "按固定预测年龄档位筛选。",
+      "priority": 60,
+      "strongSignals": [
+        "年龄",
+        "岁"
+      ],
+      "interpretationPolicy": "只组合能完整覆盖用户范围的现有档位；不能精确覆盖时必须说明并追问。",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "预测城市等级": {
+      "group": "attribute",
+      "scope": "user_attribute",
+      "purpose": "按用户明确给出的城市等级1至6筛选。",
+      "priority": 60,
+      "strongSignals": [
+        "城市等级",
+        "一线城市",
+        "二线城市",
+        "三线城市"
+      ],
+      "interpretationPolicy": "用户未给出明确等级时追问，不自行定义1至6的高低方向。",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "大快消策略人群": {
+      "group": "attribute",
+      "scope": "strategy_segment",
+      "purpose": "按旧版大快消策略人群标签筛选。",
+      "priority": 55,
+      "strongSignals": [
+        "都市蓝领",
+        "Z时代人群",
+        "精致妈妈",
+        "新锐白领"
+      ],
+      "version": "legacy",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "快消策略人群3.0": {
+      "group": "attribute",
+      "scope": "strategy_segment",
+      "purpose": "按快消策略人群3.0标签筛选。",
+      "priority": 56,
+      "strongSignals": [
+        "实惠大众",
+        "资深中产",
+        "都市型男",
+        "精致女性",
+        "悦己青年"
+      ],
+      "version": "3.0",
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "预测性别": {
+      "group": "attribute",
+      "scope": "user_attribute",
+      "purpose": "按预测性别筛选。",
+      "priority": 60,
+      "strongSignals": [
+        "男性",
+        "女性",
+        "男用户",
+        "女用户",
+        "性别"
+      ],
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    },
+    "月均消费金额": {
+      "group": "attribute",
+      "scope": "user_attribute",
+      "purpose": "按用户长期月均消费金额档位筛选，不表示某个行为时间窗口内的累计金额。",
+      "priority": 60,
+      "strongSignals": [
+        "月均消费",
+        "每月平均消费",
+        "月消费档位"
+      ],
+      "negativeSignals": [
+        "最近一段时间累计购买金额",
+        "自店订单金额"
+      ],
+      "countVisibility": {
+        "mode": "platform_dependent"
+      }
+    }
+  }
+}

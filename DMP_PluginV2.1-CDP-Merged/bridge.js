@@ -32,6 +32,7 @@
         error: data.error || '',
         step: data.step || '',
         trail: data.trail || [],
+        autoCalculated: data.autoCalculated === true,
         crowdId: data.crowdId || null,
         crowdCount: data.crowdCount || null,
         results: data.results || null,
@@ -69,6 +70,7 @@
 
     if (p.type === 'CDP_AUTOMATE_DATABANK') {
       extMsg.jsonText = p.jsonText || '';
+      extMsg.autoCalculate = p.autoCalculate === true;
       if (!extMsg.jsonText.trim()) { safeRespond(p, { ok: false, error: 'jsonText 不能为空' }); return; }
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
       extMsg.crowdName = p.crowdName || '';
@@ -115,8 +117,10 @@
       timeoutMs = 300000;  // 5min — portrait page navigation + tag extraction
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') {
       timeoutMs = 180000;  // 3min — tab open + SPA load + search + match + dialog
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK') {
+      timeoutMs = 150000;  // 2.5min — parameter paste + optional crowd count calculation
     } else {
-      timeoutMs = 60000;   // 1min — parameter paste flow
+      timeoutMs = 60000;
     }
     var sent = false;
     var timer = setTimeout(function() {

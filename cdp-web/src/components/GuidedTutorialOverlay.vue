@@ -426,9 +426,7 @@ const targetRecoveryStepMap = Object.freeze({
   'combo-open-excel': 'combo-open-field',
   'combo-paste': 'combo-open-field',
   'combo-create': 'combo-open-field',
-  'combo-select-all': 'combo-start-automation',
   'combo-confirm-run': 'combo-start-automation',
-  'parameter-select-all': 'parameter-start-automation',
   'parameter-confirm-run': 'parameter-start-automation',
 })
 
@@ -971,10 +969,8 @@ const primaryActionLabel = computed(() => ({
   'parameter-paste-brands': '重新打开 Excel 批量',
   'combo-paste': '重新打开竞争品牌',
   'combo-create': '重新打开竞争品牌',
-  'combo-select-all': '重新打开自动化圈人',
   'combo-confirm-run': '重新打开自动化圈人',
   'parameter-create-tasks': '重新打开 Excel 批量',
-  'parameter-select-all': '重新打开自动化圈人',
   'parameter-confirm-run': '重新打开自动化圈人',
 }[currentStep.value?.id] || '继续')))
 

@@ -38,6 +38,7 @@ class InvalidCurrentPasswordError(Exception):
 
 class UserStore:
     ROLES = ("super_admin", "config_admin", "user")
+    AI_CATEGORY_PREFERENCE_LIMIT = 50
     AVATAR_PATTERN = re.compile(
         r"^data:image/(?:png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)$",
         re.IGNORECASE,
@@ -433,6 +434,131 @@ class UserStore:
         with get_db(self.db_path) as conn:
             rows = conn.execute("SELECT * FROM users ORDER BY created_at").fetchall()
         return [self._public_user(row) for row in rows]
+
+    @staticmethod
+    def _public_ai_category_preference(row) -> dict:
+        return {
+            "field": row["field"],
+            "query": row["query_text"],
+            "queryKey": row["query_key"],
+            "leafKey": row["leaf_key"],
+            "value": row["option_value"],
+            "label": row["option_label"],
+            "updatedAt": row["updated_at"],
+        }
+
+    @classmethod
+    def _validate_ai_category_preference(cls, value: dict) -> dict:
+        if not isinstance(value, dict):
+            raise ValueError("类目偏好格式不正确")
+
+        field = str(value.get("field") or "category").strip()
+        query = str(value.get("query") or "").strip()
+        query_key = str(value.get("queryKey") or "").strip()
+        leaf_key = str(value.get("leafKey") or "").strip()
+        option_value = str(value.get("value") or "").strip()
+        option_label = str(value.get("label") or option_value).strip()
+        if field != "category":
+            raise ValueError("暂不支持保存该类型的偏好")
+        if not query_key or not option_value:
+            raise ValueError("类目偏好缺少业务词或正式类目")
+        limits = {
+            "query": (query, 200),
+            "queryKey": (query_key, 160),
+            "leafKey": (leaf_key, 160),
+            "value": (option_value, 1000),
+            "label": (option_label, 1000),
+        }
+        if any(len(content) > maximum for content, maximum in limits.values()):
+            raise ValueError("类目偏好内容过长")
+        return {
+            "field": field,
+            "query": query,
+            "queryKey": query_key,
+            "leafKey": leaf_key,
+            "value": option_value,
+            "label": option_label,
+        }
+
+    def list_ai_category_preferences(self, user_id: str) -> list[dict]:
+        with get_db(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT * FROM ai_category_preferences
+                   WHERE user_id = ?
+                   ORDER BY updated_at DESC, rowid DESC
+                   LIMIT ?""",
+                (user_id, self.AI_CATEGORY_PREFERENCE_LIMIT),
+            ).fetchall()
+        return [self._public_ai_category_preference(row) for row in rows]
+
+    def save_ai_category_preferences(
+        self,
+        user_id: str,
+        preferences: list[dict],
+        *,
+        preserve_existing: bool = False,
+    ) -> list[dict]:
+        if not isinstance(preferences, list):
+            raise ValueError("类目偏好列表格式不正确")
+        if len(preferences) > self.AI_CATEGORY_PREFERENCE_LIMIT:
+            raise ValueError(f"一次最多保存 {self.AI_CATEGORY_PREFERENCE_LIMIT} 条类目偏好")
+
+        normalized = []
+        seen = set()
+        for preference in preferences:
+            item = self._validate_ai_category_preference(preference)
+            identity = (item["field"], item["queryKey"])
+            if identity in seen:
+                continue
+            seen.add(identity)
+            normalized.append(item)
+
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            for item in normalized:
+                parameters = (
+                    user_id,
+                    item["field"],
+                    item["queryKey"],
+                    item["query"],
+                    item["leafKey"],
+                    item["value"],
+                    item["label"],
+                    now,
+                )
+                if preserve_existing:
+                    conn.execute(
+                        """INSERT OR IGNORE INTO ai_category_preferences (
+                               user_id, field, query_key, query_text, leaf_key,
+                               option_value, option_label, updated_at
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        parameters,
+                    )
+                else:
+                    conn.execute(
+                        """INSERT INTO ai_category_preferences (
+                               user_id, field, query_key, query_text, leaf_key,
+                               option_value, option_label, updated_at
+                           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                           ON CONFLICT(user_id, field, query_key) DO UPDATE SET
+                               query_text = excluded.query_text,
+                               leaf_key = excluded.leaf_key,
+                               option_value = excluded.option_value,
+                               option_label = excluded.option_label,
+                               updated_at = excluded.updated_at""",
+                        parameters,
+                    )
+            conn.execute(
+                """DELETE FROM ai_category_preferences
+                   WHERE rowid IN (
+                       SELECT rowid FROM ai_category_preferences
+                       WHERE user_id = ?
+                       ORDER BY updated_at DESC, rowid DESC
+                       LIMIT -1 OFFSET ?
+                   )""",
+                (user_id, self.AI_CATEGORY_PREFERENCE_LIMIT),
+            )
+        return self.list_ai_category_preferences(user_id)
 
     def get_user_data_counts(self, user_id: str) -> dict[str, int]:
         with get_db(self.db_path) as conn:

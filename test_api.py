@@ -163,6 +163,28 @@ class CdpApiTests(unittest.TestCase):
         self.assertEqual(len(data["list"]), 1)
         self.assertNotIn("stdBrand", data["list"][0]["selectionLv3"]["extraFilters"])
 
+    def test_generate_category_json_normalizes_iso_date_range_from_ai_workbench(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "类目公域行为",
+                "bhv": ["购买"],
+                "leafCates": ["美容护肤/美体/精油>乳液/面霜"],
+                "channel": ["天猫"],
+                "frequency": {"min": "", "max": ""},
+                "price": {"min": "", "max": ""},
+                "itemprice": {"min": "", "max": ""},
+                "time": {
+                    "val": {"start": "2025-09-16", "end": "2026-03-14"},
+                    "min": "range",
+                },
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        date_value = response.get_json()["list"][0]["selectionLv3"]["dateValue"]
+        self.assertEqual(date_value, {"from": "20250916", "to": "20260314"})
+
     def test_category_item_meta_supports_batch_ids(self):
         response = self.client.get("/api/meta/类目商品行为")
         self.assertEqual(response.status_code, 200)

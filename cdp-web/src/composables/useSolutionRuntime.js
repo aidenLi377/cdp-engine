@@ -193,7 +193,7 @@ export function useSolutionRuntime() {
       ) {
         formData[field.key] = []
       } else if (field.Widget_Type === '单选组') {
-        formData[field.key] = '任意商品标题关键词'
+        formData[field.key] = '任意商品标题关键字'
       } else if (field.Widget_Type === '数值_切换') {
         modeData[field.key] = 'unlimited'
         formData[field.key] = { min: null, max: null }
