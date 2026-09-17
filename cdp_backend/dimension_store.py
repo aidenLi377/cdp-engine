@@ -334,14 +334,15 @@ class DimensionStore:
         self,
         filename: str,
         page: int = 1,
-        page_size: int = 50,
+        page_size: int | None = 50,
         query: str = "",
         package_name: str = "",
         include_disabled: bool = True,
     ) -> dict:
         self._name_column(filename)
         page = max(1, int(page))
-        page_size = min(200, max(1, int(page_size)))
+        # None is reserved for internal exports; HTTP list requests remain capped.
+        page_size = min(200, max(1, int(page_size))) if page_size is not None else -1
         clauses = [
             "dimension_file = ?",
             "NOT (is_published = 1 AND published_deleted = 1 AND has_changes = 0)",
@@ -370,7 +371,7 @@ class DimensionStore:
                         CASE WHEN is_published = 1 THEN published_enabled ELSE enabled END DESC,
                         package_name, display_name, id
                     LIMIT ? OFFSET ?""",
-                tuple(params + [page_size, (page - 1) * page_size]),
+                tuple(params + [page_size, (page - 1) * page_size if page_size > 0 else 0]),
             ).fetchall()
             packages = conn.execute(
                 """SELECT DISTINCT package_name FROM dimension_rows

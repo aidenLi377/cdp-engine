@@ -593,6 +593,13 @@
             </div>
             <div class="dimension-toolbar-actions">
               <button
+                class="dimension-import-trigger"
+                type="button"
+                :disabled="dimensionExporting || !selectedDimensionFile"
+                title="导出当前筛选下的全部记录，包含待发布修改和记录状态"
+                @click="exportDimensionRows"
+              >{{ dimensionExporting ? '正在导出…' : '导出 Excel' }}</button>
+              <button
                 v-if="canImportDimensions"
                 class="dimension-import-trigger"
                 type="button"
@@ -1292,7 +1299,7 @@ import AnnouncementAdminPanel from './AnnouncementAdminPanel.vue'
 import TutorialProgressAdminPanel from './TutorialProgressAdminPanel.vue'
 import { useCdpShared } from '../composables/useCdpShared.js'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
-import { request } from '../utils/apiClient.js'
+import { buildUrl, fetchWithTimeout, request } from '../utils/apiClient.js'
 import { adoptConfigVersion } from '../utils/configVersion.js'
 import { getNodeSummaryDisplayName } from '../utils/solutionState.js'
 import {
@@ -1391,6 +1398,7 @@ const dimensionPage = ref(1)
 const dimensionPageSize = ref(30)
 const dimensionTotal = ref(0)
 const dimensionLoading = ref(false)
+const dimensionExporting = ref(false)
 const dimensionEditorOpen = ref(false)
 const editingRow = ref(null)
 const dimensionFormData = reactive({})
@@ -1969,6 +1977,36 @@ async function saveFieldOptionOrder() {
 
 function dimensionDisplayName(file) {
   return String(file || '').replace('维表.csv', '')
+}
+
+async function exportDimensionRows() {
+  if (dimensionExporting.value || !selectedDimensionFile.value) return
+  const filename = selectedDimensionFile.value
+  dimensionExporting.value = true
+  try {
+    const response = await fetchWithTimeout(buildUrl(
+      `/api/admin/dimensions/${encodeURIComponent(filename)}/export`,
+      { q: dimensionQuery.value, package: dimensionPackage.value },
+    ), { cache: 'no-store' })
+    if (response.status === 401) window.dispatchEvent(new CustomEvent('cdp:auth-required'))
+    if (!response.ok) {
+      const error = await response.json().catch(() => null)
+      throw new Error(error?.message || '维表导出失败')
+    }
+    const url = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename.replace(/\.csv$/i, '') + '.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    showMessage('维表已导出')
+  } catch (error) {
+    showMessage(error.message || '维表导出失败', 'error')
+  } finally {
+    dimensionExporting.value = false
+  }
 }
 
 async function loadDimensionRows() {

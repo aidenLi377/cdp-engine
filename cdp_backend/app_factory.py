@@ -1272,6 +1272,62 @@ def register_routes(
             return error_response("INVALID_REQUEST", str(exc), 400)
         return jsonify(result)
 
+    @app.route("/api/admin/dimensions/<filename>/export")
+    def admin_export_dimension_rows(filename: str):
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        try:
+            result = dimension_store.list_rows(
+                filename,
+                page_size=None,
+                query=request.args.get("q", ""),
+                package_name=request.args.get("package", ""),
+                include_disabled=request.args.get("includeDisabled", "1") != "0",
+            )
+        except DimensionValidationError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+
+        from openpyxl import Workbook
+        from openpyxl.cell import WriteOnlyCell
+
+        workbook = Workbook(write_only=True)
+        sheet = workbook.create_sheet("维表数据")
+        sheet.freeze_panes = "A2"
+        columns = list(result["columns"])
+        for row in result["rows"]:
+            for column in row["data"]:
+                if column not in columns:
+                    columns.append(column)
+
+        def append_text(values):
+            cells = []
+            for value in values:
+                cell = WriteOnlyCell(sheet, value=str(value))
+                cell.data_type = "s"
+                cells.append(cell)
+            sheet.append(cells)
+
+        append_text(columns + ["启用状态", "记录状态", "发布状态"])
+        for row in result["rows"]:
+            append_text([row["data"].get(column, "") for column in columns] + [
+                "启用" if row["enabled"] else "停用",
+                "待删除" if row["deleted"] else "正常",
+                "待发布" if row["hasChanges"] else "已发布",
+            ])
+        content = io.BytesIO()
+        workbook.save(content)
+        workbook.close()
+        content.seek(0)
+        response = send_file(
+            content,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name=f"{Path(filename).stem}.xlsx",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.route("/api/admin/dimensions/<filename>", methods=["POST"])
     def admin_create_dimension_row(filename: str):
         permission_error = require_config_admin()

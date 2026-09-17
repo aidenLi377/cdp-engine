@@ -5,7 +5,7 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from cdp_backend.app_factory import create_app
 from cdp_backend.user_store import UserStore
@@ -55,6 +55,46 @@ class DimensionAdminApiTests(unittest.TestCase):
         workbook.close()
         content.seek(0)
         return content, filename
+
+    def test_export_all_filtered_rows_as_text(self):
+        from cdp_backend.dimension_store import DimensionStore
+
+        client = self.login("config", "config-password")
+        filename = "类目维表.csv"
+        store = DimensionStore(self.db_path)
+        store.import_rows(filename, [
+            {"适用的包": "导出测试包", "类目名称": f"导出测试{i:03}",
+             "cateId": "001234567890123456789", "备注": "=1+1"}
+            for i in range(205)
+        ], "export-test")
+        response = client.get(f"/api/admin/dimensions/{filename}/export",
+                              query_string={"package": "导出测试包", "q": "导出测试"})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("attachment", response.headers["Content-Disposition"])
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        workbook = load_workbook(BytesIO(response.data))
+        sheet = workbook.active
+        rows = list(sheet.iter_rows())
+        self.assertEqual(len(rows), 206)
+        headers = [cell.value for cell in rows[0]]
+        self.assertEqual(rows[1][headers.index("cateId")].value, "001234567890123456789")
+        formula_cell = rows[1][headers.index("备注")]
+        self.assertEqual(formula_cell.value, "=1+1")
+        self.assertEqual(formula_cell.data_type, "s")
+        self.assertEqual(rows[1][headers.index("发布状态")].value, "待发布")
+        workbook.close()
+        empty = client.get(f"/api/admin/dimensions/{filename}/export",
+                           query_string={"q": "不存在的导出记录xyz"})
+        workbook = load_workbook(BytesIO(empty.data))
+        self.assertEqual(workbook.active.max_row, 1)
+        workbook.close()
+
+    def test_export_permissions_and_unknown_dimension(self):
+        path = "/api/admin/dimensions/类目维表.csv/export"
+        self.assertEqual(self.app.test_client().get(path).status_code, 401)
+        self.assertEqual(self.login("normal", "normal-password").get(path).status_code, 403)
+        admin = self.login("config", "config-password")
+        self.assertEqual(admin.get("/api/admin/dimensions/unknown.csv/export").status_code, 400)
 
     def test_config_admin_can_create_and_disable_dimension_row(self):
         client = self.login("config", "config-password")
