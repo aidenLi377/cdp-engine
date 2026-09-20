@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "id": "mapping-integrity",
+      "title": "是否还有行为或场景映射冲突？",
+      "assumptions": [
+        "行为、场景、状态和渠道使用系统实际生成的复合输出值判定冲突，不能仅以 ID 或 Value 单列重复判错。"
+      ],
+      "queries": [
+        {
+          "id": "dimension-composite-audit",
+          "source": {
+            "label": "配置维表与已发布数据库",
+            "files": [
+              { "label": "行为维表.csv" },
+              { "label": "场景维表.csv" },
+              { "label": "cdp.db" },
+              { "label": "parameter_dimension_audit_2026-09-20.ipynb" }
+            ],
+            "metricDefinitions": [
+              {
+                "label": "复合输出冲突",
+                "definition": "同一适用范围内，不同显示名称生成完全相同的最终输出值。"
+              }
+            ],
+            "filters": [
+              "配置组件：17 个",
+              "参数定义：56 条",
+              "行为映射：63 条",
+              "场景映射：67 条",
+              "已发布配置版本：9"
+            ],
+            "caveats": [
+              "全媒体智投曝光和点击共用 Value，但 ID 与 bhv_type 不同，因此不构成最终输出冲突。",
+              "品牌别名 DU'IT 与 DU’IT 语义相同但输出值相同，属于低风险别名重复。"
+            ],
+            "evidenceFlow": [
+              {
+                "kind": "validation",
+                "title": "业务键检查",
+                "detail": "9 张已接入维表均无完全重复行或业务键重复。"
+              },
+              {
+                "kind": "validation",
+                "title": "复合输出检查",
+                "detail": "行为维表和场景维表均无复合输出冲突；仅品牌表存在一个同义别名输出重复。"
+              }
+            ]
+          },
+          "sourceRoles": [
+            { "kind": "file", "label": "行为维表.csv", "role": "行为名称到 ID/Value 的源配置。" },
+            { "kind": "file", "label": "场景维表.csv", "role": "行为相关场景到 ID/Value 的源配置。" },
+            { "kind": "file", "label": "cdp.db", "role": "系统当前已发布并启用的运行时维表。" },
+            { "kind": "file", "label": "parameter_dimension_audit_2026-09-20.ipynb", "role": "可重复执行的完整检查与结果。" }
+          ],
+          "columns": [
+            { "field": "check", "label": "检查" },
+            { "field": "result", "label": "结果" }
+          ],
+          "rows": [
+            { "check": "参数表与逻辑表组件覆盖", "result": "17/17 通过" },
+            { "check": "行为映射复合输出冲突", "result": "0" },
+            { "check": "场景映射复合输出冲突", "result": "0" },
+            { "check": "品牌同义别名输出重复", "result": "1 组" }
+          ],
+          "preview": {
+            "kind": "aggregate",
+            "note": "汇总检查结果；逐表证据保存在审计笔记本中。",
+            "totalRows": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "official-contracts",
+      "title": "用户提供的官方参数是否已全部对齐？",
+      "queries": [
+        {
+          "id": "official-behavior-contracts",
+          "source": {
+            "label": "用户提供合同与本地配置",
+            "files": [
+              { "label": "行为维表.csv" },
+              { "label": "cdp.db" },
+              { "label": "test_api.py" },
+              { "label": "test_ai_intent_compiler.py" }
+            ],
+            "summary": "核对单媒体智投与品牌推广四组行为编码，并验证直接生成和 AI 圈包链路。",
+            "caveats": [
+              "单媒体相对日期的参数表模板仍包含 dateValue；运行时会删除该字段，因此最终 JSON 正确但配置存在双重真源。"
+            ],
+            "evidenceFlow": [
+              {
+                "kind": "validation",
+                "title": "CSV 与数据库合同核对",
+                "detail": "四组行为编码在 CSV 和已发布数据库中均与用户提供值一致。"
+              },
+              {
+                "kind": "validation",
+                "title": "官方样例回归",
+                "detail": "品牌专区、效果推广、全媒体智投、单媒体智投、品牌推广及单媒体 AI 圈包共 6 条定向回归全部通过。"
+              }
+            ]
+          },
+          "sourceRoles": [
+            { "kind": "file", "label": "行为维表.csv", "role": "代码仓库中的行为映射基线。" },
+            { "kind": "file", "label": "cdp.db", "role": "版本 9 的已发布运行时映射。" },
+            { "kind": "file", "label": "test_api.py", "role": "官方 JSON 生成回归。" },
+            { "kind": "file", "label": "test_ai_intent_compiler.py", "role": "AI 圈包链路回归。" }
+          ],
+          "columns": [
+            { "field": "package", "label": "组件" },
+            { "field": "behavior", "label": "行为" },
+            { "field": "expected", "label": "期望输出" },
+            { "field": "matched", "label": "CSV/DB" }
+          ],
+          "rows": [
+            { "package": "单媒体智投", "behavior": "曝光", "expected": "19937#|#is_pv_uddmt", "matched": "一致" },
+            { "package": "单媒体智投", "behavior": "点击", "expected": "19938#|#is_click_uddmt", "matched": "一致" },
+            { "package": "品牌推广", "behavior": "曝光", "expected": "15318#|#exp_pptg", "matched": "一致" },
+            { "package": "品牌推广", "behavior": "点击", "expected": "15298#|#click_pptg", "matched": "一致" }
+          ],
+          "preview": {
+            "kind": "aggregate",
+            "note": "用户提供的四组合同完整核对结果。",
+            "totalRows": 4
+          }
+        }
+      ]
+    },
+    {
+      "id": "maintenance-risks",
+      "title": "还存在哪些维护风险？",
+      "queries": [
+        {
+          "id": "config-drift-audit",
+          "source": {
+            "label": "参数模板、CSV 与已发布数据库",
+            "files": [
+              { "label": "1.参数表.csv" },
+              { "label": "engine.py" },
+              { "label": "cdp.db" },
+              { "label": "parameter_dimension_audit_2026-09-20.ipynb" }
+            ],
+            "summary": "检查参数合同的双重真源、仓库 CSV 与已发布维表漂移，以及未接入的数据文件。",
+            "caveats": [
+              "数据库与 CSV 差异包含经过配置审计发布的新增或删除记录，不应直接视为错误。",
+              "功效维表当前没有任何参数引用，也未进入已发布维表数据库。"
+            ],
+            "evidenceFlow": [
+              {
+                "kind": "validation",
+                "title": "参数模板检查",
+                "detail": "单媒体相对日期模板包含 dateValue，而官方运行合同只允许 dateType。"
+              },
+              {
+                "kind": "validation",
+                "title": "CSV/DB 漂移检查",
+                "detail": "数据库比 CSV 多 111 个类目和 1 个账号，少 1 个已删除品牌和 1 个已删除渠道。"
+              }
+            ]
+          },
+          "sourceRoles": [
+            { "kind": "file", "label": "1.参数表.csv", "role": "字段和后端模板定义。" },
+            { "kind": "file", "label": "engine.py", "role": "最终 JSON 的规范化与特殊字段规则。" },
+            { "kind": "file", "label": "cdp.db", "role": "当前已发布配置状态。" },
+            { "kind": "file", "label": "parameter_dimension_audit_2026-09-20.ipynb", "role": "漂移计算与风险汇总。" }
+          ],
+          "columns": [
+            { "field": "risk", "label": "风险" },
+            { "field": "evidence", "label": "证据" },
+            { "field": "severity", "label": "级别" }
+          ],
+          "rows": [
+            { "risk": "单媒体相对日期模板双重真源", "evidence": "参数表含 dateValue，运行时删除", "severity": "中" },
+            { "risk": "CSV 不是完整运行时快照", "evidence": "类目 +111、账号 +1、品牌 -1、渠道 -1", "severity": "中" },
+            { "risk": "品牌同义别名重复", "evidence": "DU'IT 与 DU’IT 共用 236210576", "severity": "低" },
+            { "risk": "功效维表未接入", "evidence": "189 行、0 个参数引用、0 个 DB 记录", "severity": "低" }
+          ],
+          "preview": {
+            "kind": "aggregate",
+            "note": "维护风险汇总，不代表四项均为生产错误。",
+            "totalRows": 4
+          }
+        }
+      ]
+    }
+  ]
+}

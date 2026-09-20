@@ -1100,16 +1100,15 @@ class AiIntentCompilerApiTests(unittest.TestCase):
             {
                 "selectionLv1": ["FIELD", "AD"],
                 "selectionLv3": {
-                    "bhv": "19937#|#is_pv_uddmt",
+                    "bhv": "19938#|#is_click_uddmt",
                     "dateType": "RELATIVE_RANGE",
-                    "dateValue": "180",
                 },
                 "tipProperty": {
                     "dateTo": "20990129",
                     "type": 3,
                     "dateFrom": "20250814",
                 },
-                "fromPoolId": 1,
+                "fromPoolId": 0,
                 "selectionLv2Name": "单媒体智投",
                 "selectionLv2": ["19936#|#cate_9195"],
             },

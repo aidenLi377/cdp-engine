@@ -154,7 +154,6 @@ class ConfigEngine:
     SINGLE_MEDIA_SELECTION_LV3_ORDER = (
         "bhv",
         "dateType",
-        "dateValue",
     )
     LIST_VALUE_KEYS = {
         "channel",
@@ -666,7 +665,6 @@ class ConfigEngine:
             if current_pkg in {
                 self.BRAND_PROMOTION_PACKAGE,
                 self.OMNIMEDIA_PACKAGE,
-                self.SINGLE_MEDIA_PACKAGE,
             }
             else 0
         )
@@ -814,8 +812,11 @@ class ConfigEngine:
         canonical = dict(base_template)
         selection_lv3 = canonical.get("selectionLv3")
         if isinstance(selection_lv3, dict):
+            selection_lv3 = dict(selection_lv3)
+            if selection_lv3.get("dateType") == "RELATIVE_RANGE":
+                selection_lv3.pop("dateValue", None)
             canonical["selectionLv3"] = cls._order_mapping(
-                dict(selection_lv3),
+                selection_lv3,
                 cls.SINGLE_MEDIA_SELECTION_LV3_ORDER,
             )
         return cls._order_mapping(canonical, cls.SINGLE_MEDIA_TOP_LEVEL_ORDER)

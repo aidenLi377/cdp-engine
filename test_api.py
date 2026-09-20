@@ -757,7 +757,18 @@ class CdpApiTests(unittest.TestCase):
                 {
                     "bhv": "19937#|#is_pv_uddmt",
                     "dateType": "RELATIVE_RANGE",
-                    "dateValue": "180",
+                },
+            ),
+            (
+                "点击_最近180天",
+                {
+                    "_package": "单媒体智投",
+                    "bhv": "点击",
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "bhv": "19938#|#is_click_uddmt",
+                    "dateType": "RELATIVE_RANGE",
                 },
             ),
             (
@@ -771,7 +782,7 @@ class CdpApiTests(unittest.TestCase):
                     },
                 },
                 {
-                    "bhv": "19937#|#is_pv_uddmt",
+                    "bhv": "19938#|#is_click_uddmt",
                     "dateType": "ABSOLUTE_DATE_RANGE",
                     "dateValue": {"from": "20260901", "to": "20260902"},
                 },
@@ -794,7 +805,7 @@ class CdpApiTests(unittest.TestCase):
                                 "type": 3,
                                 "dateFrom": "20250814",
                             },
-                            "fromPoolId": 1,
+                            "fromPoolId": 0,
                             "selectionLv2Name": "单媒体智投",
                             "selectionLv2": ["19936#|#cate_9195"],
                         }],
