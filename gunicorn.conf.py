@@ -18,6 +18,11 @@ keepalive = 5
 # batch_generate can take a while
 timeout = 120
 
+# Gunicorn 26 enables a per-user control socket by default. The production
+# systemd service has no login runtime directory and does not use that socket,
+# so disable it instead of emitting a harmless permission error at every boot.
+control_socket_disable = True
+
 # Logging
 accesslog = "-"
 errorlog = "-"
