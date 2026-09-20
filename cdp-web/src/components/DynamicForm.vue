@@ -1,5 +1,9 @@
 <template>
-  <el-form label-position="top" size="large" class="dynamic-form" :disabled="props.readonly">
+  <el-form label-position="left" label-width="88px" size="small" class="dynamic-form" :disabled="props.readonly">
+    <div v-if="packageNotice" class="package-notice display-body-light" role="note">
+      <span class="package-notice-icon" aria-hidden="true">ⓘ</span>
+      <span>{{ packageNotice }}</span>
+    </div>
     <template v-for="field in node.schema" :key="field.key">
       <el-form-item
         v-if="isVisible(field, node)"
@@ -16,7 +20,7 @@
         <div v-if="ctx && ctx.creatingCustomField && ctx.creatingCustomFieldBindings && ctx.creatingCustomFieldBindings.some(b => b.nodeId === node.id && b.fieldKey === field.key)" class="check-mark">&check;</div>
 
         <template #label>
-          <span class="display-body strong">{{ field.Label }}</span>
+          <span class="display-body strong" :title="field.Label">{{ getCompactFieldLabel(field) }}</span>
           <template v-if="getDynamicDescription(field)">
             <el-tooltip v-if="getDynamicStyle(field) !== '文字'" :content="getDynamicDescription(field)" placement="top" effect="dark">
               <span class="tooltip-icon">ⓘ</span>
@@ -98,10 +102,62 @@
         </template>
 
         <template v-else-if="field.Widget_Type === '单选组'">
-          <el-radio-group v-model="node.formData[field.key]" @change="field.key === 'title_type' && $event === '任意商品标题关键字' ? node.formData.title = [] : null" class="intercom-radio-group">
-            <el-radio-button value="任意商品标题关键字">任意商品标题关键字</el-radio-button>
-            <el-radio-button value="指定商品标题关键字">指定商品标题关键字</el-radio-button>
-          </el-radio-group>
+          <div class="single-choice-block">
+            <el-radio-group
+              v-model="node.formData[field.key]"
+              :class="['intercom-radio-group', { 'plain-radio-row': usesPlainRadios(field) }]"
+              @change="handleSingleChoiceChange(field, node, $event)"
+            >
+              <template v-if="usesPlainRadios(field)">
+                <el-radio
+                  v-for="option in getSingleChoiceOptions(field)"
+                  :key="String(option.value)"
+                  :value="option.value"
+                >{{ option.label }}</el-radio>
+              </template>
+              <template v-else>
+                <el-radio-button
+                  v-for="option in getSingleChoiceOptions(field)"
+                  :key="String(option.value)"
+                  :value="option.value"
+                >{{ option.label }}</el-radio-button>
+              </template>
+            </el-radio-group>
+            <div
+              v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'"
+              class="field-inline-note display-body-light"
+            >
+              <span class="field-inline-note-icon">ⓘ</span>
+              <span>{{ getDynamicDescription(field) }}</span>
+            </div>
+          </div>
+        </template>
+
+        <template v-else-if="field.Widget_Type === '动态多选'">
+          <el-checkbox-group
+            v-if="getDependentMultiDisplay(field, node) === 'checkbox'"
+            v-model="node.formData[field.key]"
+            class="custom-checkbox-group"
+            @change="handleMultiSelectFieldChange(field, node)"
+          >
+            <el-checkbox
+              v-for="option in getDependentOptions(field, node)"
+              :key="String(option)"
+              :value="option"
+            >{{ option }}</el-checkbox>
+          </el-checkbox-group>
+          <div v-else class="form-row">
+            <el-select-v2
+              v-model="node.formData[field.key]"
+              :options="formatOptions(getDependentOptions(field, node))"
+              multiple
+              filterable
+              clearable
+              :placeholder="`请选择${field.Label}`"
+              class="flex-1 intercom-input select-auto-height"
+              @change="handleMultiSelectFieldChange(field, node)"
+            ></el-select-v2>
+          </div>
         </template>
 
         <template v-else-if="field.Widget_Type === '搜索多选'">
@@ -208,40 +264,67 @@
         </template>
 
         <template v-else-if="field.Widget_Type === '数值_切换'">
-          <div class="range-block">
-            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group">
-              <el-radio-button value="unlimited">不限</el-radio-button>
-              <el-radio-button value="min">≥ 最小值</el-radio-button>
-              <el-radio-button value="range">自定义区间</el-radio-button>
+          <div class="range-block numeric-mode-field">
+            <el-radio-group
+              v-model="node.modeData[field.key]"
+              size="small"
+              :class="['intercom-radio-group', { 'plain-radio-row': usesPlainRadios(field) }]"
+            >
+              <template v-if="usesPlainRadios(field)">
+                <el-radio value="unlimited">{{ getFieldUiLabel(field, 'unlimitedModeLabel', '不限') }}</el-radio>
+                <el-radio value="min">{{ getFieldUiLabel(field, 'minModeLabel', '≥ 最小值') }}</el-radio>
+                <el-radio value="range">{{ getFieldUiLabel(field, 'rangeModeLabel', '自定义区间') }}</el-radio>
+              </template>
+              <template v-else>
+                <el-radio-button value="unlimited">{{ getFieldUiLabel(field, 'unlimitedModeLabel', '不限') }}</el-radio-button>
+                <el-radio-button value="min">{{ getFieldUiLabel(field, 'minModeLabel', '≥ 最小值') }}</el-radio-button>
+                <el-radio-button value="range">{{ getFieldUiLabel(field, 'rangeModeLabel', '自定义区间') }}</el-radio-button>
+              </template>
             </el-radio-group>
             <div class="range-inputs" v-if="node.modeData[field.key] !== 'unlimited'">
-              <el-input-number v-model="node.formData[field.key].min" :min="0" :controls="false" placeholder="最小值" size="small" class="intercom-input" style="width:140px" />
+              <el-input-number v-model="node.formData[field.key].min" :min="getNumericMinimum(field)" :precision="getNumericPrecision(field)" :controls="false" placeholder="最小值" size="small" class="intercom-input range-number-input" />
               <span v-if="node.modeData[field.key] === 'range'" class="display-body range-sep">—</span>
-              <el-input-number v-if="node.modeData[field.key] === 'range'" v-model="node.formData[field.key].max" :min="0" :controls="false" placeholder="最大值" size="small" class="intercom-input" style="width:140px" />
+              <el-input-number v-if="node.modeData[field.key] === 'range'" v-model="node.formData[field.key].max" :min="getNumericMinimum(field)" :precision="getNumericPrecision(field)" :controls="false" placeholder="最大值" size="small" class="intercom-input range-number-input" />
             </div>
           </div>
         </template>
 
         <template v-else-if="field.Widget_Type === '日期_切换'">
-          <div class="range-block">
-            <el-radio-group v-model="node.modeData[field.key]" size="small" class="intercom-radio-group" @change="handleDateModeChange(node, field)">
-              <el-radio-button value="recent">过去 N 天</el-radio-button>
-              <DateQuickRangePopover
-                :disabled="props.readonly"
-                @select="(dateRange) => applyQuickDateRange(node, field, dateRange)"
-              >
-                <el-radio-button value="range">固定日期</el-radio-button>
-              </DateQuickRangePopover>
+          <div class="range-block date-mode-field">
+            <el-radio-group
+              v-model="node.modeData[field.key]"
+              size="small"
+              :class="['intercom-radio-group', { 'plain-radio-row': usesPlainRadios(field) }]"
+              @change="handleDateModeChange(node, field)"
+            >
+              <template v-if="usesPlainRadios(field)">
+                <el-radio value="recent">{{ getFieldUiLabel(field, 'relativeModeLabel', '过去 N 天') }}</el-radio>
+                <DateQuickRangePopover
+                  :disabled="props.readonly"
+                  @select="(dateRange) => applyQuickDateRange(node, field, dateRange)"
+                >
+                  <el-radio value="range">{{ getFieldUiLabel(field, 'absoluteModeLabel', '固定日期') }}</el-radio>
+                </DateQuickRangePopover>
+              </template>
+              <template v-else>
+                <el-radio-button value="recent">{{ getFieldUiLabel(field, 'relativeModeLabel', '过去 N 天') }}</el-radio-button>
+                <DateQuickRangePopover
+                  :disabled="props.readonly"
+                  @select="(dateRange) => applyQuickDateRange(node, field, dateRange)"
+                >
+                  <el-radio-button value="range">{{ getFieldUiLabel(field, 'absoluteModeLabel', '固定日期') }}</el-radio-button>
+                </DateQuickRangePopover>
+              </template>
             </el-radio-group>
-            <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs">
-              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" size="small" controls-position="right" class="intercom-input" style="width:120px" @update:model-value="onRecentDaysUpdate(node, field, $event)" />
-              <span class="display-body">天</span>
-              <span class="hint-text display-body-light">最多向前追溯 366 天</span>
+            <div v-if="node.modeData[field.key] === 'recent'" class="range-inputs date-recent-inputs" title="最多向前追溯 366 天">
+              <span v-if="field.uiConfig?.recentPrefix" class="display-body">{{ field.uiConfig.recentPrefix }}</span>
+              <el-input-number v-model="node.formData[field.key].days" :min="1" :max="366" :controls="false" size="small" class="intercom-input date-recent-number" aria-label="最近天数" @update:model-value="onRecentDaysUpdate(node, field, $event)" />
+              <span class="display-body date-recent-unit">天</span>
             </div>
-            <div v-if="node.modeData[field.key] === 'range'" class="range-inputs">
-              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input" style="width:260px" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" @change="onDateRangeChange(node, field, $event)" />
-              <span class="hint-text display-body-light">{{ getExactDateRangeHint(node) }}</span>
+            <div v-if="node.modeData[field.key] === 'range'" class="range-inputs date-exact-inputs">
+              <el-date-picker v-model="node.formData[field.key].dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" format="YYYY-MM-DD" value-format="YYYYMMDD" size="small" class="intercom-input date-exact-picker" :disabled-date="(time) => disabledDate(time, node)" @calendar-change="(val) => handleCalendarChange(val, node)" @change="onDateRangeChange(node, field, $event)" />
             </div>
+            <span v-if="node.modeData[field.key] === 'range'" class="date-exact-hint display-body-light">{{ getExactDateRangeHint(node) }}</span>
           </div>
         </template>
 
@@ -251,7 +334,7 @@
 </template>
 
 <script setup>
-import { inject, onBeforeUnmount, reactive } from 'vue'
+import { computed, inject, onBeforeUnmount, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCdpShared } from '../composables/useCdpShared'
 import { chunkBySecondaryCategory } from '../utils/solutionState.js'
@@ -267,6 +350,15 @@ import {
   SOLUTION_REUSE_TUTORIAL_VALUES,
 } from '../utils/guidedTutorialConfig.js'
 import DateQuickRangePopover from './DateQuickRangePopover.vue'
+import {
+  getDependentMultiDisplay,
+  getDependentOptions,
+  getFieldUiLabel,
+  getNumericMinimum,
+  getNumericPrecision,
+  getSingleChoiceOptions,
+  usesPlainRadios,
+} from '../utils/fieldUiConfig.js'
 
 const props = defineProps({
   node: { type: Object, required: true },
@@ -277,6 +369,12 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['overflow-split'])
+
+const packageNotice = computed(() => {
+  const schema = Array.isArray(props.node?.schema) ? props.node.schema : []
+  const value = schema.find(field => field?.uiConfig?.packageNotice)?.uiConfig?.packageNotice
+  return typeof value === 'string' ? value.trim() : ''
+})
 
 const ctx = inject('solutionCenterContext', null)
 const {
@@ -302,6 +400,11 @@ const tutorialSelectRefs = new Map()
 const pendingTutorialSelectSteps = new Map()
 const tutorialSelectCloseTimers = new Map()
 const categorySearchQueries = reactive({})
+
+function getCompactFieldLabel(field) {
+  // The full source label remains available on hover, while the form grid stays aligned.
+  return field?.Label === '广告账号(阿里妈妈)' ? '广告账号' : field?.Label
+}
 
 function tutorialSelectKey(node, field) {
   return `${node?.id || 'node'}:${field?.key || 'field'}`
@@ -502,6 +605,18 @@ function handleListFieldChange(field, node) {
 
 function handleMultiSelectFieldChange(field, node) {
   handleMultiSelectChangeWithOverflow(field.key, node)
+  onTutorialFieldChanged(node, field)
+}
+
+function handleSingleChoiceChange(field, node, value) {
+  if (field.key === 'title_type' && value === '任意商品标题关键字') {
+    node.formData.title = []
+  }
+  for (const dependent of node.schema || []) {
+    if (dependent?.uiConfig?.optionSourceKey === field.key) {
+      node.formData[dependent.key] = []
+    }
+  }
   onTutorialFieldChanged(node, field)
 }
 
@@ -1065,5 +1180,53 @@ onBeforeUnmount(() => {
 .paste-btn.confirm:disabled {
   opacity: 0.35;
   cursor: not-allowed;
+}
+
+.single-choice-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.plain-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+}
+
+.plain-radio-row :deep(.el-radio) {
+  margin-right: 0;
+}
+
+.field-inline-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.field-inline-note-icon {
+  color: var(--ui-accent);
+  flex: 0 0 auto;
+}
+
+.package-notice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: var(--ui-fill, #f5f5f7);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.package-notice-icon {
+  color: var(--ui-accent);
+  flex: 0 0 auto;
 }
 </style>

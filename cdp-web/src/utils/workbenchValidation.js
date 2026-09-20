@@ -1,4 +1,7 @@
+import { buildOperationPools } from './operationPools.js'
+
 const VALID_OPERATORS = new Set(['n', 'u', 'd'])
+const VALID_POOL_OPERATORS = new Set(['n', 'u'])
 
 function normalizedNodes(nodes) {
   return Array.isArray(nodes) ? nodes : []
@@ -29,14 +32,21 @@ export function validateWorkbenchOutput({ nodes, generatedJson, generationStatus
 
 export function validateSolutionIntegrity({ name, nodes }) {
   const items = normalizedNodes(nodes)
+  const pools = buildOperationPools(items)
   const issues = []
 
   if (!String(name || '').trim()) issues.push('方案名称不能为空')
   if (items.length === 0) issues.push('请至少添加一个组件')
   if (items.some((node) => node?._hydrationError)) issues.push('存在加载失败的组件')
   if (items.some((node) => !String(node?.packageType || '').trim())) issues.push('存在未识别的组件类型')
-  if (items.slice(1).some((node) => !VALID_OPERATORS.has(node?.operator))) {
+  if (pools.slice(1).some((pool) => !VALID_OPERATORS.has(pool?.entries?.[0]?.node?.operator))) {
     issues.push('组件之间存在无效的交并差关系')
+  }
+  if (pools.some((pool) => {
+    const configuredType = pool?.entries?.[0]?.node?.poolOperator
+    return configuredType != null && !VALID_POOL_OPERATORS.has(configuredType)
+  })) {
+    issues.push('运算池仅支持交集或并集')
   }
 
   return {

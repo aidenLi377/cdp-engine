@@ -110,7 +110,7 @@ test('preview labels and live option lists stay human readable', () => {
   assert.match(drawer, /品牌核心类目 · 可搜索多选/)
   assert.match(drawer, /确认全部类目/)
   assert.match(drawer, /核心类目总数不限；超过10项会在最后确认时自动拆成多个组件/)
-  assert.match(drawer, /搜索并选择完整核心类目，超出会自动拆分/)
+  assert.match(drawer, /默认选全店销售额前10项；自定义可多选/)
   assert.match(drawer, /function limitCategorySelections\(question, values = \[\]\)/)
   assert.match(drawer, /max-collapse-tags="3"/)
   assert.match(drawer, /按业务类目筛选/)

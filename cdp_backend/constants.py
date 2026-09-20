@@ -21,6 +21,7 @@ STATUS_DIM_FILE = "状态维表.csv"
 GOODS_TYPE_DIM_FILE = "商品类型维表.csv"
 ACCOUNT_DIM_FILE = "账号维表.csv"
 ATTRIBUTE_DIM_FILE = "属性值维表.csv"
+SCENE_DIM_FILE = "场景维表.csv"
 
 REQUIRED_PARAM_COLUMNS = [
     "Crowd_Package",
@@ -43,6 +44,7 @@ REQUIRED_DIMENSION_COLUMNS = {
     GOODS_TYPE_DIM_FILE: ["适用的包", "类型名称", "ID"],
     ACCOUNT_DIM_FILE: ["适用的包", "账号名称", "ID"],
     ATTRIBUTE_DIM_FILE: ["适用的包", "属性值名称", "ID"],
+    SCENE_DIM_FILE: ["适用的包", "适用的行为", "场景名称", "ID", "Value"],
 }
 
 DB_PATH = os.environ.get(
@@ -60,6 +62,7 @@ DIMENSION_NAME_COLUMNS = {
     GOODS_TYPE_DIM_FILE: "类型名称",
     ACCOUNT_DIM_FILE: "账号名称",
     ATTRIBUTE_DIM_FILE: "属性值名称",
+    SCENE_DIM_FILE: "场景名称",
 }
 
 

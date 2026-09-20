@@ -48,6 +48,9 @@ class CdpApiTests(unittest.TestCase):
         self.assertIsInstance(packages, list)
         self.assertIn("类目公域行为", packages)
         self.assertIn("商品行为", packages)
+        self.assertIn("品牌专区", packages)
+        self.assertIn("全媒体智投", packages)
+        self.assertIn("单媒体智投", packages)
 
     def test_config_version_is_never_browser_cached(self):
         response = self.client.get("/api/config/version")
@@ -209,6 +212,609 @@ class CdpApiTests(unittest.TestCase):
             "123456789",
         )
 
+    def test_brand_zone_meta_uses_data_driven_single_choice_fields(self):
+        response = self.client.get("/api/meta/品牌专区")
+        self.assertEqual(response.status_code, 200)
+        meta = response.get_json()
+        fields = {field["key"]: field for field in meta["schema"]}
+
+        self.assertEqual(list(fields), ["account", "bhv", "dayFrequency", "time"])
+        self.assertEqual(fields["account"]["Widget_Type"], "单选组")
+        self.assertEqual(
+            fields["account"]["options"],
+            ["以下全部投放账号", "dior迪奥官方旗舰店"],
+        )
+        self.assertEqual(fields["account"]["uiConfig"]["display"], "radio")
+        self.assertEqual(fields["account"]["uiConfig"]["defaultValue"], "以下全部投放账号")
+        self.assertEqual(fields["bhv"]["Widget_Type"], "单选组")
+        self.assertEqual(fields["bhv"]["options"], ["被广告曝光过", "点击过广告"])
+        self.assertEqual(fields["dayFrequency"]["uiConfig"]["minModeLabel"], "大于")
+        self.assertEqual(fields["time"]["uiConfig"]["relativeModeLabel"], "相对日期")
+
+    def test_generate_brand_zone_matches_official_examples(self):
+        scenarios = [
+            (
+                "全部账号_曝光_天数区间_固定日期",
+                {
+                    "_package": "品牌专区",
+                    "account": "以下全部投放账号",
+                    "bhv": "被广告曝光过",
+                    "dayFrequency": {"min": 1, "max": 10},
+                    "time": {
+                        "val": {"start": "20260901", "end": "20260910"},
+                        "min": "range",
+                    },
+                },
+                {
+                    "contType": "bhv",
+                    "account": "ALL",
+                    "dayFrequency": {"op": "CLOSE_CLOSE", "min": 1, "max": 10},
+                    "bhv": "15274#|#EXPOSE_AD",
+                    "dateType": "ABSOLUTE_DATE_RANGE",
+                    "dateValue": {"from": "20260901", "to": "20260910"},
+                },
+            ),
+            (
+                "全部账号_点击_天数不限_最近180天",
+                {
+                    "_package": "品牌专区",
+                    "account": "以下全部投放账号",
+                    "bhv": "点击过广告",
+                    "dayFrequency": {"min": "", "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "contType": "bhv",
+                    "account": "ALL",
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                    "bhv": "15300#|#CLICK_AD",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+            ),
+            (
+                "指定账号_点击_大于180天_最近180天",
+                {
+                    "_package": "品牌专区",
+                    "account": "dior迪奥官方旗舰店",
+                    "bhv": "点击过广告",
+                    "dayFrequency": {"min": 180, "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "contType": "bhv",
+                    "account": "2207959261164#|#2207959261164",
+                    "dayFrequency": {"op": "OPEN_CLOSE", "min": 180},
+                    "bhv": "15300#|#CLICK_AD",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+            ),
+        ]
+
+        for name, payload, expected_lv3 in scenarios:
+            with self.subTest(name=name):
+                response = self.client.post("/api/generate", json=payload)
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                data = response.get_json()
+                expected = {
+                    "crowdName": "未命名",
+                    "list": [
+                        {
+                            "selectionLv1": ["FIELD", "AD"],
+                            "selectionLv3": expected_lv3,
+                            "fromPoolId": 0,
+                            "selectionLv2Name": "品牌专区",
+                            "selectionLv2": ["15250#|#EB"],
+                        }
+                    ],
+                    "compute": "(0)",
+                }
+                self.assertEqual(data, expected)
+                self.assertEqual(
+                    list(data["list"][0]),
+                    ["selectionLv1", "selectionLv3", "fromPoolId", "selectionLv2Name", "selectionLv2"],
+                )
+                self.assertEqual(
+                    list(data["list"][0]["selectionLv3"]),
+                    ["contType", "account", "dayFrequency", "bhv", "dateType", "dateValue"],
+                )
+
+    def test_effect_promotion_meta_uses_behavior_specific_scenes(self):
+        response = self.client.get("/api/meta/效果推广")
+        self.assertEqual(response.status_code, 200)
+        fields = {field["key"]: field for field in response.get_json()["schema"]}
+
+        self.assertEqual(
+            list(fields),
+            ["account", "bhv", "onebp_scene", "dayFrequency", "time"],
+        )
+        self.assertEqual(fields["account"]["options"], ["全部", "dior迪奥官方旗舰店"])
+        self.assertEqual(fields["bhv"]["options"], ["曝光", "点击", "观看"])
+        self.assertIsNone(fields["account"]["uiConfig"]["defaultValue"])
+        self.assertIsNone(fields["bhv"]["uiConfig"]["defaultValue"])
+        self.assertEqual(fields["onebp_scene"]["Widget_Type"], "动态多选")
+        self.assertEqual(
+            {key: len(value) for key, value in fields["onebp_scene"]["optionsByValue"].items()},
+            {"曝光": 17, "点击": 17, "观看": 3},
+        )
+        self.assertEqual(
+            fields["onebp_scene"]["optionsByValue"]["观看"],
+            ["超级直播", "超级短视频", "短直联动"],
+        )
+        self.assertEqual(
+            fields["onebp_scene"]["uiConfig"]["displayByValue"]["观看"],
+            "checkbox",
+        )
+
+    def test_generate_effect_promotion_matches_official_examples(self):
+        exposure_scenes = [
+            "货品运营",
+            "关键词推广(原淘内广告/直通车)",
+            "精准人群推广(整合原消费者运营)",
+            "获客易",
+            "其他场景推广-全店智投(原全店推)",
+            "其他场景推广-活动加速",
+            "其他场景推广-多目标直投",
+            "其他场景推广-其他(对应原服务商场景)",
+            "货品运营-测款快",
+            "消费者运营-拉新快",
+            "货品运营-货品加速",
+            "货品运营-上新快",
+            "消费者运营-会员快",
+            "消费者运营-粉丝快",
+            "消费者运营-追投快",
+            "消费者运营-人群击穿",
+            "原万相台-电商场景",
+        ]
+        exposure_values = [
+            "19111#|#376", "15403#|#371", "15405#|#372", "15386#|#144",
+            "15394#|#361", "15392#|#154", "19110#|#427", "15396#|#-100",
+            "15348#|#158", "15374#|#78", "15369#|#114", "15363#|#105",
+            "15378#|#133", "15390#|#407", "15388#|#189", "15382#|#370",
+            "15401#|#-999",
+        ]
+        scenarios = [
+            (
+                "曝光_全选",
+                "曝光",
+                exposure_scenes,
+                {
+                    "account": "2207959261164#|#2207959261164",
+                    "bhv": "15296#|#onebp_expose",
+                    "onebp_scene": exposure_values,
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                },
+            ),
+            (
+                "点击_货品运营",
+                "点击",
+                ["货品运营"],
+                {
+                    "account": "2207959261164#|#2207959261164",
+                    "bhv": "15316#|#onebp_click",
+                    "onebp_scene": ["19113#|#376"],
+                    "dateType": "RELATIVE_RANGE",
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                },
+            ),
+            (
+                "观看_三个场景",
+                "观看",
+                ["超级直播", "超级短视频", "短直联动"],
+                {
+                    "account": "2207959261164#|#2207959261164",
+                    "bhv": "15323#|#onebp_view",
+                    "onebp_scene": ["15397#|#108", "15398#|#183", "15399#|#341"],
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                },
+            ),
+        ]
+
+        for name, behavior, scenes, expected_lv3 in scenarios:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    "/api/generate",
+                    json={
+                        "_package": "效果推广",
+                        "account": "dior迪奥官方旗舰店",
+                        "bhv": behavior,
+                        "onebp_scene": scenes,
+                        "dayFrequency": {"min": "", "max": ""},
+                        "time": {"val": {"days": 180}, "min": "recent"},
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(
+                    response.get_json(),
+                    {
+                        "crowdName": "未命名",
+                        "list": [{
+                            "selectionLv1": ["FIELD", "AD"],
+                            "selectionLv3": expected_lv3,
+                            "fromPoolId": 0,
+                            "selectionLv2Name": "效果推广",
+                            "selectionLv2": ["15270#|#cate_8954"],
+                        }],
+                        "compute": "(0)",
+                    },
+                )
+
+    def test_effect_promotion_rejects_scene_from_another_behavior(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "效果推广",
+                "account": "全部",
+                "bhv": "观看",
+                "onebp_scene": ["货品运营"],
+                "dayFrequency": {"min": "", "max": ""},
+                "time": {"val": {"days": 180}, "min": "recent"},
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("场景与观看行为不匹配", response.get_json()["message"])
+
+    def test_brand_promotion_meta_uses_behavior_specific_multi_select_scenes(self):
+        response = self.client.get("/api/meta/品牌推广")
+        self.assertEqual(response.status_code, 200)
+        fields = {field["key"]: field for field in response.get_json()["schema"]}
+
+        self.assertEqual(
+            list(fields),
+            ["bhv", "ppob_scene", "cate", "dayFrequency", "time"],
+        )
+        self.assertEqual(fields["bhv"]["Widget_Type"], "单选组")
+        self.assertEqual(fields["bhv"]["options"], ["点击", "曝光"])
+        self.assertIsNone(fields["bhv"]["uiConfig"]["defaultValue"])
+        self.assertEqual(fields["ppob_scene"]["Widget_Type"], "动态多选")
+        self.assertEqual(
+            {key: len(value) for key, value in fields["ppob_scene"]["optionsByValue"].items()},
+            {"点击": 15, "曝光": 15},
+        )
+        self.assertEqual(fields["ppob_scene"]["optionsByValue"]["点击"][4], "一搜即现")
+        self.assertEqual(fields["cate"]["Widget_Type"], "搜索单选")
+        self.assertEqual(fields["cate"]["options"][0], "全部")
+        self.assertIn("彩妆/香水/美妆工具>唇部彩妆", fields["cate"]["options"])
+        self.assertEqual(fields["cate"]["uiConfig"]["defaultValue"], "全部")
+        self.assertEqual(fields["dayFrequency"]["uiConfig"]["minModeLabel"], "大于")
+        self.assertEqual(fields["time"]["uiConfig"]["defaultDays"], 180)
+
+    def test_generate_brand_promotion_matches_supplied_examples(self):
+        scenarios = [
+            (
+                "曝光_双场景_全部类目_不限_最近180天",
+                {
+                    "bhv": "曝光",
+                    "ppob_scene": [
+                        "UD全域品牌营销-超级亮相",
+                        "淘内展示营销 - 人群击穿",
+                    ],
+                    "cate": "全部",
+                    "dayFrequency": {"min": "", "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "cate": "ALL",
+                    "bhv": "15318#|#exp_pptg",
+                    "ppob_scene": ["20216#|#395", "20215#|#389"],
+                    "dateType": "RELATIVE_RANGE",
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                },
+            ),
+            (
+                "点击_一搜即现_全部类目_10至15天_最近180天",
+                {
+                    "bhv": "点击",
+                    "ppob_scene": ["一搜即现"],
+                    "cate": "全部",
+                    "dayFrequency": {"min": 10, "max": 15},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "cate": "ALL",
+                    "bhv": "15298#|#click_pptg",
+                    "ppob_scene": ["19487#|#353"],
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                    "dayFrequency": {"op": "CLOSE_CLOSE", "min": 10, "max": 15},
+                },
+            ),
+            (
+                "点击_一搜即现_唇部彩妆_大于180天_最近180天",
+                {
+                    "bhv": "点击",
+                    "ppob_scene": ["一搜即现"],
+                    "cate": "彩妆/香水/美妆工具>唇部彩妆",
+                    "dayFrequency": {"min": 180, "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "cate": "201166702#|#201166702",
+                    "bhv": "15298#|#click_pptg",
+                    "ppob_scene": ["19487#|#353"],
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                    "dayFrequency": {"op": "OPEN_CLOSE", "min": 180},
+                },
+            ),
+        ]
+
+        for name, form_data, expected_lv3 in scenarios:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    "/api/generate",
+                    json={"_package": "品牌推广", **form_data},
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(
+                    response.get_json(),
+                    {
+                        "crowdName": "未命名",
+                        "list": [{
+                            "selectionLv1": ["FIELD", "AD"],
+                            "selectionLv3": expected_lv3,
+                            "fromPoolId": 1,
+                            "selectionLv2Name": "品牌推广",
+                            "selectionLv2": ["15272#|#cate_8969"],
+                        }],
+                        "compute": "(0)",
+                    },
+                )
+
+    def test_brand_promotion_rejects_unknown_scene(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "品牌推广",
+                "bhv": "点击",
+                "ppob_scene": ["不存在的场景"],
+                "cate": "全部",
+                "dayFrequency": {"min": "", "max": ""},
+                "time": {"val": {"days": 180}, "min": "recent"},
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("场景与点击行为不匹配", response.get_json()["message"])
+
+    def test_omnimedia_meta_has_two_behaviors_and_expected_controls(self):
+        response = self.client.get("/api/meta/全媒体智投")
+        self.assertEqual(response.status_code, 200)
+        fields = {field["key"]: field for field in response.get_json()["schema"]}
+
+        self.assertEqual(list(fields), ["bhv", "dayFrequency", "time"])
+        self.assertEqual(fields["bhv"]["Widget_Type"], "单选组")
+        self.assertEqual(fields["bhv"]["options"], ["曝光", "点击"])
+        self.assertEqual(fields["bhv"]["uiConfig"]["defaultValue"], "曝光")
+        self.assertEqual(
+            fields["bhv"]["uiConfig"]["packageNotice"],
+            "原UD智汇投更名为全媒体智投",
+        )
+        self.assertEqual(fields["dayFrequency"]["uiConfig"]["minModeLabel"], "大于")
+        self.assertEqual(fields["dayFrequency"]["uiConfig"]["rangeModeLabel"], "区间")
+        self.assertEqual(fields["time"]["uiConfig"]["relativeModeLabel"], "相对日期")
+        self.assertEqual(fields["time"]["uiConfig"]["absoluteModeLabel"], "固定日期")
+        self.assertEqual(fields["time"]["uiConfig"]["defaultDays"], 180)
+
+    def test_generate_omnimedia_matches_official_examples_and_modes(self):
+        scenarios = [
+            (
+                "曝光_不限_最近180天",
+                {
+                    "bhv": "曝光",
+                    "dayFrequency": {"min": "", "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                    "bhv": "19873#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "exp_udzht",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+            ),
+            (
+                "点击_不限_最近180天",
+                {
+                    "bhv": "点击",
+                    "dayFrequency": {"min": "", "max": ""},
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                    "bhv": "19874#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "click_udzht",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+            ),
+            (
+                "曝光_大于2天_固定日期",
+                {
+                    "bhv": "曝光",
+                    "dayFrequency": {"min": 2, "max": ""},
+                    "time": {
+                        "val": {"start": "2026-09-01", "end": "2026-09-10"},
+                        "min": "range",
+                    },
+                },
+                {
+                    "dayFrequency": {"op": "OPEN_CLOSE", "min": 2},
+                    "bhv": "19873#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "exp_udzht",
+                    "dateType": "ABSOLUTE_DATE_RANGE",
+                    "dateValue": {"from": "20260901", "to": "20260910"},
+                },
+            ),
+            (
+                "点击_天数区间_固定日期",
+                {
+                    "bhv": "点击",
+                    "dayFrequency": {"min": 2, "max": 5},
+                    "time": {
+                        "val": {"start": "20260901", "end": "20260910"},
+                        "min": "range",
+                    },
+                },
+                {
+                    "dayFrequency": {"op": "CLOSE_CLOSE", "min": 2, "max": 5},
+                    "bhv": "19874#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "click_udzht",
+                    "dateType": "ABSOLUTE_DATE_RANGE",
+                    "dateValue": {"from": "20260901", "to": "20260910"},
+                },
+            ),
+        ]
+
+        for name, form_data, expected_lv3 in scenarios:
+            with self.subTest(name=name):
+                response = self.client.post(
+                    "/api/generate",
+                    json={"_package": "全媒体智投", **form_data},
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                data = response.get_json()
+                self.assertEqual(
+                    data,
+                    {
+                        "crowdName": "未命名",
+                        "list": [{
+                            "selectionLv1": ["FIELD", "AD"],
+                            "selectionLv3": expected_lv3,
+                            "tipProperty": {
+                                "dateTo": "20240717",
+                                "type": 3,
+                                "dateFrom": "20240615",
+                                "content": "原UD智汇投更名为全媒体智投",
+                            },
+                            "fromPoolId": 1,
+                            "selectionLv2Name": "全媒体智投",
+                            "selectionLv2": ["19872#|#EXP_UD_ZHT_EXP_BHV"],
+                        }],
+                        "compute": "(0)",
+                    },
+                )
+                self.assertEqual(
+                    list(data["list"][0]),
+                    [
+                        "selectionLv1",
+                        "selectionLv3",
+                        "tipProperty",
+                        "fromPoolId",
+                        "selectionLv2Name",
+                        "selectionLv2",
+                    ],
+                )
+                self.assertEqual(
+                    list(data["list"][0]["selectionLv3"]),
+                    ["dayFrequency", "bhv", "bhv_type", "dateType", "dateValue"],
+                )
+
+    def test_omnimedia_behavior_is_single_choice(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "全媒体智投",
+                "bhv": ["曝光", "点击"],
+                "dayFrequency": {"min": "", "max": ""},
+                "time": {"val": {"days": 180}, "min": "recent"},
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("行为必须是曝光或点击", response.get_json()["message"])
+
+    def test_single_media_meta_uses_only_behavior_and_time(self):
+        response = self.client.get("/api/meta/单媒体智投")
+        self.assertEqual(response.status_code, 200)
+        fields = {field["key"]: field for field in response.get_json()["schema"]}
+
+        self.assertEqual(list(fields), ["bhv", "time"])
+        self.assertEqual(fields["bhv"]["Widget_Type"], "单选组")
+        self.assertEqual(fields["bhv"]["options"], ["曝光", "点击"])
+        self.assertEqual(fields["bhv"]["uiConfig"]["display"], "radio")
+        self.assertEqual(fields["bhv"]["uiConfig"]["defaultValue"], "曝光")
+        self.assertEqual(fields["time"]["uiConfig"]["relativeModeLabel"], "相对日期")
+        self.assertEqual(fields["time"]["uiConfig"]["absoluteModeLabel"], "固定日期")
+        self.assertEqual(fields["time"]["uiConfig"]["defaultDays"], 180)
+
+    def test_generate_single_media_matches_supplied_examples(self):
+        scenarios = [
+            (
+                "曝光_最近180天",
+                {
+                    "_package": "单媒体智投",
+                    "bhv": "曝光",
+                    "time": {"val": {"days": 180}, "min": "recent"},
+                },
+                {
+                    "bhv": "19937#|#is_pv_uddmt",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+            ),
+            (
+                "点击_固定日期",
+                {
+                    "_package": "单媒体智投",
+                    "bhv": "点击",
+                    "time": {
+                        "val": {"start": "20260901", "end": "20260902"},
+                        "min": "range",
+                    },
+                },
+                {
+                    "bhv": "19937#|#is_pv_uddmt",
+                    "dateType": "ABSOLUTE_DATE_RANGE",
+                    "dateValue": {"from": "20260901", "to": "20260902"},
+                },
+            ),
+        ]
+
+        for name, payload, expected_lv3 in scenarios:
+            with self.subTest(name=name):
+                response = self.client.post("/api/generate", json=payload)
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(
+                    response.get_json(),
+                    {
+                        "crowdName": "未命名",
+                        "list": [{
+                            "selectionLv1": ["FIELD", "AD"],
+                            "selectionLv3": expected_lv3,
+                            "tipProperty": {
+                                "dateTo": "20990129",
+                                "type": 3,
+                                "dateFrom": "20250814",
+                            },
+                            "fromPoolId": 1,
+                            "selectionLv2Name": "单媒体智投",
+                            "selectionLv2": ["19936#|#cate_9195"],
+                        }],
+                        "compute": "(0)",
+                    },
+                )
+
+    def test_single_media_rejects_unknown_behavior(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "单媒体智投",
+                "bhv": "观看",
+                "time": {"val": {"days": 180}, "min": "recent"},
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("行为必须是曝光或点击", response.get_json()["message"])
+
     def test_generate_commodity_json(self):
         payload = {
             "_package": "商品行为",
@@ -281,6 +887,48 @@ class CdpApiTests(unittest.TestCase):
         self.assertLess(response_text.index('"selectionLv1"'), response_text.index('"selectionLv3"'))
         self.assertLess(response_text.index('"selectionLv3"'), response_text.index('"tipProperty"'))
         self.assertLess(response_text.index('"tipProperty"'), response_text.index('"fromPoolId"'))
+
+    def test_generate_commodity_multiple_behaviors_use_channel_codes(self):
+        for channel, expected in (
+            ("天猫", ["16709#|#PAY", "16625#|#VIEW_ITEM"]),
+            ("所有销售渠道", ["16712#|#PAY", "16628#|#VIEW_ITEM"]),
+        ):
+            with self.subTest(channel=channel):
+                response = self.client.post(
+                    "/api/generate",
+                    json={
+                        "_package": "商品行为",
+                        "channel": channel,
+                        "bhv": ["购买", "浏览"],
+                    },
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.get_json()["list"][0]["selectionLv3"]["bhv"],
+                    expected,
+                )
+
+    def test_generate_commodity_behavior_without_channel_fails(self):
+        response = self.client.post(
+            "/api/generate",
+            json={"_package": "商品行为", "bhv": ["购买", "浏览"]},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("请选择一个渠道", response.get_json()["message"])
+
+    def test_generate_commodity_behavior_without_mapping_fails(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "商品行为",
+                "channel": "天猫",
+                "bhv": ["未配置行为"],
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["code"], "INVALID_PARAMETERS")
+        self.assertIn("未配置行为代码", response.get_json()["message"])
 
     def test_generate_alias_json(self):
         payload = {

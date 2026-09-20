@@ -22,6 +22,7 @@ from .constants import (
     GOODS_TYPE_DIM_FILE,
     LOGIC_TRIGGER_CANDIDATES,
     PARAMS_FILE,
+    SCENE_DIM_FILE,
     STATUS_DIM_FILE,
     TEMPLATE_DIRNAME,
 )
@@ -49,7 +50,20 @@ class ConfigEngine:
     CATEGORY_PUBLIC_PACKAGE = "类目公域行为"
     CATEGORY_ITEM_PACKAGE = "类目商品行为"
     COMMODITY_PACKAGE = "商品行为"
-    OFFICIAL_ORDERED_PACKAGES = (CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE)
+    BRAND_ZONE_PACKAGE = "品牌专区"
+    EFFECT_PROMOTION_PACKAGE = "效果推广"
+    BRAND_PROMOTION_PACKAGE = "品牌推广"
+    OMNIMEDIA_PACKAGE = "全媒体智投"
+    SINGLE_MEDIA_PACKAGE = "单媒体智投"
+    OFFICIAL_ORDERED_PACKAGES = (
+        CATEGORY_PUBLIC_PACKAGE,
+        COMMODITY_PACKAGE,
+        BRAND_ZONE_PACKAGE,
+        EFFECT_PROMOTION_PACKAGE,
+        BRAND_PROMOTION_PACKAGE,
+        OMNIMEDIA_PACKAGE,
+        SINGLE_MEDIA_PACKAGE,
+    )
     CATEGORY_PUBLIC_TOP_LEVEL_ORDER = ("selectionLv1", "selectionLv3", "fromPoolId")
     CATEGORY_PUBLIC_SELECTION_LV3_ORDER = (
         "extraFilters",
@@ -84,6 +98,75 @@ class ConfigEngine:
         "dateValue",
         "selectedGoodsType",
     )
+    BRAND_ZONE_TOP_LEVEL_ORDER = (
+        "selectionLv1",
+        "selectionLv3",
+        "fromPoolId",
+        "selectionLv2Name",
+        "selectionLv2",
+    )
+    BRAND_ZONE_SELECTION_LV3_ORDER = (
+        "contType",
+        "account",
+        "dayFrequency",
+        "bhv",
+        "dateType",
+        "dateValue",
+    )
+    EFFECT_PROMOTION_TOP_LEVEL_ORDER = BRAND_ZONE_TOP_LEVEL_ORDER
+    EFFECT_PROMOTION_SELECTION_LV3_ORDER = (
+        "account",
+        "bhv",
+        "onebp_scene",
+        "dateType",
+        "dateValue",
+        "dayFrequency",
+    )
+    BRAND_PROMOTION_TOP_LEVEL_ORDER = BRAND_ZONE_TOP_LEVEL_ORDER
+    BRAND_PROMOTION_SELECTION_LV3_ORDER = (
+        "cate",
+        "bhv",
+        "ppob_scene",
+        "dateType",
+        "dateValue",
+        "dayFrequency",
+    )
+    OMNIMEDIA_TOP_LEVEL_ORDER = (
+        "selectionLv1",
+        "selectionLv3",
+        "tipProperty",
+        "fromPoolId",
+        "selectionLv2Name",
+        "selectionLv2",
+    )
+    OMNIMEDIA_SELECTION_LV3_ORDER = (
+        "dayFrequency",
+        "bhv",
+        "bhv_type",
+        "dateType",
+        "dateValue",
+    )
+    OMNIMEDIA_BEHAVIOR_TYPES = {
+        "曝光": "exp_udzht",
+        "点击": "click_udzht",
+    }
+    SINGLE_MEDIA_TOP_LEVEL_ORDER = OMNIMEDIA_TOP_LEVEL_ORDER
+    SINGLE_MEDIA_SELECTION_LV3_ORDER = (
+        "bhv",
+        "dateType",
+        "dateValue",
+    )
+    LIST_VALUE_KEYS = {
+        "channel",
+        "stdBrand",
+        "leafCates",
+        "bhv",
+        "title",
+        "types",
+        "keywords",
+        "onebp_scene",
+        "ppob_scene",
+    }
 
     def __init__(
         self,
@@ -104,6 +187,8 @@ class ConfigEngine:
         self.attr_options: dict[tuple[str, str], list[str]] = {}
         self.bhv_translator: dict[tuple[str, str, str], str] = {}
         self.bhv_options: dict[str, list[str]] = {}
+        self.scene_translator: dict[tuple[str, str, str], str] = {}
+        self.scene_options: dict[tuple[str, str], list[str]] = {}
         self.load_config(validate_on_load=validate_on_load)
 
     def load_config(self, validate_on_load: bool = True) -> None:
@@ -207,6 +292,8 @@ class ConfigEngine:
         self.attr_options = {}
         self.bhv_translator = {}
         self.bhv_options = {}
+        self.scene_translator = {}
+        self.scene_options = {}
 
         behavior_df = self._safe_read(BEHAVIOR_DIM_FILE)
         for _, row in behavior_df.iterrows():
@@ -220,6 +307,32 @@ class ConfigEngine:
             self.bhv_options.setdefault(package_name, [])
             if behavior_name not in self.bhv_options[package_name]:
                 self.bhv_options[package_name].append(behavior_name)
+
+        scene_df = self._safe_read(SCENE_DIM_FILE)
+        if "排序" in scene_df.columns:
+            scene_df = scene_df.copy()
+            scene_df["排序"] = pd.to_numeric(scene_df["排序"], errors="coerce")
+            scene_df = scene_df.sort_values(
+                ["适用的包", "适用的行为", "排序"],
+                kind="stable",
+                na_position="last",
+            )
+        self.dimensions[SCENE_DIM_FILE] = []
+        for _, row in scene_df.iterrows():
+            package_name = str(row.get("适用的包", "")).strip()
+            behavior_name = str(row.get("适用的行为", "")).strip()
+            scene_name = str(row.get("场景名称", "")).strip()
+            scene_id = str(row.get("ID", "")).strip()
+            scene_value = str(row.get("Value", "")).strip()
+            if not package_name or not behavior_name or not scene_name or not scene_id:
+                continue
+            translated = f"{scene_id}#|#{scene_value}"
+            self.scene_translator[(package_name, behavior_name, scene_name)] = translated
+            self.scene_options.setdefault((package_name, behavior_name), [])
+            if scene_name not in self.scene_options[(package_name, behavior_name)]:
+                self.scene_options[(package_name, behavior_name)].append(scene_name)
+            if scene_name not in self.dimensions[SCENE_DIM_FILE]:
+                self.dimensions[SCENE_DIM_FILE].append(scene_name)
 
         loaders = [
             (CHANNEL_DIM_FILE, "渠道名称", lambda r: f"{r.get('parentId', '')}#|#{r.get('BizID', '')}"),
@@ -283,10 +396,32 @@ class ConfigEngine:
                 for field, value in config.to_dict().items()
             }
             item["key"] = key
+            raw_ui_config = str(item.get("UI_Config", "")).strip()
+            if raw_ui_config and raw_ui_config not in {"-", "nan"}:
+                try:
+                    parsed_ui_config = json.loads(raw_ui_config)
+                except (TypeError, ValueError):
+                    parsed_ui_config = {}
+            else:
+                parsed_ui_config = {}
+            item["uiConfig"] = (
+                parsed_ui_config if isinstance(parsed_ui_config, dict) else {}
+            )
             data_source = item.get("Data_Source")
 
             if data_source == BEHAVIOR_DIM_FILE:
                 item["options"] = list(self.bhv_options.get(package_name, []))
+            elif data_source == SCENE_DIM_FILE:
+                item["optionsByValue"] = {
+                    behavior: list(options)
+                    for (scene_package, behavior), options in self.scene_options.items()
+                    if scene_package == package_name
+                }
+                item["options"] = unique_preserve_order(
+                    option
+                    for options in item["optionsByValue"].values()
+                    for option in options
+                )
             else:
                 item["options"] = list(
                     self.attr_options.get((package_name, data_source), self.dimensions.get(data_source, []))
@@ -296,8 +431,18 @@ class ConfigEngine:
                 key,
                 item["options"],
             )
+            preferred_options = item["uiConfig"].get("optionOrder")
+            if isinstance(preferred_options, list):
+                option_set = set(item["options"])
+                ordered_options = [
+                    value for value in preferred_options if value in option_set
+                ]
+                ordered_options.extend(
+                    value for value in item["options"] if value not in ordered_options
+                )
+                item["options"] = ordered_options
 
-            if package_name in ["AIPL状态", "商品行为"] and item["key"] in ["cate", "leafCates"]:
+            if package_name in ["AIPL状态", "商品行为", self.BRAND_PROMOTION_PACKAGE] and item["key"] in ["cate", "leafCates"]:
                 if "全部" not in item["options"]:
                     item["options"].insert(0, "全部")
 
@@ -347,10 +492,20 @@ class ConfigEngine:
     def generate_json(self, user_data: dict[str, Any]) -> dict[str, Any]:
         payload = dict(user_data)
         current_pkg = payload.pop("_package", "类目公域行为")
+        if current_pkg == self.BRAND_ZONE_PACKAGE:
+            self._validate_brand_zone_payload(payload)
+        elif current_pkg == self.EFFECT_PROMOTION_PACKAGE:
+            self._validate_effect_promotion_payload(payload)
+        elif current_pkg == self.BRAND_PROMOTION_PACKAGE:
+            self._validate_brand_promotion_payload(payload)
+        elif current_pkg == self.OMNIMEDIA_PACKAGE:
+            self._validate_omnimedia_payload(payload)
+        elif current_pkg == self.SINGLE_MEDIA_PACKAGE:
+            self._validate_single_media_payload(payload)
         selection_lv3: dict[str, Any] = {}
 
         for key, raw_val in payload.items():
-            if current_pkg == "AIPL状态" and key == "cate":
+            if current_pkg in {"AIPL状态", self.BRAND_PROMOTION_PACKAGE} and key == "cate":
                 if (isinstance(raw_val, list) and "全部" in raw_val) or raw_val == "全部":
                     self._merge_path(selection_lv3, "selectionLv3.cate", "ALL")
                     continue
@@ -369,6 +524,7 @@ class ConfigEngine:
             config = matched_rows.iloc[0]
             template_str = config.get("Backend_Template")
             json_path = str(config.get("JSON_Path", "")).strip()
+            widget_type = str(config.get("Widget_Type", "")).strip()
             if not json_path or json_path == "-":
                 continue
 
@@ -443,7 +599,7 @@ class ConfigEngine:
                 if state == "isEmpty":
                     continue
                 val_to_write = vars_dict.get("val", cleaned_val)
-                if key in ["channel", "stdBrand", "leafCates", "bhv", "title", "types", "keywords"]:
+                if key in self.LIST_VALUE_KEYS and widget_type != "单选组":
                     if not isinstance(val_to_write, list):
                         val_to_write = [val_to_write]
                 self._merge_path(selection_lv3, json_path, val_to_write)
@@ -488,6 +644,13 @@ class ConfigEngine:
                     rendered = rendered.replace(f"${{{var_key}}}", rendered_value)
                 self._merge_path(selection_lv3, json_path, json.loads(rendered))
 
+        if current_pkg == self.OMNIMEDIA_PACKAGE:
+            self._merge_path(
+                selection_lv3,
+                "selectionLv3.bhv_type",
+                self.OMNIMEDIA_BEHAVIOR_TYPES[str(payload.get("bhv", "")).strip()],
+            )
+
         base_template = self._load_base_template(current_pkg)
         for top_key, value in selection_lv3.items():
             if top_key in base_template and isinstance(base_template[top_key], dict) and isinstance(value, dict):
@@ -498,7 +661,15 @@ class ConfigEngine:
         if "selectionLv3" not in base_template:
             base_template["selectionLv3"] = {}
 
-        base_template["fromPoolId"] = 0
+        base_template["fromPoolId"] = (
+            1
+            if current_pkg in {
+                self.BRAND_PROMOTION_PACKAGE,
+                self.OMNIMEDIA_PACKAGE,
+                self.SINGLE_MEDIA_PACKAGE,
+            }
+            else 0
+        )
         if "channel" in payload and current_pkg != self.CATEGORY_PUBLIC_PACKAGE:
             channel_val = payload["channel"]
             base_template["selectionLv2Name"] = (
@@ -509,6 +680,16 @@ class ConfigEngine:
             base_template = self._canonicalize_category_public(base_template)
         elif current_pkg == self.COMMODITY_PACKAGE:
             base_template = self._canonicalize_commodity(base_template)
+        elif current_pkg == self.BRAND_ZONE_PACKAGE:
+            base_template = self._canonicalize_brand_zone(base_template)
+        elif current_pkg == self.EFFECT_PROMOTION_PACKAGE:
+            base_template = self._canonicalize_effect_promotion(base_template)
+        elif current_pkg == self.BRAND_PROMOTION_PACKAGE:
+            base_template = self._canonicalize_brand_promotion(base_template)
+        elif current_pkg == self.OMNIMEDIA_PACKAGE:
+            base_template = self._canonicalize_omnimedia(base_template)
+        elif current_pkg == self.SINGLE_MEDIA_PACKAGE:
+            base_template = self._canonicalize_single_media(base_template)
 
         return {"crowdName": "未命名", "list": [base_template], "compute": "(0)"}
 
@@ -553,6 +734,206 @@ class ConfigEngine:
 
         return cls._order_mapping(canonical, cls.COMMODITY_TOP_LEVEL_ORDER)
 
+    @classmethod
+    def _canonicalize_brand_zone(cls, base_template: dict[str, Any]) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            canonical["selectionLv3"] = cls._order_mapping(
+                dict(selection_lv3),
+                cls.BRAND_ZONE_SELECTION_LV3_ORDER,
+            )
+        return cls._order_mapping(canonical, cls.BRAND_ZONE_TOP_LEVEL_ORDER)
+
+    @classmethod
+    def _canonicalize_effect_promotion(
+        cls,
+        base_template: dict[str, Any],
+    ) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            selection_lv3 = dict(selection_lv3)
+            # The official click payload omits dateValue for a relative date,
+            # even though the same UI selection includes it for exposure/view.
+            if (
+                selection_lv3.get("bhv") == "15316#|#onebp_click"
+                and selection_lv3.get("dateType") == "RELATIVE_RANGE"
+            ):
+                selection_lv3.pop("dateValue", None)
+            canonical["selectionLv3"] = cls._order_mapping(
+                selection_lv3,
+                cls.EFFECT_PROMOTION_SELECTION_LV3_ORDER,
+            )
+        return cls._order_mapping(
+            canonical,
+            cls.EFFECT_PROMOTION_TOP_LEVEL_ORDER,
+        )
+
+    @classmethod
+    def _canonicalize_brand_promotion(
+        cls,
+        base_template: dict[str, Any],
+    ) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            selection_lv3 = dict(selection_lv3)
+            # The supplied official exposure payload keeps dateType but omits
+            # dateValue for a relative range; click payloads retain dateValue.
+            if (
+                selection_lv3.get("bhv") == "15318#|#exp_pptg"
+                and selection_lv3.get("dateType") == "RELATIVE_RANGE"
+            ):
+                selection_lv3.pop("dateValue", None)
+            canonical["selectionLv3"] = cls._order_mapping(
+                selection_lv3,
+                cls.BRAND_PROMOTION_SELECTION_LV3_ORDER,
+            )
+        return cls._order_mapping(
+            canonical,
+            cls.BRAND_PROMOTION_TOP_LEVEL_ORDER,
+        )
+
+    @classmethod
+    def _canonicalize_omnimedia(cls, base_template: dict[str, Any]) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            canonical["selectionLv3"] = cls._order_mapping(
+                dict(selection_lv3),
+                cls.OMNIMEDIA_SELECTION_LV3_ORDER,
+            )
+        return cls._order_mapping(canonical, cls.OMNIMEDIA_TOP_LEVEL_ORDER)
+
+    @classmethod
+    def _canonicalize_single_media(
+        cls,
+        base_template: dict[str, Any],
+    ) -> dict[str, Any]:
+        canonical = dict(base_template)
+        selection_lv3 = canonical.get("selectionLv3")
+        if isinstance(selection_lv3, dict):
+            canonical["selectionLv3"] = cls._order_mapping(
+                dict(selection_lv3),
+                cls.SINGLE_MEDIA_SELECTION_LV3_ORDER,
+            )
+        return cls._order_mapping(canonical, cls.SINGLE_MEDIA_TOP_LEVEL_ORDER)
+
+    @classmethod
+    def _validate_brand_zone_payload(cls, payload: dict[str, Any]) -> None:
+        cls._validate_ad_behavior_payload(payload, cls.BRAND_ZONE_PACKAGE)
+
+    def _validate_effect_promotion_payload(self, payload: dict[str, Any]) -> None:
+        self._validate_ad_behavior_payload(payload, self.EFFECT_PROMOTION_PACKAGE)
+        scenes = payload.get("onebp_scene")
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("效果推广必须至少选择一个场景")
+        behavior = str(payload.get("bhv", "")).strip()
+        valid_scenes = set(
+            self.scene_options.get((self.EFFECT_PROMOTION_PACKAGE, behavior), [])
+        )
+        invalid = [scene for scene in scenes if scene not in valid_scenes]
+        if invalid:
+            raise ValueError(
+                f"效果推广场景与{behavior or '当前'}行为不匹配：{', '.join(map(str, invalid))}"
+            )
+
+    def _validate_brand_promotion_payload(self, payload: dict[str, Any]) -> None:
+        behavior = str(payload.get("bhv", "")).strip()
+        if behavior not in {"曝光", "点击"}:
+            raise ValueError("品牌推广行为必须是曝光或点击")
+        self._validate_ad_behavior_payload(
+            payload,
+            self.BRAND_PROMOTION_PACKAGE,
+            required_fields=(("bhv", "行为"), ("cate", "二级类目"), ("time", "时间")),
+        )
+        scenes = payload.get("ppob_scene")
+        if not isinstance(scenes, list) or not scenes:
+            raise ValueError("品牌推广必须至少选择一个场景")
+        valid_scenes = set(
+            self.scene_options.get((self.BRAND_PROMOTION_PACKAGE, behavior), [])
+        )
+        invalid = [scene for scene in scenes if scene not in valid_scenes]
+        if invalid:
+            raise ValueError(
+                f"品牌推广场景与{behavior}行为不匹配：{', '.join(map(str, invalid))}"
+            )
+
+    @classmethod
+    def _validate_omnimedia_payload(cls, payload: dict[str, Any]) -> None:
+        behavior = str(payload.get("bhv", "")).strip()
+        if behavior not in cls.OMNIMEDIA_BEHAVIOR_TYPES:
+            raise ValueError("全媒体智投行为必须是曝光或点击")
+        cls._validate_ad_behavior_payload(
+            payload,
+            cls.OMNIMEDIA_PACKAGE,
+            required_fields=(("bhv", "行为"), ("time", "时间")),
+        )
+
+    @classmethod
+    def _validate_single_media_payload(cls, payload: dict[str, Any]) -> None:
+        if str(payload.get("bhv", "")).strip() not in {"曝光", "点击"}:
+            raise ValueError("单媒体智投行为必须是曝光或点击")
+        cls._validate_ad_behavior_payload(
+            payload,
+            cls.SINGLE_MEDIA_PACKAGE,
+            required_fields=(("bhv", "行为"), ("time", "时间")),
+            require_frequency=False,
+        )
+
+    @classmethod
+    def _validate_ad_behavior_payload(
+        cls,
+        payload: dict[str, Any],
+        package_name: str,
+        required_fields: tuple[tuple[str, str], ...] = (
+            ("account", "账号"),
+            ("bhv", "行为"),
+            ("time", "时间"),
+        ),
+        require_frequency: bool = True,
+    ) -> None:
+        for key, label in required_fields:
+            if payload.get(key) in (None, "", []):
+                raise ValueError(f"{package_name}必须选择{label}")
+
+        if require_frequency:
+            frequency = payload.get("dayFrequency")
+            if not isinstance(frequency, dict):
+                raise ValueError(f"{package_name}天数格式不正确")
+            minimum = cls._safe_number(frequency.get("min"))
+            maximum = cls._safe_number(frequency.get("max"))
+            if maximum != "" and minimum == "":
+                raise ValueError(f"{package_name}天数不支持仅填写最大值")
+            for value in (minimum, maximum):
+                if value != "" and (not isinstance(value, int) or value < 1):
+                    raise ValueError(f"{package_name}天数必须是大于0的整数")
+            if minimum != "" and maximum != "" and minimum > maximum:
+                raise ValueError(f"{package_name}天数最小值不能大于最大值")
+
+        time_value = payload.get("time")
+        if not isinstance(time_value, dict) or time_value.get("min") not in {
+            "recent",
+            "range",
+        }:
+            raise ValueError(f"{package_name}时间格式不正确")
+        values = time_value.get("val")
+        if not isinstance(values, dict):
+            raise ValueError(f"{package_name}时间值不能为空")
+        if time_value["min"] == "recent":
+            days = cls._safe_number(values.get("days"))
+            if not isinstance(days, int) or not 1 <= days <= 366:
+                raise ValueError(f"{package_name}相对日期必须在1至366天之间")
+            return
+
+        start = str(values.get("start", "")).replace("-", "")
+        end = str(values.get("end", "")).replace("-", "")
+        if not re.fullmatch(r"\d{8}", start) or not re.fullmatch(r"\d{8}", end):
+            raise ValueError(f"{package_name}固定日期必须使用YYYYMMDD格式")
+        if start > end:
+            raise ValueError(f"{package_name}固定日期开始时间不能晚于结束时间")
+
     @staticmethod
     def _order_mapping(source: dict[str, Any], preferred_order: tuple[str, ...]) -> dict[str, Any]:
         ordered: dict[str, Any] = {}
@@ -590,9 +971,28 @@ class ConfigEngine:
             current_channel = all_values.get("channel", ["ALL"])
             channel_name = current_channel[0] if isinstance(current_channel, list) and current_channel else current_channel
             channel_name = channel_name or "ALL"
+            if package_name == self.COMMODITY_PACKAGE:
+                if isinstance(current_channel, list) and len(current_channel) != 1:
+                    raise ValueError("商品行为请选择一个渠道后再生成 JSON；行为代码因渠道而异")
+                if channel_name == "ALL":
+                    raise ValueError("商品行为请选择一个渠道后再生成 JSON；行为代码因渠道而异")
+                translated = self.bhv_translator.get(
+                    (package_name, str(channel_name), value)
+                )
+                if translated is None:
+                    raise ValueError(
+                        f"商品行为“{value}”在“{channel_name}”渠道未配置行为代码，请检查已发布的行为维表"
+                    )
+                return translated
             return self.bhv_translator.get(
                 (package_name, str(channel_name), value),
                 self.bhv_translator.get((package_name, "ALL", value), value),
+            )
+        if key in {"onebp_scene", "ppob_scene"}:
+            behavior_name = str(all_values.get("bhv", "")).strip()
+            return self.scene_translator.get(
+                (package_name, behavior_name, value),
+                value,
             )
         return self.dim_translator.get((package_name, value), self.id_translator.get(value, value))
 

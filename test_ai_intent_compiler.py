@@ -12,6 +12,7 @@ from cdp_backend.business_date import business_today, latest_selectable_date  # 
 
 CATEGORY = "美容护肤/美体/精油>乳液/面霜"
 DIOR_LIP_CATEGORY = "彩妆/香水/美妆工具>唇部彩妆>唇彩/唇蜜/唇釉/唇泥/唇霜"
+LIPSTICK_CATEGORY = "彩妆/香水/美妆工具>唇部彩妆>唇膏/口红"
 
 
 class AiIntentCompilerApiTests(unittest.TestCase):
@@ -806,7 +807,9 @@ class AiIntentCompilerApiTests(unittest.TestCase):
         self.assertEqual(category_questions[0]["maxSelectionsPerNode"], 10)
         self.assertTrue(category_questions[0]["autoSplitOverflow"])
         self.assertEqual(len(category_questions[0]["optionGroups"]), 3)
-        self.assertIn("自动拆成多个组件", category_questions[0]["reason"])
+        self.assertIn("全店二级类目销售额降序取前10项", category_questions[0]["reason"])
+        self.assertIn("自行指定超过10项", category_questions[0]["reason"])
+        self.assertNotIn("总数不限", category_questions[0]["prompt"])
 
     def test_brand_core_category_recognizes_this_brand_node_wording(self):
         response = self.compile(
@@ -898,6 +901,293 @@ class AiIntentCompilerApiTests(unittest.TestCase):
         question = next(item for item in data["questions"] if item["field"] == "leafCates")
         self.assertEqual(question["action"]["type"], "search_options")
         self.assertEqual(data["nodes"], [])
+
+    def test_brand_zone_intent_compiles_scalar_account_and_behavior(self):
+        response = self.compile(
+            {
+                "component": "品牌专区",
+                "adAccount": "dior迪奥官方旗舰店",
+                "behaviors": ["点击过广告"],
+                "behaviorDays": {"min": 180, "max": None},
+                "recentDays": 180,
+            },
+            "迪奥广告点击人群",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(len(data["nodes"]), 1)
+        node = data["nodes"][0]
+        self.assertEqual(node["packageType"], "品牌专区")
+        self.assertEqual(node["formData"]["account"], "dior迪奥官方旗舰店")
+        self.assertEqual(node["formData"]["bhv"], "点击过广告")
+        self.assertEqual(node["modeData"]["dayFrequency"], "min")
+        self.assertEqual(node["modeData"]["time"], "recent")
+        self.assertEqual(
+            data["generated"]["list"][0],
+            {
+                "selectionLv1": ["FIELD", "AD"],
+                "selectionLv3": {
+                    "contType": "bhv",
+                    "account": "2207959261164#|#2207959261164",
+                    "dayFrequency": {"op": "OPEN_CLOSE", "min": 180},
+                    "bhv": "15300#|#CLICK_AD",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+                "fromPoolId": 0,
+                "selectionLv2Name": "品牌专区",
+                "selectionLv2": ["15250#|#EB"],
+            },
+        )
+
+    def test_brand_zone_multiple_behaviors_split_into_single_choice_nodes(self):
+        response = self.compile(
+            {
+                "component": "品牌专区",
+                "behaviors": ["被广告曝光过", "点击过广告"],
+                "behaviorMatch": "any",
+                "recentDays": 30,
+            }
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(len(data["nodes"]), 2)
+        self.assertEqual(
+            [node["formData"]["bhv"] for node in data["nodes"]],
+            ["被广告曝光过", "点击过广告"],
+        )
+        self.assertEqual(data["nodes"][1]["operator"], "u")
+        self.assertEqual(data["generated"]["compute"], "(0)u(1)")
+
+    def test_effect_promotion_intent_compiles_dynamic_view_scenes(self):
+        response = self.compile(
+            {
+                "component": "效果推广",
+                "adAccount": "dior迪奥官方旗舰店",
+                "behaviors": ["观看"],
+                "adScenes": ["超级直播", "超级短视频", "短直联动"],
+                "recentDays": 180,
+            },
+            "迪奥效果推广观看人群",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        node = data["nodes"][0]
+        self.assertEqual(node["packageType"], "效果推广")
+        self.assertEqual(node["formData"]["bhv"], "观看")
+        self.assertEqual(
+            node["formData"]["onebp_scene"],
+            ["超级直播", "超级短视频", "短直联动"],
+        )
+        self.assertEqual(
+            data["generated"]["list"][0]["selectionLv3"],
+            {
+                "account": "2207959261164#|#2207959261164",
+                "bhv": "15323#|#onebp_view",
+                "onebp_scene": ["15397#|#108", "15398#|#183", "15399#|#341"],
+                "dateType": "RELATIVE_RANGE",
+                "dateValue": "180",
+                "dayFrequency": {"op": "OPEN_OPEN"},
+            },
+        )
+
+    def test_effect_promotion_click_keyword_ad_uses_confirmed_scene_id(self):
+        response = self.compile(
+            {
+                "component": "效果推广",
+                "adAccount": "dior迪奥官方旗舰店",
+                "behaviors": ["点击"],
+                "adScenes": ["关键词推广(原淘内广告/直通车)"],
+                "dateRange": ["2026-08-01", "2026-08-31"],
+            },
+            "DIOR官旗8月直通车点击",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(
+            data["generated"]["list"][0]["selectionLv3"]["onebp_scene"],
+            ["15402#|#371"],
+        )
+
+    def test_effect_promotion_requires_explicit_ad_account(self):
+        response = self.compile(
+            {
+                "component": "效果推广",
+                "behaviors": ["观看"],
+                "adScenes": ["超级直播"],
+                "recentDays": 180,
+            }
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "needs_clarification")
+        question = next(item for item in data["questions"] if item["field"] == "adAccount")
+        self.assertEqual(question["answerType"], "single_select")
+        self.assertEqual(
+            [item["label"] for item in question["options"]],
+            ["全部", "dior迪奥官方旗舰店"],
+        )
+
+    def test_omnimedia_intent_compiles_click_with_official_payload(self):
+        response = self.compile(
+            {
+                "component": "全媒体智投",
+                "behaviors": ["点击"],
+                "recentDays": 180,
+            },
+            "全媒体智投点击人群",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        node = data["nodes"][0]
+        self.assertEqual(node["packageType"], "全媒体智投")
+        self.assertEqual(node["formData"]["bhv"], "点击")
+        self.assertEqual(node["modeData"]["dayFrequency"], "unlimited")
+        self.assertEqual(node["modeData"]["time"], "recent")
+        self.assertEqual(
+            data["generated"]["list"][0],
+            {
+                "selectionLv1": ["FIELD", "AD"],
+                "selectionLv3": {
+                    "dayFrequency": {"op": "OPEN_OPEN"},
+                    "bhv": "19874#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "click_udzht",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+                "tipProperty": {
+                    "dateTo": "20240717",
+                    "type": 3,
+                    "dateFrom": "20240615",
+                    "content": "原UD智汇投更名为全媒体智投",
+                },
+                "fromPoolId": 1,
+                "selectionLv2Name": "全媒体智投",
+                "selectionLv2": ["19872#|#EXP_UD_ZHT_EXP_BHV"],
+            },
+        )
+
+    def test_single_media_intent_compiles_click_with_official_payload(self):
+        response = self.compile(
+            {
+                "component": "单媒体智投",
+                "behaviors": ["点击"],
+                "recentDays": 180,
+            },
+            "单媒体智投点击人群",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        node = data["nodes"][0]
+        self.assertEqual(node["packageType"], "单媒体智投")
+        self.assertEqual(node["formData"]["bhv"], "点击")
+        self.assertEqual(node["modeData"]["time"], "recent")
+        self.assertEqual(
+            data["generated"]["list"][0],
+            {
+                "selectionLv1": ["FIELD", "AD"],
+                "selectionLv3": {
+                    "bhv": "19937#|#is_pv_uddmt",
+                    "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
+                },
+                "tipProperty": {
+                    "dateTo": "20990129",
+                    "type": 3,
+                    "dateFrom": "20250814",
+                },
+                "fromPoolId": 1,
+                "selectionLv2Name": "单媒体智投",
+                "selectionLv2": ["19936#|#cate_9195"],
+            },
+        )
+
+    def test_t2_title_keywords_split_into_four_union_nodes(self):
+        keywords = [
+            "所有女生", "曹米娅", "k姐", "心愿", "吉杰", "李好", "king", "曹颖", "达人专属", "主播甄选",
+            "蜜蜂", "香菇", "陈洁", "交个朋友", "禧物社", "胡可", "莉贝琳", "晁然", "林依轮", "代王",
+            "蜂狂", "烈儿", "香菇618", "呼呼美呼", "胡兵", "明道", "小小玉米", "国际名模-丹妮", "丹妮", "魔妆倩",
+            "sisy莉贝琳", "大物是也",
+        ]
+        response = self.compile(
+            {
+                "component": "类目公域行为",
+                "behaviors": ["购买"],
+                "categories": [LIPSTICK_CATEGORY],
+                "channels": ["天猫"],
+                "titleKeywords": keywords,
+                "dateRange": ["2026-08-01", "2026-08-31"],
+            },
+            "T2直播间口红购买",
+        )
+        data = response.get_json()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(len(data["nodes"]), 4)
+        self.assertEqual(data["generated"]["compute"], "(0)u(1)u(2)u(3)")
+        self.assertEqual([node["operator"] for node in data["nodes"]], [None, "u", "u", "u"])
+        self.assertEqual(
+            [node["formData"]["title"] for node in data["nodes"]],
+            [keywords[:10], keywords[10:20], keywords[20:30], keywords[30:]],
+        )
+        for node in data["generated"]["list"]:
+            self.assertEqual(node["selectionLv3"]["leafCates"], ["50010808#|#50010808"])
+            self.assertEqual(node["selectionLv3"]["dateValue"], {"from": "20260801", "to": "20260831"})
+            self.assertEqual(node["selectionLv3"]["extraFilters"]["channel"], ["16772#|#4"])
+
+    def test_overflow_titles_and_all_behaviors_refuse_ambiguous_grouping(self):
+        response = self.compile(
+            {
+                "component": "类目公域行为",
+                "behaviors": ["浏览", "购买"],
+                "behaviorMatch": "all",
+                "categories": [LIPSTICK_CATEGORY],
+                "titleKeywords": [str(index) for index in range(11)],
+                "recentDays": 30,
+            }
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("无法无歧义表达分组关系", response.get_json()["message"])
+
+    def test_brand_promotion_special_show_matches_workbook_source(self):
+        response = self.compile(
+            {
+                "component": "品牌推广",
+                "behaviors": ["曝光"],
+                "adScenes": ["淘内展示营销-品牌特秀（原品牌特秀）"],
+                "dateRange": ["2026-08-01", "2026-08-31"],
+            },
+            "DIOR特秀曝光",
+        )
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["status"], "ready")
+        self.assertEqual(data["nodes"][0]["packageType"], "品牌推广")
+        self.assertEqual(
+            data["generated"]["list"][0]["selectionLv3"],
+            {
+                "cate": "ALL",
+                "bhv": "15318#|#exp_pptg",
+                "ppob_scene": ["15365#|#49"],
+                "dateType": "ABSOLUTE_DATE_RANGE",
+                "dateValue": {"from": "20260801", "to": "20260831"},
+                "dayFrequency": {"op": "OPEN_OPEN"},
+            },
+        )
 
     def test_invalid_intermediate_contract_returns_400(self):
         response = self.client.post(

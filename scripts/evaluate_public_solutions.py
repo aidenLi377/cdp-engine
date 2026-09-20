@@ -562,7 +562,7 @@ def evaluate_result(solution: dict[str, Any], expected_nodes: list[dict[str, Any
     hit = matched.get("id") == solution.get("id") or matched.get("name") == solution.get("name")
     ready = plan.get("status") == "ready"
     shape_ok = shape(actual_nodes) == shape(expected_nodes)
-    fixed_ok, fixed_issues = fixed_fields_match(solution.get("nodes") or [], actual_nodes, solution)
+    fixed_ok, fixed_issues = fixed_fields_match(expected_nodes, actual_nodes, solution)
     binding_ok, binding_issues = bindings_match(solution, expected_nodes, actual_nodes)
     usable, usability_issues = json_usability(generated, len(expected_nodes))
     expected_normalized = normalized_generated(expected_json)
@@ -640,7 +640,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
         )
     else:
         lines.append(
-            "- 当前最主要问题不是 JSON 序列化，而是没有说出方案名称时的语义匹配不稳定；未命中后模型会自行重建相似节点，可能丢失模板中的固定渠道、交换时间或类目角色。"
+            "- 请以逐条差异定位失败原因；可能是模型语义、业务规则变更或历史模板基线过期，不能把所有未通过都归因于方案漏匹配。"
         )
     lines.extend(
         [
@@ -745,6 +745,11 @@ def main() -> None:
         solution = by_name[name]
         spec = SPECS[name]
         expected_nodes = apply_custom_fields(solution, spec["fields"])
+        if name == "流出人群分析":
+            # The saved public example carried an unrequested ¥100 item-price
+            # threshold. The confirmed business rule removes that restriction.
+            for node in expected_nodes:
+                (node.get("formData") or {})["itemprice"] = {"min": None, "max": None}
         try:
             expected_json = generate_expected(service, expected_nodes, str(solution.get("defaultCrowdName") or name))
             baseline_error = None

@@ -214,6 +214,21 @@ test('isWorkbenchStructureLocked only locks workbench structure for active publi
   assert.equal(isWorkbenchStructureLocked({ id: 'pub-1', status: 'published' }), true)
 })
 
+test('serializeNodesForSolution persists operation pool metadata', () => {
+  const [node] = serializeNodesForSolution([{
+    id: 'node-1',
+    packageType: 'category',
+    operator: null,
+    poolId: 'pool-shared',
+    poolOperator: 'u',
+    formData: {},
+    modeData: {},
+  }])
+
+  assert.equal(node.poolId, 'pool-shared')
+  assert.equal(node.poolOperator, 'u')
+})
+
 test('serializeNodesForSolution folds single class product IDs back to the persisted scalar shape', () => {
   const [node] = serializeNodesForSolution([{
     id: 'node-item',

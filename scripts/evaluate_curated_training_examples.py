@@ -92,6 +92,8 @@ def case_specs(example: dict[str, Any]) -> list[dict[str, Any]]:
                 "variant": f"动态周期{index}",
                 "utterance": str(item["utterance"]),
                 "period": str(item.get("period") or "") or None,
+                "followUp": str(item.get("clarificationFollowUp") or "").strip()
+                or None,
             }
         )
     return cases
@@ -120,7 +122,40 @@ def evaluate_case(
     expected = service.compiler.compile(intent)
     expected_generated = expected.get("generated") or {}
     started = time.perf_counter()
-    result = service.chat({"message": case["utterance"], "history": []})
+    initial_result = service.chat({"message": case["utterance"], "history": []})
+    result = initial_result
+    initial_plan = initial_result.get("plan") or {}
+    follow_up = str(case.get("followUp") or "").strip()
+    clarification_handled = True
+    turn_count = 1
+    if follow_up:
+        questions = initial_plan.get("questions") or []
+        clarification_handled = (
+            initial_plan.get("status") == "needs_clarification"
+            and any(
+                str(question.get("field") or "") == "behaviors"
+                or "行为" in str(question.get("prompt") or "")
+                for question in questions
+                if isinstance(question, dict)
+            )
+        )
+        result = service.chat(
+            {
+                "message": follow_up,
+                "history": [
+                    {"role": "user", "content": case["utterance"]},
+                    {
+                        "role": "assistant",
+                        "content": str(initial_result.get("reply") or ""),
+                    },
+                ],
+                "currentIntent": initial_result.get("intent"),
+                "currentWorkflow": initial_result.get("workflow"),
+                "currentOperation": initial_result.get("operation"),
+                "pendingQuestions": questions,
+            }
+        )
+        turn_count = 2
     elapsed = round(time.perf_counter() - started, 2)
     plan = result.get("plan") or {}
     actual_generated = plan.get("generated") or {}
@@ -141,14 +176,19 @@ def evaluate_case(
         "generatedMatchesExpected": semantic_package(actual_generated)
         == semantic_package(expected_generated),
         "sourcePackageMatchesCompiler": source_package_matches,
-        "notMisclassifiedAsPublicSolution": not bool(result.get("matchedSolution")),
+        "notMisclassifiedAsPublicSolution": not bool(plan.get("matchedSolution")),
+        "clarificationHandled": clarification_handled,
     }
     return {
         "exampleId": example.get("id"),
         "variant": case["variant"],
         "utterance": case["utterance"],
         "period": case.get("period"),
+        "followUp": follow_up or None,
+        "turnCount": turn_count,
         "elapsedSeconds": elapsed,
+        "initialStatus": initial_plan.get("status"),
+        "initialReply": initial_result.get("reply"),
         "status": plan.get("status"),
         "reply": result.get("reply"),
         "checks": checks,
@@ -171,15 +211,15 @@ def markdown_report(payload: dict[str, Any]) -> str:
         f"- 训练样本：{payload['exampleCount']} 个；自然语言：{len(runs)} 条",
         f"- 全项通过：{passed}/{len(runs)}",
         "",
-        "| # | 表达 | 耗时 | 可执行 | 节点一致 | JSON一致 | 源包可复现 | 未误命中方案 | 结果 |",
-        "|---:|---|---:|:---:|:---:|:---:|:---:|:---:|:---:|",
+        "| # | 表达 | 轮次 | 耗时 | 追问正确 | 可执行 | 节点一致 | JSON一致 | 源包可复现 | 未误命中方案 | 结果 |",
+        "|---:|---|---:|---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|",
     ]
     mark = lambda value: "✓" if value else "✗"
     for index, row in enumerate(runs, start=1):
         checks = row["checks"]
         lines.append(
-            f"| {index} | {row['variant']} | {row['elapsedSeconds']:.2f}s | "
-            f"{mark(checks['ready'])} | {mark(checks['nodeSemantics'])} | "
+            f"| {index} | {row['variant']} | {row.get('turnCount', 1)} | {row['elapsedSeconds']:.2f}s | "
+            f"{mark(checks['clarificationHandled'])} | {mark(checks['ready'])} | {mark(checks['nodeSemantics'])} | "
             f"{mark(checks['generatedMatchesExpected'])} | "
             f"{mark(checks['sourcePackageMatchesCompiler'])} | "
             f"{mark(checks['notMisclassifiedAsPublicSolution'])} | "
@@ -192,6 +232,10 @@ def markdown_report(payload: dict[str, Any]) -> str:
                 f"### {index}. {row['variant']} · {'通过' if row['passed'] else '失败'}",
                 "",
                 f"- 自然语言：{row['utterance']}",
+                f"- 对话轮次：{row.get('turnCount', 1)}",
+                f"- 第一轮状态：{row.get('initialStatus')}",
+                f"- 第一轮回复：{row.get('initialReply') or ''}",
+                f"- 用户补充：{row.get('followUp') or '无'}",
                 f"- 解析状态：{row.get('status')}",
                 f"- AI回复：{row.get('reply') or ''}",
                 f"- 检查结果：{json.dumps(row['checks'], ensure_ascii=False)}",

@@ -53,6 +53,24 @@ test('published solution header uses an accessible refresh icon instead of butto
   assert.doesNotMatch(normalModeVue, />\s*刷新\s*<\/el-button>/)
 })
 
+test('package library presents behavior components in named sections', () => {
+  assert.match(normalModeVue, />行为组件分区<\/div>/)
+  assert.match(normalModeVue, /v-for="group in groupedPackages"/)
+  assert.match(normalModeVue, /class="behavior-component-group-title"/)
+  assert.match(normalModeVue, /groupBehaviorComponents\(regularPackages\)/)
+  assert.match(css, /\.behavior-component-group-title \{/)
+})
+
+test('package library keeps user favorites quiet, persistent, and first', () => {
+  assert.match(normalModeVue, /name: '我的常用'/)
+  assert.match(normalModeVue, /loadFavoriteBehaviorComponents\(props\.sessionOwnerId\)/)
+  assert.match(normalModeVue, /saveFavoriteBehaviorComponents/)
+  assert.match(normalModeVue, /@click\.stop="toggleFavoritePackage\(pkg\)"/)
+  assert.match(normalModeVue, /:aria-pressed="isFavoritePackage\(pkg\)"/)
+  assert.match(normalModeVue, /<StarFilled v-if="isFavoritePackage\(pkg\)" \/>/)
+  assert.match(css, /\.behavior-component-favorite \{[\s\S]*?opacity: 0\.18;/)
+})
+
 test('workbench refresh force-fetches the active solution library without stale requests winning', () => {
   assert.match(normalModeVue, /publishedSolutionsAbort\?\.abort\(\)/)
   assert.match(normalModeVue, /const scope = publishedLibraryScope\.value/)
@@ -117,11 +135,11 @@ test('left panel has a lightweight border toggle for switching to solutions', ()
 })
 
 test('workbench node labels use shared display names instead of hardcoded node indexes', () => {
-  assert.match(normalModeVue, /getNodeDisplayName\(node, index\)/)
+  assert.match(normalModeVue, /getNodeDisplayName\(entry\.node, entry\.index\)/)
   assert.match(normalModeVue, /getNodeDisplayName/)
   assert.match(
     normalModeVue,
-    /class="summary-node-head"[\s\S]*?getNodeSummaryDisplayName\(node, index\)/,
+    /class="summary-node-head"[\s\S]*?getNodeSummaryDisplayName\(entry\.node, entry\.index\)/,
   )
   assert.doesNotMatch(normalModeVue, /节点 \{\{ index \+ 1 \}\}/)
 })
@@ -138,5 +156,5 @@ test('applying a solution no longer disables package search or component inserti
 })
 
 test('workbench delete icon keeps its direct click behavior', () => {
-  assert.match(normalModeVue, /class="behavior-card-icon-btn danger"[\s\S]*?@click\.stop="removeNode\(index\)"/)
+  assert.match(normalModeVue, /class="behavior-card-icon-btn danger"[\s\S]*?@click\.stop="removeNode\(entry\.index\)"/)
 })

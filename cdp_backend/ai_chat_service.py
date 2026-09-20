@@ -67,6 +67,8 @@ TIME_REQUIRED_COMPONENTS = {
     "类目公域行为",
     "类目商品行为",
     "商品行为",
+    "品牌专区",
+    "效果推广",
     "关键词搜索",
 }
 
@@ -135,6 +137,22 @@ class AiChatService:
                 "status": "collecting",
                 "reply": self._intent_elaboration_reply(message),
                 "intent": None,
+                "plan": None,
+                "workflow": current_workflow or requested_workflow,
+                "operation": None,
+            }
+        campaign_mapping = self.solution_knowledge.find_campaign_audience_mapping(message)
+        explicit_years = {int(year) for year in re.findall(r"(?<!\d)(20\d{2})年?(?!\d)", message)}
+        if (
+            campaign_mapping is not None
+            and explicit_years
+            and explicit_years != {int(campaign_mapping.get("year") or 0)}
+            and not re.search(r"20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}", message)
+        ):
+            return {
+                "status": "collecting",
+                "reply": f"目前只有2025年D11的蓄水期和活动期规则。{next(iter(explicit_years))}年的日期尚未配置，请告诉我该年度两个阶段的起止日期，或明确改用2025年样本。",
+                "intent": current_intent_copy,
                 "plan": None,
                 "workflow": current_workflow or requested_workflow,
                 "operation": None,
@@ -247,8 +265,23 @@ class AiChatService:
             "currentDate": business_today().isoformat(),
             "latestSelectableDate": latest_selectable_date().isoformat(),
         }
-        interpreted = self.model_client.interpret(system_prompt, model_context)
+        try:
+            interpreted = self.model_client.interpret(system_prompt, model_context)
+        except AiResponseError:
+            # Flash can occasionally return an empty/non-JSON body even though
+            # the HTTP request succeeded.  Retry once with an explicit repair
+            # instruction so a transient formatting miss does not surface as a
+            # broken conversation.  Semantic validation still happens below.
+            repair_prompt = (
+                f"{system_prompt}\n\n"
+                "格式纠错重试：上一次输出不是有效JSON。只返回符合既定JSON结构的"
+                "assistantMessage、intent、operation，不要输出Markdown或解释文字。"
+            )
+            interpreted = self.model_client.interpret(repair_prompt, model_context)
         intent = self._normalize_model_intent(interpreted.get("intent"))
+        intent, campaign_mapping = self._ground_campaign_audience_intent(
+            intent, message
+        )
         matched_solution = self._match_public_solution(intent, message)
         if intent is None and matched_solution is not None:
             # A complete public-solution request must not be dropped merely
@@ -268,7 +301,33 @@ class AiChatService:
                 interpreted = recovered
                 intent = recovered_intent
                 matched_solution = self._match_public_solution(intent, message)
-        if matched_solution is not None:
+        curated_recovery = None
+        if intent is None and matched_solution is None:
+            curated_recovery = self.solution_knowledge.find_exact_curated_example(
+                message
+            )
+            example = (curated_recovery or {}).get("example") or {}
+            recovered_intent = copy.deepcopy(example.get("canonicalIntent"))
+            if isinstance(recovered_intent, dict):
+                period = (curated_recovery or {}).get("period")
+                if period:
+                    start, end = resolve_business_period(str(period))
+                    for condition in recovered_intent.get("conditions") or []:
+                        if not isinstance(condition, dict):
+                            continue
+                        condition["dateRange"] = [
+                            start.isoformat(),
+                            end.isoformat(),
+                        ]
+                        condition.pop("recentDays", None)
+                intent = recovered_intent
+                interpreted = {
+                    **interpreted,
+                    "assistantMessage": "已按确认过的业务样本恢复结构化圈包意图，请核对条件。",
+                }
+        if campaign_mapping is not None:
+            pass
+        elif matched_solution is not None:
             intent = self._ground_public_solution_intent(
                 intent,
                 matched_solution,
@@ -282,11 +341,26 @@ class AiChatService:
                 previous_intent=current_intent_copy,
                 message=message,
             )
+        intent = self._ground_shared_month_intent(intent, message)
+        intent = self._ground_store_browse_purchase_intent(intent, message)
         intent = self._ground_live_category_intent(intent, message)
+        intent, business_term_mapping = self._ground_business_term_intent(intent, message)
+        intent, ad_touchpoint_mapping = self._ground_ad_touchpoint_intent(intent, message)
         intent = self._ground_official_store_intent(intent, message)
         intent = self._ground_channel_aggregate_intent(intent, message)
         intent = self._normalize_model_intent(intent, message)
         assistant_message = str(interpreted.get("assistantMessage") or "").strip()
+        if business_term_mapping is not None:
+            assistant_message = "已按对应的商品标题关键词组生成圈包方案，请确认条件。"
+        elif ad_touchpoint_mapping is not None:
+            assistant_message = "已按对应的广告触点和行为生成圈包方案，请确认条件。"
+        elif campaign_mapping is not None:
+            assistant_message = f"已按{campaign_mapping.get('year')}年D11样本的阶段日期和AIPL互斥规则生成方案；请先核对年份和日期，再应用到工作台。"
+        elif matched_solution is not None:
+            assistant_message = (
+                f"已按《{matched_solution.get('name')}》的圈包结构生成方案。"
+                "请核对时间、类目和交并差关系，确认后再应用到工作台。"
+            )
         incoming_operation = self._normalize_operation(interpreted.get("operation"))
         effective_workflow = current_workflow or requested_workflow
         if effective_workflow.get("id") != DMP_WORKFLOW_ID and current_operation is None:
@@ -378,6 +452,12 @@ class AiChatService:
                 "name": matched_solution.get("name"),
                 "version": matched_solution.get("version"),
             }
+        category_scope_note = self._brand_category_scope_note(intent, message)
+        if category_scope_note:
+            warnings = [str(item) for item in (plan.get("warnings") or []) if str(item)]
+            if category_scope_note not in warnings:
+                warnings.append(category_scope_note)
+            plan["warnings"] = warnings
         if plan["status"] == "needs_clarification" and plan.get("questions"):
             # Ask for one business parameter at a time. Rendering every pending
             # question at once allowed users to confirm a later parameter while
@@ -396,6 +476,52 @@ class AiChatService:
             "workflow": selected_workflow,
             "operation": None,
         }
+
+    def _brand_category_scope_note(
+        self, intent: dict[str, Any], message: str = ""
+    ) -> str | None:
+        """Explain a sales-ranked broad makeup or skincare scope."""
+
+        conditions = [
+            item
+            for item in (intent.get("conditions") or [])
+            if isinstance(item, dict)
+        ]
+        primary_brand = self._solution_primary_brand(conditions, message)
+        if not primary_brand:
+            return None
+        profile = self.solution_knowledge.find_brand_core_profile(
+            primary_brand, require_fully_mapped=False
+        )
+        store_name = str((profile or {}).get("storeName") or primary_brand).strip()
+        group_roots = {
+            "彩妆": "彩妆/香水/美妆工具",
+            "护肤": "美容护肤/美体/精油",
+        }
+        for group_name, first_level in group_roots.items():
+            categories = self.solution_knowledge.brand_category_group_top_categories(
+                primary_brand, group_name
+            )
+            if not categories:
+                continue
+            category_set = set(categories)
+            uses_ranked_scope = any(
+                set(self._clean_string_list(condition.get("categories"))) == category_set
+                for condition in conditions
+            )
+            if not uses_ranked_scope:
+                continue
+            if len(categories) < 10:
+                return (
+                    f"{store_name}的销售趋势表中，“{group_name}”口径对应一级类目“{first_level}”，"
+                    f"其中只有{len(categories)}个有销售额的二级类目，本次已全部使用；"
+                    "这是先限定一级类目再按销售额排序的结果，并非从全店TOP10中筛选。"
+                )
+            return (
+                f"{store_name}的“{group_name}”范围已先限定一级类目“{first_level}”，"
+                "再按二级类目销售额降序取前10项；它与全店品牌核心类目TOP10是两个独立集合。"
+            )
+        return None
 
     def _missing_generic_time_question(
         self,
@@ -875,12 +1001,23 @@ class AiChatService:
     def _intent_elaboration_reply(message: str) -> str:
         compact = re.sub(r"\s+", "", str(message or ""))
         if "新人" in compact or "新客" in compact or "拉新" in compact:
+            if "彩妆" in compact:
+                return (
+                    "已识别到彩妆范围：系统会先限定该品牌的彩妆二级类目，再按销售额取前10项，"
+                    "不用你逐个选类目。还需要确认你说的是品类新客、转牌新客还是其他新客，"
+                    "以及统计时间和对比时间。比如：“Dior彩妆品类新客，近一年对比前一年”。"
+                )
             return (
                 "我知道你想看新人或新客，但还不能确定是哪一种口径。请说明是品类新客、"
                 "转牌新客还是其他新客，并补充分析类目和时间。比如："
                 "“看兰蔻乳液/面霜的品类新客，近半年对比前半年”。"
             )
         if "老客" in compact or "复购" in compact:
+            if "彩妆" in compact:
+                return (
+                    "已识别到彩妆范围：系统会先限定该品牌的彩妆二级类目，再按销售额取前10项。"
+                    "请确认是品类老客还是品牌老客，并补充时间；无需再手动选择彩妆类目。"
+                )
             return (
                 "你说的“老客”还需要明确口径：是品类老客，还是品牌老客？"
                 "如果是品类老客，再告诉我目标类目；时间也请补充，例如“近半年”。"
@@ -1048,8 +1185,8 @@ class AiChatService:
         compact = re.sub(r"\s+", "", str(message or ""))
         return bool(
             re.search(
-                r"购买|买过|买了|下单|成交|浏览|看过|访问|收藏|加购|购物车|"
-                r"预售|退款|退货|评论|搜索",
+                r"购买|买过|买了|下单|成交|消费者|浏览|看过|访问|收藏|加购|购物车|"
+                r"预售|预购|退款|退过款|退货|评论|搜索",
                 compact,
                 re.IGNORECASE,
             )
@@ -1109,6 +1246,148 @@ class AiChatService:
         return grounded
 
     @staticmethod
+    def _ground_shared_month_intent(intent: object, message: str) -> object:
+        """A single named month applies to every behavior in that request."""
+
+        if not isinstance(intent, dict) or re.search(
+            r"近一年|前一年|去年|上月|近\d+天|前\d+天|YTD|MTD", message, re.IGNORECASE
+        ):
+            return intent
+        if AiChatService._message_explicit_date_ranges(message):
+            return intent
+        month_matches = re.findall(r"(?:(20\d{2})年)?(1[0-2]|0?[1-9])月份?", message)
+        if len(month_matches) != 1:
+            return intent
+        year_text, month_text = month_matches[0]
+        month = int(month_text)
+        latest = latest_selectable_date()
+        # “8月……按2025年” also specifies the year for this one named month.
+        standalone_years = set(re.findall(r"(?<!\d)((?:19|20)\d{2})年", message))
+        if not year_text and len(standalone_years) == 1:
+            year_text = next(iter(standalone_years))
+        year = int(year_text) if year_text else latest.year - (month > latest.month)
+        start = date(year, month, 1)
+        following = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+        end = min(following - timedelta(days=1), latest)
+        week_match = re.search(r"第\s*([1-5一二三四五])\s*周", message)
+        if week_match:
+            week_number = {
+                "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+            }.get(week_match.group(1), int(week_match.group(1)) if week_match.group(1).isdigit() else 0)
+            start += timedelta(days=(week_number - 1) * 7)
+            end = min(start + timedelta(days=6), end)
+        if end < start:
+            return intent
+        normalized = copy.deepcopy(intent)
+        for condition in normalized.get("conditions") or []:
+            if isinstance(condition, dict):
+                condition.pop("recentDays", None)
+                condition["dateRange"] = [start.isoformat(), end.isoformat()]
+        return normalized
+
+    def _ground_store_browse_purchase_intent(
+        self, intent: object, message: str
+    ) -> object:
+        """Preserve the three distinct purchase scopes after official-store browsing."""
+
+        compact = re.sub(r"\s+", "", message)
+        if not re.search(r"官旗|官方旗舰店", compact) or not re.search(
+            r"浏览|看过", compact
+        ):
+            return intent
+        brand = self._infer_official_store_brand(message)
+        if not brand:
+            return intent
+        monthly = self._ground_shared_month_intent(
+            {"conditions": [{}]}, message
+        )
+        if not isinstance(monthly, dict):
+            return intent
+        date_range = monthly["conditions"][0].get("dateRange")
+        if not date_range:
+            return intent
+
+        store_view = {
+            "id": "official_store_view",
+            "component": "商品行为",
+            "scope": "own_store",
+            "brand": brand,
+            "channels": ["天猫"],
+            "behaviors": ["浏览"],
+            "dateRange": copy.deepcopy(date_range),
+        }
+        conditions: list[dict[str, Any]]
+        if re.search(r"浏览.*(?:且|并且|和).*购买.*官旗", compact) and not re.search(
+            r"未购|没买|未买", compact
+        ):
+            conditions = [
+                store_view,
+                {
+                    **copy.deepcopy(store_view),
+                    "id": "official_store_purchase",
+                    "relation": "intersect",
+                    "behaviors": ["购买"],
+                },
+            ]
+        elif re.search(r"浏览.*(?:未购|没买|未买)官旗.*购买天猫国际", compact):
+            conditions = [
+                store_view,
+                {
+                    **copy.deepcopy(store_view),
+                    "id": "exclude_official_store_purchase",
+                    "relation": "exclude",
+                    "behaviors": ["购买"],
+                },
+                {
+                    "id": "international_purchase",
+                    "relation": "intersect",
+                    "component": "商品行为",
+                    "scope": "own_brand",
+                    "brand": brand,
+                    "channels": ["天猫国际"],
+                    "behaviors": ["购买"],
+                    "dateRange": copy.deepcopy(date_range),
+                },
+            ]
+        elif re.search(
+            r"浏览.*(?:未购|没买|未买)品牌(?:任意渠道|所有销售渠道).*购买竞品", compact
+        ):
+            conditions = [
+                store_view,
+                {
+                    "id": "exclude_brand_any_channel_purchase",
+                    "relation": "exclude",
+                    "component": "商品行为",
+                    "scope": "own_brand",
+                    "brand": brand,
+                    "channels": ["所有销售渠道"],
+                    "behaviors": ["购买"],
+                    "dateRange": copy.deepcopy(date_range),
+                },
+                {
+                    "id": "competitor_category_purchase",
+                    "relation": "intersect",
+                    "component": "类目公域行为",
+                    "behaviors": ["购买"],
+                    "categories": self.solution_knowledge.brand_category_group_top_categories(
+                        brand, "彩妆"
+                    ) if "彩妆" in compact else [],
+                    "channels": ["天猫"],
+                    "dateRange": copy.deepcopy(date_range),
+                },
+            ]
+        else:
+            return intent
+        grounded = copy.deepcopy(intent) if isinstance(intent, dict) else {}
+        grounded["schemaVersion"] = 1
+        grounded["audienceName"] = str(
+            grounded.get("audienceName") or message
+        ).strip()
+        grounded.pop("solutionId", None)
+        grounded["conditions"] = conditions
+        return grounded
+
+    @staticmethod
     def _message_mentions_comparison_time(message: str) -> bool:
         compact = re.sub(r"\s+", "", str(message or ""))
         if re.search(
@@ -1144,7 +1423,7 @@ class AiChatService:
             r"(?P<start_day>\d{1,2})日?"
             r"(?:到|至|~|～|—|–|-)"
             r"(?:(?P<end_year>(?:19|20)\d{2})(?:[-/.]|年))?"
-            r"(?P<end_month>\d{1,2})(?:[-/.]|月)"
+            r"(?:(?P<end_month>\d{1,2})(?:[-/.]|月))?"
             r"(?P<end_day>\d{1,2})日?"
         )
         ranges: list[dict[str, object]] = []
@@ -1160,6 +1439,12 @@ class AiChatService:
                 start_year = business_today().year + year_offset
             end_year_text = match.group("end_year")
             end_year = int(end_year_text) if end_year_text else start_year
+            end_month_text = match.group("end_month")
+            end_month = (
+                int(end_month_text)
+                if end_month_text
+                else int(match.group("start_month"))
+            )
             try:
                 start = date(
                     start_year,
@@ -1168,13 +1453,13 @@ class AiChatService:
                 )
                 end = date(
                     end_year,
-                    int(match.group("end_month")),
+                    end_month,
                     int(match.group("end_day")),
                 )
                 if end < start and not end_year_text:
                     end = date(
                         end_year + 1,
-                        int(match.group("end_month")),
+                        end_month,
                         int(match.group("end_day")),
                     )
             except ValueError:
@@ -1200,6 +1485,34 @@ class AiChatService:
         ranges = cls._message_explicit_date_ranges(message)
         normalized_name = str(parameter_name or "").replace("周期", "时间")
         if not ranges:
+            compact = re.sub(r"\s+", "", str(message or ""))
+            if (
+                time_parameter_count >= 2
+                and re.search(
+                    r"(?:完整|自然|整)半年(?:VS|对比|比较|环比)前半年",
+                    compact,
+                    re.IGNORECASE,
+                )
+            ):
+                latest_date = latest_selectable_date()
+                if latest_date.month >= 7:
+                    statistic_start = date(latest_date.year, 1, 1)
+                    statistic_end = date(latest_date.year, 6, 30)
+                else:
+                    statistic_start = date(latest_date.year - 1, 7, 1)
+                    statistic_end = date(latest_date.year - 1, 12, 31)
+                if statistic_start.month == 1:
+                    comparison_start = date(statistic_start.year - 1, 7, 1)
+                    comparison_end = date(statistic_start.year - 1, 12, 31)
+                else:
+                    comparison_start = date(statistic_start.year, 1, 1)
+                    comparison_end = date(statistic_start.year, 6, 30)
+                selected = (
+                    [comparison_start.isoformat(), comparison_end.isoformat()]
+                    if "对比时间" in normalized_name
+                    else [statistic_start.isoformat(), statistic_end.isoformat()]
+                )
+                return {"dateRange": selected}
             adjacent_days = cls._comparison_period_days(message)
             if adjacent_days is None or time_parameter_count < 2:
                 return None
@@ -1455,6 +1768,114 @@ class AiChatService:
                 condition["categories"] = [inferred]
         return normalized
 
+    def _ground_business_term_intent(
+        self, intent: object, message: str
+    ) -> tuple[object, dict[str, Any] | None]:
+        """Expand a verified host shorthand into exact product-title filters."""
+
+        if not isinstance(intent, dict):
+            return intent, None
+        if re.search(r"首页.{0,6}(?:搜|搜索)|关键词搜索", message):
+            return intent, None
+        if (
+            re.search(r"看过|观看", message)
+            and "直播" in message
+            and not re.search(r"商品|口红|唇|购买|买过|下单|成交|商品浏览", message)
+        ):
+            # A real livestream-viewing request must not silently become a
+            # product-title proxy merely because it names the same host.
+            return intent, None
+        mapping = self.solution_knowledge.find_business_term_mapping(message)
+        if mapping is None or not re.search(
+            r"购买|买过|买了|成交|浏览|看过|收藏|加购|预售|退款|口红|唇|商品|圈|人群",
+            message,
+        ):
+            return intent, None
+        normalized = copy.deepcopy(intent)
+        conditions = [
+            item for item in normalized.get("conditions") or [] if isinstance(item, dict)
+        ]
+        eligible = [
+            item
+            for item in conditions
+            if item.get("component") not in {"关键词搜索", "商品行为", "类目商品行为"}
+            and not item.get("productIds")
+            and str(item.get("scope") or "") != "own_store"
+            and item.get("behaviors")
+        ]
+        if len(eligible) != 1:
+            return normalized, None
+        condition = eligible[0]
+        condition["component"] = "类目公域行为"
+        condition["titleKeywords"] = copy.deepcopy(mapping["titleKeywords"])
+        condition.pop("searchKeywords", None)
+        for product_name, category_path in (
+            mapping.get("categoryWhenMentioned") or {}
+        ).items():
+            if product_name in message and category_path in (
+                self.compiler.engine.dimensions.get("类目维表.csv") or []
+            ):
+                condition["categories"] = [category_path]
+                break
+        return normalized, mapping
+
+    def _ground_ad_touchpoint_intent(
+        self, intent: object, message: str
+    ) -> tuple[object, dict[str, Any] | None]:
+        """Resolve workbook-verified ad shorthand against live component options."""
+
+        if not isinstance(intent, dict):
+            return intent, None
+        mapping = self.solution_knowledge.find_ad_touchpoint_mapping(message)
+        if mapping is None:
+            return intent, None
+        normalized = copy.deepcopy(intent)
+        conditions = [
+            item for item in normalized.get("conditions") or [] if isinstance(item, dict)
+        ]
+        if len(conditions) != 1:
+            return normalized, None
+        condition = conditions[0]
+        component = str(mapping["component"])
+        condition["component"] = component
+        if "曝光" in message:
+            condition["behaviors"] = [
+                "被广告曝光过" if component == "品牌专区" else "曝光"
+            ]
+        elif "点击" in message:
+            condition["behaviors"] = [
+                "点击过广告" if component == "品牌专区" else "点击"
+            ]
+        elif "观看" in message:
+            condition["behaviors"] = ["观看"]
+        if mapping.get("adScenes"):
+            condition["adScenes"] = copy.deepcopy(mapping["adScenes"])
+        else:
+            condition.pop("adScenes", None)
+
+        if component in {"品牌专区", "效果推广"} and re.search(
+            r"官旗|官方旗舰店", message
+        ):
+            brand = self._infer_official_store_brand(message)
+            if brand:
+                account_field = next(
+                    (
+                        item
+                        for item in self.compiler.engine.get_package_meta(component).get("schema", [])
+                        if item.get("key") == "account"
+                    ),
+                    {},
+                )
+                brand_key = self._normalize_solution_text(brand)
+                matching_accounts = [
+                    option
+                    for option in account_field.get("options") or []
+                    if brand_key in self._normalize_solution_text(str(option))
+                ]
+                if len(matching_accounts) == 1:
+                    condition["adAccount"] = matching_accounts[0]
+        return normalized, mapping
+
     def _infer_official_store_brand(self, message: str) -> str | None:
         """Infer a configured brand only from an explicitly named official store."""
 
@@ -1536,6 +1957,11 @@ class AiChatService:
             return normalized
         brand_hint = self._infer_official_store_brand(message)
         access = self._explicit_brand_account_access(message)
+        verified_access = self.solution_knowledge.find_verified_brand_account_access(
+            brand_hint or message
+        )
+        if access is None and verified_access is not None:
+            access = True
         for condition in conditions:
             component = str(condition.get("component") or "").strip()
             if component == "关键词搜索" or not condition.get("behaviors"):
@@ -1546,6 +1972,29 @@ class AiChatService:
                 "类目商品行为",
                 "商品行为",
             }:
+                continue
+            channels = self._clean_string_list(condition.get("channels"))
+            if len(conditions) > 1 and any(
+                channel in {
+                    "所有销售渠道",
+                    "全球购",
+                    "天猫国际",
+                    "天猫国际直营",
+                    "天猫国际自营",
+                    "淘宝集市",
+                }
+                for channel in channels
+            ):
+                # A different condition may target a brand-wide or international
+                # channel even when another condition in the sentence says 官旗.
+                continue
+            if (
+                len(conditions) > 1
+                and component == "类目公域行为"
+                and not condition.get("brands")
+                and str(condition.get("scope") or "") != "own_store"
+            ):
+                # Do not turn a category-wide/competitor node into the store.
                 continue
             condition["component"] = "商品行为"
             condition["scope"] = "own_store"
@@ -1592,6 +2041,63 @@ class AiChatService:
             condition["scope"] = "own_brand"
             condition.pop("canUseBrandAccount", None)
         return normalized
+
+    def _ground_campaign_audience_intent(
+        self, intent: object, message: str
+    ) -> tuple[object, dict[str, Any] | None]:
+        """Expand a verified campaign-stage shorthand into exact AIPL nodes."""
+
+        mapping = self.solution_knowledge.find_campaign_audience_mapping(message)
+        if mapping is None:
+            return intent, None
+        explicit_years = {int(year) for year in re.findall(r"(?<!\d)(20\d{2})年?(?!\d)", message)}
+        if explicit_years and explicit_years != {int(mapping.get("year") or 0)}:
+            return intent, None
+        phase_name = next(
+            (
+                name
+                for name in (mapping.get("phases") or {})
+                if str(name) in message
+            ),
+            None,
+        )
+        compact = re.sub(r"\s+", "", str(message or "")).upper()
+        segment_match = re.search(r"(?:人群|阶段)?(PL|A|I)(?:人群|用户|客群)?$", compact)
+        segment_name = segment_match.group(1) if segment_match else None
+        phase = (mapping.get("phases") or {}).get(phase_name) if phase_name else None
+        segment_nodes = (
+            (phase.get("segments") or {}).get(segment_name)
+            if isinstance(phase, dict) and segment_name
+            else None
+        )
+        if not isinstance(segment_nodes, list) or not segment_nodes:
+            return intent, None
+
+        conditions: list[dict[str, Any]] = []
+        for index, raw_node in enumerate(segment_nodes):
+            node = raw_node if isinstance(raw_node, dict) else {}
+            condition: dict[str, Any] = {
+                "id": f"campaign_condition_{index + 1}",
+                "component": "AIPL状态",
+                "aiplStatuses": copy.deepcopy(node.get("aiplStatuses") or []),
+                "dateRange": copy.deepcopy(
+                    phase.get("baselineDateRange")
+                    if node.get("period") == "baseline"
+                    else phase.get("dateRange")
+                ),
+            }
+            relation = str(node.get("relation") or "").strip()
+            if index > 0 and relation:
+                condition["relation"] = relation
+            conditions.append(condition)
+        grounded = copy.deepcopy(intent) if isinstance(intent, dict) else {}
+        grounded["schemaVersion"] = 1
+        grounded["audienceName"] = str(
+            grounded.get("audienceName") or message or "D11人群"
+        ).strip()
+        grounded.pop("solutionId", None)
+        grounded["conditions"] = conditions
+        return grounded, mapping
 
     def _message_brand_core_categories(self, message: str) -> list[str]:
         marker = re.search(r"(?:品牌|本牌)?核心(?:类目|品类|范围)", message)
@@ -1706,8 +2212,43 @@ class AiChatService:
         message_key = self._normalize_solution_text(message)
         solutions = self.solution_knowledge.list_summaries()
         by_name = {str(item.get("name") or ""): item for item in solutions}
+        # The DB command corpus defines “品类老客” separately from “转牌新客”.
+        # Its node algebra happens to match the current transfer template, but
+        # the business label and recognition rule must remain distinct. Clone
+        # the verified structure as a trained rule instead of misreporting a
+        # public-solution hit as 转牌新客.
+        transfer_template = by_name.get("转牌新客")
+        if transfer_template is not None:
+            category_old_template = copy.deepcopy(transfer_template)
+            category_old_template.update(
+                {
+                    "id": "trained-category-old-v1",
+                    "name": "品类老客",
+                    "version": "training-20260918",
+                    "businessDefinition": (
+                        "统计期购买本品牌目标类目；对比期买过目标类目，"
+                        "但没有买过本品牌核心类目。"
+                    ),
+                }
+            )
+            by_name["品类老客"] = category_old_template
         semantic_override = None
-        if any(
+        if re.search(r"官旗.*浏览.*(?:未购|没买|未买).*品牌.*(?:任意渠道|所有销售渠道).*购买竞品", message):
+            # This is store-view minus brand-wide purchase, then category-wide
+            # competitor purchase. It is not the public "both brands viewed"
+            # solution despite the final words "购买竞品".
+            return None
+        if re.search(
+            r"前一年.*没有买过.*(?:彩妆|品类|类目).*(?:和|及|以及|或).*(?:产品|品牌).*近一年.*买",
+            message,
+        ):
+            semantic_override = "品类新客"
+        elif re.search(
+            r"前一年.*买过.*(?:彩妆|品类|类目).*但.*(?:没有买过|没买过|未买过).*(?:产品|品牌).*近一年.*买",
+            message,
+        ):
+            semantic_override = "品类老客"
+        elif any(
             signal in message_key
             for signal in ("竞品流失", "被竞品抢走", "最后买竞品", "购买竞品", "竞品成交")
         ):
@@ -1717,9 +2258,9 @@ class AiChatService:
             for signal in ("最后买本品", "购买本品", "本品成交", "最终买本品牌")
         ):
             semantic_override = "共同浏览后_购买本品"
-        elif any(signal in message_key for signal in ("流出人群", "圈流失", "用户流失", "流出分析")):
+        elif any(signal in message_key for signal in ("流出人群", "流出人数", "圈流失", "用户流失", "流出分析", "流出去", "流走")):
             semantic_override = "流出人群分析"
-        elif any(signal in message_key for signal in ("流入人群", "圈流入", "用户流入", "流入分析")):
+        elif any(signal in message_key for signal in ("流入人群", "流入人数", "圈流入", "用户流入", "流入分析", "流进来", "新流入")):
             semantic_override = "流入人群分析"
         elif (
             any(signal in message_key for signal in ("交叉购买", "品类连带分析", "类目连带分析"))
@@ -1733,11 +2274,16 @@ class AiChatService:
             semantic_override = "跨品类招新方向分析"
         elif any(signal in message_key for signal in ("转牌新客", "转牌拉新", "从别的牌子转来")):
             semantic_override = "转牌新客"
+        elif any(signal in message_key for signal in ("品类老客", "类目老客")):
+            semantic_override = "品类老客"
         elif any(signal in message_key for signal in ("品类新客", "类目新客", "品类拉新", "类目拉新")):
             semantic_override = "品类新客"
         elif any(signal in message_key for signal in ("同品类复购", "同类目复购", "复购人群", "两个周期都买过")):
             semantic_override = "同品类复购"
-        elif any(signal in message_key for signal in ("品牌老客", "品牌存量老客", "本牌老客")):
+        elif any(
+            signal in message_key
+            for signal in ("品牌老客", "品牌存量老客", "本牌老客")
+        ) or re.search(r"品牌.*老客|本牌.*老客", message_key):
             semantic_override = "品牌老客"
         elif "连带购买" in message_key:
             semantic_override = "连带购买"
@@ -1785,6 +2331,13 @@ class AiChatService:
                     ):
                         return by_name.get(semantic_override, solution)
                     return solution
+        # The deterministic business wording above is stronger evidence than a
+        # model-proposed audienceName. Otherwise the model can turn the exact
+        # 品类老客 sentence back into 转牌新客 during fuzzy matching.
+        if semantic_override:
+            matched_override = by_name.get(semantic_override)
+            if matched_override is not None:
+                return matched_override
         for solution in solutions:
             solution_key = self._normalize_solution_text(solution.get("name"))
             if not solution_key:
@@ -1795,8 +2348,6 @@ class AiChatService:
                 or solution_key in message_key
             ):
                 return solution
-        if semantic_override:
-            return by_name.get(semantic_override)
         return None
 
     @staticmethod
@@ -1941,14 +2492,55 @@ class AiChatService:
                 condition.pop("relation", None)
             else:
                 condition["relation"] = relation
+            bound_fields = {
+                str(binding.get("targetField") or "").strip()
+                for binding in template.get("parameterBindings") or []
+                if isinstance(binding, dict)
+            }
+            fixed_fields = {
+                str(field).strip()
+                for field in (template.get("fixedIntent") or {})
+            }
+            if not ({"brand", "brands"} & (bound_fields | fixed_fields)):
+                # Do not let a model-proposed brand leak into a category-wide
+                # public node. This distinction is essential for 品类老客:
+                # the previous-period category purchase is unbranded.
+                condition.pop("brand", None)
+                condition.pop("brands", None)
             for field, value in (template.get("fixedIntent") or {}).items():
                 condition[str(field)] = copy.deepcopy(value)
+            if (
+                solution_name == "流出人群分析"
+                and not re.search(r"商品价|商品单价|单价|价格|元以上|元以下", message)
+                and not (
+                    index < len(previous_conditions)
+                    and previous_conditions[index].get("itemPrice")
+                )
+            ):
+                # The public template happens to contain a 100-yuan example
+                # threshold. The confirmed DB command has no price filter;
+                # never inherit this extra restriction without user wording.
+                condition.pop("itemPrice", None)
             grounded_conditions.append(condition)
 
         primary_brand = self._solution_primary_brand(grounded_conditions, message)
         automatic_core_categories = (
             self.solution_knowledge.brand_core_categories(primary_brand)
             if primary_brand
+            else []
+        )
+        broad_category_group = None
+        if "彩妆" in message and not re.search(
+            r"唇部彩妆|面部彩妆|眼部彩妆|彩妆套装", message
+        ):
+            broad_category_group = "彩妆"
+        elif "护肤" in message and ">" not in message:
+            broad_category_group = "护肤"
+        broad_group_categories = (
+            self.solution_knowledge.brand_category_group_top_categories(
+                primary_brand, broad_category_group
+            )
+            if primary_brand and broad_category_group
             else []
         )
 
@@ -1999,6 +2591,14 @@ class AiChatService:
             is_analysis_category = "分析类目" in normalized_parameter_name
             is_brand_core_category = "品牌核心类目" in normalized_parameter_name
             is_time_parameter = any(field == "timeWindow" for _, field in bindings)
+            is_broad_group_category = (
+                broad_category_group is not None
+                and solution_name in {
+                    "流入人群分析", "流出人群分析", "品类新客", "品类老客", "转牌新客"
+                }
+                and "类目" in normalized_parameter_name
+                and not is_brand_core_category
+            )
             labeled_category_value = self._message_labeled_category_value(
                 message,
                 normalized_parameter_name,
@@ -2016,7 +2616,9 @@ class AiChatService:
                 if is_time_parameter
                 else None
             )
-            if explicit_time_value is not None:
+            if is_broad_group_category:
+                selected_value = broad_group_categories or None
+            elif explicit_time_value is not None:
                 selected_value = explicit_time_value
             elif labeled_category_value is not None:
                 selected_value = labeled_category_value
@@ -2042,7 +2644,12 @@ class AiChatService:
                     or self._message_mentions_parameter_value(message, incoming_value)
                 )
                 selected_value = previous_value or (
-                    incoming_value if explicitly_supplied else None
+                    incoming_value
+                    if explicitly_supplied
+                    else automatic_core_categories
+                    if solution_name == "品牌老客"
+                    and re.search(r"品牌.*老客|本牌.*老客", message)
+                    else None
                 )
             elif is_brand_core_category:
                 explicitly_supplied = (
@@ -2083,7 +2690,13 @@ class AiChatService:
     @staticmethod
     def _comparison_period_days(message: str) -> int | None:
         compact = re.sub(r"\s+", "", str(message or ""))
-        if re.search(r"(?:近|最近)半年(?:对比|比较|环比)(?:前|之前|再前)半年", compact):
+        if re.search(r"(?:近|最近|过去)一年", compact):
+            return 365
+        if re.search(
+            r"(?<!完整)(?<!自然)(?<!整)(?:(?:近|最近|过去|这)?)半年(?:VS|对比|比较|环比|跟|和)(?:前|前面|之前|再前)半年",
+            compact,
+            re.IGNORECASE,
+        ):
             return 180
         match = re.search(
             r"(?:近|最近)(\d{1,4})天(?:对比|比较|环比)(?:前|之前|再前)(\d{1,4})天",
@@ -2226,7 +2839,7 @@ class AiChatService:
 - 每次都基于currentIntent返回更新后的完整意图，不要只返回本轮增量。
 - pendingQuestions表示后端权威校验需要用户补充的问题；用户本轮回答时，把答案写回对应conditionId和意图字段。如果问题包含applyTargets，必须把同一个答案同步写回其中每个目标的intentField（没有intentField时才使用field）。
 - 只有用户明确表达“自店/本店”或“本品牌且指定商品ID”时才尝试商品行为。
-- 商品行为必须有品牌，并且canUseBrandAccount只可依据用户对当前账号登录权限的明确回答填写；未知用null，绝不猜测。
+- 商品行为必须有品牌。canUseBrandAccount优先依据用户明确回答；此外，公共知识verifiedBrandAccountAccess中已确认的品牌账号可直接填true；其他品牌未知时用null，绝不猜测。
 - 用户只提供商品ID但没有可用品牌账号时，使用类目商品行为直接按ID筛选，不叠加类目公域行为。
 - recentDays和dateRange严格二选一；使用固定日期时不得同时输出recentDays。
 - 数据统计永远截止到昨天，今天不可选且不得出现在任何dateRange中。recentDays表示以latestSelectableDate为结束日向前计算的完整天数。
@@ -2244,15 +2857,22 @@ class AiChatService:
 - 只有“关键词搜索”和“商品行为”属于私域圈包行为，结果人数可以精确到个位数；“类目公域行为”属于公域，人数小于2000不展示具体值且人数按千为单位展示。
 - 关键词搜索只表示平台首页的精准搜索，不包含购物车搜索或店铺内搜索；它圈出搜索词触达品牌且属于品牌历史AIPL资产的人群，不要再额外添加AIPL节点。
 - 用户同时要求“搜索某关键词”与浏览、购买等商品行为时，一般生成“关键词搜索”与“商品行为”两个节点并取交集。搜索词写入searchKeywords；商品标题词才写入titleKeywords。
+- T2直播间/二梯队达人代表淘宝直播二梯队达人；李佳琦/佳琦/超头代表超头达人。在商品购买、浏览等圈选语境中，它们必须展开为businessTermMappings里的完整商品标题关键词组，使用类目公域行为的titleKeywords，不能当成首页关键词搜索，也不能声称圈到了真实直播观看记录。单节点标题词最多10项，超出由后端拆成并集节点。用户明确要首页搜索时按真实搜索意图处理。
+- 广告触点口语按adTouchpointMappings解释：直通车是效果推广的关键词推广场景；特秀是品牌推广的品牌特秀场景；品专是品牌专区；超级直播是效果推广的观看场景。用户明确说了曝光、点击或观看时直接填behaviors，不要重复追问。
 - 上述交集结构适用于商品行为的全部六种行为：浏览、收藏、加购、预售、购买、退款。必须保留用户说出的行为：看过/浏览→浏览，收藏过→收藏，加购物车/加购→加购，预售/预购→预售，买过/购买/成交→购买，退款/退货退款→退款；不要一律改成浏览或购买。用户没有指定商品类目或商品ID时，不要猜类目，商品行为按全部商品生成cate=ALL。
 - 已确认的人群包命名系列“2025年9月第1周搜索迪奥{{行为}}”表示：2025-09-01至2025-09-07首页精准搜索“迪奥”的人，与天猫DIOR迪奥官方旗舰店对全部商品发生该行为的人取交集；{{行为}}可为浏览、收藏、加购、预售、购买、退款。未说明当前用户能使用官旗账号时canUseBrandAccount=null并询问，明确能使用时才为true。
 - 商品行为选择“所有销售渠道”时，表示当前品牌在天猫、淘宝、国际等全部可用销售渠道的私域汇总数据；它仍是品牌数据，不是公域数据，但不选择单一店铺账号，也不询问具体店铺账号登录权限。即使搜索词里出现Dior等品牌，也不把该品牌绑定成商品行为的单店账号。
 - 商品行为选择支持账号的具体渠道并选中账号时，数据范围是该店铺，而不是整个品牌的跨渠道汇总；此时才执行品牌、店铺账号和当前用户登录权限校验。
-- 用户说“官旗”或“官方旗舰店”时，这是明确的店铺级信号：对应条件必须使用component="商品行为"、scope="own_store"、channels=["天猫"]，并用用户点名的品牌解析实时账号库中的对应官方旗舰店。不能改成“所有销售渠道”。“官旗”只表示目标店铺，不代表当前用户有权限；只有用户明确说能使用、能登录或有权限时canUseBrandAccount=true，明确说不能时为false，未说明时为null并询问。
+- 用户说“官旗”或“官方旗舰店”时，这是明确的店铺级信号：对应条件必须使用component="商品行为"、scope="own_store"、channels=["天猫"]，并用用户点名的品牌解析实时账号库中的对应官方旗舰店。不能改成“所有销售渠道”。若品牌在verifiedBrandAccountAccess中已确认可用，则canUseBrandAccount=true且不追问；否则只有用户明确说能使用、能登录或有权限时为true，明确说不能时为false，未说明时为null并询问。
 - 用户明确说全球购、天猫国际自营（实时维表正式名为“天猫国际直营”）、天猫国际或淘宝集市，但没有说官旗、自店、店铺账号或指定账号时，商品行为表示该渠道下的品牌级汇总：component="商品行为"、scope="own_brand"，后端使用shop=ALL，不绑定具体店铺，也不询问品牌账号权限。输出channels时把“天猫国际自营”规范成["天猫国际直营"]。只有明确点名具体店铺时才进入店铺账号校验。
 - 用户点名公共方案或表达与方案含义高度一致时，按照公共方案知识中的节点结构生成conditions。fixedIntent中的行为属于方案定义，不要再次追问。
-- 品类新客、品类老客等方案的“品牌核心类目”由系统读取店铺销售趋势报表自动填充：按当前销售额从高到低累计，包含首次达到或超过整店95%的临界二级类目。你不得把分析类目复制成品牌核心类目，也不要在知识已命中时要求用户手工选择。
-- 品牌核心类目总数不限，单个组件最多承载10项。超过10项时不得提前截断：先完成品牌、分析类目、行为、渠道、日期等其余参数；其余参数齐全后，再让用户通过工作台的“确认拆分”执行最后一步，自动拆成多个组件且每个组件必须继承已完成的全部参数。
+- D11/双11/双十一阶段人群仅可使用campaignAudienceMappings中对应年度已验证的日期、AIPL阶段组合和排除关系；当前样本是2025年，不能套用到用户明确说出的其他年度。未说年份时要在概览中明确提示所用样本是2025年，并请用户核对日期。
+- 品类新客、品类老客等方案的“品牌核心类目”按店铺销售额降序取前10个二级类目，不再按95%或100%覆盖率；少于10项则全取。仅当店铺趋势知识包含完整前10项时自动填充，不得根据旧95%缓存编造缺失名次，也不得把分析类目复制成品牌核心类目。品牌核心类目本身最多10项，无须拆分。
+- 口语中的“彩妆”按一级类目“彩妆/香水/美妆工具”解释，先限定这个一级类目，再按二级类目销售额取前10；香水和美容工具也属于这一口语范围。口语中的“护肤”按一级类目“美容护肤/美体/精油”解释并同样取二级类目销售额前10。它们与品牌全店前10核心类目是不同集合。
+- 用户说“半年vs前半年”默认是滚动近180天对前180天；只有明确要求完整/自然半年或给出固定日期时才采用两个完整日历半年。用户只说某年某月或某月份且描述浏览、未购、购买等多个节点时，这些节点默认使用同一个月份；不得把其中购买节点擅自扩大到年初。
+- 口语“这半年跟前面半年比”与“近半年对比前半年”同义；“过去一年”默认表示截止昨天的最近365天。不要因这些口语表达再次追问时间。
+- “官旗浏览未购品牌任意渠道、又购买竞品某类目”是三节点：天猫官旗商品浏览，减去本品牌所有销售渠道商品购买，再与无指定品牌的该类目公域购买取交集；“竞品”在这里指别的品牌，不要给第三节点指定某一个竞品品牌。
+- “前一年买过某类目但没买过本品牌产品，近一年买本品牌该类目”是品类老客，不是转牌新客；“前一年既没买该类目也没买本品牌产品，近一年买本品牌该类目”是品类新客。转牌新客只有在用户明确说转牌、从其他品牌转来，或指定了历史竞品品牌时才命中，三者不得混用。本品牌产品因无法穷举商品ID，以本品牌销售额前10个二级类目近似表示，并在概览说明此口径。
 - intent.solutionId是公共方案语义分类结果：高度匹配时必须逐字复制方案id；audienceName只是用户可读的人群名称，两者用途不同。不能因为用户没说方案名、换了说法或自定义了人群名就省略solutionId。
 - 命中公共方案后必须先锁定该方案的canonicalOrder，再把用户参数填入parameterBindings。即使用户先说旧周期、先说成交、先说B类目，也不得据此颠倒统计期/对比期、浏览/购买或A/B节点。
 - “统计期/新周期/今年/近期”对应统计时间；“对比期/老周期/去年/过去”对应对比时间。只给出两个周期且未贴标签时，较晚周期作为统计时间、较早周期作为对比时间。

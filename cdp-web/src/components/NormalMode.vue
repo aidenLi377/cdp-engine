@@ -102,8 +102,10 @@
     >
       <div class="workbench-section-head">
         <div>
-          <div class="display-feature-title">选择圈人方式</div>
+          <div class="display-feature-title">行为组件分区</div>
+          <div class="behavior-component-library-caption">点击新建，或拖入运算池</div>
         </div>
+        <span class="behavior-component-library-total">{{ availablePackages.length }}</span>
       </div>
 
 
@@ -117,18 +119,59 @@
         <template #prefix><el-icon class="search-prefix-icon"><Search /></el-icon></template>
       </el-input>
 
-      <div class="btn-group">
-        <el-button
-          v-for="pkg in filteredPackages"
-          :key="pkg"
-          type="default"
-          class="intercom-btn-outlined"
-          :data-tutorial-target="getTutorialPackageTarget(pkg)"
-          @click="addNode(pkg)"
-          :loading="loadingPkg === pkg"
+      <div class="behavior-component-library" aria-label="行为组件分区">
+        <section
+          v-for="group in groupedPackages"
+          :key="group.name"
+          class="behavior-component-group"
+          :class="{ 'is-favorites': group.isFavorites }"
         >
-          添加 {{ pkg }}
-        </el-button>
+          <div class="behavior-component-group-head">
+            <h3 class="behavior-component-group-title">{{ group.name }}</h3>
+            <span class="behavior-component-group-count">{{ group.packages.length }}</span>
+          </div>
+          <div class="behavior-component-group-items">
+            <div
+              v-for="pkg in group.packages"
+              :key="pkg"
+              class="behavior-component-item"
+              :class="{
+                'is-favorite': isFavoritePackage(pkg),
+                'is-dragging': draggedPackageType === pkg,
+              }"
+            >
+              <el-button
+                type="default"
+                class="behavior-component-add"
+                :data-tutorial-target="getTutorialPackageTarget(pkg)"
+                :aria-label="`添加 ${pkg}，也可拖入运算池`"
+                title="拖入运算池，或点击新建独立运算池"
+                draggable="true"
+                @dragstart="onPackageDragStart($event, pkg)"
+                @dragend="onPackageDragEnd"
+                @click="addNode(pkg)"
+                :loading="loadingPkg === pkg"
+              >
+                <span class="behavior-component-add-mark" aria-hidden="true">＋</span>
+                <span>{{ pkg }}</span>
+              </el-button>
+              <button
+                type="button"
+                class="behavior-component-favorite"
+                :class="{ 'is-active': isFavoritePackage(pkg) }"
+                :aria-label="isFavoritePackage(pkg) ? `取消收藏 ${pkg}` : `收藏 ${pkg}`"
+                :aria-pressed="isFavoritePackage(pkg)"
+                :title="isFavoritePackage(pkg) ? '取消收藏' : '收藏组件'"
+                @click.stop="toggleFavoritePackage(pkg)"
+              >
+                <el-icon aria-hidden="true">
+                  <StarFilled v-if="isFavoritePackage(pkg)" />
+                  <Star v-else />
+                </el-icon>
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div
@@ -143,7 +186,7 @@
       class="panel-resize-handle panel-resize-handle--right"
       :aria-valuenow="workbenchLeftWidth"
       aria-valuemin="240"
-      aria-valuemax="460"
+      aria-valuemax="360"
       aria-label="调整圈包页面左侧栏宽度"
       aria-orientation="vertical"
       role="separator"
@@ -432,96 +475,147 @@
             {{ collapsedCfId ? '展开全部' : '收缩' }}
           </el-button>
         </div>
-        <div v-if="nodeList.length > 0" class="canvas-with-minimap cf-use-node-area">
+        <div v-if="operationPools.length > 0" class="canvas-with-minimap cf-use-node-area">
           <div class="canvas-scroll-area" ref="canvasScrollRef" @scroll="onCanvasScroll">
-            <div
-              v-for="(node, index) in nodeList"
-              :key="node.id"
-              v-show="!collapsedCfId || getNodeFocusBindings(node.id).length > 0"
-              class="node-wrapper"
-              :ref="(el) => { if (el) nodeRefs[index] = el }"
-              @dragover.prevent="onDragOver(index)"
-              @drop="onDrop(index)"
-              @dragleave="onDragLeave"
-            >
-              <div v-if="index > 0" class="logic-connector">
+            <div v-for="(pool, poolIndex) in operationPools" :key="pool.id" class="operation-pool-block">
+              <div v-if="poolIndex > 0" class="logic-connector operation-pool-connector">
                 <div class="connector-line"></div>
-                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group" :disabled="batchMode">
-                  <el-radio-button value="n">交集</el-radio-button>
-                  <el-radio-button value="u">并集</el-radio-button>
-                  <el-radio-button value="d">差集</el-radio-button>
+                <span class="operation-pool-relation-label">运算池关系</span>
+                <el-radio-group
+                  :model-value="pool.operator"
+                  size="small"
+                  class="intercom-radio-group"
+                  :disabled="batchMode"
+                  @update:model-value="changePoolRelation(pool.id, $event)"
+                >
+                  <el-radio-button value="n">交</el-radio-button>
+                  <el-radio-button value="u">并</el-radio-button>
+                  <el-radio-button value="d">差</el-radio-button>
                 </el-radio-group>
                 <div class="connector-line"></div>
               </div>
-	              <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || node.collapsed, 'node-hydration-error': node._hydrationError }">
-	                <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === index }">
-	                  <span
-                      v-if="!batchMode"
-	                    class="drag-handle"
-	                    draggable="true"
-                    @dragstart="onDragStart($event, index)"
-                    @dragend="onDragEnd"
-                    title="拖拽排序"
-                  >
-                    ⋮⋮
-                  </span>
-	                  <span class="card-title-flex behavior-card-title-group" @click="collapsedCfId ? null : (node.collapsed = !node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
-	                    <span class="collapse-arrow behavior-card-collapse">{{ (collapsedCfId || node.collapsed) ? '▶' : '▼' }}</span>
-	                    <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
-	                    <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
-	                    <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
-	                  </span>
-	                  <div v-if="!batchMode" class="behavior-card-action-group">
-	                    <el-tooltip content="复制节点" placement="top">
-	                      <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(index)">
-	                        <el-icon><CopyDocument /></el-icon>
-	                      </el-button>
-	                    </el-tooltip>
-	                    <el-tooltip content="移除节点" placement="top">
-	                      <el-button
-	                        class="behavior-card-icon-btn danger"
-	                        aria-label="移除节点"
-	                        @click.stop="removeNode(index)"
-	                      >
-	                        <el-icon><Delete /></el-icon>
-	                      </el-button>
-	                    </el-tooltip>
-	                  </div>
-                </div>
-                <div v-if="node._hydrationError" v-show="!(collapsedCfId || node.collapsed)" class="hydration-error-body">
-                  <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新加载方案。</p>
-                </div>
-                <!-- Collapse mode: show only bound fields -->
-                <div v-else-if="collapsedCfId && getNodeFocusBindings(node.id).length > 0" class="cf-focus-fields">
+
+              <section
+                class="operation-pool"
+                :class="[
+                  `is-${pool.type === 'u' ? 'union' : 'intersection'}`,
+                  {
+                    'is-empty': pool.entries.length === 0,
+                    'is-drag-over': dragOverPoolId === pool.id,
+                    'is-package-target': Boolean(draggedPackageType),
+                  },
+                ]"
+                @dragover.prevent="onPoolDragOver($event, pool.id)"
+                @drop.prevent="onDropIntoPool($event, pool.id)"
+                @dragleave="onDragLeave"
+              >
+                <header class="operation-pool-header">
+                  <div class="operation-pool-title">
+                    <span class="operation-pool-symbol" aria-hidden="true"></span>
+                    <strong>{{ pool.type === 'u' ? '并集运算池' : '交集运算池' }} {{ poolIndex + 1 }}</strong>
+                    <span class="operation-pool-count" :aria-label="`${pool.entries.length} 个行为`">{{ pool.entries.length }}</span>
+                    <small>{{ pool.type === 'u' ? '满足以下任一行为' : '同时满足以下行为' }}</small>
+                  </div>
+                  <div class="operation-pool-actions">
+                    <el-radio-group
+                      :model-value="pool.type"
+                      size="small"
+                      class="operation-pool-type-switch"
+                      :disabled="batchMode"
+                      @update:model-value="changePoolType(pool.id, $event)"
+                    >
+                      <el-radio-button value="n">交集池</el-radio-button>
+                      <el-radio-button value="u">并集池</el-radio-button>
+                    </el-radio-group>
+                    <button
+                      v-if="!batchMode && !(pool.entries.length === 0 && operationPools.length === 1)"
+                      type="button"
+                      class="operation-pool-delete"
+                      @click="removePool(pool)"
+                    >删除运算池</button>
+                  </div>
+                </header>
+
+                <div class="operation-pool-body">
                   <div
-                    v-for="binding in getNodeFocusBindings(node.id)"
-                    :key="binding.fieldKey"
-                    class="cf-focus-field-row"
+                    v-for="entry in pool.entries"
+                    :key="entry.node.id"
+                    v-show="!collapsedCfId || getNodeFocusBindings(entry.node.id).length > 0"
+                    class="node-wrapper operation-pool-node"
+                    :ref="(el) => { if (el) nodeRefs[entry.index] = el }"
+                    @dragover.prevent="onDragOver($event, entry.index, pool.id)"
+                    @drop.stop.prevent="onDropOnNode($event, entry.index, pool.id)"
+                    @dragleave="onDragLeave"
                   >
-                    <span class="display-body-light">{{ getFocusFieldDisplay(binding.fieldKey, node).label }}</span>
-                    <span class="display-body strong">{{ getFocusFieldDisplay(binding.fieldKey, node).value }}</span>
+	                <div class="intercom-card behavior-card" :class="{ collapsed: collapsedCfId || entry.node.collapsed, 'node-hydration-error': entry.node._hydrationError }">
+	                  <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === entry.index }">
+	                    <span
+                        v-if="!batchMode"
+	                      class="drag-handle"
+	                      draggable="true"
+                        @dragstart="onDragStart($event, entry.index)"
+                        @dragend="onDragEnd"
+                        title="拖入其他运算池"
+                      >⋮⋮</span>
+	                    <span class="card-title-flex behavior-card-title-group" @click="collapsedCfId ? null : (entry.node.collapsed = !entry.node.collapsed)" :style="{ cursor: collapsedCfId ? 'default' : 'pointer' }">
+	                      <span class="collapse-arrow behavior-card-collapse">{{ (collapsedCfId || entry.node.collapsed) ? '▶' : '▼' }}</span>
+	                      <span class="display-card-title workbench-node-title">{{ entry.node.packageType }}</span>
+	                      <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(entry.node, entry.index) }}</span>
+	                      <span v-if="entry.node.collapsed" class="behavior-card-summary">{{ getCollapsedNodeSummary(entry.node) }}</span>
+	                      <span v-if="entry.node._hydrationError" class="display-mono badge-error">加载失败</span>
+	                    </span>
+	                    <div v-if="!batchMode" class="behavior-card-action-group">
+                        <button v-if="pool.entries.length > 1" type="button" class="operation-node-detach" @click.stop="detachNodeFromPool(entry.index)">移出池</button>
+	                      <el-tooltip content="复制节点" placement="top">
+	                        <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(entry.index)"><el-icon><CopyDocument /></el-icon></el-button>
+	                      </el-tooltip>
+	                      <el-tooltip content="移除节点" placement="top">
+	                        <el-button class="behavior-card-icon-btn danger" aria-label="移除节点" @click.stop="removeNode(entry.index)"><el-icon><Delete /></el-icon></el-button>
+	                      </el-tooltip>
+	                    </div>
+                    </div>
+                    <div v-if="entry.node._hydrationError" v-show="!(collapsedCfId || entry.node.collapsed)" class="hydration-error-body">
+                      <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新加载方案。</p>
+                    </div>
+                    <div v-else-if="collapsedCfId && getNodeFocusBindings(entry.node.id).length > 0" class="cf-focus-fields">
+                      <div v-for="binding in getNodeFocusBindings(entry.node.id)" :key="binding.fieldKey" class="cf-focus-field-row">
+                        <span class="display-body-light">{{ getFocusFieldDisplay(binding.fieldKey, entry.node).label }}</span>
+                        <span class="display-body strong">{{ getFocusFieldDisplay(binding.fieldKey, entry.node).value }}</span>
+                      </div>
+                    </div>
+                    <div v-else-if="collapsedCfId" class="cf-focus-fields">
+                      <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
+                    </div>
+                    <DynamicForm
+                      v-else
+                      v-show="!entry.node.collapsed"
+                      :node="entry.node"
+                      :node-index="entry.index"
+                      :readonly="batchMode"
+                      :overflow-policy="!batchMode ? 'solution-use' : 'legacy'"
+                      @overflow-split="handleOverflowSplit"
+                    />
+                  </div>
                   </div>
                 </div>
-                <!-- No matching bindings in collapse mode: subtle hint -->
-                <div v-else-if="collapsedCfId" class="cf-focus-fields">
-                  <div class="display-body-light" style="opacity:0.4;font-size:12px;padding:4px 0">无映射字段</div>
+                <div v-if="!batchMode" class="operation-pool-drop-hint">
+                  {{ pool.entries.length ? '继续拖入行为' : '从左侧拖入行为组件' }} · 池内自动{{ pool.type === 'u' ? '并集' : '交集' }}
                 </div>
-                <!-- Normal mode: full DynamicForm -->
-                <DynamicForm
-                  v-else
-                  v-show="!node.collapsed"
-                  :node="node"
-                  :node-index="index"
-                  :readonly="batchMode"
-                  :overflow-policy="!batchMode ? 'solution-use' : 'legacy'"
-                  @overflow-split="handleOverflowSplit"
-                />
-              </div>
+              </section>
             </div>
           </div>
         </div>
         <div v-else class="empty-hint display-body-light">
           当前方案没有节点
+        </div>
+        <div v-if="!batchMode" class="operation-pool-add-bar" aria-label="添加运算池">
+          <span class="operation-pool-add-label">添加运算池</span>
+          <button type="button" class="operation-pool-add-button is-intersection" @click="addEmptyOperationPool('n')">
+            <span class="operation-pool-add-symbol" aria-hidden="true"></span> 添加交集运算池
+          </button>
+          <button type="button" class="operation-pool-add-button is-union" @click="addEmptyOperationPool('u')">
+            <span class="operation-pool-add-symbol" aria-hidden="true"></span> 添加并集运算池
+          </button>
         </div>
       </div>
 
@@ -538,81 +632,129 @@
     </div>
 
     <div v-else key="free-build" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden">
-      <div v-if="nodeList.length === 0" class="empty-hint display-body-light">
+      <div v-if="operationPools.length === 0" class="empty-hint display-body-light">
         点击右下角 AI 图标，或从左侧手动添加行为组件
       </div>
 
-      <div v-if="nodeList.length > 0" class="canvas-with-minimap" data-tutorial-target="split-result">
+      <div v-if="operationPools.length > 0" class="canvas-with-minimap" data-tutorial-target="split-result">
         <div class="canvas-scroll-area" ref="canvasScrollRef" @scroll="onCanvasScroll">
-          <div
-            v-for="(node, index) in nodeList"
-            :key="node.id"
-            class="node-wrapper"
-            :class="{
-              'node-highlighted': highlightedCfId && isNodeHighlightedForCf(node.id),
-              'tutorial-copy-source': tutorialCopySourceId === node.id,
-              'tutorial-copy-arrival': tutorialCopyArrivalId === node.id,
-            }"
-            :ref="(el) => { if (el) nodeRefs[index] = el }"
-            @dragover.prevent="onDragOver(index)"
-            @drop="onDrop(index)"
-            @dragleave="onDragLeave"
-          >
-            <div v-if="index > 0" class="logic-connector">
+          <div v-for="(pool, poolIndex) in operationPools" :key="pool.id" class="operation-pool-block">
+            <div v-if="poolIndex > 0" class="logic-connector operation-pool-connector">
               <div class="connector-line"></div>
+              <span class="operation-pool-relation-label">运算池关系</span>
               <div
                 class="tutorial-intersection-control"
-                :data-tutorial-target="index === 1 ? 'solution-intersection' : undefined"
-                aria-label="节点关系：交集、并集、差集"
+                :data-tutorial-target="poolIndex === 1 ? 'solution-intersection' : undefined"
+                aria-label="运算池关系：交集、并集、差集"
               >
-                <el-radio-group v-model="node.operator" size="small" class="intercom-radio-group">
-	                  <el-radio-button value="n">交集 (n)</el-radio-button>
-	                  <el-radio-button value="u">并集 (u)</el-radio-button>
-	                  <el-radio-button value="d">差集 (d)</el-radio-button>
+                <el-radio-group
+                  :model-value="pool.operator"
+                  size="small"
+                  class="intercom-radio-group"
+                  @update:model-value="changePoolRelation(pool.id, $event)"
+                >
+	                <el-radio-button value="n">交</el-radio-button>
+	                <el-radio-button value="u">并</el-radio-button>
+	                <el-radio-button value="d">差</el-radio-button>
                 </el-radio-group>
               </div>
               <div class="connector-line"></div>
             </div>
 
-	            <div class="intercom-card behavior-card" :class="{ collapsed: node.collapsed, 'node-hydration-error': node._hydrationError }">
-	              <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === index }">
-	                <span
-	                  class="drag-handle"
-	                  draggable="true"
-                  @dragstart="onDragStart($event, index)"
-                  @dragend="onDragEnd"
-                  title="拖拽排序"
+            <section
+              class="operation-pool"
+              :class="[
+                `is-${pool.type === 'u' ? 'union' : 'intersection'}`,
+                {
+                  'is-empty': pool.entries.length === 0,
+                  'is-drag-over': dragOverPoolId === pool.id,
+                  'is-package-target': Boolean(draggedPackageType),
+                },
+              ]"
+              @dragover.prevent="onPoolDragOver($event, pool.id)"
+              @drop.prevent="onDropIntoPool($event, pool.id)"
+              @dragleave="onDragLeave"
+            >
+              <header class="operation-pool-header">
+                <div class="operation-pool-title">
+                  <span class="operation-pool-symbol" aria-hidden="true"></span>
+                  <strong>{{ pool.type === 'u' ? '并集运算池' : '交集运算池' }} {{ poolIndex + 1 }}</strong>
+                  <span class="operation-pool-count" :aria-label="`${pool.entries.length} 个行为`">{{ pool.entries.length }}</span>
+                  <small>{{ pool.type === 'u' ? '满足以下任一行为' : '同时满足以下行为' }}</small>
+                </div>
+                <div class="operation-pool-actions">
+                  <el-radio-group
+                    :model-value="pool.type"
+                    size="small"
+                    class="operation-pool-type-switch"
+                    @update:model-value="changePoolType(pool.id, $event)"
+                  >
+                    <el-radio-button value="n">交集池</el-radio-button>
+                    <el-radio-button value="u">并集池</el-radio-button>
+                  </el-radio-group>
+                  <button
+                    v-if="!(pool.entries.length === 0 && operationPools.length === 1)"
+                    type="button"
+                    class="operation-pool-delete"
+                    @click="removePool(pool)"
+                  >删除运算池</button>
+                </div>
+              </header>
+
+              <div class="operation-pool-body">
+                <div
+                  v-for="entry in pool.entries"
+                  :key="entry.node.id"
+                  class="node-wrapper operation-pool-node"
+                  :class="{
+                    'node-highlighted': highlightedCfId && isNodeHighlightedForCf(entry.node.id),
+                    'tutorial-copy-source': tutorialCopySourceId === entry.node.id,
+                    'tutorial-copy-arrival': tutorialCopyArrivalId === entry.node.id,
+                  }"
+                  :ref="(el) => { if (el) nodeRefs[entry.index] = el }"
+                  @dragover.prevent="onDragOver($event, entry.index, pool.id)"
+                  @drop.stop.prevent="onDropOnNode($event, entry.index, pool.id)"
+                  @dragleave="onDragLeave"
                 >
-                  ⠿
-                </span>
-	                <span class="card-title-flex behavior-card-title-group" @click="node.collapsed = !node.collapsed" style="cursor:pointer">
-	                  <span class="collapse-arrow behavior-card-collapse">{{ node.collapsed ? '▶' : '▼' }}</span>
-	                  <span class="display-card-title workbench-node-title">{{ node.packageType }}</span>
-	                  <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(node, index) }}</span>
-	                  <span v-if="node._hydrationError" class="display-mono badge-error">加载失败</span>
-	                </span>
-	                <div class="behavior-card-action-group">
-	                  <el-tooltip content="复制节点" placement="top">
-	                    <el-button class="behavior-card-icon-btn" :data-tutorial-target="index === 0 ? 'duplicate-solution-node-0' : undefined" @click.stop="duplicateNode(index)">
-	                      <el-icon><CopyDocument /></el-icon>
-	                    </el-button>
-	                  </el-tooltip>
-	                  <el-tooltip content="移除节点" placement="top">
-	                    <el-button
-	                      class="behavior-card-icon-btn danger"
-	                      aria-label="移除节点"
-	                      @click.stop="removeNode(index)"
-	                    >
-	                      <el-icon><Delete /></el-icon>
-	                    </el-button>
-	                  </el-tooltip>
-	                </div>
+	              <div class="intercom-card behavior-card" :class="{ collapsed: entry.node.collapsed, 'node-hydration-error': entry.node._hydrationError }">
+	                <div class="card-header-inner behavior-card-header" :class="{ 'drag-over': dragOverIndex === entry.index }">
+	                  <span
+	                    class="drag-handle"
+	                    draggable="true"
+                      @dragstart="onDragStart($event, entry.index)"
+                      @dragend="onDragEnd"
+                      title="拖入其他运算池"
+                    >⠿</span>
+	                  <span class="card-title-flex behavior-card-title-group" @click="entry.node.collapsed = !entry.node.collapsed" style="cursor:pointer">
+	                    <span class="collapse-arrow behavior-card-collapse">{{ entry.node.collapsed ? '▶' : '▼' }}</span>
+	                    <span class="display-card-title workbench-node-title">{{ entry.node.packageType }}</span>
+	                    <span class="display-mono badge-mono behavior-card-node-badge">{{ getNodeDisplayName(entry.node, entry.index) }}</span>
+	                    <span v-if="entry.node.collapsed" class="behavior-card-summary">{{ getCollapsedNodeSummary(entry.node) }}</span>
+	                    <span v-if="entry.node._hydrationError" class="display-mono badge-error">加载失败</span>
+	                  </span>
+	                  <div class="behavior-card-action-group">
+                      <button v-if="pool.entries.length > 1" type="button" class="operation-node-detach" @click.stop="detachNodeFromPool(entry.index)">移出池</button>
+	                    <el-tooltip content="复制节点" placement="top">
+	                      <el-button class="behavior-card-icon-btn" :data-tutorial-target="entry.index === 0 ? 'duplicate-solution-node-0' : undefined" @click.stop="duplicateNode(entry.index)">
+	                        <el-icon><CopyDocument /></el-icon>
+	                      </el-button>
+	                    </el-tooltip>
+	                    <el-tooltip content="移除节点" placement="top">
+	                      <el-button class="behavior-card-icon-btn danger" aria-label="移除节点" @click.stop="removeNode(entry.index)"><el-icon><Delete /></el-icon></el-button>
+	                    </el-tooltip>
+	                  </div>
+                  </div>
+                  <div v-if="entry.node._hydrationError" v-show="!entry.node.collapsed" class="hydration-error-body">
+                    <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
+                  </div>
+                  <DynamicForm v-else v-show="!entry.node.collapsed" :node="entry.node" :node-index="entry.index" @overflow-split="handleOverflowSplit" />
+                </div>
+                </div>
               </div>
-              <div v-if="node._hydrationError" v-show="!node.collapsed" class="hydration-error-body">
-                <p class="display-body-light">该组件元数据加载失败，请检查后端服务后重新添加。</p>
+              <div class="operation-pool-drop-hint">
+                {{ pool.entries.length ? '继续拖入行为' : '从左侧拖入行为组件' }} · 池内自动{{ pool.type === 'u' ? '并集' : '交集' }}
               </div>
-              <DynamicForm v-else v-show="!node.collapsed" :node="node" :node-index="index" @overflow-split="handleOverflowSplit" />
-            </div>
+            </section>
           </div>
         </div>
 
@@ -629,6 +771,15 @@
           </div>
         </div>
       </div>
+      <div class="operation-pool-add-bar" aria-label="添加运算池">
+        <span class="operation-pool-add-label">添加运算池</span>
+        <button type="button" class="operation-pool-add-button is-intersection" @click="addEmptyOperationPool('n')">
+          <span class="operation-pool-add-symbol" aria-hidden="true"></span> 添加交集运算池
+        </button>
+        <button type="button" class="operation-pool-add-button is-union" @click="addEmptyOperationPool('u')">
+          <span class="operation-pool-add-symbol" aria-hidden="true"></span> 添加并集运算池
+        </button>
+      </div>
     </div>
   </Transition>
   </div>
@@ -642,7 +793,7 @@
       class="panel-resize-handle panel-resize-handle--left"
       :aria-valuenow="workbenchRightWidth"
       aria-valuemin="280"
-      aria-valuemax="480"
+      aria-valuemax="400"
       aria-label="调整圈包页面右侧栏宽度"
       aria-orientation="vertical"
       role="separator"
@@ -720,36 +871,45 @@
         </div>
       </div>
 
+      <p v-if="jsonBuildStatus === 'failed' && jsonBuildError" class="json-build-error" role="alert">
+        {{ jsonBuildError }}
+      </p>
+
       <div v-if="jsonViewMode === 'summary'" class="json-summary">
         <div v-if="nodeList.length === 0" class="empty-state-sm display-body-light">
           请先在画布中添加行为组件或加载方案
         </div>
 
-        <div v-for="(node, index) in nodeList" :key="'s-' + node.id" class="summary-node">
-          <div class="summary-node-head">
-            <span class="summary-idx">{{ index + 1 }}</span>
-            <span class="display-body strong">{{ getNodeSummaryDisplayName(node, index) }}</span>
-            <span v-if="index > 0" class="summary-op">
-              {{ node.operator === 'n' ? '交集' : node.operator === 'u' ? '并集' : '差集' }}
+        <section v-for="(pool, poolIndex) in filledOperationPools" :key="`summary-${pool.id}`" class="summary-pool">
+          <header class="summary-pool-head">
+            <span>{{ pool.type === 'u' ? '并集运算池' : '交集运算池' }} {{ poolIndex + 1 }}</span>
+            <span v-if="poolIndex > 0" class="summary-op">
+              与前池{{ pool.operator === 'u' ? '并集' : pool.operator === 'd' ? '差集' : '交集' }}
             </span>
-          </div>
-
-          <div class="summary-rows">
-            <div
-              v-for="item in getNodeSummary(node)"
-              :key="item.key"
-              class="summary-row"
-              :class="{ 'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted(node.id, item.key) }"
-            >
-              <span class="summary-label">{{ item.label }}</span>
-              <span class="summary-val">{{ item.value }}</span>
+          </header>
+          <div v-for="entry in pool.entries" :key="'s-' + entry.node.id" class="summary-node">
+            <div class="summary-node-head">
+              <span class="summary-idx">{{ entry.index + 1 }}</span>
+              <span class="display-body strong">{{ getNodeSummaryDisplayName(entry.node, entry.index) }}</span>
             </div>
 
-            <div v-if="getNodeSummary(node).length === 0" class="display-body-light" style="padding:8px 0;opacity:0.5">
-              当前节点尚未配置可用参数
+            <div class="summary-rows">
+              <div
+                v-for="item in getNodeSummary(entry.node)"
+                :key="item.key"
+                class="summary-row"
+                :class="{ 'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted(entry.node.id, item.key) }"
+              >
+                <span class="summary-label">{{ item.label }}</span>
+                <span class="summary-val">{{ item.value }}</span>
+              </div>
+
+              <div v-if="getNodeSummary(entry.node).length === 0" class="display-body-light" style="padding:8px 0;opacity:0.5">
+                当前节点尚未配置可用参数
+              </div>
             </div>
           </div>
-        </div>
+        </section>
 
         <div v-if="nodeList.length > 1" class="summary-compute">
           <span class="display-body-light">运算链：</span>
@@ -1044,7 +1204,7 @@
 
   <el-dialog
     v-model="batchAutomationDialogVisible"
-    :width="batchMode ? '600px' : '440px'"
+    :width="batchMode ? '720px' : '440px'"
     class="intercom-dialog batch-composer-dialog"
     :close-on-click-modal="false"
     destroy-on-close
@@ -1077,19 +1237,57 @@
           : '已默认全部选中；取消勾选本次不需要执行的人群包' }}
       </p>
 
+      <div class="batch-ai-naming-bar">
+        <div>
+          <span>AI NAMING</span>
+          <strong>执行前整理人群包名称</strong>
+          <small>读取最终参数一次生成整批建议，不添加 XT；生成后仍可逐个修改。</small>
+        </div>
+        <el-button
+          class="batch-ai-naming-button"
+          size="small"
+          :loading="batchNamingLoading"
+          :disabled="batchNamingLoading || batchAutomationSelectedCount === 0"
+          @click="suggestBatchAudienceNames"
+        >{{ batchNamingLoading ? '正在生成' : 'AI 生成名称' }}</el-button>
+      </div>
+      <p v-if="batchNamingMessage" class="batch-ai-naming-message" aria-live="polite">
+        {{ batchNamingMessage }}
+      </p>
+
       <div class="batch-run-queue" role="list" aria-label="待圈人群包">
-        <el-checkbox
+        <div
           v-for="row in visibleBatchAutomationEntries"
           :key="row.entry.id || row.index"
           class="batch-run-queue-row is-selectable"
-          :class="{ 'is-selected': isBatchAutomationEntrySelected(row.index) }"
-          :model-value="isBatchAutomationEntrySelected(row.index)"
-          @change="checked => toggleBatchAutomationEntry(row.index, checked)"
+          :class="{
+            'is-selected': isBatchAutomationEntrySelected(row.index),
+            'has-name-error': Boolean(getBatchCrowdNameIssue(row.index)),
+          }"
         >
-          <span>{{ String(row.index + 1).padStart(2, '0') }}</span>
-          <strong>{{ row.entry.crowdName || '未命名人群包' }}</strong>
-          <small :title="row.entry.automationError || ''">{{ getAutomationStatusLabel(row.entry.automationStatus) }}</small>
-        </el-checkbox>
+          <el-checkbox
+            :model-value="isBatchAutomationEntrySelected(row.index)"
+            :aria-label="`选择第 ${row.index + 1} 个人群包`"
+            @change="checked => toggleBatchAutomationEntry(row.index, checked)"
+          />
+          <span class="batch-run-queue-index">{{ String(row.index + 1).padStart(2, '0') }}</span>
+          <div class="batch-run-name-editor">
+            <el-input
+              :model-value="row.entry.crowdName"
+              size="small"
+              maxlength="80"
+              :disabled="databankAutomating"
+              :aria-label="`第 ${row.index + 1} 个人群包名称`"
+              @update:model-value="value => updateBatchEntryCrowdName(row.index, value)"
+            />
+            <small v-if="getBatchCrowdNameIssue(row.index)" class="batch-run-name-error">
+              {{ getBatchCrowdNameIssue(row.index) }}
+            </small>
+          </div>
+          <small class="batch-run-status" :title="row.entry.automationError || ''">
+            {{ getAutomationStatusLabel(row.entry.automationStatus) }}
+          </small>
+        </div>
       </div>
     </div>
 
@@ -1118,7 +1316,7 @@
           <el-button
             class="batch-dialog-primary"
             data-tutorial-target="pull-confirm-batch-run"
-            :disabled="databankAutomating || (batchMode && batchAutomationSelectedCount === 0)"
+            :disabled="databankAutomating || (batchMode && (batchAutomationSelectedCount === 0 || !batchAutomationNamesValid))"
             @click="confirmBatchAutomation"
           >
             {{ batchMode
@@ -1137,7 +1335,7 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch, provide } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, FolderAdd, RefreshLeft, RefreshRight, Search } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, FolderAdd, RefreshLeft, RefreshRight, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import DynamicForm from './DynamicForm.vue'
 import FolderTree from './FolderTree.vue'
 import CustomFieldEditDialog from './CustomFieldEditDialog.vue'
@@ -1149,6 +1347,12 @@ import { usePackagesApi } from '../composables/usePackagesApi'
 import { usePanelResize } from '../composables/usePanelResize'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
+import { groupBehaviorComponents } from '../utils/behaviorComponentGroups.js'
+import {
+  loadFavoriteBehaviorComponents,
+  saveFavoriteBehaviorComponents,
+  toggleFavoriteBehaviorComponent,
+} from '../utils/favoriteBehaviorComponents.js'
 import {
   fieldToken,
   getNodeDisplayName,
@@ -1163,7 +1367,22 @@ import {
   buildMultiFieldNodeSplits,
   chunkBySecondaryCategory,
 } from '../utils/solutionState.js'
+import {
+  buildOperationPoolExpression,
+  buildOperationPools,
+  createOperationPoolId,
+  insertOwnPoolNodesAfterPool,
+  moveNodeToOperationPool,
+  moveNodeToOwnOperationPool,
+  normalizeOperationPoolNodes,
+  prepareNodeAsOwnOperationPool,
+  removeNodeFromOperationPools,
+  removeOperationPool,
+  setOperationPoolRelation,
+  setOperationPoolType,
+} from '../utils/operationPools.js'
 import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
+import { getFieldUiLabel, getNumericSummaryPrefix } from '../utils/fieldUiConfig.js'
 import {
   analyzeBatchCustomFieldCompatibility,
   buildBatchCustomFieldSections as composeBatchCustomFieldSections,
@@ -1218,9 +1437,9 @@ const {
 } = usePanelResize({
   panelId: 'workbench-left',
   ownerId: props.sessionOwnerId,
-  defaultWidth: window.innerWidth <= 1120 ? 300 : 280,
+  defaultWidth: window.innerWidth <= 1120 ? 280 : 260,
   minWidth: 240,
-  maxWidth: 460,
+  maxWidth: 360,
   edge: 'right',
   applyWidth: width => workbenchLeftPanelRef.value?.style.setProperty('width', `${width}px`),
   getDynamicMaxWidth: () =>
@@ -1236,9 +1455,9 @@ const {
 } = usePanelResize({
   panelId: 'workbench-right',
   ownerId: props.sessionOwnerId,
-  defaultWidth: window.innerWidth <= 1120 ? 320 : 340,
+  defaultWidth: window.innerWidth <= 1120 ? 300 : 320,
   minWidth: 280,
-  maxWidth: 480,
+  maxWidth: 400,
   edge: 'left',
   applyWidth: width => workbenchRightPanelRef.value?.style.setProperty('width', `${width}px`),
   getDynamicMaxWidth: () =>
@@ -1251,6 +1470,13 @@ const DEFAULT_CROWD_NAME = '未命名人群包'
 const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'
 const CATEGORY_ITEM_PACKAGE = '类目商品行为'
 const COMMODITY_PACKAGE = '商品行为'
+const SINGLE_MEDIA_PACKAGE = '单媒体智投'
+const BRAND_PROMOTION_PACKAGE = '品牌推广'
+const PRESERVE_FROM_POOL_ID_PACKAGES = new Set([
+  BRAND_PROMOTION_PACKAGE,
+  '全媒体智投',
+  SINGLE_MEDIA_PACKAGE,
+])
 const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'
 const DEFAULT_DRAFT_NAME = '圈包方案草稿'
 const MAX_HISTORY = 20
@@ -1374,9 +1600,19 @@ const {
   updateContext: updateGuidedTutorialContext,
 } = useGuidedTutorial()
 
+function createEmptyOperationPoolDraft(type = 'n', operator = null) {
+  const normalizedType = type === 'u' ? 'u' : 'n'
+  return {
+    id: createOperationPoolId(`empty-${normalizedType}`),
+    type: normalizedType,
+    operator: ['n', 'u', 'd'].includes(operator) ? operator : null,
+  }
+}
+
 const jsonViewMode = ref('summary')
 const workbenchMode = ref('free-build')
 const availablePackages = ref([])
+const favoritePackages = ref(loadFavoriteBehaviorComponents(props.sessionOwnerId))
 const publishedSolutions = ref([])
 const publishedLibraryScope = ref('mine')
 const loadingPublishedSolutions = ref(false)
@@ -1384,6 +1620,7 @@ const loadingSolutionId = ref(null)
 const loadingPkg = ref(null)
 const savingDraft = ref(false)
 const nodeList = ref([])
+const emptyOperationPools = ref([createEmptyOperationPoolDraft('n')])
 const currentSolution = ref(null)
 const loadedSolutionRecord = ref(null)
 const loadedSolutionFieldIds = ref([])
@@ -1395,10 +1632,13 @@ const activeNodeIndex = ref(0)
 const canvasScrollRef = ref(null)
 const nodeRefs = ref({})
 const dragOverIndex = ref(-1)
+const dragOverPoolId = ref('')
+const draggedPackageType = ref('')
 const historyStack = ref([])
 const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
 const jsonBuildStatus = ref('empty')
+const jsonBuildError = ref('')
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
@@ -1431,6 +1671,8 @@ const batchAutomationDialogVisible = ref(false)
 const batchAutomationScope = ref('current')
 const batchAutomationSelectedIndexes = ref([])
 const databankAutoCalculate = ref(false)
+const batchNamingLoading = ref(false)
+const batchNamingMessage = ref('')
 const parameterBatchDialogVisible = ref(false)
 const parameterBatchSection = ref(null)
 const parameterBatchText = ref('')
@@ -1481,6 +1723,43 @@ const filteredPackages = computed(() => {
   const keyword = pkgSearch.value.toLowerCase()
   return availablePackages.value.filter((pkg) => String(pkg).toLowerCase().includes(keyword))
 })
+
+const favoritePackageSet = computed(() => new Set(favoritePackages.value))
+
+const groupedPackages = computed(() => {
+  const filteredSet = new Set(filteredPackages.value)
+  const favorites = favoritePackages.value.filter(packageName => filteredSet.has(packageName))
+  const regularPackages = filteredPackages.value.filter(
+    packageName => !favoritePackageSet.value.has(packageName),
+  )
+  return [
+    ...(favorites.length
+      ? [{ name: '我的常用', packages: favorites, isFavorites: true }]
+      : []),
+    ...groupBehaviorComponents(regularPackages).map(group => ({
+      ...group,
+      isFavorites: false,
+    })),
+  ]
+})
+
+function isFavoritePackage(packageName) {
+  return favoritePackageSet.value.has(packageName)
+}
+
+function toggleFavoritePackage(packageName) {
+  favoritePackages.value = saveFavoriteBehaviorComponents(
+    props.sessionOwnerId,
+    toggleFavoriteBehaviorComponent(favoritePackages.value, packageName),
+  )
+}
+
+watch(
+  () => props.sessionOwnerId,
+  ownerId => {
+    favoritePackages.value = loadFavoriteBehaviorComponents(ownerId)
+  },
+)
 
 const filteredPublishedSolutions = computed(() => {
   const keyword = solutionSearch.value.trim().toLowerCase()
@@ -1562,6 +1841,9 @@ const batchAutomationAllSelected = computed(() => (
 const batchAutomationPartiallySelected = computed(() => (
   batchAutomationSelectedCount.value > 0 && !batchAutomationAllSelected.value
 ))
+const batchAutomationNamesValid = computed(() => (
+  batchAutomationSelectedIndexes.value.every(index => !getBatchCrowdNameIssue(index))
+))
 const isParameterBatch = computed(() => batchMode.value && batchKind.value === 'parameter')
 const parameterBatchSourceCount = computed(() => batchMode.value ? batchEntries.value.length : 1)
 const parameterBatchTaskCount = computed(() => parameterBatchRows.value.length * parameterBatchSourceCount.value)
@@ -1608,6 +1890,21 @@ function getTutorialAutomationTarget() {
 }
 
 const allCollapsed = computed(() => nodeList.value.length > 0 && nodeList.value.every((node) => node.collapsed))
+const filledOperationPools = computed(() => buildOperationPools(nodeList.value))
+const operationPools = computed(() => {
+  const filledPools = filledOperationPools.value
+  return [
+    ...filledPools,
+    ...emptyOperationPools.value.map((pool, index) => ({
+      id: pool.id,
+      type: pool.type === 'u' ? 'u' : 'n',
+      operator: filledPools.length + index === 0
+        ? null
+        : (['n', 'u', 'd'].includes(pool.operator) ? pool.operator : 'n'),
+      entries: [],
+    })),
+  ]
+})
 const canUndo = computed(() => !batchMode.value && historyPos.value > 0)
 const canRedo = computed(() => !batchMode.value && historyPos.value < historyStack.value.length - 1)
 const deferredSolutionSplitSummary = computed(() => {
@@ -2348,36 +2645,212 @@ function onNameManualEdit(value) {
   }
 }
 
+function getDroppedPackageType(event) {
+  const transferred = String(
+    event?.dataTransfer?.getData('application/x-cdp-behavior-package') || '',
+  ).trim()
+  if (transferred) return transferred
+
+  const plainText = String(event?.dataTransfer?.getData('text/plain') || '')
+  if (plainText.startsWith('behavior-package:')) {
+    return plainText.slice('behavior-package:'.length).trim()
+  }
+  return String(draggedPackageType.value || '').trim()
+}
+
+function onPackageDragStart(event, packageType) {
+  if (batchMode.value || loadingPkg.value) {
+    event.preventDefault()
+    return
+  }
+  dragSrcIndex = null
+  draggedPackageType.value = String(packageType || '')
+  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.setData('application/x-cdp-behavior-package', draggedPackageType.value)
+  event.dataTransfer.setData('text/plain', `behavior-package:${draggedPackageType.value}`)
+}
+
+function onPackageDragEnd() {
+  draggedPackageType.value = ''
+  onDragLeave()
+}
+
 function onDragStart(event, index) {
+  draggedPackageType.value = ''
   dragSrcIndex = index
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData('text/plain', String(index))
 }
 
-function onDragOver(index) {
+function onDragOver(event, index, poolId = '') {
+  if (batchMode.value) return
   dragOverIndex.value = index
+  dragOverPoolId.value = String(poolId || '')
+  if (event?.dataTransfer) {
+    event.dataTransfer.dropEffect = draggedPackageType.value ? 'copy' : 'move'
+  }
 }
 
 function onDragLeave() {
   dragOverIndex.value = -1
+  dragOverPoolId.value = ''
 }
 
-function onDrop(targetIndex) {
+function onPoolDragOver(event, poolId) {
+  if (batchMode.value) return
+  dragOverPoolId.value = String(poolId || '')
+  if (event?.dataTransfer) {
+    event.dataTransfer.dropEffect = draggedPackageType.value ? 'copy' : 'move'
+  }
+}
+
+function findEmptyOperationPool(poolId) {
+  return emptyOperationPools.value.find((pool) => pool.id === String(poolId)) || null
+}
+
+function removeEmptyOperationPool(poolId) {
+  const index = emptyOperationPools.value.findIndex((pool) => pool.id === String(poolId))
+  if (index < 0) return null
+  return emptyOperationPools.value.splice(index, 1)[0]
+}
+
+function moveExistingNodeToPool(sourceIndex, poolId) {
+  const emptyPool = findEmptyOperationPool(poolId)
+  if (!emptyPool) {
+    moveNodeToOperationPool(nodeList.value, sourceIndex, poolId)
+    return
+  }
+
+  const movedNode = removeNodeFromOperationPools(nodeList.value, sourceIndex)
+  if (!movedNode) return
+  movedNode.poolId = emptyPool.id
+  movedNode.poolOperator = emptyPool.type
+  movedNode.operator = emptyPool.operator || 'n'
+  nodeList.value.push(movedNode)
+  removeEmptyOperationPool(emptyPool.id)
+  normalizeOperationPoolNodes(nodeList.value)
+}
+
+async function onDropIntoPool(event, poolId) {
   dragOverIndex.value = -1
+  dragOverPoolId.value = ''
+  if (batchMode.value) return
+
+  const packageType = getDroppedPackageType(event)
+  if (packageType) {
+    dragSrcIndex = null
+    draggedPackageType.value = ''
+    await addPackageToPool(packageType, poolId)
+    return
+  }
+  if (dragSrcIndex === null) return
+
+  takeSnapshot()
+  moveExistingNodeToPool(dragSrcIndex, poolId)
+  dragSrcIndex = null
+  markDerivedStructureChange()
+}
+
+async function onDropOnNode(event, targetIndex, poolId) {
+  dragOverIndex.value = -1
+  dragOverPoolId.value = ''
+  if (batchMode.value) return
+
+  const packageType = getDroppedPackageType(event)
+  if (packageType) {
+    dragSrcIndex = null
+    draggedPackageType.value = ''
+    await addPackageToPool(packageType, poolId)
+    return
+  }
   if (dragSrcIndex === null || dragSrcIndex === targetIndex) return
 
   takeSnapshot()
-  const [moved] = nodeList.value.splice(dragSrcIndex, 1)
-  nodeList.value.splice(targetIndex, 0, moved)
-  nodeList.value.forEach((node, index) => {
-    if (index === 0) node.operator = null
-  })
+  moveNodeToOperationPool(nodeList.value, dragSrcIndex, poolId, targetIndex)
   dragSrcIndex = null
   markDerivedStructureChange()
 }
 
 function onDragEnd() {
   dragOverIndex.value = -1
+  dragOverPoolId.value = ''
+  dragSrcIndex = null
+}
+
+function changePoolType(poolId, type) {
+  takeSnapshot()
+  const emptyPool = findEmptyOperationPool(poolId)
+  if (emptyPool) {
+    emptyPool.type = type === 'u' ? 'u' : 'n'
+  } else {
+    setOperationPoolType(nodeList.value, poolId, type)
+  }
+  markDerivedStructureChange()
+}
+
+function changePoolRelation(poolId, operator) {
+  takeSnapshot()
+  const emptyPool = findEmptyOperationPool(poolId)
+  if (emptyPool) {
+    emptyPool.operator = ['n', 'u', 'd'].includes(operator) ? operator : 'n'
+  } else {
+    setOperationPoolRelation(nodeList.value, poolId, operator)
+  }
+  markDerivedStructureChange()
+}
+
+function addEmptyOperationPool(type = 'n') {
+  if (batchMode.value) return
+  takeSnapshot()
+  emptyOperationPools.value.push(createEmptyOperationPoolDraft(
+    type,
+    operationPools.value.length === 0 ? null : 'n',
+  ))
+  markDerivedStructureChange()
+  nextTick(() => {
+    if (canvasScrollRef.value) {
+      canvasScrollRef.value.scrollTop = canvasScrollRef.value.scrollHeight
+    }
+  })
+}
+
+function ensureDefaultOperationPool() {
+  if (batchMode.value || nodeList.value.length > 0 || emptyOperationPools.value.length > 0) return
+  emptyOperationPools.value = [createEmptyOperationPoolDraft('n')]
+}
+
+function detachNodeFromPool(index) {
+  takeSnapshot()
+  moveNodeToOwnOperationPool(nodeList.value, index)
+  markDerivedStructureChange()
+}
+
+async function removePool(pool) {
+  if (!pool) return
+  if (!pool.entries?.length) {
+    takeSnapshot()
+    removeEmptyOperationPool(pool.id)
+    ensureDefaultOperationPool()
+    markDerivedStructureChange()
+    return
+  }
+  if (pool.entries.length > 1) {
+    try {
+      await ElMessageBox.confirm(
+        `该运算池包含 ${pool.entries.length} 个行为，删除后将一并移除。`,
+        '删除运算池',
+        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+  }
+
+  takeSnapshot()
+  const removedNodes = removeOperationPool(nodeList.value, pool.id)
+  removedNodes.forEach((node) => removeBindingsForNode(node.id))
+  ensureDefaultOperationPool()
+  markDerivedStructureChange()
 }
 
 function resetBatchContext() {
@@ -2392,6 +2865,8 @@ function resetBatchContext() {
   batchAutomationDialogVisible.value = false
   batchAutomationScope.value = 'current'
   batchAutomationSelectedIndexes.value = []
+  batchNamingLoading.value = false
+  batchNamingMessage.value = ''
   parameterBatchDialogVisible.value = false
   parameterBatchSection.value = null
   parameterBatchText.value = ''
@@ -2400,8 +2875,9 @@ function resetBatchContext() {
   parameterBatchFieldId.value = ''
 }
 
-function resetWorkbenchContext() {
+function resetWorkbenchContext({ withDefaultPool = true } = {}) {
   resetBatchContext()
+  emptyOperationPools.value = withDefaultPool ? [createEmptyOperationPoolDraft('n')] : []
   currentSolution.value = null
   loadedSolutionRecord.value = null
   loadedSolutionFieldIds.value = []
@@ -2417,7 +2893,7 @@ function resetHistory() {
 }
 
 function clearCanvas() {
-  if (nodeList.value.length === 0 && !currentSolution.value) return
+  if (nodeList.value.length === 0 && emptyOperationPools.value.length === 0 && !currentSolution.value) return
 
   takeSnapshot()
   nodeList.value = []
@@ -2434,10 +2910,11 @@ function prepareCleanGuidedTutorialWorkbench() {
     return
   }
   const hadContent = nodeList.value.length > 0
+    || emptyOperationPools.value.length > 0
     || Boolean(currentSolution.value)
     || Boolean(String(crowdNameInput.value || '').trim())
 
-  if (nodeList.value.length > 0 || currentSolution.value) takeSnapshot()
+  if (nodeList.value.length > 0 || emptyOperationPools.value.length > 0 || currentSolution.value) takeSnapshot()
   nodeList.value = []
   nodeRefs.value = {}
   activeNodeIndex.value = 0
@@ -2496,6 +2973,7 @@ function takeSnapshot() {
         logicMatrix,
       }
     }),
+    emptyOperationPools: cloneValue(toRaw(emptyOperationPools.value)),
     crowdNameInput: crowdNameInput.value,
   }
 
@@ -2512,6 +2990,7 @@ function restoreSnapshot() {
   if (!snapshot) return
 
   nodeList.value = snapshot.nodeList || []
+  emptyOperationPools.value = cloneValue(snapshot.emptyOperationPools || [])
   crowdNameInput.value = snapshot.crowdNameInput ?? ''
 }
 
@@ -2707,6 +3186,7 @@ async function activateBatchEntry(index, options = {}) {
     derivedSolutionMeta.sourceSolutionName = nextEntry.solutionName || ''
     derivedSolutionMeta.hasStructureChanges = false
     derivedSolutionMeta.hasParamChanges = false
+    emptyOperationPools.value = []
     nodeList.value = nextEntry.nodes
     nodeRefs.value = {}
     activeNodeIndex.value = 0
@@ -2948,19 +3428,61 @@ async function createParameterBatchEntries() {
   }
 }
 
-async function addNode(packageType) {
+function completePackageAddTutorial(packageType) {
+  if (packageType === CATEGORY_ITEM_PACKAGE) {
+    completeGuidedTutorialStep('add-category-item')
+  }
+  if (packageType === CATEGORY_PUBLIC_PACKAGE && isGuidedTutorialStep('add-public-behavior')) {
+    completeGuidedTutorialStep('add-public-behavior')
+  }
+}
+
+async function addPackageToPool(packageType, poolId) {
+  if (!packageType || loadingPkg.value || batchMode.value) return
   loadingPkg.value = packageType
   try {
     const node = await createRuntimeNode({ packageType }, nodeList.value.length)
+    const targetPool = operationPools.value.find((pool) => pool.id === String(poolId))
+    if (!targetPool) throw new Error('目标运算池已变化，请重新拖入')
+
+    takeSnapshot()
+    node.poolId = targetPool.id
+    node.poolOperator = targetPool.type
+    node.operator = targetPool.entries.length > 0 ? null : (targetPool.operator || 'n')
+
+    if (targetPool.entries.length > 0) {
+      const insertIndex = Math.max(...targetPool.entries.map((entry) => entry.index)) + 1
+      nodeList.value.splice(insertIndex, 0, node)
+    } else {
+      nodeList.value.push(node)
+      removeEmptyOperationPool(targetPool.id)
+    }
+    normalizeOperationPoolNodes(nodeList.value)
+    markDerivedStructureChange()
+    completePackageAddTutorial(packageType)
+  } catch (error) {
+    ElMessage.error(error.message || '组件加载失败，请检查后端连接')
+  } finally {
+    loadingPkg.value = null
+  }
+}
+
+async function addNode(packageType) {
+  if (loadingPkg.value || batchMode.value) return
+  const defaultEmptyPool = emptyOperationPools.value[0]
+  if (defaultEmptyPool) {
+    await addPackageToPool(packageType, defaultEmptyPool.id)
+    return
+  }
+  loadingPkg.value = packageType
+  try {
+    const node = await createRuntimeNode({ packageType }, nodeList.value.length)
+    prepareNodeAsOwnOperationPool(node, nodeList.value.length === 0 ? null : 'n')
     takeSnapshot()
     nodeList.value.push(node)
+    normalizeOperationPoolNodes(nodeList.value)
     markDerivedStructureChange()
-    if (packageType === CATEGORY_ITEM_PACKAGE) {
-      completeGuidedTutorialStep('add-category-item')
-    }
-    if (packageType === CATEGORY_PUBLIC_PACKAGE && isGuidedTutorialStep('add-public-behavior')) {
-      completeGuidedTutorialStep('add-public-behavior')
-    }
+    completePackageAddTutorial(packageType)
   } catch (error) {
     ElMessage.error(error.message || '组件加载失败，请检查后端连接')
   } finally {
@@ -2970,13 +3492,11 @@ async function addNode(packageType) {
 
 function removeNode(index) {
   takeSnapshot()
-  const [removedNode] = nodeList.value.splice(index, 1)
-  nodeList.value.forEach((node, nodeIndex) => {
-    if (nodeIndex === 0) node.operator = null
-  })
+  const removedNode = removeNodeFromOperationPools(nodeList.value, index)
   if (removedNode) {
     removeBindingsForNode(removedNode.id)
   }
+  ensureDefaultOperationPool()
   markDerivedStructureChange()
 }
 
@@ -2988,7 +3508,7 @@ function duplicateNode(index) {
   const duplicated = cloneNodeForDuplicate(source, index)
   const tutorialCopy = isGuidedTutorialStep('duplicate-own-node') && index === 0
   if (tutorialCopy) duplicated.operator = 'n'
-  insertNodeAtPosition(nodeList.value, duplicated, index)
+  insertOwnPoolNodesAfterPool(nodeList.value, index, [duplicated], duplicated.operator || 'n')
   markDerivedStructureChange()
 
   if (tutorialCopy) {
@@ -3055,10 +3575,7 @@ function handleOverflowSplit(payload) {
       sourceNode.formData[ov.fieldKey] = ov.allValues.slice(0, ov.limit)
     }
   }
-  nodeList.value.splice(srcIndex + 1, 0, ...splits)
-  nodeList.value.forEach((node, idx) => {
-    if (idx === 0) node.operator = null
-  })
+  insertOwnPoolNodesAfterPool(nodeList.value, srcIndex, splits, 'u')
 
   const customFields = currentSolution.value?.customFields || []
   if (customFields.some(cf => (cf.bindings || []).some(binding => binding.nodeId === sourceNode.id))) {
@@ -3247,7 +3764,7 @@ async function applyAiAudiencePlan({ nodes, audienceName, workflow } = {}) {
     if (hydratedNodes.some(node => node._hydrationError)) {
       throw new Error('部分AI节点加载失败，请检查组件配置后重试')
     }
-    resetWorkbenchContext()
+    resetWorkbenchContext({ withDefaultPool: false })
     nodeList.value = hydratedNodes
     nodeRefs.value = {}
     activeNodeIndex.value = 0
@@ -3294,6 +3811,7 @@ async function setWorkbenchFromSolution(record) {
     derivedSolutionMeta.sourceSolutionName = record?.name || ''
     derivedSolutionMeta.hasStructureChanges = false
     derivedSolutionMeta.hasParamChanges = false
+    emptyOperationPools.value = []
     nodeList.value = hydratedNodes
     nodeRefs.value = {}
     activeNodeIndex.value = 0
@@ -3407,6 +3925,7 @@ async function buildFinalJson() {
   const buildAbort = new AbortController()
   jsonBuildAbort = buildAbort
   jsonBuildStatus.value = 'building'
+  jsonBuildError.value = ''
 
   if (nodeList.value.length === 0) {
     generatedJson.value = { crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' }
@@ -3419,7 +3938,8 @@ async function buildFinalJson() {
   }
 
   const list = []
-  let compute = '(0)'
+  const poolExpression = buildOperationPoolExpression(nodeList.value)
+  const compute = poolExpression.compute
   let generationFailed = false
 
   for (let index = 0; index < nodeList.value.length; index += 1) {
@@ -3476,14 +3996,18 @@ async function buildFinalJson() {
         body: JSON.stringify(payload),
         signal: buildAbort.signal,
       })
-      if (!response.ok) throw new Error(`生成接口返回 ${response.status}`)
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null)
+        throw new Error(errorBody?.message || `生成接口返回 ${response.status}`)
+      }
       const nodeJson = await response.json()
       if (nodeJson?.list?.length > 0) {
         const baseTemplate = nodeJson.list[0]
-        baseTemplate.fromPoolId = index
+        if (!PRESERVE_FROM_POOL_ID_PACKAGES.has(node.packageType)) {
+          baseTemplate.fromPoolId = poolExpression.fromPoolIdByIndex.get(index) ?? index
+        }
         if (index > 0) {
           baseTemplate.op = 'INIT'
-          compute += `${node.operator}(${index})`
         }
         list.push(baseTemplate)
       } else {
@@ -3492,6 +4016,7 @@ async function buildFinalJson() {
     } catch (error) {
       if (error.name === 'AbortError') return
       generationFailed = true
+      if (!jsonBuildError.value) jsonBuildError.value = error.message || 'JSON 生成失败'
       console.error('JSON 生成失败，请检查后端服务状态', error)
     }
   }
@@ -3553,13 +4078,13 @@ function getNodeSummary(node) {
     if (field.Widget_Type === '数值_切换') {
       if (mode === 'unlimited') return
       if (mode === 'min' && value?.min !== null && value?.min !== undefined) {
-        display = `≥${value.min}`
+        display = `${getNumericSummaryPrefix(field)}${value.min}`
       } else if (mode === 'range') {
         display = `${value?.min ?? '?'} - ${value?.max ?? '?'}`
       }
     } else if (field.Widget_Type === '日期_切换') {
       if (mode === 'recent' && value?.days) {
-        display = `过去 ${value.days} 天`
+        display = `${getFieldUiLabel(field, 'recentPrefix', '过去')} ${value.days} 天`
       } else if (mode === 'range' && Array.isArray(value?.dateRange) && value.dateRange.length === 2) {
         display = `${value.dateRange[0]} ~ ${value.dateRange[1]}`
       }
@@ -3586,10 +4111,17 @@ function getNodeSummary(node) {
   return items
 }
 
+function getCollapsedNodeSummary(node) {
+  return getNodeSummary(node)
+    .slice(0, 2)
+    .map(item => `${item.label}：${item.value}`)
+    .join(' · ')
+}
+
 function isPureOfficialParityOutput() {
   if (nodeList.value.length === 0) return false
   const packageType = nodeList.value[0]?.packageType
-  if (![CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE].includes(packageType)) return false
+  if (![CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE, BRAND_PROMOTION_PACKAGE, SINGLE_MEDIA_PACKAGE].includes(packageType)) return false
   return nodeList.value.every((node) => node.packageType === packageType)
 }
 
@@ -3825,12 +4357,103 @@ function openBatchFailureRecovery() {
 }
 
 function openBatchAutomationDialog(scope = 'all') {
+  persistActiveBatchEntry()
   batchAutomationScope.value = scope === 'failed' ? 'failed' : 'all'
   batchAutomationSelectedIndexes.value = batchEntries.value
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => batchAutomationScope.value !== 'failed' || entry.automationStatus === 'failed')
     .map(({ index }) => index)
+  batchNamingMessage.value = ''
   batchAutomationDialogVisible.value = true
+}
+
+function getBatchCrowdNameIssue(index) {
+  const name = String(batchEntries.value[index]?.crowdName || '').trim()
+  if (!name) return '请填写人群包名称'
+  const duplicateCount = batchEntries.value.filter(
+    entry => String(entry?.crowdName || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+  ).length
+  return duplicateCount > 1 ? '人群包名称重复' : ''
+}
+
+function updateBatchEntryCrowdName(index, value) {
+  const entry = batchEntries.value[index]
+  if (!entry) return
+  const crowdName = String(value || '').slice(0, 80)
+  entry.crowdName = crowdName
+  if (entry.record) entry.record.defaultCrowdName = crowdName
+  if (entry.sourceRecord) entry.sourceRecord.defaultCrowdName = crowdName
+  if (entry.generatedJson) entry.generatedJson.crowdName = crowdName
+  if (index === activeBatchIndex.value) {
+    crowdNameInput.value = crowdName
+    if (generatedJson.value) generatedJson.value.crowdName = crowdName
+  }
+  batchEntries.value = [...batchEntries.value]
+}
+
+function buildBatchNamingEntry(entry, index) {
+  return {
+    id: String(entry?.id || `batch-${index + 1}`),
+    currentName: String(entry?.crowdName || ''),
+    solutionName: String(entry?.solutionName || entry?.record?.name || ''),
+    parameterField: String(parameterBatchFieldName.value || ''),
+    parameterValues: Array.isArray(entry?.parameterBatchValues)
+      ? entry.parameterBatchValues.slice(0, 20)
+      : [],
+    nodes: (Array.isArray(entry?.nodes) ? entry.nodes : []).slice(0, 20).map((node, nodeIndex) => ({
+      component: String(node?.packageType || ''),
+      name: getNodeDisplayName(node, nodeIndex),
+      relation: nodeIndex === 0
+        ? '起始条件'
+        : node?.operator === 'n'
+          ? '交集'
+          : node?.operator === 'u'
+            ? '并集'
+            : '差集',
+      parameters: getNodeSummary(node).slice(0, 16).map(item => ({
+        label: item.label,
+        value: item.value,
+      })),
+    })),
+  }
+}
+
+async function suggestBatchAudienceNames() {
+  if (batchNamingLoading.value || !batchMode.value || batchAutomationSelectedCount.value === 0) return
+  batchNamingLoading.value = true
+  batchNamingMessage.value = ''
+  try {
+    const selectedRows = batchAutomationSelectedIndexes.value
+      .map(index => ({ entry: batchEntries.value[index], index }))
+      .filter(row => row.entry)
+    const response = await fetchWithTimeout('/api/ai/batch-names', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entries: selectedRows.map(row => buildBatchNamingEntry(row.entry, row.index)),
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data?.message || data?.error || 'AI名称生成失败')
+    const indexById = new Map(
+      selectedRows.map(row => [String(row.entry.id || `batch-${row.index + 1}`), row.index]),
+    )
+    let applied = 0
+    ;(Array.isArray(data?.suggestions) ? data.suggestions : []).forEach((suggestion) => {
+      const index = indexById.get(String(suggestion?.id || ''))
+      if (index === undefined || !String(suggestion?.name || '').trim()) return
+      updateBatchEntryCrowdName(index, suggestion.name)
+      applied += 1
+    })
+    if (!applied) throw new Error('AI没有返回可用的名称建议')
+    batchNamingMessage.value = data?.assistantMessage || `已生成 ${applied} 个名称，可继续逐个修改。`
+    ElMessage.success(`已为 ${applied} 个人群包生成名称`)
+  } catch (error) {
+    batchNamingMessage.value = `${error?.message || 'AI名称生成失败'}；你仍可以手动修改名称。`
+    ElMessage.error(batchNamingMessage.value)
+  } finally {
+    batchNamingLoading.value = false
+  }
 }
 
 function isBatchAutomationEntrySelected(index) {
@@ -3864,6 +4487,10 @@ async function confirmBatchAutomation() {
   if (!batchMode.value) {
     batchAutomationDialogVisible.value = false
     void startAutoDataBankFlow()
+    return
+  }
+  if (!batchAutomationNamesValid.value) {
+    ElMessage.warning('请先处理空名称或重复名称，再开始批量圈人')
     return
   }
   if (isGuidedTutorialStep('combo-confirm-run')) {
@@ -4274,6 +4901,7 @@ function buildWorkbenchSessionPayload() {
     savedAt: new Date().toISOString(),
     workbenchMode: workbenchMode.value,
     nodeList: serializeNodesForSolution(nodeList.value),
+    emptyOperationPools: cloneValue(toRaw(emptyOperationPools.value)),
     crowdNameInput: crowdNameInput.value,
     currentSolution: cloneValue(currentSolution.value),
     loadedSolutionRecord: cloneValue(loadedSolutionRecord.value),
@@ -4331,6 +4959,7 @@ async function restoreWorkbenchSession() {
   snapshotPaused.value = true
   try {
     const ui = stored.ui || {}
+    emptyOperationPools.value = []
     jsonViewMode.value = ['summary', 'json'].includes(ui.jsonViewMode) ? ui.jsonViewMode : 'summary'
     publishedLibraryScope.value = ['mine', 'public'].includes(ui.publishedLibraryScope)
       ? ui.publishedLibraryScope
@@ -4397,6 +5026,13 @@ async function restoreWorkbenchSession() {
     } else {
       resetBatchContext()
       nodeList.value = await hydrateNodes(stored.nodeList || [])
+      emptyOperationPools.value = (Array.isArray(stored.emptyOperationPools)
+        ? stored.emptyOperationPools
+        : []).map((pool) => ({
+        id: String(pool?.id || createOperationPoolId('restored-empty')),
+        type: pool?.type === 'u' ? 'u' : 'n',
+        operator: ['n', 'u', 'd'].includes(pool?.operator) ? pool.operator : 'n',
+      }))
       currentSolution.value = cloneValue(stored.currentSolution)
       loadedSolutionRecord.value = cloneValue(stored.loadedSolutionRecord)
       loadedSolutionFieldIds.value = normalizeWorkbenchFieldIds(
@@ -4410,6 +5046,7 @@ async function restoreWorkbenchSession() {
         compute: '',
       }
       workbenchMode.value = stored.workbenchMode === 'solution-use' ? 'solution-use' : 'free-build'
+      ensureDefaultOperationPool()
     }
 
     Object.assign(derivedSolutionMeta, {
@@ -4566,7 +5203,7 @@ watch(
 )
 
 watch(
-  [nodeList, crowdNameInput],
+  [nodeList, crowdNameInput, emptyOperationPools],
   ([nextNodes]) => {
     enforceWorkbenchFieldConstraints(nextNodes)
     clearTimeout(jsonTimer)
@@ -4607,6 +5244,7 @@ watch(
     batchAutomationScope,
     parameterBatchFieldName,
     parameterBatchFieldId,
+    emptyOperationPools,
   ],
   scheduleWorkbenchSessionSave,
   { deep: true },
@@ -4906,5 +5544,599 @@ onBeforeUnmount(() => {
 @media (prefers-reduced-motion: reduce) {
   .tutorial-copy-source .behavior-card,
   .tutorial-copy-arrival .behavior-card { animation: none; }
+}
+
+.operation-pool-block {
+  position: relative;
+  margin: 0 0 10px;
+}
+
+.operation-pool {
+  --pool-accent: #f26b2d;
+  --pool-soft: #fff4ec;
+  position: relative;
+  padding: 0 10px 10px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e6e8ed;
+  border-left: 3px solid var(--pool-accent);
+  border-radius: 10px;
+  box-shadow: none;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+
+.operation-pool.is-union {
+  --pool-accent: #2878e8;
+  --pool-soft: #eff6ff;
+}
+
+.operation-pool.is-drag-over {
+  background: var(--pool-soft);
+  border-color: var(--pool-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pool-accent) 14%, transparent);
+}
+
+.operation-pool-header {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 2px 5px 0;
+}
+
+.operation-pool-title,
+.operation-pool-actions {
+  display: flex;
+  align-items: center;
+}
+
+.operation-pool-title {
+  min-width: 0;
+  gap: 8px;
+}
+
+.operation-pool-title strong {
+  color: #202124;
+  font-size: 12px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+
+.operation-pool-title small {
+  overflow: hidden;
+  margin-left: 2px;
+  padding-left: 10px;
+  color: #92969f;
+  font-size: 10px;
+  border-left: 1px solid #e1e3e8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-pool-symbol {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 18px;
+  flex: 0 0 28px;
+}
+
+.operation-pool-symbol::before,
+.operation-pool-symbol::after,
+.operation-pool-add-symbol::before,
+.operation-pool-add-symbol::after {
+  position: absolute;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  content: '';
+}
+
+.operation-pool-symbol::before,
+.operation-pool-add-symbol::before { left: 2px; }
+.operation-pool-symbol::after,
+.operation-pool-add-symbol::after { left: 10px; }
+
+.operation-pool-symbol { color: var(--pool-accent); }
+
+.operation-pool-count {
+  display: inline-grid;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  place-items: center;
+  color: var(--pool-accent);
+  font: 700 9px/1 ui-monospace, monospace;
+  background: var(--pool-soft);
+  border-radius: 999px;
+}
+
+.operation-pool-actions {
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.operation-pool-type-switch {
+  padding: 2px;
+  background: #fff;
+  border: 1px solid #dfe2e8;
+  border-radius: 7px;
+}
+
+.operation-pool-type-switch :deep(.el-radio-button__inner) {
+  min-width: 48px;
+  min-height: 24px;
+  padding: 0 9px;
+  color: #737b8b;
+  font-size: 10px;
+  line-height: 24px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.operation-pool-type-switch :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-radius: 4px 0 0 4px;
+}
+
+.operation-pool-type-switch :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-radius: 0 4px 4px 0;
+}
+
+.operation-pool-type-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  color: #fff;
+  background: var(--pool-accent);
+  border-radius: 5px;
+}
+
+.operation-pool.is-union .operation-pool-type-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  color: #fff;
+}
+
+.operation-pool-delete,
+.operation-node-detach {
+  padding: 0;
+  color: #777d88;
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: .42;
+  transition: color .16s ease, opacity .16s ease;
+}
+
+.operation-pool-delete:hover { color: #c94e31; opacity: 1; }
+.operation-node-detach:hover { color: #202124; opacity: 1; }
+
+.operation-pool-body {
+  display: grid;
+  gap: 8px;
+}
+
+.operation-pool-node.node-wrapper {
+  margin: 0;
+}
+
+.operation-pool-node .intercom-card {
+  border: 1px solid #e6e8ed !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.operation-pool-node .intercom-card:hover {
+  transform: none;
+}
+
+.operation-pool-node .card-header-inner {
+  min-height: 40px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #eceef2;
+  border-radius: 8px 8px 0 0;
+}
+
+.operation-pool-node .intercom-card.collapsed .card-header-inner {
+  min-height: 42px;
+  border-bottom: 0;
+  border-radius: 8px;
+}
+
+.operation-pool-drop-hint {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 7px;
+  color: #878783;
+  font-size: 9px;
+  background: transparent;
+  border: 1px dashed #eceef2;
+  border-radius: 5px;
+}
+
+.operation-pool.is-drag-over .operation-pool-drop-hint {
+  color: var(--pool-accent);
+  background: rgba(255, 255, 255, .78);
+  border-color: var(--pool-accent);
+}
+
+.operation-pool-connector {
+  margin-bottom: 4px;
+}
+
+.operation-pool-connector .connector-line {
+  height: 7px;
+}
+
+.operation-pool-relation-label {
+  margin: 1px 0 3px;
+  color: #9ba1ad;
+  font-size: 9px;
+}
+
+/* Official-style dense workbench: small chrome, single-line labels, wide canvas. */
+.workbench-left-panel {
+  padding: 20px 14px 14px;
+}
+
+.center-panel {
+  padding: 18px 22px 14px;
+}
+
+.right-panel {
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.panel-toolbar {
+  min-height: 42px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+}
+
+.workbench-toolbar-copy .display-feature-title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: -.02em !important;
+}
+
+.workbench-package-section .workbench-section-head .display-feature-title,
+.workbench-solution-section .workbench-section-head .display-feature-title {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+}
+
+.canvas-scroll-area {
+  padding-top: 2px;
+  padding-right: 10px;
+}
+
+.node-minimap {
+  width: 30px;
+  gap: 5px;
+  padding: 6px 0;
+}
+
+.minimap-dot {
+  width: 20px;
+  height: 20px;
+}
+
+.operation-pool-node .behavior-card-header {
+  min-height: 34px;
+}
+
+.operation-pool-node .drag-handle {
+  width: 13px;
+  font-size: 12px;
+}
+
+.operation-pool-node .behavior-card-title-group {
+  gap: 5px;
+}
+
+.operation-pool-node .behavior-card-summary {
+  min-width: 0;
+  margin-left: 7px;
+  padding-left: 10px;
+  overflow: hidden;
+  color: #8c919b;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-left: 1px solid #e3e5e9;
+}
+
+.operation-pool-node .behavior-card-collapse {
+  width: 18px;
+  height: 18px;
+  font-size: 8px;
+}
+
+.operation-pool-node .workbench-node-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operation-pool-node .behavior-card-node-badge {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  color: #868b94;
+  background: #f5f6f8;
+  font-size: 9px;
+}
+
+.operation-pool-node .behavior-card-icon-btn.el-button {
+  width: 24px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+}
+
+.operation-pool-node .behavior-card-action-group {
+  opacity: .3;
+  transition: opacity .16s ease;
+}
+
+.operation-pool-node .behavior-card-header:hover .behavior-card-action-group,
+.operation-pool-node .behavior-card-action-group:focus-within {
+  opacity: 1;
+}
+
+.operation-pool-connector .tutorial-intersection-control {
+  padding: 1px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.operation-pool-connector .tutorial-intersection-control :deep(.intercom-radio-group) {
+  gap: 1px;
+}
+
+.operation-pool-connector .tutorial-intersection-control :deep(.el-radio-button__inner) {
+  min-width: 34px;
+  min-height: 24px;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+  line-height: 24px !important;
+  border-radius: 5px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form) {
+  padding: 10px 12px 14px;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-form-item) {
+  min-height: 30px;
+  margin-bottom: 6px;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-form-item__label) {
+  height: 30px;
+  padding-right: 12px !important;
+  overflow: visible;
+  font-size: 12px !important;
+  line-height: 30px;
+  white-space: nowrap;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-form-item__label .display-body),
+.operation-pool-node :deep(.dynamic-form .el-form-item__content),
+.operation-pool-node :deep(.dynamic-form .display-body) {
+  font-size: 12px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-form-item__content) {
+  min-height: 30px;
+  line-height: 30px;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-input__wrapper),
+.operation-pool-node :deep(.dynamic-form .el-select__wrapper),
+.operation-pool-node :deep(.dynamic-form .el-select-v2__wrapper) {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-radius: 6px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .select-auto-height .el-select__wrapper),
+.operation-pool-node :deep(.dynamic-form .select-auto-height .el-select-v2__wrapper) {
+  height: auto !important;
+  min-height: 28px !important;
+  padding: 1px 8px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-input__inner),
+.operation-pool-node :deep(.dynamic-form .el-select__placeholder),
+.operation-pool-node :deep(.dynamic-form .el-select__selected-item) {
+  font-size: 12px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .el-radio__label),
+.operation-pool-node :deep(.dynamic-form .el-checkbox__label) {
+  font-size: 12px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .plain-radio-row),
+.operation-pool-node :deep(.dynamic-form .custom-checkbox-group) {
+  column-gap: 16px;
+  row-gap: 3px;
+}
+
+.operation-pool-node :deep(.dynamic-form .intercom-radio-group .el-radio-button__inner) {
+  min-height: 24px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+  line-height: 24px !important;
+  border-radius: 5px !important;
+}
+
+.operation-pool-node :deep(.dynamic-form .range-block) {
+  gap: 6px 10px;
+}
+
+.operation-pool-add-symbol {
+  position: relative;
+  display: inline-block;
+  width: 24px;
+  height: 18px;
+  flex: 0 0 24px;
+}
+
+.operation-pool-add-button.is-intersection .operation-pool-add-symbol { color: #f26b2d; }
+.operation-pool-add-button.is-union .operation-pool-add-symbol { color: #2878e8; }
+
+.summary-pool {
+  margin-bottom: 13px;
+  padding: 8px;
+  background: #fff;
+  border: 0;
+  border-radius: 0;
+}
+
+.summary-pool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  color: #686f7e;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.summary-pool .summary-node {
+  margin-bottom: 7px;
+  background: #fff;
+}
+
+.summary-pool .summary-node:last-child { margin-bottom: 0; }
+
+.behavior-component-add {
+  cursor: grab;
+}
+
+.behavior-component-add:active {
+  cursor: grabbing;
+}
+
+.behavior-component-item.is-dragging {
+  opacity: .5;
+}
+
+.behavior-component-item.is-dragging .behavior-component-add {
+  color: #ff7043;
+  border-color: #ffad91;
+  background: #fff7f3;
+}
+
+.operation-pool.is-package-target:not(.is-drag-over) .operation-pool-drop-hint {
+  color: color-mix(in srgb, var(--pool-accent) 78%, #707887);
+  border-color: color-mix(in srgb, var(--pool-accent) 42%, #dfe3ea);
+}
+
+.operation-pool.is-empty {
+  padding-bottom: 8px;
+}
+
+.operation-pool.is-empty .operation-pool-body:empty {
+  display: none;
+}
+
+.operation-pool.is-empty .operation-pool-drop-hint {
+  min-height: 72px;
+  margin-top: 2px;
+  color: #8d95a4;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--pool-soft) 58%, #fff);
+  border-color: color-mix(in srgb, var(--pool-accent) 26%, #dfe3ea);
+}
+
+.operation-pool.is-empty.is-drag-over .operation-pool-drop-hint {
+  color: var(--pool-accent);
+  background: var(--pool-soft);
+  border-style: solid;
+}
+
+.operation-pool-add-bar {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  background: #fff;
+  border: 1px solid #e7e9ee;
+  border-radius: 8px;
+}
+
+.operation-pool-add-label {
+  margin-right: 2px;
+  color: #242831;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.operation-pool-add-button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  color: #505767;
+  font: inherit;
+  font-size: 11px;
+  background: #f8f9fb;
+  border: 1px solid #e1e4ea;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color .16s ease, border-color .16s ease, background .16s ease;
+}
+
+.operation-pool-add-button span {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.operation-pool-add-button.is-intersection span { color: #f47b38; }
+.operation-pool-add-button.is-union span { color: #5f91ed; }
+
+.operation-pool-add-button.is-intersection:hover {
+  color: #c75a20;
+  background: #fff7f1;
+  border-color: #f4b18c;
+}
+
+.operation-pool-add-button.is-union:hover {
+  color: #3f70ca;
+  background: #f2f7ff;
+  border-color: #a9c4f5;
+}
+
+@media (max-width: 1180px) {
+  .operation-pool-header { align-items: flex-start; }
+  .operation-pool-title small { display: none; }
+  .operation-pool-actions { align-items: flex-end; flex-direction: column; gap: 5px; }
+
+  .operation-pool-add-bar {
+    flex-wrap: wrap;
+  }
 }
 </style>

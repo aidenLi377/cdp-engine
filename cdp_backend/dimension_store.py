@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from .constants import (
     BEHAVIOR_DIM_FILE,
+    SCENE_DIM_FILE,
     DIMENSION_FILES,
     DIMENSION_NAME_COLUMNS,
     REQUIRED_DIMENSION_COLUMNS,
@@ -96,6 +97,8 @@ class DimensionStore:
         parts = [package_name, name]
         if filename == BEHAVIOR_DIM_FILE:
             parts.append(data.get("适用的渠道", "") or "ALL")
+        elif filename == SCENE_DIM_FILE:
+            parts.append(data.get("适用的行为", ""))
         return "\x1f".join(parts)
 
     @classmethod
@@ -256,12 +259,13 @@ class DimensionStore:
                     frame, _ = read_csv_flexible(path)
                 except Exception:
                     continue
-                existing_count = conn.execute(
-                    "SELECT COUNT(*) FROM dimension_rows WHERE dimension_file = ?",
-                    (filename,),
-                ).fetchone()[0]
-                if existing_count >= len(frame.index):
-                    continue
+                existing_keys = {
+                    row["natural_key"]
+                    for row in conn.execute(
+                        "SELECT natural_key FROM dimension_rows WHERE dimension_file = ?",
+                        (filename,),
+                    ).fetchall()
+                }
                 now = _utc_now()
                 for _, raw_row in frame.iterrows():
                     data = {
@@ -275,6 +279,8 @@ class DimensionStore:
                     package_name = data.get("适用的包", "")
                     display_name = data[self._name_column(filename)]
                     natural_key = self._natural_key(filename, data)
+                    if natural_key in existing_keys:
+                        continue
                     conn.execute(
                         """INSERT OR IGNORE INTO dimension_rows (
                             id, dimension_file, natural_key, package_name, display_name,
@@ -1520,6 +1526,7 @@ class DimensionStore:
                             now,
                         ),
                     )
+                    existing_keys.add(natural_key)
                 used_ids.add(row_id)
 
             for row in current_rows:

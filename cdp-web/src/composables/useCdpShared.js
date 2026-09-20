@@ -70,6 +70,10 @@ function getDynamicDescription(field) { return field.Widget_Type === '日期_切
 
 // ---- 表单可见性逻辑 ----
 function isVisible(field, node) {
+  const optionSourceKey = field?.uiConfig?.optionSourceKey
+  if (optionSourceKey && getArray(node.formData?.[optionSourceKey]).length === 0) {
+    return false
+  }
   if (field.key === 'item' && node.packageType === '商品行为') {
     return node.formData.selectedGoodsType === '指定商品ID'
   }

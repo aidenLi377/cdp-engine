@@ -53,6 +53,11 @@
           "enum": [
             "类目公域行为",
             "类目商品行为",
+            "品牌专区",
+            "品牌推广",
+            "效果推广",
+            "全媒体智投",
+            "单媒体智投",
             "AIPL状态",
             "商品行为",
             "预测购买力",
@@ -70,6 +75,16 @@
           "enum": ["unspecified", "public", "own_brand", "own_store"]
         },
         "brand": {"type": "string"},
+        "adAccount": {
+          "type": "string",
+          "description": "品牌专区或效果推广的广告账号；未填写时使用对应组件的全部账号。"
+        },
+        "adScenes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string"},
+          "description": "效果推广的广告场景；选项由曝光、点击或观看行为动态决定。"
+        },
         "canUseBrandAccount": {
           "type": ["boolean", "null"],
           "description": "仅表示当前用户能否使用匹配到的品牌账号登录数据引擎；未知时必须为null或省略。"
@@ -122,6 +137,10 @@
         "purchaseAmount": {"$ref": "#/$defs/numberRange"},
         "itemPrice": {"$ref": "#/$defs/numberRange"},
         "browseDays": {"$ref": "#/$defs/numberRange"},
+        "behaviorDays": {
+          "$ref": "#/$defs/numberRange",
+          "description": "品牌专区、效果推广或全媒体智投的行为天数；min有值且max为空表示大于，min和max都有值表示闭区间。"
+        },
         "recentDays": {
           "type": "integer",
           "minimum": 1,

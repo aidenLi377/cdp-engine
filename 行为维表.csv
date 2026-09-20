@@ -51,3 +51,14 @@ AIPL状态,忠诚,15187,D_ROYALTY,
 商品行为,预售,16690,PREPAY,淘宝集市
 商品行为,购买,16711,PAY,淘宝集市
 商品行为,退款,16725,REFUND,淘宝集市
+品牌专区,被广告曝光过,15274,EXPOSE_AD,
+品牌专区,点击过广告,15300,CLICK_AD,
+效果推广,曝光,15296,onebp_expose,
+效果推广,点击,15316,onebp_click,
+效果推广,观看,15323,onebp_view,
+全媒体智投,曝光,19873,EXP_UD_ZHT_EXP_BHV,
+全媒体智投,点击,19874,EXP_UD_ZHT_EXP_BHV,
+单媒体智投,曝光,19937,is_pv_uddmt,
+单媒体智投,点击,19937,is_pv_uddmt,
+品牌推广,曝光,15318,exp_pptg,
+品牌推广,点击,15298,click_pptg,

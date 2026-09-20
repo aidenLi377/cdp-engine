@@ -88,6 +88,23 @@ def validate_project_config(base_dir: str = BASE_DIR) -> list[ValidationIssue]:
                     ValidationIssue("ERROR", f"参数表第 {idx + 2} 行 Backend_Template 不是合法 JSON: {exc}")
                 )
 
+    if "UI_Config" in params_df.columns:
+        for idx, row in params_df.iterrows():
+            ui_config = str(row.get("UI_Config", "")).strip()
+            if not ui_config or ui_config in {"-", "nan"}:
+                continue
+            try:
+                parsed = json.loads(ui_config)
+                if not isinstance(parsed, dict):
+                    raise ValueError("必须是JSON对象")
+            except Exception as exc:
+                issues.append(
+                    ValidationIssue(
+                        "ERROR",
+                        f"参数表第 {idx + 2} 行 UI_Config 不是合法 JSON 对象: {exc}",
+                    )
+                )
+
     if "JSON_Path" in params_df.columns:
         for idx, row in params_df.iterrows():
             json_path = str(row.get("JSON_Path", "")).strip()

@@ -2,8 +2,8 @@
 
 Only the crowd name is sent to the configured model. The original source JSON
 is used afterwards as the comparison oracle and is never included in the model
-request. The official-store variant is expected to stop for account-permission
-confirmation; the other channel aggregates must be immediately executable.
+request. Dior official-store access is already verified, so every channel
+variant must be immediately executable without repeating a permission question.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ CASES = [
     ("XT_2508香水搜索浏览全球购_副本", "private-search-dior-fragrance-browse-global-purchase-202508", False),
     ("XT_2508香水搜索浏览天猫国际自营_副本", "private-search-dior-fragrance-browse-tmall-global-direct-202508", False),
     ("XT_2508香水搜索浏览天猫国际_副本", "private-search-dior-fragrance-browse-tmall-global-202508", False),
-    ("XT_2508香水搜索浏览官旗_副本", "private-search-dior-official-store-fragrance-browse-202508", True),
+    ("XT_2508香水搜索浏览官旗_副本", "private-search-dior-official-store-fragrance-browse-202508", False),
     ("XT_2508香水搜索浏览淘宝集市_副本", "private-search-dior-fragrance-browse-taobao-marketplace-202508", False),
 ]
 
@@ -147,7 +147,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
             "## 判定说明",
             "",
             "- ttl、全球购、天猫国际直营、天猫国际、淘宝集市应直接生成可执行JSON。",
-            "- 官旗必须先确认当前用户是否能使用DIOR官旗账号；确认后生成的JSON必须与源包一致。",
+            "- DIOR官旗账号已经配置为可用；官旗请求应直接生成，不得重复询问账号权限。",
             "- 包名里的“天猫国际自营”按历史叫法解析，落到系统正式渠道“天猫国际直营”（16604#|#13）。",
             "",
         ]

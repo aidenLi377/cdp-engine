@@ -56,6 +56,11 @@ IGNORED_FORM_FIELDS = {
 # solution remains the sole source of component order, fixed values and
 # parameter bindings.
 SOLUTION_SEMANTICS: dict[str, dict[str, Any]] = {
+    "品类老客": {
+        "businessDefinition": "统计期购买本品牌目标分析类目；对比期买过目标分析类目，但没有买过本品牌核心类目。它表示目标品类的既有消费者，不能标为转牌新客。",
+        "recognitionExamples": ["前期买过目标品类但没买本品牌，近期买本品牌目标品类", "品类老客"],
+        "canonicalOrder": ["统计期本品牌分析类目购买", "对比期分析类目购买（交集）", "对比期本品牌核心类目购买（排除）"],
+    },
     "品类新客": {
         "businessDefinition": "统计期购买本品牌目标分析类目，排除对比期买过本品牌核心类目的人，再排除对比期买过目标分析类目的人。",
         "recognitionExamples": ["目标品类新客", "近期买本品牌该品类、过去既没买本品牌也没买该品类"],
@@ -169,6 +174,14 @@ class AiSolutionKnowledge:
         }
 
     @staticmethod
+    def _has_complete_top_ten(profile: dict[str, Any]) -> bool:
+        """An old 95% cache is usable only if it contains every top-ten row."""
+
+        total_categories = int(profile.get("allCategoryCount") or 0)
+        core_count = len(profile.get("coreCategories") or [])
+        return total_categories > 0 and core_count >= min(10, total_categories)
+
+    @staticmethod
     def _normalize_store_lookup(value: object) -> str:
         normalized = str(value or "").strip().casefold()
         normalized = re.sub(r"[\s/／\\_\-—·•（）()【】\[\]{}]+", "", normalized)
@@ -215,6 +228,8 @@ class AiSolutionKnowledge:
         matches: list[tuple[int, float, dict[str, Any]]] = []
         for profile in self._load_store_category_knowledge()["profiles"]:
             if require_fully_mapped and not profile.get("fullyMapped"):
+                continue
+            if require_fully_mapped and not self._has_complete_top_ten(profile):
                 continue
             store_key = self._normalize_store_lookup(
                 profile.get("normalizedStoreName") or profile.get("storeName")
@@ -269,6 +284,8 @@ class AiSolutionKnowledge:
         for profile in self._load_store_category_knowledge()["profiles"]:
             if require_fully_mapped and not profile.get("fullyMapped"):
                 continue
+            if require_fully_mapped and not self._has_complete_top_ten(profile):
+                continue
             store_key = self._normalize_store_lookup(
                 profile.get("normalizedStoreName") or profile.get("storeName")
             )
@@ -294,8 +311,27 @@ class AiSolutionKnowledge:
             return []
         return [
             str(item.get("categoryPath") or "").strip()
-            for item in profile.get("coreCategories") or []
+            for item in (profile.get("coreCategories") or [])[:10]
             if str(item.get("categoryPath") or "").strip() and item.get("cateId")
+        ]
+
+    def brand_category_group_top_categories(
+        self, brand_or_store: object, group: str
+    ) -> list[str]:
+        """Take a group's ten best-selling second-level categories for one store."""
+
+        profile = self.find_brand_core_profile(
+            brand_or_store, require_fully_mapped=False
+        )
+        if profile is None:
+            return []
+        categories = (profile.get("categoryGroups") or {}).get(group) or []
+        if not categories or any(not item.get("cateId") for item in categories[:10]):
+            return []
+        return [
+            str(item.get("categoryPath") or "").strip()
+            for item in categories[:10]
+            if str(item.get("categoryPath") or "").strip()
         ]
 
     def _load_training_knowledge(self) -> dict[str, Any]:
@@ -303,16 +339,120 @@ class AiSolutionKnowledge:
             with self.training_examples_path.open("r", encoding="utf-8") as stream:
                 payload = json.load(stream)
         except (OSError, json.JSONDecodeError):
-            return {"businessTimeSemantics": [], "rules": [], "examples": []}
+            return {"businessTimeSemantics": [], "verifiedBrandAccountAccess": [], "businessTermMappings": [], "adTouchpointMappings": [], "campaignAudienceMappings": [], "rules": [], "examples": []}
         if not isinstance(payload, dict):
-            return {"businessTimeSemantics": [], "rules": [], "examples": []}
+            return {"businessTimeSemantics": [], "verifiedBrandAccountAccess": [], "businessTermMappings": [], "adTouchpointMappings": [], "campaignAudienceMappings": [], "rules": [], "examples": []}
         return {
             "businessTimeSemantics": copy.deepcopy(
                 payload.get("businessTimeSemantics") or []
             ),
+            "verifiedBrandAccountAccess": copy.deepcopy(
+                payload.get("verifiedBrandAccountAccess") or []
+            ),
+            "businessTermMappings": copy.deepcopy(
+                payload.get("businessTermMappings") or []
+            ),
+            "adTouchpointMappings": copy.deepcopy(
+                payload.get("adTouchpointMappings") or []
+            ),
+            "campaignAudienceMappings": copy.deepcopy(
+                payload.get("campaignAudienceMappings") or []
+            ),
             "rules": copy.deepcopy(payload.get("rules") or []),
             "examples": copy.deepcopy(payload.get("examples") or []),
         }
+
+    def find_verified_brand_account_access(
+        self, brand_or_message: object
+    ) -> dict[str, Any] | None:
+        normalized = str(brand_or_message or "").casefold()
+        matches = [
+            mapping
+            for mapping in self._load_training_knowledge()[
+                "verifiedBrandAccountAccess"
+            ]
+            if isinstance(mapping, dict)
+            and mapping.get("canUseBrandAccount") is True
+            and any(
+                isinstance(alias, str) and alias.casefold() in normalized
+                for alias in [mapping.get("brand"), *(mapping.get("aliases") or [])]
+                if alias
+            )
+        ]
+        return copy.deepcopy(matches[0]) if len(matches) == 1 else None
+
+    def find_business_term_mapping(self, message: str) -> dict[str, Any] | None:
+        normalized = str(message or "").casefold()
+        matches = [
+            mapping
+            for mapping in self._load_training_knowledge()["businessTermMappings"]
+            if isinstance(mapping, dict)
+            and any(
+                isinstance(alias, str) and alias.casefold() in normalized
+                for alias in mapping.get("aliases") or []
+            )
+        ]
+        return copy.deepcopy(matches[0]) if len(matches) == 1 else None
+
+    def find_ad_touchpoint_mapping(self, message: str) -> dict[str, Any] | None:
+        normalized = str(message or "").casefold()
+        matches = [
+            mapping
+            for mapping in self._load_training_knowledge()["adTouchpointMappings"]
+            if isinstance(mapping, dict)
+            and any(
+                isinstance(alias, str) and alias.casefold() in normalized
+                for alias in mapping.get("aliases") or []
+            )
+        ]
+        return copy.deepcopy(matches[0]) if len(matches) == 1 else None
+
+    def find_campaign_audience_mapping(self, message: str) -> dict[str, Any] | None:
+        normalized = str(message or "").casefold()
+        matches = [
+            mapping
+            for mapping in self._load_training_knowledge()[
+                "campaignAudienceMappings"
+            ]
+            if isinstance(mapping, dict)
+            and any(
+                isinstance(alias, str) and alias.casefold() in normalized
+                for alias in mapping.get("aliases") or []
+            )
+        ]
+        return copy.deepcopy(matches[0]) if len(matches) == 1 else None
+
+    def find_exact_curated_example(self, message: str) -> dict[str, Any] | None:
+        """Return a confirmed training example only for an exact utterance match.
+
+        This is a recovery path for occasional model turns that return prose
+        without an intent.  It deliberately does not fuzzy-match: unfamiliar
+        natural language must still be interpreted by the model and validated
+        by the compiler rather than being forced into the nearest example.
+        """
+
+        normalized = re.sub(r"\s+", "", str(message or "")).casefold()
+        if not normalized:
+            return None
+        matches: list[dict[str, Any]] = []
+        for example in self._load_training_knowledge()["examples"]:
+            if not isinstance(example, dict):
+                continue
+            for utterance in example.get("naturalLanguageVariants") or []:
+                if re.sub(r"\s+", "", str(utterance or "")).casefold() == normalized:
+                    matches.append({"example": example, "period": None})
+            for variant in example.get("dynamicNaturalLanguageVariants") or []:
+                if not isinstance(variant, dict):
+                    continue
+                utterance = variant.get("utterance")
+                if re.sub(r"\s+", "", str(utterance or "")).casefold() == normalized:
+                    matches.append(
+                        {
+                            "example": example,
+                            "period": str(variant.get("period") or "") or None,
+                        }
+                    )
+        return copy.deepcopy(matches[0]) if len(matches) == 1 else None
 
     def _prompt_training_examples(self) -> list[dict[str, Any]]:
         compact_examples = []
@@ -357,6 +497,10 @@ class AiSolutionKnowledge:
             "solutionKnowledgeUpdatedAt": latest or None,
             "trainingExampleCount": len(training_knowledge["examples"]),
             "storeCategoryProfileCount": len(store_knowledge["profiles"]),
+            "availableTopTenCategoryProfileCount": sum(
+                1 for item in store_knowledge["profiles"]
+                if item.get("fullyMapped") and self._has_complete_top_ten(item)
+            ),
             "fullyMappedStoreCategoryProfileCount": sum(
                 1 for item in store_knowledge["profiles"] if item.get("fullyMapped")
             ),
@@ -374,8 +518,16 @@ class AiSolutionKnowledge:
                     "coveredShare": matched_profile.get("coveredShare"),
                     "coreCategories": [
                         item.get("categoryPath")
-                        for item in matched_profile.get("coreCategories") or []
+                        for item in (matched_profile.get("coreCategories") or [])[:10]
                     ],
+                    "makeupTopCategories": [
+                        item.get("categoryPath")
+                        for item in (matched_profile.get("categoryGroups") or {}).get("彩妆") or []
+                    ][:10],
+                    "skincareTopCategories": [
+                        item.get("categoryPath")
+                        for item in (matched_profile.get("categoryGroups") or {}).get("护肤") or []
+                    ][:10],
                 }
             )
         return {
@@ -386,12 +538,21 @@ class AiSolutionKnowledge:
                 "parameterBindings是用户需要提供或可从本轮话语提取的变量；不要复制方案创建时的示例品牌、类目和日期。",
                 "fixedIntent是方案定义本身。用户没有另行修改时必须保留，不能对其中已有的行为再次追问。",
                 "公共方案只提供业务结构参考；实时品牌、类目、账号和字段选项仍交给后端校验。",
-                "品类新客、品类老客等方案中的分析类目是本次目标二级类目；品牌核心类目必须来自店铺销售趋势知识，按店铺销售额降序累计并包含首次达到或超过整店95%的临界二级类目，两者不能混用或互相覆盖。",
-                "命中店铺销售趋势知识后，系统会确定性自动填充全部品牌核心类目；核心类目总数不限，不要自行编造、删减或用分析类目覆盖它。单节点最多10项，超过时必须先完成其他参数，再由用户最后确认批量拆分。",
+                "品类新客、品类老客等方案中的分析类目是本次目标二级类目；品牌核心类目按店铺销售额降序取前10个二级类目，不使用销售覆盖率阈值，不得把分析类目复制为品牌核心类目。",
+                "口语中的某品牌“彩妆”按一级类目“彩妆/香水/美妆工具”解释，先限定这个一级类目，再按二级类目销售额取前10项；因此香水和美容工具也属于这一口语范围。口语中的“护肤”同理按一级类目“美容护肤/美体/精油”解释。这些范围都不同于全店品牌核心类目。",
+                "仅在店铺销售趋势知识包含完整前10项时自动填充品牌核心类目；旧95%缓存不够10项且店铺还有更多类目时不得假称已选出前10。品牌核心类目最多10项，不需要因该字段批量拆分。",
                 "curatedExamples是用户确认过的JSON反向训练样本，用于学习组件与字段语义；它们不是公共方案，除非另有方案命中，否则不要填写solutionId。",
             ],
             "solutions": self.list_summaries(),
             "businessTimeSemantics": training_knowledge["businessTimeSemantics"],
+            "verifiedBrandAccountAccess": training_knowledge[
+                "verifiedBrandAccountAccess"
+            ],
+            "businessTermMappings": training_knowledge["businessTermMappings"],
+            "adTouchpointMappings": training_knowledge["adTouchpointMappings"],
+            "campaignAudienceMappings": training_knowledge[
+                "campaignAudienceMappings"
+            ],
             "curatedTrainingRules": training_knowledge["rules"],
             "curatedExamples": self._prompt_training_examples(),
             "matchedStoreCategoryProfiles": matched_profiles,
@@ -426,6 +587,7 @@ class AiSolutionKnowledge:
                     }
 
         summarized_nodes = []
+        seen_pool_ids: set[str] = set()
         for node in solution.get("nodes") or []:
             if not isinstance(node, dict):
                 continue
@@ -442,12 +604,18 @@ class AiSolutionKnowledge:
                 intent_field = FORM_TO_INTENT_FIELD.get(str(field_key))
                 if intent_field:
                     fixed_intent[intent_field] = copy.deepcopy(value)
+            pool_id = str(node.get("poolId") or "").strip()
+            relation_operator = node.get("operator")
+            if pool_id and pool_id in seen_pool_ids:
+                relation_operator = node.get("poolOperator") or "n"
+            if pool_id:
+                seen_pool_ids.add(pool_id)
             summarized_nodes.append(
                 {
                     "displayName": str(node.get("displayName") or "").strip(),
                     "component": str(node.get("packageType") or "").strip(),
                     "relation": RELATION_LABELS.get(
-                        node.get("operator"), str(node.get("operator") or "start")
+                        relation_operator, str(relation_operator or "start")
                     ),
                     "fixedIntent": fixed_intent,
                     "parameterBindings": parameter_bindings,
@@ -473,7 +641,7 @@ class AiSolutionKnowledge:
                         {
                             "selectionMode": "multiple",
                             "maxSelectionsPerNode": 10,
-                            "description": "系统根据店铺销售趋势自动取累计覆盖整店95%销售额的全部核心二级类目；总数不限，单节点最多10项，超过时在其他参数完成后再确认拆分。",
+                            "description": "系统按店铺销售额降序取前10个二级类目；不足10个时保留全部，源数据不足时不能编造。",
                         }
                     )
 

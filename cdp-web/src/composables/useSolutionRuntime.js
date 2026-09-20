@@ -8,6 +8,8 @@ import {
   refreshConfigVersion,
 } from '../utils/configVersion.js'
 import { initializeCategoryBehaviorDateState } from '../utils/categoryBehaviorDateDefaults.js'
+import { getDateDefaultDays, getSingleChoiceDefault } from '../utils/fieldUiConfig.js'
+import { normalizeOperationPoolNodes, POOL_INTERSECTION } from '../utils/operationPools.js'
 
 function unwrapCloneValue(value, seen = new WeakMap()) {
   if (isRef(value)) return unwrapCloneValue(value.value, seen)
@@ -72,6 +74,8 @@ export function bindRuntimeUsageSections(baseSections, nodes) {
         displayName: runtimeNode.displayName,
         packageType: runtimeNode.packageType,
         operator: runtimeNode.operator,
+        poolId: runtimeNode.poolId,
+        poolOperator: runtimeNode.poolOperator,
         formData: runtimeNode.formData,
         modeData: runtimeNode.modeData,
         logicMatrix: runtimeNode.logicMatrix,
@@ -186,20 +190,23 @@ export function useSolutionRuntime() {
 
     for (const field of schema) {
       if (field.Widget_Type === '搜索单选') {
-        formData[field.key] = ''
+        const hasConfiguredDefault = Object.prototype.hasOwnProperty.call(
+          field.uiConfig || {},
+          'defaultValue',
+        )
+        formData[field.key] = hasConfiguredDefault ? getSingleChoiceDefault(field) : ''
       } else if (
-        ['搜索多选', '复选组', '下拉多选'].includes(field.Widget_Type) ||
-        ['bhv', 'channel', 'leafCates', 'stdBrand'].includes(field.key)
+        ['搜索多选', '复选组', '下拉多选', '动态多选'].includes(field.Widget_Type)
       ) {
         formData[field.key] = []
       } else if (field.Widget_Type === '单选组') {
-        formData[field.key] = '任意商品标题关键字'
+        formData[field.key] = getSingleChoiceDefault(field)
       } else if (field.Widget_Type === '数值_切换') {
         modeData[field.key] = 'unlimited'
         formData[field.key] = { min: null, max: null }
       } else if (field.Widget_Type === '日期_切换') {
         modeData[field.key] = 'recent'
-        formData[field.key] = { days: 30, dateRange: [] }
+        formData[field.key] = { days: getDateDefaultDays(field), dateRange: [] }
       } else {
         formData[field.key] = ''
       }
@@ -283,11 +290,16 @@ export function useSolutionRuntime() {
             .filter(Boolean)
     }
 
+    const nodeId = node?.id || `node_${Date.now()}_${index}`
     const runtimeNode = {
-      id: node?.id || `node_${Date.now()}_${index}`,
+      id: nodeId,
       displayName: typeof node?.displayName === 'string' ? node.displayName : '',
       packageType,
       operator: index === 0 ? null : (node?.operator ?? 'n'),
+      poolId: String(node?.poolId || `pool_${nodeId}`),
+      poolOperator: ['n', 'u'].includes(node?.poolOperator)
+        ? node.poolOperator
+        : POOL_INTERSECTION,
       schema: meta.schema,
       logicMatrix: meta.matrix,
       formData,
@@ -312,11 +324,16 @@ export function useSolutionRuntime() {
         hydrated.push(result.value)
       } else {
         console.error(`节点 ${sourceNodes[i]?.packageType || i} 加载失败:`, result.reason)
+        const nodeId = sourceNodes[i]?.id || `node_error_${i}`
         hydrated.push({
-          id: sourceNodes[i]?.id || `node_error_${i}`,
+          id: nodeId,
           displayName: typeof sourceNodes[i]?.displayName === 'string' ? sourceNodes[i].displayName : '',
           packageType: sourceNodes[i]?.packageType || '未知组件',
           operator: i === 0 ? null : (sourceNodes[i]?.operator ?? 'n'),
+          poolId: String(sourceNodes[i]?.poolId || `pool_${nodeId}`),
+          poolOperator: ['n', 'u'].includes(sourceNodes[i]?.poolOperator)
+            ? sourceNodes[i].poolOperator
+            : POOL_INTERSECTION,
           schema: [],
           logicMatrix: {},
           formData: sourceNodes[i]?.formData || {},
@@ -326,7 +343,7 @@ export function useSolutionRuntime() {
         })
       }
     })
-    return hydrated
+    return normalizeOperationPoolNodes(hydrated)
   }
 
   function normalizeWorkbenchFieldIds(workbenchFieldIds, nodes) {

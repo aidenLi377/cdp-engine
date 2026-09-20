@@ -36,7 +36,7 @@ ATTRIBUTE_COMPONENTS = {
     "预测性别",
     "月均消费金额",
 }
-MULTI_VALUE_WIDGETS = {"搜索多选", "复选组", "下拉多选"}
+MULTI_VALUE_WIDGETS = {"搜索多选", "复选组", "下拉多选", "动态多选"}
 DEFAULT_CATEGORY_RECENT_DAYS = {
     "购买": 366,
     "预售": 180,
@@ -53,6 +53,8 @@ CONDITION_KEYS = {
     "component",
     "scope",
     "brand",
+    "adAccount",
+    "adScenes",
     "canUseBrandAccount",
     "needsFineGrainedCount",
     "behaviors",
@@ -67,13 +69,16 @@ CONDITION_KEYS = {
     "purchaseAmount",
     "itemPrice",
     "browseDays",
+    "behaviorDays",
     "recentDays",
     "dateRange",
     "aiplStatuses",
     "attributes",
 }
 OPTION_FIELD_TO_INTENT_FIELD = {
+    "account": "adAccount",
     "bhv": "behaviors",
+    "onebp_scene": "adScenes",
     "leafCates": "categories",
     "cate": "categories",
     "stdBrand": "brands",
@@ -291,7 +296,8 @@ class AiIntentCompiler:
             }
 
         for index, item in enumerate(generated_items):
-            item["fromPoolId"] = index
+            if item.get("fromPoolId") in (None, 0):
+                item["fromPoolId"] = index
             if index > 0:
                 item["op"] = "INIT"
         compute = "(0)"
@@ -324,7 +330,15 @@ class AiIntentCompiler:
             raise IntentValidationError(
                 f"第{index + 1}个条件包含未知字段：{', '.join(sorted(unknown))}"
             )
-        for field in ("id", "displayName", "relation", "component", "scope", "brand"):
+        for field in (
+            "id",
+            "displayName",
+            "relation",
+            "component",
+            "scope",
+            "brand",
+            "adAccount",
+        ):
             if field in condition and condition[field] is not None and not isinstance(
                 condition[field], str
             ):
@@ -341,6 +355,7 @@ class AiIntentCompiler:
             raise IntentValidationError("scope值不受支持")
         for field in (
             "behaviors",
+            "adScenes",
             "categories",
             "brands",
             "channels",
@@ -431,6 +446,11 @@ class AiIntentCompiler:
             ConfigEngine.CATEGORY_PUBLIC_PACKAGE,
             ConfigEngine.CATEGORY_ITEM_PACKAGE,
             ConfigEngine.COMMODITY_PACKAGE,
+            ConfigEngine.BRAND_ZONE_PACKAGE,
+            ConfigEngine.BRAND_PROMOTION_PACKAGE,
+            ConfigEngine.EFFECT_PROMOTION_PACKAGE,
+            ConfigEngine.OMNIMEDIA_PACKAGE,
+            ConfigEngine.SINGLE_MEDIA_PACKAGE,
         }
         if component in behavior_components:
             if not behaviors:
@@ -450,9 +470,57 @@ class AiIntentCompiler:
                     self._question(
                         condition_id,
                         "behaviors",
-                        "请选择需要圈选的用户行为，例如浏览、购买、收藏或加购。",
-                        "“类目公域行为”是组件名称；这里需要选择组件内的具体用户行为。",
-                        answer_type="multi_select",
+                        (
+                            "请选择曝光或点击。"
+                            if component in {
+                                ConfigEngine.OMNIMEDIA_PACKAGE,
+                                ConfigEngine.SINGLE_MEDIA_PACKAGE,
+                            }
+                            else (
+                                "请选择被广告曝光过或点击过广告。"
+                                if component == ConfigEngine.BRAND_ZONE_PACKAGE
+                                else (
+                                    "请选择品牌推广的曝光或点击。"
+                                    if component == ConfigEngine.BRAND_PROMOTION_PACKAGE
+                                    else (
+                                    "请选择曝光、点击或观看。"
+                                    if component == ConfigEngine.EFFECT_PROMOTION_PACKAGE
+                                    else "请选择需要圈选的用户行为，例如浏览、购买、收藏或加购。"
+                                    )
+                                )
+                            )
+                        ),
+                        (
+                            f"{component}的行为为单选；多个行为会拆成多个节点。"
+                            if component in {
+                                ConfigEngine.OMNIMEDIA_PACKAGE,
+                                ConfigEngine.SINGLE_MEDIA_PACKAGE,
+                            }
+                            else (
+                                "品牌专区的行为为单选；多个行为会拆成多个节点。"
+                                if component == ConfigEngine.BRAND_ZONE_PACKAGE
+                                else (
+                                    "品牌推广的行为为单选，且场景随行为变化。"
+                                    if component == ConfigEngine.BRAND_PROMOTION_PACKAGE
+                                    else (
+                                    "效果推广的行为为单选，并决定可选的广告场景。"
+                                    if component == ConfigEngine.EFFECT_PROMOTION_PACKAGE
+                                    else "组件名称不等于具体行为；这里需要选择组件内的用户行为。"
+                                    )
+                                )
+                            )
+                        ),
+                        answer_type=(
+                            "single_select"
+                            if component in {
+                                ConfigEngine.BRAND_ZONE_PACKAGE,
+                                ConfigEngine.BRAND_PROMOTION_PACKAGE,
+                                ConfigEngine.EFFECT_PROMOTION_PACKAGE,
+                                ConfigEngine.OMNIMEDIA_PACKAGE,
+                                ConfigEngine.SINGLE_MEDIA_PACKAGE,
+                            }
+                            else "multi_select"
+                        ),
                         options=behavior_options,
                     )
                 )
@@ -486,9 +554,16 @@ class AiIntentCompiler:
             )
 
         expansions: list[tuple[list[str], str | None]] = []
+        split_single_behavior = component in {
+            ConfigEngine.BRAND_ZONE_PACKAGE,
+            ConfigEngine.BRAND_PROMOTION_PACKAGE,
+            ConfigEngine.EFFECT_PROMOTION_PACKAGE,
+            ConfigEngine.OMNIMEDIA_PACKAGE,
+            ConfigEngine.SINGLE_MEDIA_PACKAGE,
+        }
         behavior_groups = (
             [[behavior] for behavior in behaviors]
-            if behavior_match == "all" and len(behaviors) > 1
+            if split_single_behavior or (behavior_match == "all" and len(behaviors) > 1)
             else [behaviors]
         )
         if component == ConfigEngine.CATEGORY_ITEM_PACKAGE:
@@ -512,8 +587,9 @@ class AiIntentCompiler:
                     expansions.append((behavior_group, internal_operator))
         else:
             for behavior_index, behavior_group in enumerate(behavior_groups):
+                internal_relation = "n" if behavior_match == "all" else "u"
                 expansions.append(
-                    (behavior_group, "n" if behavior_index > 0 else None)
+                    (behavior_group, internal_relation if behavior_index > 0 else None)
                 )
 
         category_split_chunks: list[list[str]] = []
@@ -543,6 +619,34 @@ class AiIntentCompiler:
                 f"品牌核心类目共有{len(categories)}项；已在其余参数齐全后按每节点最多10项拆成{len(category_split_chunks)}组。"
             )
 
+        title_keywords = _clean_list(condition.get("titleKeywords"), "titleKeywords")
+        if component == ConfigEngine.CATEGORY_PUBLIC_PACKAGE and len(title_keywords) > 10:
+            if behavior_match == "all" and len(behavior_groups) > 1:
+                raise IntentValidationError(
+                    "多个行为都要发生且商品标题关键词超过10个时，当前工作台无法无歧义表达分组关系，请拆成独立条件。"
+                )
+            title_chunks = [
+                title_keywords[index : index + 10]
+                for index in range(0, len(title_keywords), 10)
+            ]
+            expanded_titles: list[tuple[list[str], str | None, list[str] | None, list[str]]] = []
+            for expansion in expansions:
+                behavior_group, behavior_operator = expansion[:2]
+                category_chunk = expansion[2] if len(expansion) > 2 else None
+                for chunk_index, title_chunk in enumerate(title_chunks):
+                    chunk_operator = (
+                        behavior_operator
+                        if chunk_index == 0
+                        else ("d" if relation == "d" else "u")
+                    )
+                    expanded_titles.append(
+                        (behavior_group, chunk_operator, category_chunk, title_chunk)
+                    )
+            expansions = expanded_titles
+            warnings.append(
+                f"商品标题关键词共有{len(title_keywords)}项；已在其余参数齐全后按每节点最多10项拆成{len(title_chunks)}组。"
+            )
+
         if questions:
             return {
                 "nodes": [],
@@ -558,6 +662,7 @@ class AiIntentCompiler:
         for group_index, expansion in enumerate(expansions):
             behavior_group, internal_operator = expansion[:2]
             category_chunk = expansion[2] if len(expansion) > 2 else None
+            title_chunk = expansion[3] if len(expansion) > 3 else None
             product_id = None
             if component == ConfigEngine.CATEGORY_ITEM_PACKAGE and product_ids:
                 product_id = product_ids[group_index % len(product_ids)]
@@ -565,6 +670,8 @@ class AiIntentCompiler:
             node_condition = copy.deepcopy(condition)
             if category_chunk is not None:
                 node_condition["categories"] = category_chunk
+            if title_chunk is not None:
+                node_condition["titleKeywords"] = title_chunk
             built = self._build_node(
                 component,
                 node_condition,
@@ -617,9 +724,27 @@ class AiIntentCompiler:
                 "purchaseAmount": {"购买"},
             },
             ConfigEngine.CATEGORY_ITEM_PACKAGE: {},
+            ConfigEngine.BRAND_ZONE_PACKAGE: {
+                "behaviorDays": {"被广告曝光过", "点击过广告"},
+            },
+            ConfigEngine.BRAND_PROMOTION_PACKAGE: {
+                "behaviorDays": {"曝光", "点击"},
+            },
+            ConfigEngine.EFFECT_PROMOTION_PACKAGE: {
+                "behaviorDays": {"曝光", "点击", "观看"},
+            },
+            ConfigEngine.OMNIMEDIA_PACKAGE: {
+                "behaviorDays": {"曝光", "点击"},
+            },
         }
         component_rules = applicability.get(component, {})
-        for field in ("browseDays", "purchaseCount", "purchaseAmount", "itemPrice"):
+        for field in (
+            "browseDays",
+            "behaviorDays",
+            "purchaseCount",
+            "purchaseAmount",
+            "itemPrice",
+        ):
             if condition.get(field) is None:
                 continue
             valid_behaviors = component_rules.get(field, set())
@@ -655,7 +780,17 @@ class AiIntentCompiler:
         meta = self.engine.get_package_meta(component)
         form_data, mode_data = self._initial_state(component, meta.get("schema") or [])
         if behaviors:
-            form_data["bhv"] = behaviors
+            form_data["bhv"] = (
+                behaviors[0]
+                if component in {
+                    ConfigEngine.BRAND_ZONE_PACKAGE,
+                    ConfigEngine.BRAND_PROMOTION_PACKAGE,
+                    ConfigEngine.EFFECT_PROMOTION_PACKAGE,
+                    ConfigEngine.OMNIMEDIA_PACKAGE,
+                    ConfigEngine.SINGLE_MEDIA_PACKAGE,
+                }
+                else behaviors
+            )
 
         if component == ConfigEngine.CATEGORY_PUBLIC_PACKAGE:
             self._populate_category_public(
@@ -667,6 +802,26 @@ class AiIntentCompiler:
         elif component == ConfigEngine.COMMODITY_PACKAGE:
             self._populate_commodity(
                 condition, condition_id, form_data, mode_data, questions, warnings
+            )
+        elif component == ConfigEngine.BRAND_ZONE_PACKAGE:
+            self._populate_brand_zone(
+                condition, condition_id, form_data, mode_data, questions
+            )
+        elif component == ConfigEngine.BRAND_PROMOTION_PACKAGE:
+            self._populate_brand_promotion(
+                condition, condition_id, form_data, mode_data, questions
+            )
+        elif component == ConfigEngine.EFFECT_PROMOTION_PACKAGE:
+            self._populate_effect_promotion(
+                condition, condition_id, form_data, mode_data, questions
+            )
+        elif component == ConfigEngine.OMNIMEDIA_PACKAGE:
+            self._populate_omnimedia(
+                condition, condition_id, form_data, mode_data, questions
+            )
+        elif component == ConfigEngine.SINGLE_MEDIA_PACKAGE:
+            self._populate_single_media(
+                condition, condition_id, form_data, mode_data, questions
             )
         elif component == "AIPL状态":
             statuses = _clean_list(condition.get("aiplStatuses"), "aiplStatuses")
@@ -805,12 +960,12 @@ class AiIntentCompiler:
         )
         category_parameter_name = "品牌核心类目" if is_brand_core_category else "分析类目"
         category_prompt = (
-            f"请选择{brand_label or '该品牌'}的品牌核心类目；总数不限，系统会按每个组件最多10项自动拆分。"
+            f"暂时无法从销售报表确认{brand_label or '该品牌'}全店销售额最高的前10个二级类目，请选择要使用的品牌核心类目。"
             if is_brand_core_category
             else "请选择需要分析的类目。"
         )
         category_reason = (
-            "品牌核心类目是该品牌销售最高的核心二级类目，用于排除对比期内已经购买过该品牌的人；请一次选择完整范围，超过10项会在其余参数完成后自动拆成多个组件。"
+            "默认口径是先按该品牌全店二级类目销售额降序取前10项，与本次分析类目分开；销售数据缺失或未映射时不能猜测。若你自行指定超过10项，系统会在其余参数确认后按组件上限拆分。"
             if is_brand_core_category
             else "品类新客需要先明确本次分析的正式类目路径。"
         )
@@ -1082,6 +1237,246 @@ class AiIntentCompiler:
         form_data[switch_key] = "指定商品标题关键字" if keywords else "任意商品标题关键字"
         form_data[value_key] = keywords
 
+    def _populate_brand_zone(
+        self,
+        condition: dict[str, Any],
+        condition_id: str,
+        form_data: dict[str, Any],
+        mode_data: dict[str, Any],
+        questions: list[dict[str, Any]],
+    ) -> None:
+        component = ConfigEngine.BRAND_ZONE_PACKAGE
+        account = _clean_text(condition.get("adAccount")) or "以下全部投放账号"
+        resolved_accounts = self._resolve_options(
+            component, "account", [account], condition_id, questions
+        )
+        if resolved_accounts:
+            form_data["account"] = resolved_accounts[0]
+        self._apply_numeric(
+            condition, "behaviorDays", "dayFrequency", form_data, mode_data
+        )
+        behavior = form_data.get("bhv")
+        self._apply_time(
+            component,
+            condition,
+            [behavior] if isinstance(behavior, str) and behavior else [],
+            form_data,
+            mode_data,
+            questions,
+        )
+
+    def _populate_brand_promotion(
+        self,
+        condition: dict[str, Any],
+        condition_id: str,
+        form_data: dict[str, Any],
+        mode_data: dict[str, Any],
+        questions: list[dict[str, Any]],
+    ) -> None:
+        component = ConfigEngine.BRAND_PROMOTION_PACKAGE
+        categories = _clean_list(condition.get("categories"), "categories")
+        if len(categories) > 1:
+            questions.append(
+                self._question(
+                    condition_id,
+                    "categories",
+                    "品牌推广每个节点只能选择一个二级类目，请选定一个。",
+                    "品牌推广的二级类目为单选；未指定时使用全部。",
+                    answer_type="single_select",
+                )
+            )
+        resolved_categories = self._resolve_options(
+            component, "cate", categories or ["全部"], condition_id, questions
+        )
+        if resolved_categories:
+            form_data["cate"] = resolved_categories[0]
+
+        behavior = _clean_text(form_data.get("bhv"))
+        scenes = _clean_list(condition.get("adScenes"), "adScenes")
+        scene_field = next(
+            (
+                item
+                for item in self.engine.get_package_meta(component).get("schema") or []
+                if item.get("key") == "ppob_scene"
+            ),
+            {},
+        )
+        allowed_scenes = list((scene_field.get("optionsByValue") or {}).get(behavior, []))
+        if not scenes:
+            questions.append(
+                self._question(
+                    condition_id,
+                    "adScenes",
+                    f"请选择{behavior or '当前行为'}对应的品牌推广场景。",
+                    "品牌推广至少需要一个与当前行为匹配的场景。",
+                    answer_type="multi_select",
+                    options=[{"value": item, "label": item} for item in allowed_scenes],
+                )
+            )
+        resolved_scenes = self._resolve_options(
+            component, "ppob_scene", scenes, condition_id, questions
+        )
+        invalid_scenes = [item for item in resolved_scenes if item not in allowed_scenes]
+        if invalid_scenes:
+            questions.append(
+                self._question(
+                    condition_id,
+                    "adScenes",
+                    f"以下场景不适用于{behavior}：{', '.join(invalid_scenes)}。请重新选择。",
+                    "场景必须与曝光或点击行为对应。",
+                    answer_type="multi_select",
+                    options=[{"value": item, "label": item} for item in allowed_scenes],
+                )
+            )
+        form_data["ppob_scene"] = [
+            item for item in resolved_scenes if item in allowed_scenes
+        ]
+        self._apply_numeric(
+            condition, "behaviorDays", "dayFrequency", form_data, mode_data
+        )
+        self._apply_time(
+            component,
+            condition,
+            [behavior] if behavior else [],
+            form_data,
+            mode_data,
+            questions,
+        )
+
+    def _populate_effect_promotion(
+        self,
+        condition: dict[str, Any],
+        condition_id: str,
+        form_data: dict[str, Any],
+        mode_data: dict[str, Any],
+        questions: list[dict[str, Any]],
+    ) -> None:
+        component = ConfigEngine.EFFECT_PROMOTION_PACKAGE
+        account = _clean_text(condition.get("adAccount"))
+        if not account:
+            account_field = next(
+                (
+                    item
+                    for item in self.engine.get_package_meta(component).get("schema", [])
+                    if item.get("key") == "account"
+                ),
+                {},
+            )
+            questions.append(
+                self._question(
+                    condition_id,
+                    "adAccount",
+                    "请选择广告账号：全部或具体官方账号。",
+                    "效果推广的广告账号为必选单选项，不会自动选择。",
+                    answer_type="single_select",
+                    options=[
+                        {"value": _option_parts(item)[0], "label": _option_parts(item)[1]}
+                        for item in account_field.get("options") or []
+                    ],
+                )
+            )
+        else:
+            resolved_accounts = self._resolve_options(
+                component, "account", [account], condition_id, questions
+            )
+            if resolved_accounts:
+                form_data["account"] = resolved_accounts[0]
+
+        behavior = _clean_text(form_data.get("bhv"))
+        scenes = _clean_list(condition.get("adScenes"), "adScenes")
+        meta = self.engine.get_package_meta(component)
+        scene_field = next(
+            (
+                item
+                for item in meta.get("schema") or []
+                if item.get("key") == "onebp_scene"
+            ),
+            {},
+        )
+        allowed_scenes = list((scene_field.get("optionsByValue") or {}).get(behavior, []))
+        if not scenes:
+            questions.append(
+                self._question(
+                    condition_id,
+                    "adScenes",
+                    f"请选择{behavior or '当前行为'}对应的广告场景。",
+                    "效果推广至少需要一个场景；曝光和点击支持多选下拉，观看支持三个观看场景多选。",
+                    answer_type="multi_select",
+                    options=[{"value": item, "label": item} for item in allowed_scenes],
+                )
+            )
+        resolved_scenes = self._resolve_options(
+            component, "onebp_scene", scenes, condition_id, questions
+        )
+        invalid_scenes = [item for item in resolved_scenes if item not in allowed_scenes]
+        if invalid_scenes:
+            questions.append(
+                self._question(
+                    condition_id,
+                    "adScenes",
+                    f"以下场景不适用于{behavior}：{', '.join(invalid_scenes)}。请重新选择。",
+                    "行为切换后，场景必须使用该行为对应的官方场景集合。",
+                    answer_type="multi_select",
+                    options=[{"value": item, "label": item} for item in allowed_scenes],
+                )
+            )
+        form_data["onebp_scene"] = [
+            item for item in resolved_scenes if item in allowed_scenes
+        ]
+
+        self._apply_numeric(
+            condition, "behaviorDays", "dayFrequency", form_data, mode_data
+        )
+        self._apply_time(
+            component,
+            condition,
+            [behavior] if behavior else [],
+            form_data,
+            mode_data,
+            questions,
+        )
+
+    def _populate_omnimedia(
+        self,
+        condition: dict[str, Any],
+        condition_id: str,
+        form_data: dict[str, Any],
+        mode_data: dict[str, Any],
+        questions: list[dict[str, Any]],
+    ) -> None:
+        component = ConfigEngine.OMNIMEDIA_PACKAGE
+        self._apply_numeric(
+            condition, "behaviorDays", "dayFrequency", form_data, mode_data
+        )
+        behavior = _clean_text(form_data.get("bhv"))
+        self._apply_time(
+            component,
+            condition,
+            [behavior] if behavior else [],
+            form_data,
+            mode_data,
+            questions,
+        )
+
+    def _populate_single_media(
+        self,
+        condition: dict[str, Any],
+        condition_id: str,
+        form_data: dict[str, Any],
+        mode_data: dict[str, Any],
+        questions: list[dict[str, Any]],
+    ) -> None:
+        component = ConfigEngine.SINGLE_MEDIA_PACKAGE
+        behavior = _clean_text(form_data.get("bhv"))
+        self._apply_time(
+            component,
+            condition,
+            [behavior] if behavior else [],
+            form_data,
+            mode_data,
+            questions,
+        )
+
     def _apply_numeric(
         self,
         condition: dict[str, Any],
@@ -1180,15 +1575,24 @@ class AiIntentCompiler:
             widget = _clean_text(field.get("Widget_Type"))
             if widget == "搜索单选":
                 form_data[key] = ""
-            elif widget in MULTI_VALUE_WIDGETS or key in {
-                "bhv",
-                "channel",
-                "leafCates",
-                "stdBrand",
-            }:
+            elif widget in MULTI_VALUE_WIDGETS:
                 form_data[key] = []
             elif widget == "单选组":
-                form_data[key] = "任意商品标题关键字"
+                options = field.get("options") or []
+                ui_config = field.get("uiConfig") or {}
+                has_configured_default = "defaultValue" in ui_config
+                configured_default = ui_config.get("defaultValue")
+                option_values = [_option_parts(option)[0] for option in options]
+                if has_configured_default and configured_default in (None, ""):
+                    form_data[key] = ""
+                elif configured_default in option_values:
+                    form_data[key] = configured_default
+                elif option_values:
+                    form_data[key] = option_values[0]
+                elif key in {"title_type", "keywords_type"}:
+                    form_data[key] = "任意商品标题关键字"
+                else:
+                    form_data[key] = ""
             elif widget == "数值_切换":
                 mode_data[key] = "unlimited"
                 form_data[key] = {"min": None, "max": None}
@@ -1219,12 +1623,22 @@ class AiIntentCompiler:
         if any("|" in key for key in matrix_keys):
             channel_values = form_data.get("channel")
             channels = channel_values if isinstance(channel_values, list) else [channel_values]
-            behaviors = form_data.get("bhv") or []
+            behavior_values = form_data.get("bhv") or []
+            behaviors = (
+                behavior_values
+                if isinstance(behavior_values, list)
+                else [behavior_values]
+            )
             combinations = [f"{channel}|{behavior}" for channel in channels for behavior in behaviors]
         elif "DEFAULT" in matrix:
             combinations = ["DEFAULT"]
         else:
-            combinations = form_data.get("bhv") or form_data.get("types") or []
+            selected_values = form_data.get("bhv") or form_data.get("types") or []
+            combinations = (
+                selected_values
+                if isinstance(selected_values, list)
+                else [selected_values]
+            )
         if combinations:
             shared = None
             for combination in combinations:

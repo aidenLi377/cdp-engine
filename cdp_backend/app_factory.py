@@ -26,6 +26,7 @@ from .ai_component_catalog import (
     CatalogValidationError,
 )
 from .ai_chat_service import AiChatRequestError, AiChatService
+from .ai_batch_naming import AiBatchNamingRequestError, AiBatchNamingService
 from .ai_intent_compiler import AiIntentCompiler, IntentValidationError
 from .ai_model_client import (
     AiModelClient,
@@ -308,6 +309,7 @@ def register_routes(
         ai_solution_knowledge,
         ai_system_knowledge,
     )
+    ai_batch_naming_service = AiBatchNamingService(ai_model_client)
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
     config_dependent_endpoints = {
@@ -1835,6 +1837,28 @@ def register_routes(
             app.logger.warning("AI response validation failed: %s", exc)
             return error_response("AI_RESPONSE_INVALID", str(exc), 502)
 
+    @app.route("/api/ai/batch-names", methods=["POST"])
+    def suggest_ai_batch_names():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "批量命名参数格式不正确", 400)
+        try:
+            return jsonify(ai_batch_naming_service.suggest(payload))
+        except AiBatchNamingRequestError as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        except AiNotConfiguredError:
+            return error_response(
+                "AI_NOT_CONFIGURED",
+                "AI模型尚未配置，仍可手动修改人群包名称",
+                503,
+            )
+        except AiProviderError as exc:
+            app.logger.warning("AI batch naming request failed: %s", exc)
+            return error_response("AI_PROVIDER_ERROR", str(exc), 502)
+        except AiResponseError as exc:
+            app.logger.warning("AI batch naming validation failed: %s", exc)
+            return error_response("AI_RESPONSE_INVALID", str(exc), 502)
+
     @app.route("/api/ai/compile", methods=["POST"])
     def compile_ai_intent():
         payload = request.get_json(silent=True)
@@ -1862,6 +1886,8 @@ def register_routes(
         params["_package"] = package_name
         try:
             return generation_response(engine.generate_json(params), package_name)
+        except ValueError as exc:
+            return error_response("INVALID_PARAMETERS", str(exc), 400)
         except Exception as exc:
             app.logger.exception("generate_json failed [%s]: %s", package_name, exc)
             return error_response("GENERATION_FAILED", "圈选条件生成失败，请检查填写内容后重试", 500)
@@ -1874,6 +1900,8 @@ def register_routes(
         try:
             package_name = payload.get("_package", ConfigEngine.CATEGORY_PUBLIC_PACKAGE)
             return generation_response(engine.generate_json(payload), package_name)
+        except ValueError as exc:
+            return error_response("INVALID_PARAMETERS", str(exc), 400)
         except Exception as exc:
             app.logger.exception("generate failed: %s", exc)
             return error_response("GENERATION_FAILED", "圈选条件生成失败，请检查填写内容后重试", 500)

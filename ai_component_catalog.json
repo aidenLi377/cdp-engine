@@ -59,6 +59,170 @@
     }
   },
   "components": {
+    "品牌推广": {
+      "group": "behavior",
+      "scope": "paid_ad",
+      "purpose": "分析品牌推广的曝光或点击人群，特秀属于此组件的广告场景。",
+      "priority": 116,
+      "strongSignals": ["品牌推广", "品牌特秀", "特秀"],
+      "negativeSignals": ["商品购买", "首页关键词搜索"],
+      "behaviors": ["曝光", "点击"],
+      "businessFieldMeanings": {
+        "ppob_scene": "按曝光或点击选择品牌推广场景；特秀的正式场景为淘内展示营销-品牌特秀（原品牌特秀）",
+        "cate": "二级类目，用户没有指定时使用全部",
+        "dayFrequency": "发生行为的天数",
+        "time": "相对最近天数或固定日期范围"
+      },
+      "limits": {"recentDays": 366, "fixedDateRangeDays": 366},
+      "singleSelectFields": ["bhv", "cate"],
+      "multiSelectFields": ["ppob_scene"]
+    },
+    "品牌专区": {
+      "group": "behavior",
+      "scope": "paid_ad",
+      "purpose": "分析品牌专区付费广告中被广告曝光或点击过广告的人群，可按全部投放账号或指定投放账号圈选。",
+      "priority": 115,
+      "strongSignals": [
+        "品牌专区",
+        "广告曝光",
+        "曝光过广告",
+        "点击过广告",
+        "投放账号"
+      ],
+      "negativeSignals": [
+        "商品浏览",
+        "商品购买",
+        "搜索关键词"
+      ],
+      "behaviors": [
+        "被广告曝光过",
+        "点击过广告"
+      ],
+      "businessFieldMeanings": {
+        "account": "投放账号，以下全部投放账号与具体账号二选一",
+        "dayFrequency": "发生广告行为的天数，不限、大于或闭区间",
+        "time": "相对最近天数或固定日期范围"
+      },
+      "limits": {
+        "recentDays": 366,
+        "fixedDateRangeDays": 366
+      },
+      "singleSelectFields": [
+        "account",
+        "bhv"
+      ],
+      "countVisibility": {
+        "mode": "identifiable_unique_individual",
+        "note": "数据引擎圈选的是可识别唯一一个体，人数会小于等于UV。"
+      }
+    },
+    "效果推广": {
+      "group": "behavior",
+      "scope": "paid_ad",
+      "purpose": "分析效果推广广告中发生曝光、点击或观看行为的人群，并按行为选择对应广告场景。",
+      "priority": 116,
+      "strongSignals": [
+        "效果推广",
+        "万相台曝光",
+        "万相台点击",
+        "广告观看",
+        "超级直播",
+        "超级短视频",
+        "短直联动"
+      ],
+      "negativeSignals": [
+        "品牌专区",
+        "商品购买",
+        "搜索关键词"
+      ],
+      "behaviors": [
+        "曝光",
+        "点击",
+        "观看"
+      ],
+      "businessFieldMeanings": {
+        "account": "广告账号，全部与具体账号二选一",
+        "onebp_scene": "随行为变化的广告场景，可多选",
+        "dayFrequency": "发生行为的天数，不限、大于或闭区间",
+        "time": "相对最近天数或固定日期范围"
+      },
+      "limits": {
+        "recentDays": 366,
+        "fixedDateRangeDays": 366
+      },
+      "singleSelectFields": [
+        "account",
+        "bhv"
+      ],
+      "multiSelectFields": [
+        "onebp_scene"
+      ]
+    },
+    "全媒体智投": {
+      "group": "behavior",
+      "scope": "paid_ad",
+      "purpose": "分析全媒体智投广告中发生曝光或点击行为的人群。该组件原名UD智汇投。",
+      "priority": 117,
+      "strongSignals": [
+        "全媒体智投",
+        "UD智汇投",
+        "全媒体广告曝光",
+        "全媒体广告点击"
+      ],
+      "negativeSignals": [
+        "品牌专区",
+        "效果推广",
+        "商品购买",
+        "搜索关键词"
+      ],
+      "behaviors": [
+        "曝光",
+        "点击"
+      ],
+      "businessFieldMeanings": {
+        "dayFrequency": "发生行为的天数，不限、大于或闭区间",
+        "time": "相对最近天数或固定日期范围"
+      },
+      "limits": {
+        "recentDays": 366,
+        "fixedDateRangeDays": 366
+      },
+      "singleSelectFields": [
+        "bhv"
+      ]
+    },
+    "单媒体智投": {
+      "group": "behavior",
+      "scope": "paid_ad",
+      "purpose": "分析单媒体智投广告中发生曝光或点击行为的人群。",
+      "priority": 118,
+      "strongSignals": [
+        "单媒体智投",
+        "单媒体广告曝光",
+        "单媒体广告点击"
+      ],
+      "negativeSignals": [
+        "全媒体智投",
+        "品牌专区",
+        "效果推广",
+        "商品购买",
+        "搜索关键词"
+      ],
+      "behaviors": [
+        "曝光",
+        "点击"
+      ],
+      "businessFieldMeanings": {
+        "time": "相对最近天数或固定日期范围"
+      },
+      "limits": {
+        "recentDays": 366,
+        "fixedDateRangeDays": 366
+      },
+      "singleSelectFields": [
+        "bhv"
+      ]
+    },
     "类目公域行为": {
       "group": "behavior",
       "scope": "public_category",

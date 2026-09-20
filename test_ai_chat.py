@@ -11,7 +11,8 @@ import httpx
 os.environ["FLASK_ENV"] = "development"
 
 from cdp_backend.ai_model_client import AiModelClient  # noqa: E402
-from cdp_backend.ai_chat_service import DMP_DEFAULT_TAG_NAMES  # noqa: E402
+from cdp_backend.ai_chat_service import AiChatService, DMP_DEFAULT_TAG_NAMES  # noqa: E402
+from cdp_backend.ai_solution_knowledge import AiSolutionKnowledge  # noqa: E402
 from cdp_backend.business_date import (  # noqa: E402
     business_today,
     latest_selectable_date,
@@ -132,6 +133,415 @@ class AiModelClientTests(unittest.TestCase):
 
 
 class AiChatApiTests(unittest.TestCase):
+    def test_chat_retries_once_when_model_returns_invalid_json(self):
+        calls = 0
+
+        def caller(_request):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return {
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [{"type": "output_text", "text": ""}],
+                        }
+                    ]
+                }
+            return responses_payload(
+                {
+                    "assistantMessage": "已恢复结构化意图。",
+                    "intent": {
+                        "schemaVersion": 1,
+                        "audienceName": "近30天面霜购买人群",
+                        "conditions": [
+                            {
+                                "component": "类目公域行为",
+                                "behaviors": ["购买"],
+                                "categories": [CATEGORY],
+                                "recentDays": 30,
+                            }
+                        ],
+                    },
+                }
+            )
+
+        test_app = create_authenticated_test_app(
+            "ai-invalid-json-retry-user",
+            test_config={
+                "AI_API_KEY": "server-secret",
+                "AI_MODEL": "test-model",
+                "AI_API_STYLE": "responses",
+                "AI_MODEL_CALLER": caller,
+            },
+        )
+        try:
+            response = test_app.client.post(
+                "/api/ai/chat",
+                json={"message": "圈最近30天购买过面霜的人"},
+            )
+            data = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(data["status"], "ready")
+            self.assertEqual(calls, 2)
+        finally:
+            test_app.close()
+
+    def test_old_ninety_five_percent_cache_is_not_misrepresented_as_top_ten(self):
+        knowledge = AiSolutionKnowledge.__new__(AiSolutionKnowledge)
+        profile = {
+            "storeName": "DIOR迪奥官方旗舰店",
+            "normalizedStoreName": "dior迪奥",
+            "allCategoryCount": 22,
+            "fullyMapped": True,
+            "coreCategories": [
+                {"rank": index, "categoryPath": f"分类>{index}", "cateId": str(index)}
+                for index in range(1, 10)
+            ],
+        }
+        knowledge._load_store_category_knowledge = lambda: {"profiles": [profile]}
+        self.assertEqual(knowledge.brand_core_categories("DIOR"), [])
+        profile["coreCategories"].append(
+            {"rank": 10, "categoryPath": "分类>10", "cateId": "10"}
+        )
+        self.assertEqual(len(knowledge.brand_core_categories("DIOR")), 10)
+
+    def test_dior_whole_store_top_ten_is_distinct_from_makeup_top_ten(self):
+        knowledge = AiSolutionKnowledge(object())
+        whole_store = knowledge.brand_core_categories("Dior/迪奥")
+        makeup = knowledge.brand_category_group_top_categories("Dior/迪奥", "彩妆")
+        skincare = knowledge.brand_category_group_top_categories("Dior/迪奥", "护肤")
+        self.assertEqual(len(whole_store), 10)
+        self.assertEqual(len(makeup), 7)
+        self.assertTrue(all("彩妆/香水/美妆工具>" in item for item in makeup))
+        self.assertTrue(any("香水/香水用品" in item for item in makeup))
+        self.assertTrue(any("美容工具" in item for item in makeup))
+        self.assertEqual(len(skincare), 10)
+        self.assertTrue(all("美容护肤/美体/精油>" in item for item in skincare))
+
+    def test_short_makeup_scope_explains_that_all_ranked_rows_are_used(self):
+        class StubEngine:
+            dimensions = {"品牌维表.csv": ["Dior/迪奥"]}
+
+        class StubCompiler:
+            engine = StubEngine()
+
+        service = object.__new__(AiChatService)
+        service.compiler = StubCompiler()
+        service.solution_knowledge = AiSolutionKnowledge(object())
+        makeup = service.solution_knowledge.brand_category_group_top_categories(
+            "Dior/迪奥", "彩妆"
+        )
+
+        note = service._brand_category_scope_note(
+            {
+                "conditions": [
+                    {
+                        "brands": ["Dior/迪奥"],
+                        "categories": makeup,
+                    }
+                ]
+            },
+            "Dior彩妆品类老客",
+        )
+
+        self.assertIn("口径对应一级类目“彩妆/香水/美妆工具”", note)
+        self.assertIn("只有7个有销售额的二级类目", note)
+        self.assertIn("先限定一级类目再按销售额排序", note)
+        self.assertIn("并非从全店TOP10中筛选", note)
+
+    def test_exact_confirmed_example_recovers_when_model_returns_no_intent(self):
+        test_app = create_authenticated_test_app(
+            "ai-curated-recovery-user",
+            test_config={
+                "AI_API_KEY": "server-secret",
+                "AI_MODEL": "test-model",
+                "AI_API_STYLE": "responses",
+                "AI_MODEL_CALLER": lambda _request: responses_payload(
+                    {
+                        "assistantMessage": "请继续告诉我需要圈选的人群条件。",
+                        "intent": None,
+                    }
+                ),
+            },
+        )
+        try:
+            response = test_app.client.post(
+                "/api/ai/chat",
+                json={"message": "XT_2508香水搜索浏览全球购_副本"},
+            )
+            data = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(data["status"], "ready")
+            self.assertEqual(
+                [node["packageType"] for node in data["plan"]["nodes"]],
+                ["关键词搜索", "商品行为"],
+            )
+            self.assertEqual(data["plan"]["generated"]["compute"], "(0)n(1)")
+        finally:
+            test_app.close()
+
+    def test_half_year_vs_previous_half_year_defaults_to_rolling_180_days(self):
+        service = AiChatService.__new__(AiChatService)
+        with patch(
+            "cdp_backend.ai_chat_service.latest_selectable_date",
+            return_value=date(2026, 9, 16),
+        ):
+            self.assertEqual(
+                service._message_solution_time_value(
+                    "半年vs前半年", "统计时间", time_parameter_count=2,
+                    pending_parameter=False,
+                ),
+                {"recentDays": 180},
+            )
+            self.assertEqual(
+                service._message_solution_time_value(
+                    "完整半年vs前半年", "统计时间", time_parameter_count=2,
+                    pending_parameter=False,
+                ),
+                {"dateRange": ["2026-01-01", "2026-06-30"]},
+            )
+            self.assertEqual(
+                service._message_solution_time_value(
+                    "这半年跟前面半年比", "统计时间", time_parameter_count=2,
+                    pending_parameter=False,
+                ),
+                {"recentDays": 180},
+            )
+            self.assertEqual(service._comparison_period_days("过去一年"), 365)
+
+    def test_historical_category_buyer_phrases_match_category_old_and_new_customer(self):
+        service = AiChatService.__new__(AiChatService)
+
+        class Knowledge:
+            @staticmethod
+            def list_summaries():
+                return [
+                    {"id": "transfer", "name": "转牌新客"},
+                    {"id": "new", "name": "品类新客"},
+                    {"id": "competitor", "name": "共同浏览后_购买竞品"},
+                ]
+
+        service.solution_knowledge = Knowledge()
+        self.assertEqual(
+            service._match_public_solution(
+                {}, "圈出前一年买过彩妆但没有买过DIOR产品，近一年买DIOR彩妆的人群"
+            )["name"],
+            "品类老客",
+        )
+        self.assertEqual(
+            service._match_public_solution(
+                {}, "圈出前一年没有买过彩妆品类和DIOR产品，但近一年买DIOR彩妆的人群"
+            )["name"],
+            "品类新客",
+        )
+        self.assertEqual(
+            service._match_public_solution({}, "找从别的牌子转来的转牌新客")["name"],
+            "转牌新客",
+        )
+        self.assertIsNone(
+            service._match_public_solution(
+                {}, "圈出DIOR官旗8月份浏览未购品牌任意渠道，购买竞品彩妆的人群"
+            )
+        )
+
+    def test_store_browse_purchase_paths_keep_scopes_and_one_month(self):
+        service = AiChatService.__new__(AiChatService)
+        service._infer_official_store_brand = lambda _message: "Dior/迪奥"
+        service.solution_knowledge = AiSolutionKnowledge(object())
+        examples = (
+            (
+                "圈出DIOR官旗8月份浏览且购买官旗任意商品的人群",
+                ["intersect"], ["own_store", "own_store"],
+                [["天猫"], ["天猫"]],
+            ),
+            (
+                "圈出DIOR官旗8月份浏览未购官旗，购买天猫国际的人群",
+                ["exclude", "intersect"],
+                ["own_store", "own_store", "own_brand"],
+                [["天猫"], ["天猫"], ["天猫国际"]],
+            ),
+            (
+                "圈出DIOR官旗8月份浏览未购品牌任意渠道，购买竞品彩妆的人群",
+                ["exclude", "intersect"],
+                ["own_store", "own_brand", None],
+                [["天猫"], ["所有销售渠道"], ["天猫"]],
+            ),
+        )
+        with patch(
+            "cdp_backend.ai_chat_service.latest_selectable_date",
+            return_value=date(2026, 9, 16),
+        ):
+            for message, relations, scopes, channels in examples:
+                with self.subTest(message=message):
+                    grounded = service._ground_store_browse_purchase_intent(
+                        {"conditions": [{"recentDays": 366}]}, message
+                    )
+                    conditions = grounded["conditions"]
+                    self.assertEqual(
+                        [item.get("relation") for item in conditions[1:]], relations
+                    )
+                    self.assertEqual(
+                        [item.get("scope") for item in conditions], scopes
+                    )
+                    self.assertEqual(
+                        [item.get("channels") for item in conditions], channels
+                    )
+                    self.assertTrue(
+                        all(item["dateRange"] == ["2026-08-01", "2026-08-31"]
+                            for item in conditions)
+                    )
+
+    def test_store_browse_purchase_paths_compile_without_model_scope_drift(self):
+        test_app = create_authenticated_test_app(
+            "ai-store-purchase-path-user",
+            test_config={
+                "AI_API_KEY": "server-secret",
+                "AI_MODEL": "test-model",
+                "AI_API_STYLE": "responses",
+                "AI_MODEL_CALLER": lambda _request: responses_payload(
+                    {
+                        "assistantMessage": "已理解。",
+                        "intent": {
+                            "schemaVersion": 1,
+                            "audienceName": "测试人群",
+                            "conditions": [
+                                {
+                                    "component": "商品行为",
+                                    "scope": "own_store",
+                                    "brand": "DIOR",
+                                    "channels": ["天猫"],
+                                    "behaviors": ["浏览"],
+                                    "dateRange": ["2026-01-01", "2026-08-31"],
+                                }
+                            ],
+                        },
+                        "operation": None,
+                    }
+                ),
+            },
+        )
+        try:
+            for message, expected_count, expected_compute in (
+                ("圈出DIOR官旗8月份浏览且购买官旗任意商品的人群", 2, "(0)n(1)"),
+                ("圈出DIOR官旗8月份浏览未购官旗，购买天猫国际的人群", 3, "(0)d(1)n(2)"),
+                ("圈出DIOR官旗8月份浏览未购品牌任意渠道，购买竞品彩妆的人群", 3, "(0)d(1)n(2)"),
+            ):
+                with self.subTest(message=message):
+                    response = test_app.client.post("/api/ai/chat", json={"message": message})
+                    self.assertEqual(response.status_code, 200, response.get_json())
+                    data = response.get_json()
+                    self.assertEqual(len(data["intent"]["conditions"]), expected_count)
+                    self.assertEqual(
+                        [item["dateRange"] for item in data["intent"]["conditions"]],
+                        [["2026-08-01", "2026-08-31"]] * expected_count,
+                    )
+                    if data["plan"].get("generated"):
+                        self.assertEqual(data["plan"]["generated"]["compute"], expected_compute)
+                    else:
+                        self.assertEqual(data["plan"]["status"], "needs_clarification")
+        finally:
+            test_app.close()
+
+    def test_broad_dior_brand_old_customer_matches_solution_and_year(self):
+        service = AiChatService.__new__(AiChatService)
+
+        class Knowledge:
+            @staticmethod
+            def list_summaries():
+                return [{"id": "brand-old", "name": "品牌老客"}]
+
+        service.solution_knowledge = Knowledge()
+        matched = service._match_public_solution(
+            {}, "圈出DIOR品牌近一年的老客"
+        )
+        self.assertEqual(matched["name"], "品牌老客")
+        self.assertEqual(service._comparison_period_days("近一年"), 365)
+
+    def test_d11_campaign_shorthand_compiles_verified_aipl_segments(self):
+        test_app = create_authenticated_test_app(
+            "ai-d11-campaign-user",
+            test_config={
+                "AI_API_KEY": "server-secret",
+                "AI_MODEL": "test-model",
+                "AI_API_STYLE": "responses",
+                "AI_MODEL_CALLER": lambda _request: responses_payload(
+                    {
+                        "assistantMessage": "正在整理。",
+                        "intent": {
+                            "schemaVersion": 1,
+                            "audienceName": "D11人群",
+                            "conditions": [
+                                {
+                                    "component": "AIPL状态",
+                                    "aiplStatuses": ["认知"],
+                                    "recentDays": 30,
+                                }
+                            ],
+                        },
+                        "operation": None,
+                    }
+                ),
+            },
+        )
+        expected = {
+            "蓄水期A": ("(0)d(1)", [["15184#|#D_AWARENESS"], ["15185#|#D_INTEREST", "15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20250915", "20251014"], ["20250915", "20251014"]]),
+            "蓄水期I": ("(0)d(1)", [["15185#|#D_INTEREST"], ["15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20250915", "20251014"], ["20250915", "20251014"]]),
+            "蓄水期PL": ("(0)", [["15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20250915", "20251014"]]),
+            "活动期A": ("(0)d(1)d(2)", [["15184#|#D_AWARENESS"], ["15185#|#D_INTEREST"], ["15184#|#D_AWARENESS", "15185#|#D_INTEREST", "15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20251015", "20251114"], ["20251015", "20251114"], ["20250915", "20251014"]]),
+            "活动期I": ("(0)d(1)", [["15185#|#D_INTEREST"], ["15184#|#D_AWARENESS", "15185#|#D_INTEREST", "15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20251015", "20251114"], ["20250915", "20251014"]]),
+            "活动期PL": ("(0)d(1)d(2)", [["15186#|#D_BUY", "15187#|#D_ROYALTY"], ["15184#|#D_AWARENESS", "15185#|#D_INTEREST"], ["15184#|#D_AWARENESS", "15185#|#D_INTEREST", "15186#|#D_BUY", "15187#|#D_ROYALTY"]], [["20251015", "20251114"], ["20251015", "20251114"], ["20250915", "20251014"]]),
+        }
+        try:
+            for label, (compute, statuses, ranges) in expected.items():
+                with self.subTest(label=label):
+                    response = test_app.client.post(
+                        "/api/ai/chat",
+                        json={"message": f"圈出DIOR品牌D11{label}人群"},
+                    )
+                    data = response.get_json()
+                    self.assertEqual(data["plan"]["status"], "ready")
+                    generated = data["plan"]["generated"]
+                    self.assertEqual(generated["compute"], compute)
+                    actual_statuses = [
+                        item["selectionLv3"]["types"] for item in generated["list"]
+                    ]
+                    actual_ranges = [
+                        [
+                            item["selectionLv3"]["dateValue"]["from"],
+                            item["selectionLv3"]["dateValue"]["to"],
+                        ]
+                        for item in generated["list"]
+                    ]
+                    self.assertEqual(actual_statuses, statuses)
+                    self.assertEqual(actual_ranges, ranges)
+        finally:
+            test_app.close()
+
+    def test_future_d11_year_requires_dates_instead_of_reusing_2025(self):
+        test_app = create_authenticated_test_app(
+            "ai-d11-future-year-user",
+            test_config={
+                "AI_API_KEY": "server-secret",
+                "AI_MODEL": "test-model",
+                "AI_API_STYLE": "responses",
+                "AI_MODEL_CALLER": lambda _request: self.fail("不能调用模型猜2026年的活动日期"),
+            },
+        )
+        try:
+            response = test_app.client.post(
+                "/api/ai/chat",
+                json={"message": "圈出DIOR品牌2026年D11蓄水期A人群"},
+            )
+            data = response.get_json()
+            self.assertEqual(data["status"], "collecting")
+            self.assertIsNone(data["plan"])
+            self.assertIn("2026", data["reply"])
+        finally:
+            test_app.close()
+
     def test_vague_first_turn_guides_user_without_calling_model(self):
         def caller(_request):
             raise AssertionError("过短且含义不明的首轮输入不应调用模型")
@@ -180,6 +590,15 @@ class AiChatApiTests(unittest.TestCase):
             self.assertIn("转牌新客", data["reply"])
         finally:
             test_app.close()
+
+    def test_ambiguous_makeup_new_customer_keeps_known_category_scope(self):
+        reply = AiChatService._intent_elaboration_reply("Dior彩妆新客")
+        self.assertIn("先限定该品牌的彩妆二级类目", reply)
+        self.assertIn("不用你逐个选类目", reply)
+        self.assertIn("品类新客", reply)
+        self.assertIn("转牌新客", reply)
+        self.assertIn("统计时间和对比时间", reply)
+        self.assertNotIn("补充分析类目", reply)
 
     def test_brand_plus_ambiguous_old_customer_guides_without_calling_model(self):
         def caller(_request):
@@ -318,6 +737,41 @@ class AiChatApiTests(unittest.TestCase):
         finally:
             test_app.close()
 
+    def test_official_store_in_multi_condition_does_not_overwrite_other_channels(self):
+        test_app = create_authenticated_test_app("ai-multi-channel-store-user")
+        try:
+            service = AiChatService.__new__(AiChatService)
+
+            class Compiler:
+                engine = test_app.engine
+
+            class Knowledge:
+                @staticmethod
+                def find_verified_brand_account_access(_brand):
+                    return {"canUseBrandAccount": True}
+
+            service.compiler = Compiler()
+            service.solution_knowledge = Knowledge()
+            intent = {
+                "conditions": [
+                    {"component": "商品行为", "scope": "own_store", "brand": "Dior", "behaviors": ["浏览"], "channels": ["天猫"]},
+                    {"component": "商品行为", "scope": "own_brand", "brand": "Dior", "behaviors": ["购买"], "channels": ["所有销售渠道"]},
+                    {"component": "商品行为", "scope": "own_brand", "brand": "Dior", "behaviors": ["购买"], "channels": ["天猫国际"]},
+                    {"component": "类目公域行为", "behaviors": ["购买"], "categories": ["彩妆/香水/美妆工具>唇部彩妆"]},
+                ]
+            }
+            grounded = service._ground_official_store_intent(
+                intent, "Dior官旗浏览，排除品牌所有销售渠道购买，再交集天猫国际购买和唇部彩妆大盘"
+            )
+            self.assertEqual(grounded["conditions"][0]["channels"], ["天猫"])
+            self.assertTrue(grounded["conditions"][0]["canUseBrandAccount"])
+            self.assertEqual(grounded["conditions"][1]["channels"], ["所有销售渠道"])
+            self.assertEqual(grounded["conditions"][1]["scope"], "own_brand")
+            self.assertEqual(grounded["conditions"][2]["channels"], ["天猫国际"])
+            self.assertEqual(grounded["conditions"][3]["component"], "类目公域行为")
+        finally:
+            test_app.close()
+
     def test_official_store_grounding_forces_tmall_account_and_explicit_access(self):
         from cdp_backend.ai_chat_service import AiChatService
 
@@ -373,7 +827,7 @@ class AiChatApiTests(unittest.TestCase):
         finally:
             test_app.close()
 
-    def test_official_store_mention_does_not_imply_account_access(self):
+    def test_dior_official_store_uses_configured_default_account_access(self):
         test_app = create_authenticated_test_app(
             "ai-official-store-permission-user",
             test_config={
@@ -409,12 +863,11 @@ class AiChatApiTests(unittest.TestCase):
             data = response.get_json()
 
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(data["plan"]["status"], "needs_clarification")
-            self.assertEqual(
-                data["plan"]["questions"][0]["field"],
-                "canUseBrandAccount",
-            )
-            self.assertIn("DIOR迪奥官方旗舰店", data["reply"])
+            self.assertEqual(data["plan"]["status"], "ready")
+            condition = data["intent"]["conditions"][0]
+            self.assertTrue(condition["canUseBrandAccount"])
+            self.assertEqual(condition["component"], "商品行为")
+            self.assertEqual(condition["channels"], ["天猫"])
         finally:
             test_app.close()
 
@@ -724,6 +1177,47 @@ class AiChatApiTests(unittest.TestCase):
             ],
         )
 
+    def test_explicit_range_inherits_omitted_end_month(self):
+        from cdp_backend.ai_chat_service import AiChatService
+
+        ranges = AiChatService._message_explicit_date_ranges(
+            "2025年9月1日至7日在首页搜索并浏览官旗商品"
+        )
+
+        self.assertEqual(
+            [item["dateRange"] for item in ranges],
+            [["2025-09-01", "2025-09-07"]],
+        )
+
+    def test_single_month_respects_separate_explicit_year_and_first_week(self):
+        from cdp_backend.ai_chat_service import AiChatService
+
+        self.assertEqual(
+            AiChatService._ground_shared_month_intent(
+                {"conditions": [{"recentDays": 30}, {}]},
+                "圈8月首页搜迪奥香水又在天猫国际看过香水商品的人，按2025年。",
+            )["conditions"],
+            [
+                {"dateRange": ["2025-08-01", "2025-08-31"]},
+                {"dateRange": ["2025-08-01", "2025-08-31"]},
+            ],
+        )
+        for wording in ("2025年9月第1周", "2025年9月第一周"):
+            self.assertEqual(
+                AiChatService._ground_shared_month_intent(
+                    {"conditions": [{}]}, f"{wording}搜索迪奥并在官旗购买"
+                )["conditions"][0]["dateRange"],
+                ["2025-09-01", "2025-09-07"],
+            )
+
+    def test_consumer_is_purchase_behavior_signal(self):
+        from cdp_backend.ai_chat_service import AiChatService
+
+        self.assertTrue(AiChatService._message_mentions_behavior("看香奈儿唇釉的消费者"))
+        self.assertFalse(AiChatService._message_mentions_behavior("看看香奈儿唇釉"))
+        self.assertTrue(AiChatService._message_mentions_behavior("在店里预购过商品"))
+        self.assertTrue(AiChatService._message_mentions_behavior("在店里退过款"))
+
     def test_public_solution_match_accepts_solution_name_inside_custom_audience_name(self):
         from cdp_backend.ai_chat_service import AiChatService
 
@@ -822,7 +1316,7 @@ class AiChatApiTests(unittest.TestCase):
         )
 
         self.assertEqual(brand, "lancome兰蔻")
-        self.assertEqual(len(service.solution_knowledge.brand_core_categories(brand)), 8)
+        self.assertEqual(len(service.solution_knowledge.brand_core_categories(brand)), 10)
 
     def test_system_prompt_defines_yesterday_cutoff_and_adjacent_comparison_periods(self):
         from cdp_backend.ai_chat_service import AiChatService
@@ -840,7 +1334,7 @@ class AiChatApiTests(unittest.TestCase):
         self.assertIn("所有销售渠道”时，表示当前品牌", constants)
         self.assertIn("品牌在天猫、淘宝、国际等全部可用销售渠道的私域汇总数据", constants)
         self.assertIn("用户说“官旗”或“官方旗舰店”时", constants)
-        self.assertIn("官旗”只表示目标店铺，不代表当前用户有权限", constants)
+        self.assertIn("若品牌在verifiedBrandAccountAccess中已确认可用", constants)
 
     def test_business_period_resolution_uses_cutoff_and_handles_leap_day(self):
         self.assertEqual(
@@ -1221,6 +1715,90 @@ class AiChatApiTests(unittest.TestCase):
 
         self.assertEqual(grounded["conditions"][0]["categories"], [lip_category])
 
+    def test_live_host_shortcuts_expand_to_verified_product_title_keywords(self):
+        from cdp_backend.ai_chat_service import AiChatService
+        from cdp_backend.ai_solution_knowledge import AiSolutionKnowledge
+
+        lipstick = "彩妆/香水/美妆工具>唇部彩妆>唇膏/口红"
+
+        class StubEngine:
+            dimensions = {"类目维表.csv": [lipstick]}
+
+        class StubCompiler:
+            engine = StubEngine()
+
+        class StubStore:
+            def list_solutions(self, *_args):
+                return []
+
+        service = object.__new__(AiChatService)
+        service.compiler = StubCompiler()
+        service.solution_knowledge = AiSolutionKnowledge(StubStore())
+        intent = {
+            "schemaVersion": 1,
+            "conditions": [{
+                "component": "类目公域行为",
+                "behaviors": ["购买"],
+                "categories": ["彩妆/香水/美妆工具>唇部彩妆>唇彩/唇蜜/唇釉/唇泥/唇霜"],
+                "titleKeywords": ["李佳琦直播间"],
+            }],
+        }
+
+        lee, lee_mapping = service._ground_business_term_intent(
+            intent, "圈8月买过李佳琦直播间口红的人"
+        )
+        self.assertIsNotNone(lee_mapping)
+        self.assertEqual(lee["conditions"][0]["titleKeywords"], ["佳琦", "李佳琦"])
+        self.assertEqual(lee["conditions"][0]["categories"], [lipstick])
+        self.assertEqual(intent["conditions"][0]["titleKeywords"], ["李佳琦直播间"])
+
+        t2, t2_mapping = service._ground_business_term_intent(
+            intent, "圈8月买过T2直播间口红的人"
+        )
+        self.assertIsNotNone(t2_mapping)
+        self.assertEqual(len(t2["conditions"][0]["titleKeywords"]), 32)
+        self.assertEqual(t2["conditions"][0]["titleKeywords"][:2], ["所有女生", "曹米娅"])
+        self.assertEqual(t2["conditions"][0]["titleKeywords"][-2:], ["sisy莉贝琳", "大物是也"])
+        self.assertEqual(t2["conditions"][0]["categories"], [lipstick])
+
+        search, search_mapping = service._ground_business_term_intent(
+            intent, "首页搜索李佳琦的用户"
+        )
+        self.assertIsNone(search_mapping)
+        self.assertEqual(search, intent)
+        viewing, viewing_mapping = service._ground_business_term_intent(
+            intent, "看过李佳琦直播间的人"
+        )
+        self.assertIsNone(viewing_mapping)
+        self.assertEqual(viewing, intent)
+
+    def test_ad_touchpoint_shortcuts_keep_explicit_behavior(self):
+        from cdp_backend.ai_chat_service import AiChatService
+        from cdp_backend.ai_solution_knowledge import AiSolutionKnowledge
+
+        class StubStore:
+            def list_solutions(self, *_args):
+                return []
+
+        service = object.__new__(AiChatService)
+        service.solution_knowledge = AiSolutionKnowledge(StubStore())
+        intent = {"schemaVersion": 1, "conditions": [{"behaviors": []}]}
+        brand_promo, mapping = service._ground_ad_touchpoint_intent(
+            intent, "圈出8月特秀曝光过的人"
+        )
+        self.assertIsNotNone(mapping)
+        condition = brand_promo["conditions"][0]
+        self.assertEqual(condition["component"], "品牌推广")
+        self.assertEqual(condition["behaviors"], ["曝光"])
+        self.assertEqual(condition["adScenes"], ["淘内展示营销-品牌特秀（原品牌特秀）"])
+
+        brand_zone, _ = service._ground_ad_touchpoint_intent(
+            intent, "圈出8月品专点击过的人"
+        )
+        self.assertEqual(brand_zone["conditions"][0]["component"], "品牌专区")
+        self.assertEqual(brand_zone["conditions"][0]["behaviors"], ["点击过广告"])
+        self.assertNotIn("adScenes", brand_zone["conditions"][0])
+
     def test_ambiguous_product_word_still_requires_category_confirmation(self):
         from cdp_backend.ai_chat_service import AiChatService
 
@@ -1488,6 +2066,8 @@ class AiChatApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(data["status"], "ready")
             self.assertEqual(data["plan"]["matchedSolution"]["name"], "品类新客")
+            self.assertIn("已按《品类新客》", data["reply"])
+            self.assertNotIn("请补充", data["reply"])
             self.assertEqual(
                 [item["component"] for item in conditions],
                 ["类目公域行为", "类目公域行为", "类目公域行为"],
@@ -1503,14 +2083,10 @@ class AiChatApiTests(unittest.TestCase):
                 [comparison_start.isoformat(), comparison_end.isoformat()],
             )
             self.assertEqual(conditions[2]["dateRange"], conditions[1]["dateRange"])
-            expected_core_categories = [
-                "美容护肤/美体/精油>面部精华（新）",
-                "美容护肤/美体/精油>面部护理套装",
-                "美容护肤/美体/精油>乳液/面霜",
-                "美容护肤/美体/精油>眼部护理（新）",
-                "美容护肤/美体/精油>唇部护理（新）",
-                "美容护肤/美体/精油>洁面",
-            ]
+            expected_core_categories = AiSolutionKnowledge(
+                object()
+            ).brand_core_categories("海蓝之谜")
+            self.assertEqual(len(expected_core_categories), 10)
             self.assertEqual(conditions[1]["categories"], expected_core_categories)
             self.assertEqual(conditions[0]["categories"], [CATEGORY])
             self.assertEqual(conditions[2]["categories"], [CATEGORY])

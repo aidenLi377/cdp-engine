@@ -1302,6 +1302,7 @@ import { useSolutionRuntime } from '../composables/useSolutionRuntime.js'
 import { buildUrl, fetchWithTimeout, request } from '../utils/apiClient.js'
 import { adoptConfigVersion } from '../utils/configVersion.js'
 import { getNodeSummaryDisplayName } from '../utils/solutionState.js'
+import { getFieldUiLabel, getNumericSummaryPrefix } from '../utils/fieldUiConfig.js'
 import {
   configAuditActionLabel,
   configAuditOperationLabel,
@@ -1752,13 +1753,13 @@ function solutionOverviewRows(node) {
     if (field.Widget_Type === '数值_切换') {
       if (mode === 'unlimited') return
       if (mode === 'min' && value?.min !== null && value?.min !== undefined) {
-        display = `≥${value.min}`
+        display = `${getNumericSummaryPrefix(field)}${value.min}`
       } else if (mode === 'range') {
         display = `${value?.min ?? '?'} - ${value?.max ?? '?'}`
       }
     } else if (field.Widget_Type === '日期_切换') {
       if (mode === 'recent' && value?.days) {
-        display = `过去 ${value.days} 天`
+        display = `${getFieldUiLabel(field, 'recentPrefix', '过去')} ${value.days} 天`
       } else if (mode === 'range' && Array.isArray(value?.dateRange) && value.dateRange.length === 2) {
         display = `${value.dateRange[0]} ~ ${value.dateRange[1]}`
       }

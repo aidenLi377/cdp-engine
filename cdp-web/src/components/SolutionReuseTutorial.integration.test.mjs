@@ -106,8 +106,8 @@ test('复制与字段联动动效尊重减少动态效果设置', () => {
 
 test('共同浏览步骤高亮完整的交并差控制区，并给整个系统确认弹窗留出可点击区域', () => {
   assert.match(normalModeVue, /class="tutorial-intersection-control"/)
-  assert.match(normalModeVue, /:data-tutorial-target=\"index === 1 \? 'solution-intersection' : undefined\"/)
-  assert.match(normalModeVue, /aria-label=\"节点关系：交集、并集、差集\"/)
+  assert.match(normalModeVue, /:data-tutorial-target=\"poolIndex === 1 \? 'solution-intersection' : undefined\"/)
+  assert.match(normalModeVue, /aria-label=\"运算池关系：交集、并集、差集\"/)
   assert.match(overlayVue, /messageBoxSelector/)
   assert.match(overlayVue, /\.is-message-box \.el-message-box/)
   assert.match(overlayVue, /document\.querySelectorAll\(messageBoxSelector\)/)

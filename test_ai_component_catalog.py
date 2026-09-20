@@ -23,8 +23,8 @@ class AiComponentCatalogApiTests(unittest.TestCase):
         data = response.get_json()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(data["coverage"]["configuredComponentCount"], 12)
-        self.assertEqual(data["coverage"]["documentedComponentCount"], 12)
+        self.assertEqual(data["coverage"]["configuredComponentCount"], 17)
+        self.assertEqual(data["coverage"]["documentedComponentCount"], 17)
         self.assertEqual(data["coverage"]["missingBusinessPolicies"], [])
         self.assertEqual(data["coverage"]["staleBusinessPolicies"], [])
         self.assertEqual(data["operatorSemantics"]["multiBehaviorInOneNode"], "union")

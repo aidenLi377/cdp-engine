@@ -1,0 +1,2136 @@
+{
+  "schemaVersion": 1,
+  "sourceWorkbook": "DB自动化圈包词典.xlsx",
+  "sourceSheet": "命令",
+  "extraction": "C列原句、D列字段注释、E列标准JSON；仅供回归对照，未经校验不得直接塞入模型提示词。",
+  "cases": [
+    {
+      "sourceRow": 2,
+      "naturalLanguage": "圈出DIOR官旗8月份浏览过任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 浏览(VIEW_ITEM)\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16625#|#VIEW_ITEM"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1",
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 3,
+      "naturalLanguage": "圈出DIOR官旗8月份收藏加购过任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 收藏加购\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16646#|#COLLECT_ITEM",
+                "16667#|#CART"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 4,
+      "naturalLanguage": "圈出DIOR官旗8月份预售过任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 预售\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16688#|#PREPAY"
+              ],
+              "selectedGoodsType": "1",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 5,
+      "naturalLanguage": "圈出DIOR官旗8月份购买过任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 购买\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16709#|#PAY"
+              ],
+              "selectedGoodsType": "1",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "frequency": {
+                "op": "OPEN_OPEN"
+              },
+              "money": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 6,
+      "naturalLanguage": "圈出DIOR官旗8月份直通车曝光的人群",
+      "fieldNotes": "触点：直通车\n行为：曝光\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "account": "2207959261164#|#2207959261164",
+              "bhv": "15296#|#onebp_expose",
+              "onebp_scene": [
+                "15403#|#371"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "效果推广",
+            "selectionLv2": [
+              "15270#|#cate_8954"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 7,
+      "naturalLanguage": "圈出DIOR官旗8月份特秀曝光的人群",
+      "fieldNotes": "触点：特秀\n行为：曝光\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "bhv": "15318#|#exp_pptg",
+              "ppob_scene": [
+                "15365#|#49"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "品牌推广",
+            "selectionLv2": [
+              "15272#|#cate_8969"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 8,
+      "naturalLanguage": "圈出DIOR官旗8月份品专曝光的人群",
+      "fieldNotes": "触点：品专\n行为：曝光\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "contType": "bhv",
+              "account": "2207959261164#|#2207959261164",
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              },
+              "bhv": "15274#|#EXPOSE_AD",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "品牌专区",
+            "selectionLv2": [
+              "15250#|#EB"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 9,
+      "naturalLanguage": "圈出DIOR官旗8月份直通车点击的人群",
+      "fieldNotes": "触点：直通车\n行为：点击\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "account": "2207959261164#|#2207959261164",
+              "bhv": "15316#|#onebp_click",
+              "onebp_scene": [
+                "15402#|#371"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "效果推广",
+            "selectionLv2": [
+              "15270#|#cate_8954"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 10,
+      "naturalLanguage": "圈出DIOR官旗8月份特秀点击的人群",
+      "fieldNotes": "触点：特秀\n行为：点击\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "bhv": "15298#|#click_pptg",
+              "ppob_scene": [
+                "15364#|#49"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "品牌推广",
+            "selectionLv2": [
+              "15272#|#cate_8969"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 11,
+      "naturalLanguage": "圈出DIOR官旗8月份品专点击的人群",
+      "fieldNotes": "触点：品专\n行为：点击\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "contType": "bhv",
+              "account": "2207959261164#|#2207959261164",
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              },
+              "bhv": "15300#|#CLICK_AD",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "品牌专区",
+            "selectionLv2": [
+              "15250#|#EB"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 12,
+      "naturalLanguage": "圈出DIOR官旗8月份超级直播观看的人群",
+      "fieldNotes": "触点：超级直播\n行为：观看\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "AD"
+            ],
+            "selectionLv3": {
+              "account": "2207959261164#|#2207959261164",
+              "bhv": "15323#|#onebp_view",
+              "onebp_scene": [
+                "15397#|#108"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "fromPoolId": 0,
+            "selectionLv2Name": "效果推广",
+            "selectionLv2": [
+              "15270#|#cate_8954"
+            ]
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 13,
+      "naturalLanguage": "圈出DIOR彩妆类目半年vs前半年流入人数",
+      "fieldNotes": "渠道：天猫\n类目：彩妆类目\n行为：购买\n时间: 近半年（2026-1-01~2026-6-30）前半年（2025-7-01~2025-12-31）",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260101",
+                "to": "20260630"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250701",
+                "to": "20251231"
+              }
+            },
+            "fromPoolId": 1
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250701",
+                "to": "20251231"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)n(2)"
+      }
+    },
+    {
+      "sourceRow": 14,
+      "naturalLanguage": "圈出DIOR彩妆类目半年vs前半年流出人数",
+      "fieldNotes": "渠道：天猫\n类目：彩妆类目\n行为：购买\n时间: 近半年（2026-1-01~2026-6-30）前半年（2025-7-01~2025-12-31）",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250701",
+                "to": "20251231"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260101",
+                "to": "20260630"
+              }
+            },
+            "fromPoolId": 1
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260101",
+                "to": "20260630"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)n(2)"
+      }
+    },
+    {
+      "sourceRow": 15,
+      "naturalLanguage": "圈出DIOR官旗8月份浏览过任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 浏览(VIEW_ITEM)\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16625#|#VIEW_ITEM"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1",
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              }
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 16,
+      "naturalLanguage": "圈出DIOR官旗8月份浏览且购买官旗任意商品的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 浏览且购买\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16625#|#VIEW_ITEM"
+              ],
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16709#|#PAY"
+              ],
+              "frequency": {
+                "op": "OPEN_OPEN"
+              },
+              "money": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260101",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 1,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          }
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "sourceRow": 17,
+      "naturalLanguage": "圈出DIOR官旗8月份浏览未购官旗，购买天猫国际的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 浏览未购官旗，购买天猫国际\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16625#|#VIEW_ITEM"
+              ],
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16709#|#PAY"
+              ],
+              "frequency": {
+                "op": "OPEN_OPEN"
+              },
+              "money": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260101",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 1,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "ALL",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16707#|#PAY"
+              ],
+              "frequency": {
+                "op": "OPEN_OPEN"
+              },
+              "money": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 2,
+            "selectionLv2": [
+              "16600#|#1"
+            ],
+            "selectionLv2Name": "天猫国际"
+          }
+        ],
+        "compute": "(0)d(1)n(2)"
+      }
+    },
+    {
+      "sourceRow": 18,
+      "naturalLanguage": "圈出DIOR官旗8月份浏览未购品牌任意渠道，购买竞品彩妆的人群",
+      "fieldNotes": "店铺: 376414317\n行为: 浏览未购品牌任意渠道，购买竞品\n类目：彩妆类目\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "shop": "376414317#|#376414317",
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16625#|#VIEW_ITEM"
+              ],
+              "dayFrequency": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 0,
+            "selectionLv2": [
+              "16612#|#4"
+            ],
+            "selectionLv2Name": "天猫"
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMODITY",
+              "ITEM"
+            ],
+            "selectionLv3": {
+              "keywords": null,
+              "cate": "ALL",
+              "bhv": [
+                "16712#|#PAY"
+              ],
+              "frequency": {
+                "op": "OPEN_OPEN"
+              },
+              "money": {
+                "op": "OPEN_OPEN"
+              },
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "selectedGoodsType": "1"
+            },
+            "tipProperty": null,
+            "fromPoolId": 1,
+            "selectionLv2": [
+              "16596#|#ALL"
+            ],
+            "selectionLv2Name": "所有销售渠道"
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "50010812#|#50010812",
+                "201161605#|#201161605",
+                "201166702#|#201166702",
+                "50010793#|#50010793",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)n(2)"
+      }
+    },
+    {
+      "sourceRow": 19,
+      "naturalLanguage": "圈出DIOR品牌D11蓄水期A人群",
+      "fieldNotes": "时间: 2025-09-15~10-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15185#|#D_INTEREST",
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)d(1)"
+      }
+    },
+    {
+      "sourceRow": 20,
+      "naturalLanguage": "圈出DIOR品牌D11蓄水期I人群",
+      "fieldNotes": "时间: 2025-09-15~10-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15185#|#D_INTEREST"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)d(1)"
+      }
+    },
+    {
+      "sourceRow": 21,
+      "naturalLanguage": "圈出DIOR品牌D11蓄水期PL人群",
+      "fieldNotes": "时间: 2025-09-15~10-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 22,
+      "naturalLanguage": "圈出DIOR品牌D11活动期A人群",
+      "fieldNotes": "时间: 2025-10-15~11-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20251015",
+                "to": "20251114"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15185#|#D_INTEREST"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20251015",
+                "to": "20251114"
+              }
+            },
+            "fromPoolId": 1
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS",
+                "15185#|#D_INTEREST",
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)d(2)"
+      }
+    },
+    {
+      "sourceRow": 23,
+      "naturalLanguage": "圈出DIOR品牌D11活动期I人群",
+      "fieldNotes": "时间: 2025-10-15~11-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15185#|#D_INTEREST"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20251015",
+                "to": "20251114"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS",
+                "15185#|#D_INTEREST",
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)"
+      }
+    },
+    {
+      "sourceRow": 24,
+      "naturalLanguage": "圈出DIOR品牌D11活动期PL人群",
+      "fieldNotes": "时间: 2025-10-15~11-14",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20251015",
+                "to": "20251114"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS",
+                "15185#|#D_INTEREST"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20251015",
+                "to": "20251114"
+              }
+            },
+            "fromPoolId": 2
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "FULL_LINK",
+              "FULL_LINK"
+            ],
+            "selectionLv3": {
+              "cate": "ALL",
+              "types": [
+                "15184#|#D_AWARENESS",
+                "15185#|#D_INTEREST",
+                "15186#|#D_BUY",
+                "15187#|#D_ROYALTY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250915",
+                "to": "20251014"
+              }
+            },
+            "fromPoolId": 3
+          }
+        ],
+        "compute": "(0)d(1)d(2)"
+      }
+    },
+    {
+      "sourceRow": 25,
+      "naturalLanguage": "圈出DIOR品牌近一年的老客",
+      "fieldNotes": "渠道：天猫\n类目：核心彩妆类目\n行为：购买\n时间: 近一年（2025-9-16~2026-9-15）前一年（2024-9-16~2025-9-15）",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "122438001#|#122438001",
+                "121460005#|#121460005",
+                "201164006#|#201164006",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "50010813#|#50010813"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250916",
+                "to": "20260915"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "121460005#|#121460005",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "125458001#|#125458001"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20240916",
+                "to": "20250915"
+              }
+            },
+            "fromPoolId": 1
+          }
+        ],
+        "compute": "(0)n(1)"
+      }
+    },
+    {
+      "sourceRow": 26,
+      "naturalLanguage": "圈出前一年买过彩妆但没有买过DIOR产品，近一年买DIOR彩妆的人群",
+      "fieldNotes": "渠道：天猫\n类目：核心彩妆类目\n行为：购买\n时间: 近一年（2025-9-16~2026-9-15）前一年（2024-9-16~2025-9-15）",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "122438001#|#122438001",
+                "121460005#|#121460005",
+                "201164006#|#201164006",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "50010813#|#50010813"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250916",
+                "to": "20260915"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "121460005#|#121460005",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "125458001#|#125458001"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20240916",
+                "to": "20250915"
+              }
+            },
+            "fromPoolId": 1
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "121460005#|#121460005",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20240916",
+                "to": "20250915"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)n(1)d(2)"
+      }
+    },
+    {
+      "sourceRow": 27,
+      "naturalLanguage": "圈出前一年没有买过彩妆品类和DIOR产品，但近一年买DIOR彩妆的人群",
+      "fieldNotes": "渠道：天猫\n类目：核心彩妆类目\n行为：购买\n时间: 近一年（2025-9-16~2026-9-15）前一年（2024-9-16~2025-9-15）",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "122438001#|#122438001",
+                "121460005#|#121460005",
+                "201164006#|#201164006",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "50010813#|#50010813"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20250916",
+                "to": "20260915"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "121460005#|#121460005",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006",
+                "125458001#|#125458001"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20240916",
+                "to": "20250915"
+              }
+            },
+            "fromPoolId": 1
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "29478"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "125458001#|#125458001",
+                "121452004#|#121452004",
+                "201166702#|#201166702",
+                "121460005#|#121460005",
+                "122438001#|#122438001",
+                "201164006#|#201164006",
+                "50010813#|#50010813",
+                "201834201#|#201834201",
+                "201161714#|#201161714",
+                "121398006#|#121398006"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20240916",
+                "to": "20250915"
+              }
+            },
+            "fromPoolId": 2
+          }
+        ],
+        "compute": "(0)d(1)d(2)"
+      }
+    },
+    {
+      "sourceRow": 28,
+      "naturalLanguage": "圈出8月份搜索（迪奥,迪奥唇膏,魅惑唇膏）的人数",
+      "fieldNotes": "关键词：迪奥,迪奥唇膏,魅惑唇膏\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "FIELD",
+              "SEARCH"
+            ],
+            "selectionLv3": {
+              "contType": "bhv",
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              },
+              "searchs": [
+                "迪奥",
+                "迪奥唇膏",
+                "魅惑唇膏"
+              ]
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 29,
+      "naturalLanguage": "圈出8月份浏览过YSL唇膏的人",
+      "fieldNotes": "行为: 浏览\n类目：唇膏/口红\n竞品：YSL\n渠道：天猫\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "20112"
+                ],
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18930#|#CATE_PUBLIC_VIEWITEM"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 30,
+      "naturalLanguage": "圈出8月份购买过YSL唇膏的人",
+      "fieldNotes": "行为: 购买\n类目：唇膏/口红\n竞品：YSL\n渠道：天猫\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "stdBrand": [
+                  "20112"
+                ],
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                }
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 31,
+      "naturalLanguage": "圈出8月份购买过李佳琦直播间口红的人",
+      "fieldNotes": "行为: 购买\n类目：唇膏/口红\n商品标题关键词：佳琦,李佳琦\n渠道：天猫\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "title": [
+                  "佳琦",
+                  "李佳琦"
+                ]
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0)"
+      }
+    },
+    {
+      "sourceRow": 32,
+      "naturalLanguage": "圈出8月份购买过T2直播间口红的人",
+      "fieldNotes": "行为: 购买\n类目：唇膏/口红\n商品标题关键词：所有女生,曹米娅,k姐,心愿,吉杰,李好,king,曹颖,达人专属,主播甄选,蜜蜂,香菇,陈洁,交个朋友,禧物社,胡可,莉贝琳,晁然,林依轮,代王,蜂狂,烈儿,香菇618,呼呼美呼,胡兵,明道,小小玉米,国际名模-丹妮,丹妮,魔妆倩,sisy莉贝琳,大物是也\n渠道：天猫\n时间: 2026-08-01~08-31",
+      "sourcePackage": {
+        "crowdName": "未命名",
+        "list": [
+          {
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "title": [
+                  "所有女生",
+                  "曹米娅",
+                  "k姐",
+                  "心愿",
+                  "吉杰",
+                  "李好",
+                  "king",
+                  "曹颖",
+                  "达人专属",
+                  "主播甄选"
+                ]
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "title": [
+                  "蜜蜂",
+                  "香菇",
+                  "陈洁",
+                  "交个朋友",
+                  "禧物社",
+                  "胡可",
+                  "莉贝琳",
+                  "晁然",
+                  "林依轮",
+                  "代王"
+                ]
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "title": [
+                  "蜂狂",
+                  "烈儿",
+                  "香菇618",
+                  "呼呼美呼",
+                  "胡兵",
+                  "明道",
+                  "小小玉米",
+                  "国际名模-丹妮",
+                  "丹妮",
+                  "魔妆倩"
+                ]
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          },
+          {
+            "op": "INIT",
+            "selectionLv1": [
+              "COMMON_TOUCH",
+              "PUBLIC_CATE_BHV"
+            ],
+            "selectionLv3": {
+              "extraFilters": {
+                "channel": [
+                  "16772#|#4"
+                ],
+                "frequency": {
+                  "op": "OPEN_OPEN"
+                },
+                "price": {
+                  "op": "OPEN_OPEN"
+                },
+                "itemprice": {
+                  "op": "OPEN_OPEN"
+                },
+                "title": [
+                  "sisy莉贝琳",
+                  "大物是也"
+                ]
+              },
+              "leafCates": [
+                "50010808#|#50010808"
+              ],
+              "bhv": [
+                "18919#|#CATE_PUBLIC_PAY"
+              ],
+              "dateType": "ABSOLUTE_DATE_RANGE",
+              "dateValue": {
+                "from": "20260801",
+                "to": "20260831"
+              }
+            },
+            "fromPoolId": 0
+          }
+        ],
+        "compute": "(0u1u2u3)"
+      }
+    }
+  ]
+}

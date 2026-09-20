@@ -83,7 +83,7 @@ def case_specs(behavior: str, colloquial: str) -> list[dict[str, Any]]:
         {
             "variant": "包名直输",
             "utterance": f"2025年9月第1周搜索迪奥{behavior}_副本",
-            "permissionExpected": True,
+            "permissionExpected": False,
         },
     ]
 
@@ -207,7 +207,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
             "",
             "## 权限口径",
             "",
-            "完整表达明确说可以使用官旗账号，因此应直接生成；包名直输没有说明当前用户权限，因此应先确认一次，确认后生成的JSON再参与一致性校验。",
+            "Dior官旗账号已经登记为当前用户可用；完整表达、自然口语和包名直输都应直接生成，不得重复询问账号权限。",
             "",
         ]
     )

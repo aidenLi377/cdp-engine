@@ -58,10 +58,23 @@ test('DataBank automation leaves more headroom than the extension bridge timeout
 test('official parity outputs keep the official default name and copy indentation', () => {
   assert.match(normalModeVue, /const CATEGORY_PUBLIC_PACKAGE = '类目公域行为'/)
   assert.match(normalModeVue, /const COMMODITY_PACKAGE = '商品行为'/)
+  assert.match(normalModeVue, /const BRAND_PROMOTION_PACKAGE = '品牌推广'/)
+  assert.match(normalModeVue, /const SINGLE_MEDIA_PACKAGE = '单媒体智投'/)
   assert.match(normalModeVue, /const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'/)
   assert.match(normalModeVue, /isPureOfficialParityOutput\(\) \? OFFICIAL_DEFAULT_CROWD_NAME : DEFAULT_CROWD_NAME/)
-  assert.match(normalModeVue, /\[CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE\]\.includes\(packageType\)/)
+  assert.match(normalModeVue, /\[CATEGORY_PUBLIC_PACKAGE, COMMODITY_PACKAGE, BRAND_PROMOTION_PACKAGE, SINGLE_MEDIA_PACKAGE\]\.includes\(packageType\)/)
   assert.match(normalModeVue, /JSON\.stringify\(generatedJson\.value, null, isPureOfficialParityOutput\(\) \? '\\t' : 4\)/)
+})
+
+test('packages with a fixed source pool preserve the generated pool id', () => {
+  assert.match(
+    normalModeVue,
+    /const PRESERVE_FROM_POOL_ID_PACKAGES = new Set\(\[[\s\S]*?BRAND_PROMOTION_PACKAGE,[\s\S]*?'全媒体智投',[\s\S]*?SINGLE_MEDIA_PACKAGE,[\s\S]*?\]\)/,
+  )
+  assert.match(
+    normalModeVue,
+    /if \(!PRESERVE_FROM_POOL_ID_PACKAGES\.has\(node\.packageType\)\) \{[\s\S]*?baseTemplate\.fromPoolId = poolExpression\.fromPoolIdByIndex\.get\(index\) \?\? index[\s\S]*?\}/,
+  )
 })
 
 test('JSON preview uses readable spacing without changing copied parity output', () => {

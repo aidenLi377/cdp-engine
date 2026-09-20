@@ -28,7 +28,7 @@ test('compact layout is the only combination workbench layout', () => {
 test('combination workbench can be cleared back to the free-build workspace', () => {
   assert.match(normalModeVue, /v-if="batchMode"[\s\S]*?@click="clearCanvas"[\s\S]*?清空组合/)
   assert.match(normalModeVue, /function clearCanvas\(\)[\s\S]*?resetWorkbenchContext\(\)/)
-  assert.match(normalModeVue, /function resetWorkbenchContext\(\)[\s\S]*?resetBatchContext\(\)[\s\S]*?workbenchMode\.value = 'free-build'/)
+  assert.match(normalModeVue, /function resetWorkbenchContext\([^)]*\)[\s\S]*?resetBatchContext\(\)[\s\S]*?workbenchMode\.value = 'free-build'/)
 })
 
 test('batch workbench switches package detail by configured crowd name', () => {

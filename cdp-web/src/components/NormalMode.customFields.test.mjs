@@ -44,7 +44,7 @@ test('solution-use parameter highlighting stays field-level and reaches the matc
   const fieldHighlightCallback = normalModeVue.slice(fieldHighlightStart, fieldHighlightEnd)
 
   assert.doesNotMatch(solutionUseTemplate, /node-highlighted/)
-  assert.match(normalModeVue, /'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted\(node\.id, item\.key\)/)
+  assert.match(normalModeVue, /'summary-row-highlighted': highlightedCfId && isSummaryRowHighlighted\(entry\.node\.id, item\.key\)/)
   assert.match(summaryFunction, /if \(!highlightedCfId\.value\) return false/)
   assert.match(summaryFunction, /c\.id === highlightedCfId\.value/)
   assert.doesNotMatch(summaryFunction, /collapsedCfId/)
@@ -59,7 +59,7 @@ test('single-field overflow policy is enabled only while using a solution', () =
   const freeBuildTemplate = normalModeVue.slice(freeBuildStart, normalModeVue.indexOf('<script setup>', freeBuildStart))
 
   assert.match(solutionUseTemplate, /:overflow-policy="!batchMode \? 'solution-use' : 'legacy'"/)
-  assert.match(freeBuildTemplate, /<DynamicForm v-else v-show="!node\.collapsed" :node="node" :node-index="index" @overflow-split="handleOverflowSplit"/)
+  assert.match(freeBuildTemplate, /<DynamicForm v-else v-show="!entry\.node\.collapsed" :node="entry\.node" :node-index="entry\.index" @overflow-split="handleOverflowSplit"/)
   assert.doesNotMatch(freeBuildTemplate, /overflow-policy="solution-use"/)
   assert.match(normalModeVue, /const overflows = workbenchMode\.value === 'solution-use'/)
   assert.match(normalModeVue, /if \(workbenchMode\.value !== 'solution-use' \|\| batchMode\.value\) return \[\]/)

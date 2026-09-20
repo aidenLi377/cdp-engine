@@ -49,3 +49,16 @@ test('publish validation reports invalid relationships and summarizes valid node
   assert.equal(valid.valid, true)
   assert.equal(valid.summary.nodeCount, 2)
 })
+
+test('publish validation checks relations between pools and allows null operators inside a pool', () => {
+  const result = validateSolutionIntegrity({
+    name: '池化方案',
+    nodes: [
+      { id: 'a', packageType: '商品行为', operator: null, poolId: 'pool-a', poolOperator: 'n' },
+      { id: 'b', packageType: '类目公域行为', operator: 'n', poolId: 'pool-b', poolOperator: 'u' },
+      { id: 'c', packageType: '类目公域行为', operator: null, poolId: 'pool-b', poolOperator: 'u' },
+    ],
+  })
+
+  assert.equal(result.valid, true)
+})

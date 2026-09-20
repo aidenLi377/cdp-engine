@@ -372,7 +372,7 @@
                     :max-collapse-tags="3"
                     :remote-method="query => searchCategoryOptions(question, query)"
                     :loading="categorySearchLoading[question.id]"
-                    :placeholder="isMultiCategoryQuestion(question) ? '搜索并选择完整核心类目，超出会自动拆分' : '搜索并选择一个正式类目'"
+                    :placeholder="isMultiCategoryQuestion(question) ? '默认选全店销售额前10项；自定义可多选' : '搜索并选择一个正式类目'"
                     no-data-text="输入类目关键词，搜索实时正式路径"
                     :disabled="sending"
                     @visible-change="visible => visible && primeCategoryQuestion(question)"

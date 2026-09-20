@@ -66,7 +66,7 @@ test('gallery white keeps surfaces neutral and primary actions black', () => {
   assert.match(themeCss, /\.intercom-input \.el-input__wrapper\.is-focus[\s\S]*border-color:\s*var\(--ui-accent\)/)
 })
 
-test('gallery white workbench library is a compact borderless white row list', () => {
+test('gallery white workbench library is a compact borderless grouped row list', () => {
   const section = effectiveRule(themeCss, '.workbench-package-section')
   const search = effectiveRule(themeCss, '.workbench-package-section .pkg-search .el-input__wrapper')
   const list = effectiveRule(themeCss, '.workbench-package-section .btn-group')
@@ -78,8 +78,8 @@ test('gallery white workbench library is a compact borderless white row list', (
   assert.match(section, /background:\s*transparent\s*!important/)
   assert.match(section, /box-shadow:\s*none\s*!important/)
   assert.match(search, /height:\s*32px\s*!important/)
-  assert.match(list, /display:\s*grid/)
-  assert.match(list, /grid-template-columns:\s*minmax\(0,\s*1fr\)/)
+  assert.match(list, /display:\s*flex/)
+  assert.match(list, /flex-direction:\s*column/)
   assert.match(row, /height:\s*34px\s*!important/)
   assert.match(row, /border:\s*0\s*!important/)
   assert.match(row, /background:\s*var\(--ui-surface\)\s*!important/)

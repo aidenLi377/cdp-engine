@@ -2,6 +2,7 @@ import {
   applyCategoryBehaviorDateDefault,
   markCategoryBehaviorDateManual,
 } from './categoryBehaviorDateDefaults.js'
+import { prepareNodeAsOwnOperationPool } from './operationPools.js'
 
 const FIELD_TOKEN_SEPARATOR = ':'
 
@@ -56,14 +57,14 @@ function getSchemaKeys(node) {
 }
 
 export function cloneNodeForDuplicate(source, index) {
-  return {
+  return prepareNodeAsOwnOperationPool({
     ...JSON.parse(JSON.stringify(source)),
     id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
     displayName: '',
     operator: index === 0 ? 'n' : (source?.operator ?? 'n'),
     selectedFirstDate: null,
     collapsed: false,
-  }
+  }, index === 0 ? 'n' : (source?.operator ?? 'n'))
 }
 
 export function insertNodeAtPosition(nodeList, newNode, index) {
@@ -87,11 +88,19 @@ export function serializeNodesForSolution(nodeList) {
       else if (persistedFormData.item.length === 1) persistedFormData.item = persistedFormData.item[0]
     }
 
+    const poolState = node?.poolId
+      ? {
+          poolId: String(node.poolId),
+          poolOperator: ['n', 'u'].includes(node?.poolOperator) ? node.poolOperator : 'n',
+        }
+      : {}
+
     return {
       id: node?.id ?? null,
       displayName: typeof node?.displayName === 'string' ? node.displayName : '',
       packageType: node?.packageType ?? null,
       operator: node?.operator ?? null,
+      ...poolState,
       formData: persistedFormData,
       modeData: node?.modeData ?? {},
     }
@@ -359,6 +368,7 @@ export function buildNodeSplits(sourceNode, fieldKey, allValues, limit) {
     cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${i}`
     cloned.displayName = ''
     cloned.operator = 'u'
+    prepareNodeAsOwnOperationPool(cloned, 'u')
     cloned.selectedFirstDate = null
     cloned.collapsed = false
     cloned.formData[fieldKey] = chunks[i]
@@ -400,6 +410,7 @@ export function buildMultiFieldNodeSplits(sourceNode, overflows) {
     cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${ci}`
     cloned.displayName = ''
     cloned.operator = 'u'
+    prepareNodeAsOwnOperationPool(cloned, 'u')
     cloned.selectedFirstDate = null
     cloned.collapsed = false
     for (const { fieldKey } of overflows) {
