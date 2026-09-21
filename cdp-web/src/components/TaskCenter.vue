@@ -343,7 +343,7 @@ import {
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
-const EXPECTED_EXTENSION_VERSION = '2.2.4'
+const EXPECTED_EXTENSION_VERSION = '2.2.11'
 const TASK_SESSION_KEY = 'task-center.v1'
 const COMPLETION_TOAST_DURATION_MS = 4000
 const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
@@ -761,6 +761,16 @@ function disableTaskSessionPersistence() {
   taskSessionPersistenceDisabled = true
 }
 
+function resolveExtensionArchiveName(response) {
+  const fallback = `DMP_PluginV${EXPECTED_EXTENSION_VERSION}-CDP-Merged.zip`
+  const disposition = response.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="?([^";]+)"?/i)
+  const archiveName = match?.[1]?.trim().split(/[\\/]/).pop() || ''
+  return /^DMP_PluginV\d+(?:\.\d+){1,3}-CDP-Merged\.zip$/.test(archiveName)
+    ? archiveName
+    : fallback
+}
+
 async function downloadExtension() {
   if (installingExtension.value) return
   installingExtension.value = true
@@ -781,7 +791,7 @@ async function downloadExtension() {
     const blobUrl = URL.createObjectURL(await response.blob())
     const link = document.createElement('a')
     link.href = blobUrl
-    link.download = `DMP_PluginV${EXPECTED_EXTENSION_VERSION}-CDP-Merged.zip`
+    link.download = resolveExtensionArchiveName(response)
     document.body.appendChild(link)
     link.click()
     link.remove()

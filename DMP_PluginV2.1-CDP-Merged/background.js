@@ -8,10 +8,15 @@ const ALLOWED_ORIGINS = new Set([
 const DATABANK_PARAM_URL = 'https://databank.tmall.com/#/userDefinedAnalyses';
 const DATABANK_CROWD_URL = 'https://databank.tmall.com/#/customAnalysis';
 const DATABANK_DATAHUB_URL = 'https://databank.tmall.com/#/dataHub';
+const DATABANK_CUSTOM_CROWD_LIST_URL = 'https://databank.tmall.com/api/paasapi';
 const DMP_CROWD_URL = 'https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=';
 
 // Message types from frontend (via bridge)
 const MSG_DATABANK_PARAM = 'CDP_AUTOMATE_DATABANK';
+const MSG_DATABANK_REALTIME_COUNT = 'CDP_QUERY_DATABANK_REALTIME_COUNT';
+const MSG_DATABANK_CREATE_API = 'CDP_CREATE_DATABANK_CROWD_API';
+const MSG_DATABANK_COUNT = 'CDP_QUERY_DATABANK_CROWD_COUNT';
+const MSG_DATABANK_DEPENDENCIES = 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES';
 const MSG_DATABANK_CROWD = 'CDP_AUTOMATE_DATABANK_CROWD';
 const MSG_DATABANK_WAIT_APPLY = 'CDP_AUTOMATE_DATABANK_WAIT_APPLY';
 const MSG_DATABANK_DATAHUB = 'CDP_AUTOMATE_DATABANK_DATAHUB';
@@ -33,6 +38,9 @@ const CONTENT_PING_CROWD = 'PING_CROWD_READY';
 const CONTENT_PING_DATAHUB = 'PING_DATAHUB_READY';
 const CONTENT_PING_DMP = 'PING_DMP_READY';
 const CONTENT_CMD_DATABANK = 'AUTOMATE_DATABANK';
+const CONTENT_CMD_DATABANK_REALTIME_COUNT = 'QUERY_DATABANK_REALTIME_COUNT';
+const CONTENT_CMD_DATABANK_CREATE_API = 'CREATE_DATABANK_CROWD_API';
+const CONTENT_CMD_DATABANK_COUNT = 'QUERY_DATABANK_CROWD_COUNT';
 const CONTENT_CMD_DATABANK_CROWD = 'AUTOMATE_DATABANK_CROWD';
 const CONTENT_CMD_DATABANK_WAIT_APPLY = 'AUTOMATE_DATABANK_WAIT_APPLY';
 const CONTENT_CMD_DATABANK_DATAHUB = 'AUTOMATE_DATABANK_DATAHUB';
@@ -56,6 +64,8 @@ const TASK_RUN_KEYS = {
   databank: 'cdpTaskDatabankRunId',
 };
 const taskStorage = chrome.storage?.session || chrome.storage?.local || null;
+const DATABANK_REQUEST_CONTEXT_KEY = 'cdpDatabankRequestContext';
+let databankRequestContext = null;
 const taskStateReady = (async () => {
   if (!taskStorage) return;
   try {
@@ -73,6 +83,44 @@ const taskStateReady = (async () => {
     log('info', 'task state restore skipped', error?.message || error);
   }
 })();
+
+const databankRequestContextReady = (async () => {
+  if (!taskStorage) return;
+  try {
+    const stored = await taskStorage.get([DATABANK_REQUEST_CONTEXT_KEY]);
+    const context = stored?.[DATABANK_REQUEST_CONTEXT_KEY];
+    if (context && typeof context === 'object') databankRequestContext = context;
+  } catch (error) {
+    log('info', 'databank request context restore skipped', error?.message || error);
+  }
+})();
+
+function captureDatabankRequestContext(details) {
+  const requestHeaders = Array.isArray(details?.requestHeaders) ? details.requestHeaders : [];
+  const normalizedHeaders = {};
+  for (const header of requestHeaders) {
+    const name = String(header?.name || '').toLowerCase();
+    if (!['x-csrf-token', 'x-requested-with', 'bx-v'].includes(name)) continue;
+    const value = String(header?.value || '').trim();
+    if (value) normalizedHeaders[name] = value;
+  }
+  if (!normalizedHeaders['x-csrf-token']) return;
+  databankRequestContext = {
+    headers: normalizedHeaders,
+    capturedAt: Date.now(),
+  };
+  if (taskStorage) {
+    taskStorage.set({ [DATABANK_REQUEST_CONTEXT_KEY]: databankRequestContext }).catch(() => null);
+  }
+}
+
+if (chrome.webRequest?.onBeforeSendHeaders) {
+  chrome.webRequest.onBeforeSendHeaders.addListener(
+    captureDatabankRequestContext,
+    { urls: ['https://databank.tmall.com/api/paasapi*'] },
+    ['requestHeaders'],
+  );
+}
 
 function normalizeDmpSettings(stored) {
   const conditionCache = stored?.dmpConditionCache || {};
@@ -262,27 +310,262 @@ async function sendMessageWithRetry(tabId, message, retries) {
 }
 
 // Run DataBank parameter paste flow
-async function runDatabankParam(senderTab, jsonText, autoCalculate, sendResponse) {
+async function runDatabankParam(senderTab, jsonText, autoCalculate, executionMode, crowdName, runId, sendResponse) {
   let tab = null;
   try {
+    await taskStateReady;
+    assertRunNotCancelled(runId);
     tab = await createTab(DATABANK_PARAM_URL);
+    registerRunTab(runId, tab.id);
+    await setTaskTabId('databank', tab.id, runId);
     await focusTab(tab);
     await waitForTabComplete(tab.id);
+    assertRunNotCancelled(runId);
     await ensureScriptInjected(tab.id, ['databank-automation.js']);
     await waitForReady(tab.id, CONTENT_PING);
+    assertRunNotCancelled(runId);
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK,
       jsonText: jsonText,
       autoCalculate: autoCalculate === true,
+      executionMode,
+      crowdName,
+      runId,
     });
+    assertRunNotCancelled(runId);
     log('info', 'databank param flow done', result);
+    unregisterRunTab(runId, tab.id);
+    if (!runId || databankRunId === normalizeRunId(runId)) await setTaskTabId('databank', null);
     if (senderTab?.id) {
       try { await focusTab(senderTab); } catch (e) { /* ignore */ }
     }
     sendResponse(result);
   } catch (error) {
     log('error', 'databank param flow failed', error.message);
-    sendResponse({ ok: false, error: error?.message || '参数粘贴流程执行失败' });
+    if (tab?.id) {
+      unregisterRunTab(runId, tab.id);
+      if (error?.name === 'AbortError') {
+        try { await chrome.tabs.remove(tab.id); } catch (e) { /* ignore */ }
+      }
+    }
+    if (!runId || databankRunId === normalizeRunId(runId)) await setTaskTabId('databank', null);
+    sendResponse({
+      ok: false,
+      cancelled: error?.name === 'AbortError',
+      error: error?.message || '参数粘贴流程执行失败',
+    });
+  }
+}
+
+async function findOpenDatabankTab() {
+  const tabs = await chrome.tabs.query({ url: 'https://databank.tmall.com/*' });
+  const candidates = (Array.isArray(tabs) ? tabs : []).filter((tab) => Number.isInteger(tab?.id));
+  return candidates.find((tab) => tab.active && tab.status === 'complete')
+    || candidates.find((tab) => tab.status === 'complete')
+    || candidates[0]
+    || null;
+}
+
+async function runDatabankRealtimeCount(jsonText, crowdName, runId, sendResponse) {
+  try {
+    await databankRequestContextReady;
+    assertRunNotCancelled(runId);
+    const tab = await findOpenDatabankTab();
+    if (!tab?.id) {
+      throw createDatabankApiError(
+        '请先打开并登录数据银行，接口取数不会自动打开新页面',
+        'DATABANK_LOGIN_REQUIRED',
+      );
+    }
+    await ensureScriptInjected(tab.id, ['databank-automation.js']);
+    assertRunNotCancelled(runId);
+    const result = await sendMessageWithRetry(tab.id, {
+      type: CONTENT_CMD_DATABANK_REALTIME_COUNT,
+      jsonText,
+      crowdName,
+      requestHeaders: databankRequestContext?.headers || {},
+      runId,
+    });
+    assertRunNotCancelled(runId);
+    sendResponse(result);
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      cancelled: error?.name === 'AbortError',
+      code: error?.code || 'DATABANK_REALTIME_COUNT_FAILED',
+      error: error?.message || '接口取数失败',
+    });
+  }
+}
+
+async function runDatabankDirectCreate(jsonText, crowdName, runId, sendResponse) {
+  try {
+    await databankRequestContextReady;
+    assertRunNotCancelled(runId);
+    const tab = await findOpenDatabankTab();
+    if (!tab?.id) {
+      throw createDatabankApiError(
+        '请先打开并登录数据银行，接口建包不会自动打开新页面',
+        'DATABANK_LOGIN_REQUIRED',
+      );
+    }
+    await ensureScriptInjected(tab.id, ['databank-automation.js']);
+    assertRunNotCancelled(runId);
+    const result = await sendMessageWithRetry(tab.id, {
+      type: CONTENT_CMD_DATABANK_CREATE_API,
+      jsonText,
+      crowdName,
+      requestHeaders: databankRequestContext?.headers || {},
+      runId,
+    });
+    assertRunNotCancelled(runId);
+    sendResponse(result);
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      cancelled: error?.name === 'AbortError',
+      code: error?.code || 'DATABANK_DIRECT_API_FAILED',
+      error: error?.message || '接口创建人群失败',
+    });
+  }
+}
+
+function createDatabankApiError(message, code) {
+  const error = new Error(message);
+  error.code = code || 'DATABANK_API_ERROR';
+  return error;
+}
+
+function buildCustomCrowdSearchUrl(crowdName) {
+  const url = new URL(DATABANK_CUSTOM_CROWD_LIST_URL);
+  url.searchParams.set('path', '/api/v1/custom/list');
+  url.searchParams.set('source', 'CUSTOM');
+  url.searchParams.set('page', '1');
+  url.searchParams.set('pageSize', '10');
+  url.searchParams.set('qualityReportOpened', 'all');
+  url.searchParams.set('keyword', crowdName);
+  url.searchParams.set('type', '4');
+  url.searchParams.set('category2NotEqualList', 'scene_crowd');
+  return url.toString();
+}
+
+async function fetchCustomCrowdExactMatches(crowdName) {
+  const response = await fetch(buildCustomCrowdSearchUrl(crowdName), {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  });
+  if (response.status === 401 || response.status === 403) {
+    throw createDatabankApiError('数据银行登录已失效，请重新登录后再试', 'DATABANK_LOGIN_REQUIRED');
+  }
+  if (!response.ok) {
+    throw createDatabankApiError(`数据银行查询失败（HTTP ${response.status}）`);
+  }
+  const payload = await response.json();
+  if (Number(payload?.errCode || 0) !== 0) {
+    throw createDatabankApiError(payload?.errMsg || '数据银行查询失败');
+  }
+  const expectedName = String(crowdName || '').trim();
+  return (Array.isArray(payload?.data?.list) ? payload.data.list : [])
+    .filter((item) => String(item?.name || '').trim() === expectedName);
+}
+
+function hasNumericCrowdCount(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ''
+    && Number.isFinite(Number(value));
+}
+
+function sortCrowdsNewestFirst(items) {
+  return [...items].sort((left, right) => {
+    const rightTime = Number(right?.gmtUpdateReal || right?.gmtModified || right?.gmtCreate || 0);
+    const leftTime = Number(left?.gmtUpdateReal || left?.gmtModified || left?.gmtCreate || 0);
+    return rightTime - leftTime;
+  });
+}
+
+function summarizeCustomCrowd(item) {
+  const countReady = hasNumericCrowdCount(item?.count);
+  return {
+    crowdId: item?.id ?? null,
+    crowdBaseId: item?.baseId ?? null,
+    crowdName: String(item?.name || '').trim(),
+    crowdStatus: String(item?.status || '').trim(),
+    crowdCount: countReady ? Number(item.count) : null,
+    countReady,
+    canSelectOrLookalike: item?.canSelectOrLookalike ?? null,
+  };
+}
+
+async function runDatabankCrowdCountQuery(crowdName, sendResponse) {
+  try {
+    const exactMatches = sortCrowdsNewestFirst(await fetchCustomCrowdExactMatches(crowdName));
+    const crowd = exactMatches[0] || null;
+    const summary = crowd ? summarizeCustomCrowd(crowd) : {};
+    sendResponse({
+      ok: true,
+      crowdFound: !!crowd,
+      exactMatchCount: exactMatches.length,
+      ...summary,
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      code: error?.code || 'DATABANK_API_ERROR',
+      error: error?.message || '查询人群包人数失败',
+    });
+  }
+}
+
+async function runDatabankCustomDependencyCheck(crowdNames, sendResponse) {
+  try {
+    const results = [];
+    for (const crowdName of crowdNames) {
+      const exactMatches = sortCrowdsNewestFirst(await fetchCustomCrowdExactMatches(crowdName));
+      if (exactMatches.length === 0) {
+        results.push({
+          crowdName,
+          state: 'missing',
+          ready: false,
+          message: '未找到同名自定义人群',
+          exactMatchCount: 0,
+        });
+        continue;
+      }
+      if (exactMatches.length > 1) {
+        results.push({
+          crowdName,
+          state: 'ambiguous',
+          ready: false,
+          message: `找到 ${exactMatches.length} 个同名自定义人群`,
+          exactMatchCount: exactMatches.length,
+        });
+        continue;
+      }
+      const summary = summarizeCustomCrowd(exactMatches[0]);
+      const selectable = summary.canSelectOrLookalike === null
+        || summary.canSelectOrLookalike === undefined
+        || Number(summary.canSelectOrLookalike) !== 0;
+      const ready = summary.crowdStatus === 'CREATED' && summary.countReady && selectable;
+      results.push({
+        ...summary,
+        state: ready ? 'ready' : 'waiting',
+        ready,
+        message: ready ? '已计算完成' : '仍在计算中',
+        exactMatchCount: 1,
+      });
+    }
+    sendResponse({
+      ok: true,
+      ready: results.every((item) => item.ready),
+      results,
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      code: error?.code || 'DATABANK_API_ERROR',
+      error: error?.message || '检查自定义人群状态失败',
+    });
   }
 }
 
@@ -506,7 +789,7 @@ async function runDmpExtract(senderTab, phase1Result, selectedTags, runId, sendR
 // Main message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const msgType = message?.type;
-  if (![MSG_DATABANK_PARAM, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_CANCEL_TASK, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
+  if (![MSG_DATABANK_PARAM, MSG_DATABANK_REALTIME_COUNT, MSG_DATABANK_CREATE_API, MSG_DATABANK_COUNT, MSG_DATABANK_DEPENDENCIES, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_CANCEL_TASK, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
 
   const senderUrl = message.pageUrl || sender.tab?.url || '';
   const senderOrigin = (function() {
@@ -543,7 +826,69 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: false, error: 'jsonText 不能为空' });
       return;
     }
-    runDatabankParam(senderTab, jsonText, message.autoCalculate === true, sendResponse);
+    const executionMode = String(message.executionMode || '');
+    const crowdName = String(message.crowdName || '').trim();
+    if ((executionMode === 'create_only' || executionMode === 'create_and_count') && !crowdName) {
+      sendResponse({ ok: false, error: '创建人群时人群包名称不能为空' });
+      return;
+    }
+    runDatabankParam(
+      senderTab,
+      jsonText,
+      message.autoCalculate === true,
+      executionMode,
+      crowdName,
+      runId,
+      sendResponse,
+    );
+    return true;
+  }
+
+  if (msgType === MSG_DATABANK_REALTIME_COUNT) {
+    const jsonText = String(message.jsonText || '').trim();
+    const crowdName = String(message.crowdName || '').trim();
+    if (!jsonText) {
+      sendResponse({ ok: false, error: 'jsonText 不能为空' });
+      return;
+    }
+    runDatabankRealtimeCount(jsonText, crowdName, runId, sendResponse);
+    return true;
+  }
+
+  if (msgType === MSG_DATABANK_CREATE_API) {
+    const jsonText = String(message.jsonText || '').trim();
+    const crowdName = String(message.crowdName || '').trim();
+    if (!jsonText) {
+      sendResponse({ ok: false, error: 'jsonText 不能为空' });
+      return;
+    }
+    if (!crowdName) {
+      sendResponse({ ok: false, error: '接口创建人群时人群包名称不能为空' });
+      return;
+    }
+    runDatabankDirectCreate(jsonText, crowdName, runId, sendResponse);
+    return true;
+  }
+
+  if (msgType === MSG_DATABANK_COUNT) {
+    const crowdName = String(message.crowdName || '').trim();
+    if (!crowdName) {
+      sendResponse({ ok: false, error: '查询人数时人群包名称不能为空' });
+      return;
+    }
+    runDatabankCrowdCountQuery(crowdName, sendResponse);
+    return true;
+  }
+
+  if (msgType === MSG_DATABANK_DEPENDENCIES) {
+    const crowdNames = [...new Set((Array.isArray(message.crowdNames) ? message.crowdNames : [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean))].slice(0, 100);
+    if (crowdNames.length === 0) {
+      sendResponse({ ok: false, error: '自定义人群名称不能为空' });
+      return;
+    }
+    runDatabankCustomDependencyCheck(crowdNames, sendResponse);
     return true;
   }
 

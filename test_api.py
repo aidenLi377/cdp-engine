@@ -51,12 +51,32 @@ class CdpApiTests(unittest.TestCase):
         self.assertIn("品牌专区", packages)
         self.assertIn("全媒体智投", packages)
         self.assertIn("单媒体智投", packages)
+        self.assertIn("自定义人群", packages)
 
     def test_config_version_is_never_browser_cached(self):
         response = self.client.get("/api/config/version")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"version": 0, "publishedAt": None})
         self.assertIn("no-store", response.headers["Cache-Control"])
+
+    def test_generate_custom_crowd_keeps_name_for_runtime_resolution(self):
+        response = self.client.post(
+            "/api/generate",
+            json={"_package": "自定义人群", "crowdIds": "HN919I人群BH"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "crowdName": "未命名",
+                "list": [{
+                    "selectionLv1": ["CROWD", "CUSTOM"],
+                    "selectionLv3": {"crowdIds": ["HN919I人群BH"]},
+                    "fromPoolId": 0,
+                }],
+                "compute": "(0)",
+            },
+        )
 
     def test_meta_and_cache(self):
         response = self.client.get("/api/meta/类目公域行为?v=test-release.0")
@@ -968,6 +988,53 @@ class CdpApiTests(unittest.TestCase):
         templates = response.get_json()
         self.assertIsInstance(templates, list)
         self.assertTrue(any(name.endswith(".csv") for name in templates))
+
+    def test_export_audience_run_has_exactly_three_columns_and_preserves_special_counts(self):
+        response = self.client.post(
+            "/api/audience-runs/export",
+            json={
+                "rows": [
+                    {
+                        "crowdName": "新品兴趣人群0921",
+                        "crowdCount": 0,
+                        "parameters": '{"crowdName":"新品兴趣人群0921","list":[]}',
+                    },
+                    {
+                        "crowdName": "高潜购买人群0921",
+                        "crowdCount": 7257408,
+                        "parameters": '{"compute":"(0)"}',
+                    },
+                    {
+                        "crowdName": "低量级人群0921",
+                        "crowdCount": "-",
+                        "parameters": '{"compute":"(1)"}',
+                    },
+                    {
+                        "crowdName": "隐私阈值人群0921",
+                        "crowdCount": "< 2,000",
+                        "parameters": '{"compute":"(2)"}',
+                    },
+                ],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.mimetype,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(io.BytesIO(response.data), read_only=True, data_only=True)
+        sheet = workbook["人群包结果"]
+        values = list(sheet.iter_rows(values_only=True))
+        workbook.close()
+        self.assertEqual(values[0], ("人群包名称", "对应人数", "人群包参数"))
+        self.assertEqual(len(values[0]), 3)
+        self.assertEqual(values[1][0], "新品兴趣人群0921")
+        self.assertEqual(values[1][1], 0)
+        self.assertEqual(values[2][1], 7257408)
+        self.assertEqual(values[3][1], "-")
+        self.assertEqual(values[4][1], "<2000")
 
     def test_errors(self):
         response = self.client.get("/api/non-existent-endpoint")

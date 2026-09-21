@@ -79,9 +79,15 @@ test('task center keeps single run actions and adds batch paste entry points', (
 })
 
 test('task center requires the fixed extension patch version', () => {
-  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.4'/)
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.11'/)
   assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
   assert.match(source, /actual\[index\] < expected\[index\]/)
+})
+
+test('extension download uses the archive version returned by the server', () => {
+  assert.match(source, /function resolveExtensionArchiveName\(response\)/)
+  assert.match(source, /response\.headers\.get\('Content-Disposition'\)/)
+  assert.match(source, /link\.download = resolveExtensionArchiveName\(response\)/)
 })
 
 test('run buttons use task-specific prerequisites and explain missing DMP tags on click', () => {

@@ -160,6 +160,7 @@ class ConfigEngine:
         "stdBrand",
         "leafCates",
         "bhv",
+        "crowdIds",
         "title",
         "types",
         "keywords",

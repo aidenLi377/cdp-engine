@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS folders (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
     parent_id   TEXT,
+    execution_mode TEXT NOT NULL DEFAULT 'create_and_count',
     owner_id    TEXT,
     visibility  TEXT NOT NULL DEFAULT 'public'
                 CHECK(visibility IN ('public', 'private')),
@@ -423,6 +424,7 @@ MIGRATION_COLUMNS = {
         "visibility": "TEXT NOT NULL DEFAULT 'public'",
         "created_by": "TEXT",
         "updated_by": "TEXT",
+        "execution_mode": "TEXT NOT NULL DEFAULT 'create_and_count'",
     },
     "tasks": {
         "owner_id": "TEXT",

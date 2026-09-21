@@ -1,5 +1,9 @@
 export const BEHAVIOR_COMPONENT_GROUPS = [
   {
+    name: '人群资产',
+    packages: ['自定义人群'],
+  },
+  {
     name: '公域数据',
     packages: ['类目公域行为', '类目商品行为'],
   },

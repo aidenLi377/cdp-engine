@@ -11,10 +11,10 @@ export function useFoldersApi() {
         ...(fresh ? { cache: 'no-store' } : {}),
       })
     },
-    createFolder(name, parentId, scope = 'mine') {
+    createFolder(name, parentId, scope = 'mine', executionMode = 'create_and_count') {
       return request('/api/folders', {
         method: 'POST',
-        body: JSON.stringify({ name, parentId: parentId || null, scope }),
+        body: JSON.stringify({ name, parentId: parentId || null, scope, executionMode }),
       })
     },
     updateFolder(id, name) {

@@ -4,6 +4,10 @@
 
   var VALID_TYPES = [
     'CDP_AUTOMATE_DATABANK',
+    'CDP_QUERY_DATABANK_REALTIME_COUNT',
+    'CDP_CREATE_DATABANK_CROWD_API',
+    'CDP_QUERY_DATABANK_CROWD_COUNT',
+    'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES',
     'CDP_AUTOMATE_DATABANK_CROWD',
     'CDP_AUTOMATE_DATABANK_WAIT_APPLY',
     'CDP_AUTOMATE_DATABANK_DATAHUB',
@@ -30,11 +34,27 @@
         ok: !!data.ok,
         version: EXTENSION_VERSION,
         error: data.error || '',
+        message: data.message || '',
         step: data.step || '',
         trail: data.trail || [],
         autoCalculated: data.autoCalculated === true,
-        crowdId: data.crowdId || null,
-        crowdCount: data.crowdCount || null,
+        crowdId: data.crowdId ?? null,
+        crowdName: data.crowdName || '',
+        crowdCount: data.crowdCount ?? null,
+        crowdFound: data.crowdFound === true,
+        countReady: data.countReady === true,
+        countUnavailable: data.countUnavailable === true,
+        countDisplay: data.countDisplay || '',
+        countThreshold: data.countThreshold === true,
+        crowdCreated: data.crowdCreated === true,
+        crowdReused: data.crowdReused === true,
+        crowdStatus: data.crowdStatus || '',
+        ready: data.ready === true,
+        executionMode: data.executionMode || '',
+        directRealtime: data.directRealtime === true,
+        directCreate: data.directCreate === true,
+        preflightPassed: data.preflightPassed === true,
+        code: data.code || '',
         results: data.results || null,
         settings: data.settings || null,
         cancelled: data.cancelled === true,
@@ -68,11 +88,20 @@
       runId: String(p.runId || ''),
     };
 
-    if (p.type === 'CDP_AUTOMATE_DATABANK') {
+    if (p.type === 'CDP_AUTOMATE_DATABANK' || p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT' || p.type === 'CDP_CREATE_DATABANK_CROWD_API') {
       extMsg.jsonText = p.jsonText || '';
-      extMsg.autoCalculate = p.autoCalculate === true;
+      extMsg.crowdName = p.crowdName || '';
       if (!extMsg.jsonText.trim()) { safeRespond(p, { ok: false, error: 'jsonText 不能为空' }); return; }
-    } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
+      if (p.type === 'CDP_AUTOMATE_DATABANK') {
+        extMsg.autoCalculate = p.autoCalculate === true;
+        extMsg.executionMode = p.executionMode || '';
+      }
+    } else if (p.type === 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES') {
+      extMsg.crowdNames = Array.from(new Set((Array.isArray(p.crowdNames) ? p.crowdNames : [])
+        .map(function(item) { return String(item || '').trim(); })
+        .filter(Boolean)));
+      if (!extMsg.crowdNames.length) { safeRespond(p, { ok: false, error: '自定义人群名称不能为空' }); return; }
+    } else if (p.type === 'CDP_QUERY_DATABANK_CROWD_COUNT' || p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
       extMsg.crowdName = p.crowdName || '';
       if (!extMsg.crowdName.trim()) { safeRespond(p, { ok: false, error: '人群包名称不能为空' }); return; }
       if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') extMsg.autoApply = p.autoApply === true;
@@ -117,6 +146,10 @@
       timeoutMs = 300000;  // 5min — portrait page navigation + tag extraction
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') {
       timeoutMs = 180000;  // 3min — tab open + SPA load + search + match + dialog
+    } else if (p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT') {
+      timeoutMs = 60000;   // authenticated API count without page automation
+    } else if (p.type === 'CDP_QUERY_DATABANK_CROWD_COUNT' || p.type === 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES') {
+      timeoutMs = 30000;   // one authenticated list request
     } else if (p.type === 'CDP_AUTOMATE_DATABANK') {
       timeoutMs = 150000;  // 2.5min — parameter paste + optional crowd count calculation
     } else {

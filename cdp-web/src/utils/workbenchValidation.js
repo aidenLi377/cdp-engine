@@ -14,6 +14,10 @@ export function validateWorkbenchOutput({ nodes, generatedJson, generationStatus
   if (items.length === 0) issues.push('请至少添加一个圈选组件')
   if (items.some((node) => node?._hydrationError)) issues.push('存在加载失败的组件，请移除或重新加载')
   if (items.some((node) => !String(node?.packageType || '').trim())) issues.push('存在未识别的组件类型')
+  if (items.some((node) => (
+    node?.packageType === '自定义人群'
+    && !String(node?.formData?.crowdIds || '').trim()
+  ))) issues.push('请填写自定义人群的人群包名称')
 
   const generatedItems = Array.isArray(generatedJson?.list) ? generatedJson.list : []
   if (items.length > 0 && generationStatus === 'building') {

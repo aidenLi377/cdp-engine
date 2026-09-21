@@ -129,18 +129,30 @@
     </div>
 
     <div v-if="!readOnly && creatingParentId !== undefined" class="folder-create-row">
-      <el-input
-        v-model="createName"
-        size="small"
-        class="intercom-input"
-        data-tutorial-target="pull-folder-name"
-        placeholder="文件夹名称"
-        @keyup.enter="finishCreate"
-        @keyup.esc="cancelCreate"
-        ref="createInputRef"
-      />
-      <el-button size="small" text @click="finishCreate">确定</el-button>
-      <el-button size="small" text @click="cancelCreate">取消</el-button>
+      <div class="folder-create-fields">
+        <el-input
+          v-model="createName"
+          size="small"
+          class="intercom-input"
+          data-tutorial-target="pull-folder-name"
+          placeholder="方案组名称"
+          @keyup.enter="finishCreate"
+          @keyup.esc="cancelCreate"
+          ref="createInputRef"
+        />
+        <div class="folder-create-mode" aria-label="方案组默认执行方式">
+          <span>默认执行</span>
+          <el-radio-group v-model="createExecutionMode" size="small">
+            <el-radio-button value="calculate_only">只算人数</el-radio-button>
+            <el-radio-button value="create_only">只圈包</el-radio-button>
+            <el-radio-button value="create_and_count">圈包并取数</el-radio-button>
+          </el-radio-group>
+        </div>
+      </div>
+      <div class="folder-create-actions">
+        <el-button size="small" text @click="finishCreate">确定</el-button>
+        <el-button size="small" text @click="cancelCreate">取消</el-button>
+      </div>
     </div>
 
     <Teleport to="body">
@@ -183,6 +195,7 @@ const expandedIds = ref(new Set())
 const selectedFolderId = ref(null)
 const creatingParentId = ref(undefined)
 const createName = ref('')
+const createExecutionMode = ref('create_and_count')
 const createInputRef = ref(null)
 const editInputRef = ref(null)
 const editingFolderId = ref(null)
@@ -226,6 +239,7 @@ function startCreate(parentId, tutorialTrigger = false) {
   if (props.readOnly) return
   creatingParentId.value = parentId
   createName.value = ''
+  createExecutionMode.value = 'create_and_count'
   if (tutorialTrigger) emit('tutorial-create-started')
   nextTick(() => {
     createInputRef.value?.focus?.()
@@ -235,6 +249,7 @@ function startCreate(parentId, tutorialTrigger = false) {
 function cancelCreate() {
   creatingParentId.value = undefined
   createName.value = ''
+  createExecutionMode.value = 'create_and_count'
 }
 
 function finishCreate() {
@@ -242,9 +257,15 @@ function finishCreate() {
   const name = createName.value.trim()
   if (!name) return
   const parentId = creatingParentId.value
+  const executionMode = createExecutionMode.value
   contextMenu.value.visible = false
   cancelCreate()
-  emit('folders-changed', { action: 'create', parentId, name })
+  emit('folders-changed', {
+    action: 'create',
+    parentId,
+    name,
+    executionMode,
+  })
 }
 
 function startEdit(id, currentName) {
@@ -512,13 +533,50 @@ defineExpose({ selectedFolderId, selectFolder })
 }
 .folder-create-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
   margin-top: 4px;
+  border: 1px solid #e6e8ed;
+  border-radius: 9px;
+  background: #fbfbfc;
+}
+.folder-create-fields {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 7px;
 }
 .folder-create-row .el-input {
   flex: 1;
+}
+.folder-create-mode {
+  display: grid;
+  gap: 5px;
+}
+.folder-create-mode > span {
+  color: #777d89;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .08em;
+}
+.folder-create-mode :deep(.el-radio-group) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+}
+.folder-create-mode :deep(.el-radio-button__inner) {
+  width: 100%;
+  padding: 0 4px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  font-size: 9px !important;
+  box-shadow: none !important;
+}
+.folder-create-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 .folder-context-menu {
   position: fixed;

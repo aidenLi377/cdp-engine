@@ -123,16 +123,16 @@ class FolderShareStore:
                 raise FolderShareAccessError()
 
             folders = conn.execute(
-                """WITH RECURSIVE subtree(id, name, parent_id, depth) AS (
-                       SELECT id, name, parent_id, 0 FROM folders
+                """WITH RECURSIVE subtree(id, name, parent_id, execution_mode, depth) AS (
+                       SELECT id, name, parent_id, execution_mode, 0 FROM folders
                        WHERE id = ? AND owner_id = ? AND visibility = 'private'
                        UNION ALL
-                       SELECT child.id, child.name, child.parent_id, subtree.depth + 1
+                       SELECT child.id, child.name, child.parent_id, child.execution_mode, subtree.depth + 1
                        FROM folders child
                        JOIN subtree ON child.parent_id = subtree.id
                        WHERE child.owner_id = ? AND child.visibility = 'private'
                    )
-                   SELECT id, name, parent_id, depth FROM subtree
+                   SELECT id, name, parent_id, execution_mode, depth FROM subtree
                    ORDER BY depth ASC, name COLLATE NOCASE ASC, id ASC""",
                 (folder_id, owner_id, owner_id),
             ).fetchall()
@@ -156,6 +156,7 @@ class FolderShareStore:
                         "id": row["id"],
                         "name": row["name"],
                         "parentId": row["parent_id"] if row["id"] != folder_id else None,
+                        "executionMode": row["execution_mode"] or "create_and_count",
                         "depth": row["depth"],
                     }
                     for row in folders
@@ -251,16 +252,27 @@ class FolderShareStore:
                 name = self._unique_root_name(conn, folder.get("name", ""), user_id) if is_root else (folder.get("name") or "未命名文件夹")
                 conn.execute(
                     """INSERT INTO folders (
-                           id, name, parent_id, owner_id, visibility,
+                           id, name, parent_id, execution_mode, owner_id, visibility,
                            created_by, updated_by, created_at, updated_at
-                       ) VALUES (?, ?, ?, ?, 'private', ?, ?, ?, ?)""",
-                    (new_id, name, parent_id, user_id, user_id, user_id, now_iso, now_iso),
+                       ) VALUES (?, ?, ?, ?, ?, 'private', ?, ?, ?, ?)""",
+                    (
+                        new_id,
+                        name,
+                        parent_id,
+                        folder.get("executionMode", "create_and_count"),
+                        user_id,
+                        user_id,
+                        user_id,
+                        now_iso,
+                        now_iso,
+                    ),
                 )
                 if is_root:
                     imported_root = {
                         "id": new_id,
                         "name": name,
                         "parentId": None,
+                        "executionMode": folder.get("executionMode", "create_and_count"),
                         "ownerId": user_id,
                         "visibility": "private",
                         "createdBy": user_id,

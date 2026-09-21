@@ -9,6 +9,10 @@ import {
 test('行为组件按指定分区展示', () => {
   assert.deepEqual(BEHAVIOR_COMPONENT_GROUPS, [
     {
+      name: '人群资产',
+      packages: ['自定义人群'],
+    },
+    {
       name: '公域数据',
       packages: ['类目公域行为', '类目商品行为'],
     },
@@ -47,10 +51,11 @@ test('搜索结果只保留有匹配组件的分区', () => {
   )
 })
 
-test('品牌推广归入付费广告互动，未配置的新组件仍进入其他分区', () => {
+test('自定义人群归入人群资产，品牌推广归入付费广告互动，未配置的新组件仍进入其他分区', () => {
   assert.deepEqual(
-    groupBehaviorComponents(['品牌推广', '类目公域行为', '新组件']),
+    groupBehaviorComponents(['自定义人群', '品牌推广', '类目公域行为', '新组件']),
     [
+      { name: '人群资产', packages: ['自定义人群'] },
       { name: '公域数据', packages: ['类目公域行为'] },
       { name: '付费广告互动', packages: ['品牌推广'] },
       { name: '其他', packages: ['新组件'] },

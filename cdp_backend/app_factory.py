@@ -2278,6 +2278,88 @@ def register_routes(
             return error_response("INVALID_SCOPE", "文件夹类型不正确", 400)
         return jsonify(folder_store.list_folders(scope, g.current_user["id"]))
 
+    @app.route("/api/audience-runs/export", methods=["POST"])
+    def export_audience_run():
+        payload = request.get_json(silent=True) or {}
+        rows = payload.get("rows")
+        if not isinstance(rows, list) or not rows:
+            return error_response("AUDIENCE_ROWS_REQUIRED", "至少需要一条人群包结果", 400)
+        if len(rows) > 500:
+            return error_response("TOO_MANY_AUDIENCE_ROWS", "单次最多导出 500 条结果", 400)
+
+        normalized_rows = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                return error_response("INVALID_AUDIENCE_ROW", f"第 {index + 1} 条结果格式不正确", 400)
+            crowd_name = str(row.get("crowdName") or "").strip()
+            if not crowd_name:
+                return error_response("AUDIENCE_NAME_REQUIRED", f"第 {index + 1} 条缺少人群包名称", 400)
+            raw_count = row.get("crowdCount")
+            normalized_count_text = (
+                "".join(str(raw_count).split())
+                .replace(",", "")
+                .replace("，", "")
+                .replace("＜", "<")
+                .replace("﹤", "<")
+                if raw_count not in (None, "")
+                else ""
+            )
+            if raw_count in (None, ""):
+                crowd_count = None
+            elif normalized_count_text in ("-", "<2000"):
+                crowd_count = normalized_count_text
+            else:
+                try:
+                    crowd_count = int(raw_count)
+                except (TypeError, ValueError):
+                    return error_response("INVALID_AUDIENCE_COUNT", f"第 {index + 1} 条人数不正确", 400)
+                if crowd_count < 0:
+                    return error_response("INVALID_AUDIENCE_COUNT", f"第 {index + 1} 条人数不能为负数", 400)
+            parameters = row.get("parameters", "")
+            if not isinstance(parameters, str):
+                parameters = json.dumps(parameters, ensure_ascii=False, indent=2)
+            normalized_rows.append((crowd_name, crowd_count, parameters))
+
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "人群包结果"
+        sheet.freeze_panes = "A2"
+        sheet.append(["人群包名称", "对应人数", "人群包参数"])
+        for crowd_name, crowd_count, parameters in normalized_rows:
+            sheet.append([crowd_name, crowd_count, parameters])
+
+        header_fill = PatternFill("solid", fgColor="F47B38")
+        for cell in sheet[1]:
+            cell.font = Font(color="FFFFFF", bold=True)
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for row in sheet.iter_rows(min_row=2):
+            row[0].data_type = "s"
+            row[0].alignment = Alignment(vertical="top")
+            row[1].alignment = Alignment(horizontal="right", vertical="top")
+            row[2].data_type = "s"
+            row[2].alignment = Alignment(vertical="top", wrap_text=True)
+        sheet.column_dimensions["A"].width = 30
+        sheet.column_dimensions["B"].width = 16
+        sheet.column_dimensions["C"].width = 80
+        sheet.auto_filter.ref = f"A1:C{sheet.max_row}"
+
+        content = io.BytesIO()
+        workbook.save(content)
+        workbook.close()
+        content.seek(0)
+        response = send_file(
+            content,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            as_attachment=True,
+            download_name="人群包任务结果.xlsx",
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.route("/api/folders", methods=["POST"])
     def create_folder():
         payload = request.get_json(silent=True) or {}
@@ -2286,15 +2368,22 @@ def register_routes(
             return error_response("FOLDER_NAME_REQUIRED", "文件夹名称不能为空", 400)
         parent_id = payload.get("parentId")
         scope = payload.get("scope", "mine")
+        execution_mode = payload.get("executionMode", "create_and_count")
         if scope not in ("mine", "public"):
             return error_response("INVALID_SCOPE", "文件夹类型不正确", 400)
+        if execution_mode not in ("calculate_only", "create_only", "create_and_count"):
+            return error_response("INVALID_EXECUTION_MODE", "方案组执行方式不正确", 400)
         if scope == "public":
             permission_error = require_super_admin()
             if permission_error is not None:
                 return permission_error
         try:
             created = folder_store.create_folder(
-                name, g.current_user["id"], parent_id, scope=scope
+                name,
+                g.current_user["id"],
+                parent_id,
+                scope=scope,
+                execution_mode=execution_mode,
             )
         except (FolderNotFoundError, FolderAccessError):
             return error_response("INVALID_PARENT_FOLDER", "上级文件夹不存在或不可编辑", 400)

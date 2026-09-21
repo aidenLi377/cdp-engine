@@ -56,6 +56,29 @@ class FolderShareApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         return response.get_json()
 
+    def test_folder_execution_mode_is_saved_and_listed(self):
+        response = self.owner_client.post(
+            "/api/folders",
+            json={
+                "name": "只计算人数方案组",
+                "scope": "mine",
+                "executionMode": "calculate_only",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        created = response.get_json()
+        self.assertEqual(created["executionMode"], "calculate_only")
+        folders = self.owner_client.get("/api/folders?scope=mine").get_json()
+        listed = next(item for item in folders if item["id"] == created["id"])
+        self.assertEqual(listed["executionMode"], "calculate_only")
+
+        invalid = self.owner_client.post(
+            "/api/folders",
+            json={"name": "错误方案组", "scope": "mine", "executionMode": "unknown"},
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.get_json()["code"], "INVALID_EXECUTION_MODE")
+
     def test_share_phrase_previews_and_imports_an_independent_folder_snapshot(self):
         root = self.create_folder("流入流出策略")
         child = self.create_folder("高价值人群", root["id"])

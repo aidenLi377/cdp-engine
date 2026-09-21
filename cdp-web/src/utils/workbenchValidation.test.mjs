@@ -34,6 +34,15 @@ test('copy validation accepts a fully generated workbench', () => {
   assert.deepEqual(result, { valid: true, issues: [] })
 })
 
+test('custom crowd validation requires a package name before copy or automation', () => {
+  const result = validateWorkbenchOutput({
+    nodes: [{ packageType: '自定义人群', formData: { crowdIds: '' } }],
+    generatedJson: { list: [{}], compute: '(0)' },
+  })
+  assert.equal(result.valid, false)
+  assert.match(result.issues.join('；'), /请填写自定义人群的人群包名称/)
+})
+
 test('publish validation reports invalid relationships and summarizes valid nodes', () => {
   const invalid = validateSolutionIntegrity({
     name: '测试方案',

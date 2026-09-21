@@ -10,6 +10,14 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const DATABANK_TEXTAREA_XPATH = '/html/body/div[6]/div[2]/div[1]/div/div[2]/div/span/textarea';
   const DATABANK_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/button[1]';
   const DATABANK_CALCULATE_COUNT_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[2]/div[3]/div/div/span';
+  const DATABANK_CROWD_COUNT_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[2]/div[2]/span';
+  const DATABANK_CREATE_CROWD_XPATH = '/html/body/div[2]/div[2]/div/div/div/div/div/div/div/div/div/div/div[2]/div/div/div/div/div[2]/div[2]/div[6]/button[1]/span';
+  const DATABANK_CREATE_CONFIRM_XPATH = '/html/body/div[6]/div[2]/div[2]/form/div[2]/div/button[1]/span';
+  const CUSTOM_CROWD_DIMENSION_URL = 'https://databank.tmall.com/api/paasapi?path=/api/dimension/listChildDimension&type=CROWD&id=CUSTOM';
+  const CUSTOM_CROWD_LIST_URL = 'https://databank.tmall.com/api/paasapi';
+  const REALTIME_COUNT_PATH = '/api/v1/custom/realtime/count';
+  const CROWD_CREATE_PREFLIGHT_PATH = '/api/v1/custom/canAcc';
+  const CROWD_CREATE_PATH = '/api/v1/custom/databank';
 
   // -- Crowd flow XPaths (new) --
   const CROWD_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[1]/div[2]/span/input';
@@ -23,6 +31,10 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const PARAM_VALUE_SETTLE_MS = 900;
   const PARAM_COMPLETION_SETTLE_MS = 1500;
   const CALCULATE_COUNT_READY_TIMEOUT_MS = 30000;
+  const CALCULATE_COUNT_RESULT_TIMEOUT_MS = 90000;
+  const CALCULATE_COUNT_UNAVAILABLE_GRACE_MS = 5000;
+  const CREATE_CROWD_READY_TIMEOUT_MS = 30000;
+  const CREATE_CROWD_DIALOG_TIMEOUT_MS = 20000;
   const PARAM_TRIGGER_STABLE_CHECKS = 2;
   const PARAM_TRIGGER_POLL_MS = 250;
   const PARAM_TRIGGER_READY_TIMEOUT_MS = 90000;
@@ -444,6 +456,27 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return { step: 'preflight_ok', message: '页面状态校验通过' };
   }
 
+  function parseCrowdCountText(value) {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized === '--' || normalized === '-' || normalized === '—') return null;
+    const match = normalized.match(/(?:^|[^\d])(\d{1,3}(?:,\d{3})+|\d+)(?:\+)?(?:[^\d]|$)/);
+    if (!match) return null;
+    const count = Number(match[1].replace(/,/g, ''));
+    return Number.isFinite(count) ? { count, display: match[0].trim() } : null;
+  }
+
+  function readCalculatedCrowdCount() {
+    const countNode = getNodeByXpath(DATABANK_CROWD_COUNT_XPATH);
+    if (!isNodeVisible(countNode)) return null;
+    return parseCrowdCountText(countNode.textContent);
+  }
+
+  function readCalculatedCrowdCountDisplay() {
+    const countNode = getNodeByXpath(DATABANK_CROWD_COUNT_XPATH);
+    if (!isNodeVisible(countNode)) return '';
+    return String(countNode.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
   async function clickCalculateCount(trail) {
     const calculateNode = await waitForLocator(
       () => {
@@ -457,14 +490,642 @@ if (!window.__databankAutomationContentScriptLoaded) {
     );
     clickNode(calculateNode);
     trail.push({ step: 'clicked_calculate_count' });
+    const deadline = Date.now() + CALCULATE_COUNT_RESULT_TIMEOUT_MS;
+    let unavailableSince = null;
+    let unavailableDisplay = '';
+    let result = null;
+    while (Date.now() < deadline) {
+      assertAutomationActive();
+      result = readCalculatedCrowdCount();
+      if (result) break;
+      const display = readCalculatedCrowdCountDisplay();
+      if (display === '-' || display === '--' || display === '—') {
+        if (unavailableSince === null) unavailableSince = Date.now();
+        unavailableDisplay = display;
+        if (Date.now() - unavailableSince >= CALCULATE_COUNT_UNAVAILABLE_GRACE_MS) {
+          trail.push({ step: 'count_unavailable', countDisplay: unavailableDisplay });
+          return null;
+        }
+      } else {
+        unavailableSince = null;
+        unavailableDisplay = '';
+      }
+      await sleep(500);
+    }
+    if (result) {
+      trail.push({ step: 'count_ready', crowdCount: result.count, countDisplay: result.display });
+    } else {
+      trail.push({ step: 'count_still_pending' });
+    }
+    return result;
   }
 
-  async function automateDatabank(jsonText, autoCalculate) {
+  function getCreateCrowdControl() {
+    const xpathNode = getNodeByXpath(DATABANK_CREATE_CROWD_XPATH);
+    const xpathControl = xpathNode?.closest?.('button, [role="button"], a') || xpathNode;
+    if (isNodeInteractive(xpathControl)) return xpathControl;
+    const textNode = getVisibleNodeByText('button', '创建人群');
+    return isNodeInteractive(textNode) ? textNode : null;
+  }
+
+  function getCreateCrowdConfirmControl() {
+    const xpathNode = getNodeByXpath(DATABANK_CREATE_CONFIRM_XPATH);
+    const xpathControl = xpathNode?.closest?.('button, [role="button"]') || xpathNode;
+    if (isNodeInteractive(xpathControl)) return xpathControl;
+    const dialogs = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTORS)).filter(isNodeVisible);
+    for (const dialog of dialogs.reverse()) {
+      const title = String(dialog.textContent || '');
+      if (!title.includes('填写人群信息')) continue;
+      const control = Array.from(dialog.querySelectorAll(CONFIRM_CONTROL_SELECTOR)).find((node) => {
+        const text = String(node.textContent || '').replace(/\s+/g, '');
+        return isNodeInteractive(node) && (text === '创建' || text === '确定');
+      });
+      if (control) return control;
+    }
+    return null;
+  }
+
+  function getCreateCrowdDialogName(confirmControl) {
+    const dialog = getDialogRoot(confirmControl);
+    if (!dialog || typeof dialog.querySelectorAll !== 'function') return '';
+    const inputs = Array.from(dialog.querySelectorAll('input')).filter(isNodeVisible);
+    const nameInput = inputs.find((node) => Number(node.maxLength) === 20) || inputs[0];
+    return String(nameInput?.value || '').trim();
+  }
+
+  async function createConfiguredCrowd(crowdName, trail) {
+    const expectedName = String(crowdName || '').trim();
+    if (!expectedName) throw new Error('创建人群前缺少人群包名称');
+    const createControl = await waitForLocator(
+      getCreateCrowdControl,
+      '创建人群按钮',
+      CREATE_CROWD_READY_TIMEOUT_MS,
+      250
+    );
+    clickNode(createControl);
+    trail.push({ step: 'opened_create_crowd_dialog', crowdName: expectedName });
+
+    const confirmControl = await waitForLocator(
+      () => {
+        const control = getCreateCrowdConfirmControl();
+        if (!control) return null;
+        return getCreateCrowdDialogName(control) === expectedName ? control : null;
+      },
+      '已配置正确名称的创建弹窗',
+      CREATE_CROWD_DIALOG_TIMEOUT_MS,
+      250
+    ).catch(() => {
+      const liveControl = getCreateCrowdConfirmControl();
+      const actualName = getCreateCrowdDialogName(liveControl);
+      throw new Error(actualName
+        ? `人群包名称未正确同步：期望“${expectedName}”，实际“${actualName}”`
+        : '未能确认创建弹窗中的人群包名称');
+    });
+
+    const dialogRoot = getDialogRoot(confirmControl);
+    clickNode(confirmControl);
+    trail.push({ step: 'submitted_create_crowd', crowdName: expectedName });
+    if (dialogRoot) {
+      await waitForOptionalLocator(
+        () => !isNodeVisible(dialogRoot) ? true : null,
+        30000,
+        300
+      );
+    }
+    return { crowdName: expectedName };
+  }
+
+  function buildCustomCrowdListUrl(crowdName) {
+    const url = new URL(CUSTOM_CROWD_LIST_URL);
+    url.search = new URLSearchParams({
+      path: '/api/v1/custom/list',
+      source: 'CUSTOM',
+      page: '1',
+      pageSize: '10',
+      qualityReportOpened: 'all',
+      keyword: String(crowdName || '').trim(),
+      type: '4',
+      category2NotEqualList: 'scene_crowd',
+    }).toString();
+    return url.toString();
+  }
+
+  async function fetchCustomCrowdCount(crowdName) {
+    const expectedName = String(crowdName || '').trim();
+    if (!expectedName) throw new Error('查询人数前缺少人群包名称');
+    let response;
+    try {
+      response = await fetch(buildCustomCrowdListUrl(expectedName), {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+    } catch (error) {
+      throw new Error('查询人群包人数失败：' + (error?.message || '网络请求失败'));
+    }
+    if (!response?.ok) {
+      if (response?.status === 401 || response?.status === 403) {
+        const error = new Error('登录状态已失效，请重新登录数据引擎后继续抓取人数');
+        error.code = 'DATABANK_LOGIN_REQUIRED';
+        throw error;
+      }
+      throw new Error('查询人群包人数失败，接口返回 ' + (response?.status || '异常状态'));
+    }
+    const body = await response.json().catch(() => null);
+    if (!body) throw new Error('查询人群包人数失败，数据引擎返回了非JSON内容');
+    if (body.errCode !== undefined && Number(body.errCode) !== 0) {
+      throw new Error('查询人群包人数失败：' + (body.errMsg || '数据引擎接口返回错误'));
+    }
+    const matches = (Array.isArray(body?.data?.list) ? body.data.list : [])
+      .filter((item) => String(item?.name || '').trim() === expectedName)
+      .sort((left, right) => Number(right?.gmtCreate || 0) - Number(left?.gmtCreate || 0));
+    const item = matches[0] || null;
+    const rawCount = item?.count;
+    const countReady = rawCount !== null && rawCount !== undefined && rawCount !== '' && Number.isFinite(Number(rawCount));
+    return {
+      ok: true,
+      crowdName: expectedName,
+      crowdFound: Boolean(item),
+      countReady,
+      crowdCount: countReady ? Number(rawCount) : null,
+      crowdId: item?.id ?? null,
+      baseId: item?.baseId ?? null,
+      crowdStatus: item?.status || '',
+      gmtCreate: item?.gmtCreate ?? null,
+      gmtModified: item?.gmtModified ?? null,
+    };
+  }
+
+  function isCustomCrowdNode(node) {
+    return Array.isArray(node?.selectionLv1)
+      && node.selectionLv1[0] === 'CROWD'
+      && node.selectionLv1[1] === 'CUSTOM';
+  }
+
+  function isResolvedCrowdId(value) {
+    const match = String(value || '').trim().match(/^(\d+)#\|#(\d+)$/);
+    return Boolean(match && match[1] === match[2]);
+  }
+
+  function getCustomCrowdNames(payload) {
+    const names = [];
+    for (const node of Array.isArray(payload?.list) ? payload.list : []) {
+      if (!isCustomCrowdNode(node)) continue;
+      const crowdIds = node?.selectionLv3?.crowdIds;
+      const values = Array.isArray(crowdIds) ? crowdIds : [crowdIds];
+      for (const value of values) {
+        const normalized = String(value || '').trim();
+        if (!normalized || isResolvedCrowdId(normalized) || names.includes(normalized)) continue;
+        names.push(normalized);
+      }
+    }
+    return names;
+  }
+
+  async function fetchCustomCrowdIdMap() {
+    assertAutomationActive();
+    let response;
+    try {
+      response = await fetch(CUSTOM_CROWD_DIMENSION_URL, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+    } catch (error) {
+      throw new Error('获取当前账号自定义人群列表失败：' + (error?.message || '网络请求失败'));
+    }
+    assertAutomationActive();
+
+    if (!response?.ok) {
+      if (response?.status === 401 || response?.status === 403) {
+        throw new Error('获取自定义人群失败，请确认已登录数据引擎');
+      }
+      throw new Error('获取自定义人群失败，接口返回 ' + (response?.status || '异常状态'));
+    }
+
+    let body;
+    try {
+      body = await response.json();
+    } catch (_error) {
+      throw new Error('获取自定义人群失败，数据引擎返回了非JSON内容，请确认登录状态');
+    }
+    if (body && body.errCode !== undefined && Number(body.errCode) !== 0) {
+      throw new Error('获取自定义人群失败：' + (body.errMsg || '数据引擎接口返回错误'));
+    }
+    if (!Array.isArray(body?.data)) {
+      throw new Error('获取自定义人群失败，接口未返回有效人群列表');
+    }
+
+    const crowdIdsByName = new Map();
+    for (const item of body.data) {
+      const name = String(item?.name || '').trim();
+      const id = String(item?.id || item?.bizId || item?.aid || '').trim();
+      if (!name || !/^\d+$/.test(id)) continue;
+      if (!crowdIdsByName.has(name)) crowdIdsByName.set(name, new Set());
+      crowdIdsByName.get(name).add(id);
+    }
+    return crowdIdsByName;
+  }
+
+  async function resolveCustomCrowds(jsonText) {
+    let payload;
+    try {
+      payload = JSON.parse(String(jsonText || ''));
+    } catch (_error) {
+      throw new Error('待导入参数不是有效JSON');
+    }
+
+    const customNodes = (Array.isArray(payload?.list) ? payload.list : []).filter(isCustomCrowdNode);
+    if (customNodes.length === 0) {
+      return { jsonText: String(jsonText || ''), resolvedNames: [] };
+    }
+
+    for (const node of customNodes) {
+      const crowdIds = node?.selectionLv3?.crowdIds;
+      const values = Array.isArray(crowdIds) ? crowdIds : [crowdIds];
+      if (values.length === 0 || values.some((value) => !String(value || '').trim())) {
+        throw new Error('自定义人群节点缺少人群包名称');
+      }
+    }
+
+    const requestedNames = getCustomCrowdNames(payload);
+    if (requestedNames.length === 0) {
+      return { jsonText: String(jsonText || ''), resolvedNames: [] };
+    }
+
+    const crowdIdsByName = await fetchCustomCrowdIdMap();
+    const resolvedByName = new Map();
+    for (const name of requestedNames) {
+      const ids = Array.from(crowdIdsByName.get(name) || []);
+      if (ids.length === 0) throw new Error('未找到自定义人群：' + name);
+      if (ids.length > 1) throw new Error('存在多个同名自定义人群，无法确定ID：' + name);
+      resolvedByName.set(name, ids[0] + '#|#' + ids[0]);
+    }
+
+    for (const node of customNodes) {
+      const values = Array.isArray(node.selectionLv3.crowdIds)
+        ? node.selectionLv3.crowdIds
+        : [node.selectionLv3.crowdIds];
+      node.selectionLv3.crowdIds = values.map((value) => {
+        const normalized = String(value || '').trim();
+        return isResolvedCrowdId(normalized) ? normalized : resolvedByName.get(normalized);
+      });
+    }
+
+    return {
+      jsonText: JSON.stringify(payload, null, 2),
+      resolvedNames: requestedNames,
+    };
+  }
+
+  function findStoredCsrfToken(requestHeaders) {
+    const supplied = String(requestHeaders?.['x-csrf-token'] || '').trim();
+    if (supplied) return supplied;
+
+    const metaSelectors = [
+      'meta[name="x-csrf-token"]',
+      'meta[name="csrf-token"]',
+      'meta[name="_csrf"]',
+    ];
+    for (const selector of metaSelectors) {
+      const value = String(document.querySelector?.(selector)?.getAttribute?.('content') || '').trim();
+      if (value) return value;
+    }
+
+    const cookieText = String(document.cookie || '');
+    for (const part of cookieText.split(';')) {
+      const separator = part.indexOf('=');
+      if (separator < 0) continue;
+      const name = part.slice(0, separator).trim();
+      if (!/csrf|xsrf/i.test(name)) continue;
+      const value = part.slice(separator + 1).trim();
+      if (!value) continue;
+      try { return decodeURIComponent(value); } catch (_error) { return value; }
+    }
+
+    for (const storage of [
+      typeof localStorage !== 'undefined' ? localStorage : null,
+      typeof sessionStorage !== 'undefined' ? sessionStorage : null,
+    ]) {
+      if (!storage) continue;
+      try {
+        for (let index = 0; index < storage.length; index += 1) {
+          const key = storage.key(index);
+          if (!/csrf|xsrf/i.test(String(key || ''))) continue;
+          const value = String(storage.getItem(key) || '').trim();
+          if (value) return value;
+        }
+      } catch (_error) {
+        // Storage access may be restricted by the host page.
+      }
+    }
+    return '';
+  }
+
+  function realtimeCountError(message, code) {
+    const error = new Error(message);
+    error.code = code || 'DATABANK_REALTIME_COUNT_FAILED';
+    return error;
+  }
+
+  function databankDirectApiError(message, code) {
+    const error = new Error(message);
+    error.code = code || 'DATABANK_DIRECT_API_FAILED';
+    return error;
+  }
+
+  function buildDatabankApiHeaders(requestHeaders, options = {}) {
+    const csrfToken = findStoredCsrfToken(requestHeaders);
+    if (options.requireCsrf === true && !csrfToken) {
+      throw databankDirectApiError(
+        '接口环境尚未初始化，请先在数据银行手动计算一次人数，再回来重试接口建包',
+        'DATABANK_REQUEST_CONTEXT_REQUIRED'
+      );
+    }
+    const headers = {
+      Accept: '*/*',
+      'Content-Type': 'application/json',
+      'x-requested-with': String(requestHeaders?.['x-requested-with'] || 'XMLHttpRequest'),
+    };
+    const bxVersion = String(requestHeaders?.['bx-v'] || '').trim();
+    if (bxVersion) headers['bx-v'] = bxVersion;
+    if (csrfToken) headers['x-csrf-token'] = csrfToken;
+    return headers;
+  }
+
+  async function postDatabankApi(path, model, headers, operationLabel) {
+    let response;
+    try {
+      response = await fetch(CUSTOM_CROWD_LIST_URL, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers,
+        body: JSON.stringify({
+          path,
+          contentType: 'application/json',
+          customModelStr: JSON.stringify(model),
+        }),
+      });
+    } catch (error) {
+      throw databankDirectApiError(`${operationLabel}失败：${error?.message || '网络请求失败'}`);
+    }
+    assertAutomationActive();
+    if (response?.status === 401 || response?.status === 403) {
+      throw databankDirectApiError('数据银行登录已失效，请重新登录后再试', 'DATABANK_LOGIN_REQUIRED');
+    }
+    if (response?.redirected || !response?.ok) {
+      throw databankDirectApiError(
+        '接口环境已失效，请刷新数据银行并手动计算一次人数后重试',
+        'DATABANK_REQUEST_CONTEXT_REQUIRED'
+      );
+    }
+    const body = await response.json().catch(() => null);
+    if (!body) throw databankDirectApiError(`${operationLabel}返回了非JSON内容`);
+    return body;
+  }
+
+  function isCaptchaRequiredResponse(body) {
+    const text = `${body?.errMsg || ''} ${body?.codeClass || ''}`;
+    return /captcha|nvc|人机|验证码|安全验证|风控|risk/i.test(text);
+  }
+
+  async function createCrowdDirectly(jsonText, crowdName, requestHeaders) {
+    assertAutomationActive();
+    const resolved = await resolveCustomCrowds(jsonText);
+    let model;
+    try {
+      model = JSON.parse(resolved.jsonText);
+    } catch (_error) {
+      throw databankDirectApiError('待创建的人群包不是有效JSON');
+    }
+    const normalizedCrowdName = String(crowdName || model?.crowdName || '').trim();
+    if (!normalizedCrowdName) throw databankDirectApiError('创建人群时人群包名称不能为空');
+    model.crowdName = normalizedCrowdName;
+
+    const existingCrowd = await fetchCustomCrowdCount(normalizedCrowdName);
+    if (existingCrowd.crowdFound) {
+      return {
+        ...existingCrowd,
+        ok: true,
+        executionMode: 'create_only',
+        directCreate: true,
+        crowdCreated: false,
+        crowdReused: true,
+        resolvedCustomCrowds: resolved.resolvedNames,
+        trail: [{
+          step: 'existing_crowd_reused',
+          crowdName: normalizedCrowdName,
+          crowdId: existingCrowd.crowdId,
+        }],
+        message: '已存在同名人群包，已跳过重复创建',
+      };
+    }
+
+    const headers = buildDatabankApiHeaders(requestHeaders, { requireCsrf: true });
+    const preflightBody = await postDatabankApi(
+      CROWD_CREATE_PREFLIGHT_PATH,
+      model,
+      headers,
+      '创建资格预检'
+    );
+    if (Number(preflightBody?.errCode || 0) !== 0) {
+      throw databankDirectApiError(
+        preflightBody?.errMsg || '创建资格预检未通过',
+        'DATABANK_CREATE_PREFLIGHT_FAILED'
+      );
+    }
+
+    const createBody = await postDatabankApi(CROWD_CREATE_PATH, model, headers, '接口创建人群');
+    const rawCrowdId = createBody?.data;
+    const crowdId = Number(rawCrowdId);
+    if (Number(createBody?.errCode || 0) !== 0 || !Number.isFinite(crowdId) || crowdId <= 0) {
+      if (isCaptchaRequiredResponse(createBody)) {
+        throw databankDirectApiError(
+          '数据银行要求本次创建进行安全验证，请切换“页面建包”完成；系统没有复用旧 captcha',
+          'DATABANK_CAPTCHA_REQUIRED'
+        );
+      }
+      throw databankDirectApiError(
+        createBody?.errMsg || '创建接口没有返回有效的人群包ID',
+        'DATABANK_CREATE_FAILED'
+      );
+    }
+
+    return {
+      ok: true,
+      executionMode: 'create_only',
+      directCreate: true,
+      preflightPassed: true,
+      crowdName: normalizedCrowdName,
+      crowdId,
+      crowdFound: false,
+      crowdCreated: true,
+      crowdReused: false,
+      countReady: false,
+      crowdCount: null,
+      resolvedCustomCrowds: resolved.resolvedNames,
+      trail: [
+        { step: 'create_api_context_ready' },
+        { step: 'create_api_preflight_passed', data: preflightBody?.data ?? null },
+        { step: 'create_api_completed', crowdId },
+      ],
+      message: '已通过接口创建人群包',
+    };
+  }
+
+  async function fetchRealtimeCrowdCount(jsonText, crowdName, requestHeaders) {
+    assertAutomationActive();
+    const resolved = await resolveCustomCrowds(jsonText);
+    let model;
+    try {
+      model = JSON.parse(resolved.jsonText);
+    } catch (_error) {
+      throw realtimeCountError('待取数的人群包不是有效JSON');
+    }
+    const normalizedCrowdName = String(crowdName || model?.crowdName || '').trim();
+    if (normalizedCrowdName) model.crowdName = normalizedCrowdName;
+
+    const headers = buildDatabankApiHeaders(requestHeaders);
+
+    let response;
+    try {
+      response = await fetch(CUSTOM_CROWD_LIST_URL, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        headers,
+        body: JSON.stringify({
+          contentType: 'application/json',
+          customModelStr: JSON.stringify(model),
+          path: REALTIME_COUNT_PATH,
+        }),
+      });
+    } catch (error) {
+      throw realtimeCountError('接口取数失败：' + (error?.message || '网络请求失败'));
+    }
+    assertAutomationActive();
+
+    if (response?.status === 401 || response?.status === 403) {
+      throw realtimeCountError('数据银行登录已失效，请重新登录后再试', 'DATABANK_LOGIN_REQUIRED');
+    }
+    if (response?.redirected || !response?.ok) {
+      throw realtimeCountError(
+        '接口取数上下文已失效，请刷新数据银行页面后重试',
+        'DATABANK_REQUEST_CONTEXT_REQUIRED',
+      );
+    }
+    const body = await response.json().catch(() => null);
+    if (!body) {
+      throw realtimeCountError('实时人数接口返回了非JSON内容');
+    }
+    const hasData = body.data !== null
+      && body.data !== undefined
+      && !(typeof body.data === 'string' && body.data.trim() === '');
+    const count = hasData ? Number(body.data) : Number.NaN;
+    if (hasData && !Number.isFinite(count)) {
+      throw realtimeCountError('实时人数接口返回了无法识别的人数');
+    }
+    const normalizedErrorMessage = String(body.errMsg || '')
+      .trim()
+      .replace(/[＜﹤]/g, '<')
+      .replace(/[,，]/g, '')
+      .replace(/\s+/g, '');
+    const isPrivacyThreshold = !hasData && normalizedErrorMessage === '<2000';
+    if (!hasData && !isPrivacyThreshold) {
+      throw realtimeCountError(body.errMsg || '实时人数接口未返回有效人数');
+    }
+    const crowdCount = isPrivacyThreshold ? '<2000' : count;
+    return {
+      ok: true,
+      executionMode: 'calculate_only',
+      autoCalculated: true,
+      directRealtime: true,
+      countReady: true,
+      crowdCount,
+      countDisplay: isPrivacyThreshold ? '<2000' : String(count),
+      countThreshold: isPrivacyThreshold,
+      crowdFound: false,
+      crowdCreated: false,
+      crowdReused: false,
+      crowdName: normalizedCrowdName,
+      resolvedCustomCrowds: resolved.resolvedNames,
+      trail: [{
+        step: isPrivacyThreshold ? 'realtime_count_privacy_threshold' : 'realtime_count_api_completed',
+        crowdCount,
+      }],
+      message: isPrivacyThreshold ? '人数低于隐私保护阈值' : '已通过接口直接取得人数',
+    };
+  }
+
+  async function automateDatabank(jsonText, autoCalculate, executionMode, crowdName) {
     const trail = [];
+    const resolvedMode = ['calculate_only', 'create_only', 'create_and_count'].includes(executionMode)
+      ? executionMode
+      : (autoCalculate === true ? 'calculate_only' : 'import_only');
+    const normalizedCrowdName = String(crowdName || '').trim();
+    let existingCrowd = null;
+
+    if (['calculate_only', 'create_only', 'create_and_count'].includes(resolvedMode) && normalizedCrowdName) {
+      existingCrowd = await fetchCustomCrowdCount(normalizedCrowdName);
+      const reusedStep = resolvedMode === 'calculate_only'
+        ? 'existing_crowd_reused_for_count'
+        : 'existing_crowd_reused';
+      const missingStep = resolvedMode === 'calculate_only'
+        ? 'existing_crowd_not_found_for_count'
+        : 'existing_crowd_not_found';
+      trail.push({
+        step: existingCrowd.crowdFound ? reusedStep : missingStep,
+        crowdName: normalizedCrowdName,
+        crowdId: existingCrowd.crowdId,
+        countReady: existingCrowd.countReady,
+        crowdCount: existingCrowd.crowdCount,
+      });
+
+      if (existingCrowd.crowdFound) {
+        const countUnavailable = resolvedMode === 'calculate_only' && !existingCrowd.countReady;
+        return {
+          ok: true,
+          trail,
+          executionMode: resolvedMode,
+          autoCalculated: resolvedMode === 'calculate_only',
+          countReady: resolvedMode === 'calculate_only' ? true : existingCrowd.countReady,
+          crowdCount: countUnavailable ? '-' : existingCrowd.crowdCount,
+          crowdFound: true,
+          crowdId: existingCrowd.crowdId,
+          crowdStatus: existingCrowd.crowdStatus || '',
+          crowdCreated: false,
+          crowdReused: true,
+          crowdName: normalizedCrowdName,
+          countUnavailable,
+          message: resolvedMode === 'calculate_only'
+            ? (countUnavailable
+                ? '已存在同名人群包，人数记为“-”并跳过实时计算'
+                : '已存在同名人群包，已直接取得人数并跳过实时计算')
+            : resolvedMode === 'create_only'
+              ? '已存在同名人群包，已跳过重复创建'
+              : (existingCrowd.countReady
+                  ? '已存在同名人群包，已复用并取得人数'
+                  : '已存在同名人群包，已复用并等待人数'),
+        };
+      }
+    }
+
     console.info('[Databank Automation][content] param paste start');
     trail.push(await runPreflightChecks());
     const triggerNode = await waitForParamPageInitialized();
     trail.push({ step: 'page_initialized', message: '参数粘贴入口已就绪' });
+    const resolved = await resolveCustomCrowds(jsonText);
+    jsonText = resolved.jsonText;
+    if (resolved.resolvedNames.length > 0) {
+      trail.push({
+        step: 'resolved_custom_crowds',
+        count: resolved.resolvedNames.length,
+        names: resolved.resolvedNames,
+      });
+    }
     const initialTextareaNode = await openImportDialog(triggerNode, trail);
     await sleep(PARAM_DIALOG_SETTLE_MS);
     inputTextarea(initialTextareaNode, jsonText);
@@ -480,15 +1141,57 @@ if (!window.__databankAutomationContentScriptLoaded) {
     await waitForImportDialogClosed(importDialogRoot);
     trail.push({ step: 'dialog_closed' });
     await sleep(PARAM_COMPLETION_SETTLE_MS);
-    if (autoCalculate === true) {
-      await clickCalculateCount(trail);
+    let calculatedCount = null;
+    let crowdCreated = false;
+    if (resolvedMode === 'calculate_only') {
+      calculatedCount = await clickCalculateCount(trail);
     }
+    if (resolvedMode === 'create_and_count') {
+      if (!existingCrowd) {
+        existingCrowd = await fetchCustomCrowdCount(crowdName);
+        trail.push({
+          step: existingCrowd.crowdFound ? 'existing_crowd_reused' : 'existing_crowd_not_found',
+          crowdName: normalizedCrowdName,
+          crowdId: existingCrowd.crowdId,
+          countReady: existingCrowd.countReady,
+          crowdCount: existingCrowd.crowdCount,
+        });
+      }
+      if (!existingCrowd.crowdFound) {
+        await createConfiguredCrowd(crowdName, trail);
+        crowdCreated = true;
+      }
+    } else if (resolvedMode === 'create_only') {
+      await createConfiguredCrowd(crowdName, trail);
+      crowdCreated = true;
+    }
+    const countUnavailable = trail.some((entry) => entry.step === 'count_unavailable');
     console.info('[Databank Automation][content] param paste success');
     return {
       ok: true,
       trail,
-      autoCalculated: autoCalculate === true,
-      message: autoCalculate === true ? '参数已自动导入并已触发人数计算' : '参数已自动导入',
+      executionMode: resolvedMode,
+      autoCalculated: resolvedMode === 'calculate_only',
+      countReady: Boolean(calculatedCount) || countUnavailable || existingCrowd?.countReady === true,
+      crowdCount: countUnavailable ? '-' : (calculatedCount?.count ?? existingCrowd?.crowdCount ?? null),
+      crowdFound: existingCrowd?.crowdFound === true,
+      crowdId: existingCrowd?.crowdId ?? null,
+      crowdStatus: existingCrowd?.crowdStatus || '',
+      crowdCreated,
+      crowdReused: existingCrowd?.crowdFound === true,
+      crowdName: String(crowdName || '').trim(),
+      countUnavailable,
+      message: resolvedMode === 'calculate_only'
+        ? (countUnavailable
+            ? '页面人数显示“-”，已按结果记录'
+            : '参数已自动导入并已触发人数计算')
+        : resolvedMode === 'create_only'
+          ? '人群包已创建'
+          : resolvedMode === 'create_and_count'
+            ? existingCrowd?.crowdFound
+              ? (existingCrowd.countReady ? '已存在同名人群包，已复用并取得人数' : '已存在同名人群包，已复用并等待人数')
+              : '人群包已创建，等待人数'
+            : '参数已自动导入',
     };
   }
 
@@ -945,6 +1648,42 @@ if (!window.__databankAutomationContentScriptLoaded) {
       return false;
     }
 
+    if (message?.type === 'QUERY_DATABANK_REALTIME_COUNT') {
+      beginAutomationRun(message.runId);
+      fetchRealtimeCrowdCount(
+        String(message.jsonText || ''),
+        String(message.crowdName || ''),
+        message.requestHeaders || {}
+      )
+        .then((result) => sendResponse(result))
+        .catch((error) => sendResponse({
+          ok: false,
+          cancelled: error?.name === 'AbortError',
+          code: error?.code || 'DATABANK_REALTIME_COUNT_FAILED',
+          error: error?.message || '接口取数失败',
+        }))
+        .finally(() => finishAutomationRun(message.runId));
+      return true;
+    }
+
+    if (message?.type === 'CREATE_DATABANK_CROWD_API') {
+      beginAutomationRun(message.runId);
+      createCrowdDirectly(
+        String(message.jsonText || ''),
+        String(message.crowdName || ''),
+        message.requestHeaders || {}
+      )
+        .then((result) => sendResponse(result))
+        .catch((error) => sendResponse({
+          ok: false,
+          cancelled: error?.name === 'AbortError',
+          code: error?.code || 'DATABANK_DIRECT_API_FAILED',
+          error: error?.message || '接口创建人群失败',
+        }))
+        .finally(() => finishAutomationRun(message.runId));
+      return true;
+    }
+
     if (message?.type === 'AUTOMATE_DATABANK') {
       if (window.__databankAutomationRunning) {
         sendResponse({ ok: false, error: '已有自动化流程正在执行' });
@@ -952,16 +1691,36 @@ if (!window.__databankAutomationContentScriptLoaded) {
       }
       window.__databankAutomationRunning = true;
       beginAutomationRun(message.runId);
-      automateDatabank(String(message.jsonText || ''), message.autoCalculate === true)
+      automateDatabank(
+        String(message.jsonText || ''),
+        message.autoCalculate === true,
+        String(message.executionMode || ''),
+        String(message.crowdName || '')
+      )
         .then((result) => sendResponse(result))
         .catch((error) => {
           console.error('[Databank Automation] param paste failed:', error);
-          sendResponse({ ok: false, error: error?.message || '自动化执行失败' });
+          sendResponse({
+            ok: false,
+            cancelled: error?.name === 'AbortError',
+            error: error?.message || '自动化执行失败',
+          });
         })
         .finally(() => {
           window.__databankAutomationRunning = false;
           finishAutomationRun(message.runId);
         });
+      return true;
+    }
+
+    if (message?.type === 'QUERY_DATABANK_CROWD_COUNT') {
+      fetchCustomCrowdCount(String(message.crowdName || ''))
+        .then((result) => sendResponse(result))
+        .catch((error) => sendResponse({
+          ok: false,
+          code: error?.code || '',
+          error: error?.message || '查询人群包人数失败',
+        }));
       return true;
     }
 

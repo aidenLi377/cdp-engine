@@ -28,6 +28,20 @@ function createHarness() {
         forwarded.push(payload)
         if (payload.type === 'CDP_DMP_GET_SETTINGS' || payload.type === 'CDP_DMP_UPDATE_SETTINGS') {
           callback({ ok: true, settings: { readyTagIds: ['200'], columnVisibility: { CTR: false }, rebaseExcludedTagIds: ['300'] } })
+        } else if (payload.type === 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES') {
+          callback({ ok: true, ready: false, results: [{ crowdName: payload.crowdNames[0], state: 'waiting', ready: false }] })
+        } else if (payload.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT') {
+          callback({ ok: true, countReady: true, countThreshold: true, crowdCount: '<2000', directRealtime: true })
+        } else if (payload.type === 'CDP_CREATE_DATABANK_CROWD_API') {
+          callback({
+            ok: true,
+            message: '已通过接口创建人群包',
+            crowdName: '接口建包',
+            crowdCreated: true,
+            crowdId: 78408082,
+            directCreate: true,
+            preflightPassed: true,
+          })
         } else if (payload.type === 'CDP_CANCEL_TASK') {
           callback({ ok: true, cancelled: true, closedTabs: 2 })
         } else {
@@ -85,6 +99,45 @@ test('bridge forwards DataBank payload and returns the correlated response', () 
   assert.equal(harness.posted[0].payload.ok, true)
 })
 
+test('bridge forwards the opt-in realtime count request without changing its JSON', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_QUERY_DATABANK_REALTIME_COUNT',
+    requestId: 'realtime-count-1',
+    jsonText: '{"crowdName":"接口试验包","list":[],"compute":""}',
+    crowdName: '接口试验包',
+  })
+
+  assert.equal(harness.forwarded[0].type, 'CDP_QUERY_DATABANK_REALTIME_COUNT')
+  assert.equal(harness.forwarded[0].jsonText, '{"crowdName":"接口试验包","list":[],"compute":""}')
+  assert.equal(harness.forwarded[0].crowdName, '接口试验包')
+  assert.equal(harness.posted[0].payload.requestId, 'realtime-count-1')
+  assert.equal(harness.posted[0].payload.ok, true)
+  assert.equal(harness.posted[0].payload.countReady, true)
+  assert.equal(harness.posted[0].payload.countThreshold, true)
+  assert.equal(harness.posted[0].payload.crowdCount, '<2000')
+})
+
+test('bridge forwards guarded direct-create requests and exposes the preflight result', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_CREATE_DATABANK_CROWD_API',
+    requestId: 'direct-create-1',
+    jsonText: '{"crowdName":"接口建包","list":[],"compute":""}',
+    crowdName: '接口建包',
+  })
+
+  assert.equal(harness.forwarded[0].type, 'CDP_CREATE_DATABANK_CROWD_API')
+  assert.equal(harness.forwarded[0].crowdName, '接口建包')
+  assert.equal(harness.posted[0].payload.directCreate, true)
+  assert.equal(harness.posted[0].payload.preflightPassed, true)
+  assert.equal(harness.posted[0].payload.crowdId, 78408082)
+  assert.equal(harness.posted[0].payload.crowdName, '接口建包')
+  assert.equal(harness.posted[0].payload.message, '已通过接口创建人群包')
+})
+
 test('bridge forwards the explicit DataBank auto apply choice', () => {
   const harness = createHarness()
   harness.dispatch({
@@ -97,6 +150,20 @@ test('bridge forwards the explicit DataBank auto apply choice', () => {
 
   assert.equal(harness.forwarded[0].crowdName, '待推送人群')
   assert.equal(harness.forwarded[0].autoApply, true)
+})
+
+test('bridge normalizes custom crowd dependency names and returns their readiness', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES',
+    requestId: 'dependencies-1',
+    crowdNames: ['  自定义包A  ', '自定义包A', '', '自定义包B'],
+  })
+
+  assert.deepEqual(Array.from(harness.forwarded[0].crowdNames), ['自定义包A', '自定义包B'])
+  assert.equal(harness.posted[0].payload.ready, false)
+  assert.equal(harness.posted[0].payload.results[0].state, 'waiting')
 })
 
 test('bridge forwards and returns shared DMP settings', () => {

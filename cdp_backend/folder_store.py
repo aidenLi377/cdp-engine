@@ -11,6 +11,7 @@ _FOLDER_KEY_MAP = {
     "id": "id",
     "name": "name",
     "parent_id": "parentId",
+    "execution_mode": "executionMode",
     "owner_id": "ownerId",
     "visibility": "visibility",
     "created_by": "createdBy",
@@ -19,6 +20,7 @@ _FOLDER_KEY_MAP = {
     "updated_at": "updatedAt",
 }
 _FOLDER_COL_MAP = {v: k for k, v in _FOLDER_KEY_MAP.items()}
+_EXECUTION_MODES = {"calculate_only", "create_only", "create_and_count"}
 
 
 def _utc_now() -> str:
@@ -154,15 +156,19 @@ class FolderStore:
         user_id: str,
         parent_id: str | None = None,
         scope: str = "mine",
+        execution_mode: str = "create_and_count",
     ) -> dict:
         if scope not in {"mine", "public"}:
             raise ValueError("invalid folder scope")
+        if execution_mode not in _EXECUTION_MODES:
+            raise ValueError("invalid execution mode")
         is_public = scope == "public"
         now = _utc_now()
         created = {
             "id": self._new_id(),
             "name": name,
             "parentId": parent_id,
+            "executionMode": execution_mode,
             "ownerId": None if is_public else user_id,
             "visibility": "public" if is_public else "private",
             "createdBy": user_id,
@@ -180,10 +186,10 @@ class FolderStore:
                     raise FolderAccessError(parent_id)
             conn.execute(
                 """INSERT INTO folders (
-                    id, name, parent_id, owner_id, visibility,
+                    id, name, parent_id, execution_mode, owner_id, visibility,
                     created_by, updated_by, created_at, updated_at
                 ) VALUES (
-                    :id, :name, :parent_id, :owner_id, :visibility,
+                    :id, :name, :parent_id, :execution_mode, :owner_id, :visibility,
                     :created_by, :updated_by, :created_at, :updated_at
                 )""",
                 db_row,

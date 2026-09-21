@@ -2694,7 +2694,12 @@ async function handleFolderChange(event) {
   if (libraryScope.value === 'public' && !canManagePublicSolutions.value) return
   try {
     if (event.action === 'create') {
-      const created = await createFolder(event.name, event.parentId, libraryScope.value)
+      const created = await createFolder(
+        event.name,
+        event.parentId,
+        libraryScope.value,
+        event.executionMode || 'create_and_count',
+      )
       ElMessage.success('文件夹已创建')
       if (isPullAnalysisTutorialActive() && isGuidedTutorialStep('pull-name-folder')) {
         if (String(event.name || '').trim() !== PULL_ANALYSIS_GROUP_TUTORIAL_VALUES.folderName) {

@@ -8,13 +8,11 @@ const currentDir = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(resolve(currentDir, 'NormalMode.vue'), 'utf8')
 const styles = readFileSync(resolve(currentDir, '../styles/cdp-global.css'), 'utf8')
 
-test('batch automation offers AI names only after final task expansion', () => {
+test('batch automation prepares deterministic names only after final task expansion', () => {
   assert.match(source, /v-if="batchMode" class="batch-automation-picker"/)
-  assert.match(source, /AI 生成名称/)
-  assert.match(source, /suggestBatchAudienceNames/)
-  assert.match(source, /fetchWithTimeout\('\/api\/ai\/batch-names'/)
-  assert.match(source, /parameterValues: Array\.isArray\(entry\?\.parameterBatchValues\)/)
-  assert.match(source, /parameters: getNodeSummary\(node\)/)
+  assert.match(source, /prepareBatchCrowdNamesForRun\(\)/)
+  assert.match(source, /getShanghaiDateSuffix/)
+  assert.doesNotMatch(source, />AI 生成名称</)
 })
 
 test('generated batch names remain editable and block empty or duplicate names', () => {
@@ -25,9 +23,10 @@ test('generated batch names remain editable and block empty or duplicate names',
   assert.match(source, /请先处理空名称或重复名称/)
 })
 
-test('batch naming UI explains no XT prefix and keeps a compact editable queue', () => {
-  assert.match(source, /不添加 XT；生成后仍可逐个修改/)
-  assert.match(styles, /\.batch-ai-naming-bar/)
+test('batch naming UI keeps a compact editable table without the slow AI naming block', () => {
+  assert.match(source, /class="batch-task-table-head"/)
+  assert.doesNotMatch(source, /class="batch-ai-naming-bar"/)
   assert.match(styles, /\.batch-run-name-editor/)
-  assert.match(styles, /\.batch-run-queue-row\.is-selectable\.has-name-error/)
+  assert.match(styles, /\.batch-task-dialog \.batch-run-queue-row\.is-selectable/)
+  assert.match(styles, /min-height: 42px/)
 })

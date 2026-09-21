@@ -49,8 +49,11 @@ test('automation checks generation service readiness without enforcing parameter
   assert.ok(singleAutomation, 'single automation flow should exist')
   assert.match(batchAutomation, /ensureGeneratedOutputReady/)
   assert.match(singleAutomation, /await buildFinalJson\(\)[\s\S]*?ensureGeneratedOutputReady/)
-  assert.match(batchAutomation, /sendMessageToDatabankExtension\(getGeneratedJsonText\(\)\)/)
-  assert.match(singleAutomation, /sendMessageToDatabankExtension\(getGeneratedJsonText\(\)\)/)
+  assert.match(batchAutomation, /const jsonText = getGeneratedJsonText\(\)[\s\S]*?sendMessageToDatabankExtension\([\s\S]*?jsonText/)
+  assert.match(singleAutomation, /const jsonText = getGeneratedJsonText\(\)/)
+  assert.match(singleAutomation, /sendDatabankRealtimeCount\(jsonText, crowdName\)/)
+  assert.match(singleAutomation, /sendDatabankDirectCreate\(jsonText, crowdName\)/)
+  assert.match(singleAutomation, /sendMessageToDatabankExtension\([\s\S]*?jsonText/)
 })
 
 test('task center exposes local installation and manual redetection while preserving connection protocol', () => {

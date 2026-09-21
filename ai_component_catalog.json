@@ -59,6 +59,18 @@
     }
   },
   "components": {
+    "自定义人群": {
+      "group": "behavior",
+      "scope": "existing_crowd",
+      "purpose": "引用当前数据引擎账号中已经存在的自定义人群包，参与后续交并差运算。",
+      "priority": 120,
+      "strongSignals": ["自定义人群", "已有的人群包", "引用人群包", "人群包名称"],
+      "negativeSignals": ["新建人群包名称", "给结果命名"],
+      "businessFieldMeanings": {
+        "crowdIds": "当前数据引擎账号下完整且精确的人群包名称；自动化执行时由浏览器扩展解析为正式ID。"
+      },
+      "singleSelectFields": ["crowdIds"]
+    },
     "品牌推广": {
       "group": "behavior",
       "scope": "paid_ad",

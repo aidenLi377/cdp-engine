@@ -20,7 +20,7 @@ test('workbench toolbar separates copy, primary action, and secondary actions', 
 test('data engine is an icon link before copy and automation owns the former action slot', () => {
   const engineIndex = normalModeVue.indexOf('class="databank-engine-button"')
   const copyIndex = normalModeVue.indexOf('@click="copyJson"')
-  const automationIndex = normalModeVue.indexOf('@click="handleDataBankCommand(\'auto\')"')
+  const automationIndex = normalModeVue.indexOf('@click="handleAutomationButtonClick"')
 
   assert.ok(engineIndex >= 0)
   assert.ok(engineIndex < copyIndex)
@@ -45,7 +45,7 @@ test('workbench toolbar stays on one line without widening the canvas', () => {
   assert.match(css, /\.workbench-toolbar-actions \{[^}]*min-width: 0;/s)
   assert.doesNotMatch(normalModeVue, /databank-auto-calculate-inline/)
   assert.doesNotMatch(css, /\.databank-auto-calculate-inline/)
-  assert.match(css, /\.automation-calculate-toggle \{[^}]*height: 22px;[^}]*font-size: 9px;/s)
+  assert.match(css, /\.automation-single-mode-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/s)
 })
 
 test('workbench phase status is a compact breathing-light indicator', () => {
