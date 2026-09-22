@@ -12,6 +12,8 @@ _FOLDER_KEY_MAP = {
     "name": "name",
     "parent_id": "parentId",
     "execution_mode": "executionMode",
+    "source_folder_id": "sourceFolderId",
+    "source_owner_id": "sourceOwnerId",
     "owner_id": "ownerId",
     "visibility": "visibility",
     "created_by": "createdBy",

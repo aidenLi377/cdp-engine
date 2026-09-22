@@ -229,6 +229,101 @@ class AdminAccountManagementApiTests(unittest.TestCase):
         self.assertEqual(duplicate.status_code, 409)
         self.assertEqual(duplicate.get_json()["code"], "SOLUTION_ALREADY_PROMOTED")
 
+    def test_admin_can_promote_complete_private_folder_tree_to_public_library(self):
+        root = self.target_client.post(
+            "/api/folders", json={"name": "Dior"}
+        ).get_json()
+        children = [
+            self.target_client.post(
+                "/api/folders",
+                json={"name": name, "parentId": root["id"]},
+            ).get_json()
+            for name in ("KOL", "SOB拆解", "竞争分析")
+        ]
+        source_folders = [root, *children]
+        source_solutions = []
+        for index, folder in enumerate(source_folders, start=1):
+            source_solutions.append(
+                self.target_client.post(
+                    "/api/solutions/drafts",
+                    json={
+                        "name": f"Dior 方案 {index}",
+                        "folderId": folder["id"],
+                        "nodes": [{"id": f"node-{index}"}],
+                    },
+                ).get_json()
+            )
+
+        individually_promoted = self.admin_client.post(
+            f"/api/admin/users/{self.target['id']}/solutions/{source_solutions[1]['id']}/promote",
+            json={},
+        )
+        self.assertEqual(individually_promoted.status_code, 201)
+
+        promoted_response = self.admin_client.post(
+            f"/api/admin/users/{self.target['id']}/folders/{root['id']}/promote",
+            json={"parentFolderId": None},
+        )
+        self.assertEqual(promoted_response.status_code, 201)
+        promoted = promoted_response.get_json()
+        self.assertEqual(promoted["folderCount"], 4)
+        self.assertEqual(promoted["solutionCount"], 4)
+        self.assertEqual(promoted["promotedCount"], 3)
+        self.assertEqual(promoted["synchronizedCount"], 1)
+
+        public_tree = self.admin_client.get("/api/folders?scope=public").get_json()
+        public_root = next(
+            folder
+            for folder in public_tree
+            if folder.get("sourceFolderId") == root["id"]
+        )
+        self.assertEqual(public_root["name"], "Dior")
+        self.assertEqual(
+            {folder["name"] for folder in public_root.get("children", [])},
+            {"KOL", "SOB拆解", "竞争分析"},
+        )
+        public_folder_by_source = {
+            folder["sourceFolderId"]: folder["id"]
+            for folder in [public_root, *public_root.get("children", [])]
+        }
+        public_solutions = self.admin_client.get(
+            "/api/solutions?scope=public"
+        ).get_json()
+        promoted_by_source = {
+            solution.get("derivedFromSolutionId"): solution
+            for solution in public_solutions
+            if solution.get("derivedFromSolutionId")
+        }
+        for folder, source_solution in zip(source_folders, source_solutions):
+            self.assertEqual(
+                promoted_by_source[source_solution["id"]]["folderId"],
+                public_folder_by_source[folder["id"]],
+            )
+
+        private_ids = {
+            solution["id"]
+            for solution in self.target_client.get("/api/solutions?scope=mine").get_json()
+        }
+        self.assertTrue({item["id"] for item in source_solutions}.issubset(private_ids))
+
+        synchronized_response = self.admin_client.post(
+            f"/api/admin/users/{self.target['id']}/folders/{root['id']}/promote",
+            json={"parentFolderId": None},
+        )
+        synchronized = synchronized_response.get_json()
+        self.assertEqual(synchronized_response.status_code, 201)
+        self.assertEqual(synchronized["createdFolderCount"], 0)
+        self.assertEqual(synchronized["promotedCount"], 0)
+        self.assertEqual(synchronized["synchronizedCount"], 4)
+
+        user_data = self.admin_client.get(
+            f"/api/admin/users/{self.target['id']}/data"
+        ).get_json()
+        self.assertEqual(
+            user_data["folders"][0]["promotion"]["publicFolderId"],
+            public_root["id"],
+        )
+
     def test_admin_can_delete_account_and_private_data(self):
         self.target_client.post(
             "/api/solutions/drafts",

@@ -1,5 +1,5 @@
 <template>
-  <div class="folder-tree">
+  <div class="folder-tree" role="tree" aria-label="方案文件夹">
     <div class="folder-tree-head">
       <span class="display-body-light" style="font-size:11px">方案文件夹</span>
       <el-button v-if="!readOnly" class="folder-tree-add" text size="small" data-tutorial-target="pull-create-folder" @click.stop="startCreate(null, true)">
@@ -11,23 +11,34 @@
       v-for="folder in folderTree"
       :key="folder.id"
       class="folder-tree-node"
-      :class="{ 'drag-over': dragOverFolderId === folder.id }"
-      @dragover.prevent="onDragOverFolder($event, folder.id)"
-      @dragleave="onDragLeaveFolder"
-      @drop.prevent="onDropOnFolder($event, folder.id)"
     >
       <div
         class="folder-tree-row"
-        :class="{ active: selectedFolderId === folder.id }"
-        @click="selectFolder(folder.id)"
+        :class="{
+          active: selectedFolderId === folder.id,
+          'drag-over': dragOverFolderId === folder.id,
+        }"
+        role="treeitem"
+        tabindex="0"
+        :aria-expanded="hasFolderChildren(folder) ? expandedIds.has(folder.id) : undefined"
+        @click="activateFolder(folder)"
+        @keydown.enter.prevent="activateFolder(folder)"
+        @keydown.space.prevent="activateFolder(folder)"
         @contextmenu.prevent="onContextMenu($event, folder)"
+        @dragenter.stop.prevent="onDragEnterFolder($event, folder.id)"
+        @dragover.stop.prevent="onDragOverFolder($event, folder.id)"
+        @dragleave.stop="onDragLeaveFolder($event, folder.id)"
+        @drop.stop.prevent="onDropOnFolder($event, folder.id)"
       >
         <span
+          v-if="hasFolderChildren(folder)"
           class="folder-expand-toggle"
+          aria-hidden="true"
           @click.stop="toggleExpand(folder.id)"
         >
           {{ expandedIds.has(folder.id) ? '▾' : '▸' }}
         </span>
+        <span v-else class="folder-expand-toggle" style="visibility:hidden" aria-hidden="true">▸</span>
         <el-icon class="folder-icon"><FolderIcon /></el-icon>
         <template v-if="editingFolderId === folder.id">
           <el-input
@@ -81,15 +92,20 @@
           <span aria-hidden="true">✦</span>
           {{ getBatchCount(folder.id) }}
         </button>
-        <span v-if="dragOverFolderId === folder.id" class="folder-drop-hint">释放到此处</span>
+        <span
+          v-if="dragOverFolderId === folder.id"
+          class="folder-drop-hint"
+          :title="`移动到 ${folder.name}`"
+        >移动到 {{ folder.name }}</span>
       </div>
 
-      <div v-if="expandedIds.has(folder.id)" class="folder-children">
+      <div v-if="expandedIds.has(folder.id)" class="folder-children" role="group">
         <FolderTreeNode
           v-for="child in folder.children || []"
           :key="child.id"
           :folder="child"
           :depth="1"
+          :folder-path="[folder.name, child.name]"
           :expanded-ids="expandedIds"
           :selected-folder-id="selectedFolderId"
           :drag-over-folder-id="dragOverFolderId"
@@ -105,6 +121,7 @@
           @batch-apply="openBatchFolder"
           @share-folder="shareFolder"
           @context-menu="onContextMenu"
+          @drag-enter-folder="onDragEnterFolder"
           @drag-over-folder="onDragOverFolder"
           @drag-leave-folder="onDragLeaveFolder"
           @drop-on-folder="onDropOnFolder"
@@ -118,14 +135,26 @@
 
     <div
       class="folder-tree-row uncategorized"
-      :class="{ active: selectedFolderId === '__uncategorized__' }"
+      :class="{
+        active: selectedFolderId === '__uncategorized__',
+        'drag-over': dragOverFolderId === '__uncategorized__',
+      }"
+      role="treeitem"
+      tabindex="0"
       @click="selectFolder('__uncategorized__')"
-      @dragover.prevent="onDragOverFolder($event, '__uncategorized__')"
-      @dragleave="onDragLeaveFolder"
-      @drop.prevent="onDropOnFolder($event, '__uncategorized__')"
+      @keydown.enter.prevent="selectFolder('__uncategorized__')"
+      @keydown.space.prevent="selectFolder('__uncategorized__')"
+      @dragenter.stop.prevent="onDragEnterFolder($event, '__uncategorized__')"
+      @dragover.stop.prevent="onDragOverFolder($event, '__uncategorized__')"
+      @dragleave.stop="onDragLeaveFolder($event, '__uncategorized__')"
+      @drop.stop.prevent="onDropOnFolder($event, '__uncategorized__')"
     >
       <el-icon class="folder-icon is-muted"><FolderIcon /></el-icon>
       <span class="folder-name" style="color:#999">未分类</span>
+      <span
+        v-if="dragOverFolderId === '__uncategorized__'"
+        class="folder-drop-hint"
+      >移动到 未分类</span>
     </div>
 
     <div v-if="!readOnly && creatingParentId !== undefined" class="folder-create-row">
@@ -174,11 +203,12 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
 import { Check, Close, Share } from '@element-plus/icons-vue'
 import FolderTreeNode from './FolderTreeNode.vue'
+import { findFolderById } from '../utils/folderTree.js'
 
 const props = defineProps({
   folders: { type: Array, default: () => [] },
@@ -202,6 +232,8 @@ const editingFolderId = ref(null)
 const editName = ref('')
 const dragOverFolderId = ref(null)
 const contextMenu = ref({ visible: false, x: 0, y: 0, folder: null })
+let dragExpandTimer = null
+const dragEnterDepthByFolder = new Map()
 
 const folderTree = ref([])
 
@@ -268,6 +300,15 @@ function finishCreate() {
   })
 }
 
+function hasFolderChildren(folder) {
+  return Array.isArray(folder?.children) && folder.children.length > 0
+}
+
+function activateFolder(folder) {
+  selectFolder(folder.id)
+  if (hasFolderChildren(folder)) toggleExpand(folder.id)
+}
+
 function startEdit(id, currentName) {
   if (props.readOnly) return
   editingFolderId.value = id
@@ -296,15 +337,58 @@ function saveEdit(id) {
 
 function onDragOverFolder(event, folderId) {
   if (props.readOnly) return
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  if (dragOverFolderId.value === folderId) return
+  clearDragExpandTimer()
   dragOverFolderId.value = folderId
+
+  const folder = findFolderById(folderTree.value, folderId)
+  if (!hasFolderChildren(folder) || expandedIds.value.has(folderId)) return
+  dragExpandTimer = window.setTimeout(() => {
+    dragExpandTimer = null
+    if (dragOverFolderId.value !== folderId || expandedIds.value.has(folderId)) return
+    const next = new Set(expandedIds.value)
+    next.add(folderId)
+    expandedIds.value = next
+  }, 600)
 }
 
-function onDragLeaveFolder() {
+function onDragEnterFolder(event, folderId) {
+  if (props.readOnly) return
+  dragEnterDepthByFolder.set(folderId, (dragEnterDepthByFolder.get(folderId) || 0) + 1)
+  onDragOverFolder(event, folderId)
+}
+
+function clearDragExpandTimer() {
+  if (dragExpandTimer) window.clearTimeout(dragExpandTimer)
+  dragExpandTimer = null
+}
+
+function onDragLeaveFolder(event, folderId) {
+  const nextDepth = Math.max(0, (dragEnterDepthByFolder.get(folderId) || 1) - 1)
+  if (nextDepth > 0) {
+    dragEnterDepthByFolder.set(folderId, nextDepth)
+    return
+  }
+  dragEnterDepthByFolder.delete(folderId)
+  if (event?.currentTarget?.contains?.(event.relatedTarget)) return
+  const rect = event?.currentTarget?.getBoundingClientRect?.()
+  if (
+    rect
+    && event.clientX >= rect.left
+    && event.clientX <= rect.right
+    && event.clientY >= rect.top
+    && event.clientY <= rect.bottom
+  ) return
+  if (dragOverFolderId.value !== folderId) return
+  clearDragExpandTimer()
   dragOverFolderId.value = null
 }
 
 function onDropOnFolder(event, folderId) {
   if (props.readOnly) return
+  dragEnterDepthByFolder.clear()
+  clearDragExpandTimer()
   dragOverFolderId.value = null
   const srcFolderId = event.dataTransfer?.getData('text/folder-id')
   const srcSolutionId = event.dataTransfer?.getData('text/solution-id')
@@ -335,6 +419,11 @@ function contextRename() {
     startEdit(contextMenu.value.folder.id, contextMenu.value.folder.name)
   }
 }
+
+onBeforeUnmount(() => {
+  clearDragExpandTimer()
+  dragEnterDepthByFolder.clear()
+})
 
 function contextNewChild() {
   if (contextMenu.value.folder) {
@@ -377,11 +466,6 @@ defineExpose({ selectedFolderId, selectFolder })
   height: auto !important;
   padding: 0 !important;
 }
-.folder-tree-node.drag-over {
-  background: var(--ui-fill);
-  outline: 1px solid var(--ui-accent);
-  border-radius: 4px;
-}
 .folder-tree-row {
   display: flex;
   align-items: center;
@@ -391,6 +475,10 @@ defineExpose({ selectedFolderId, selectFolder })
   border-radius: 4px;
   transition: background 0.15s;
 }
+.folder-tree-row:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 1px;
+}
 .folder-tree-row:hover:not(.active) {
   background: var(--ui-fill);
 }
@@ -398,6 +486,11 @@ defineExpose({ selectedFolderId, selectFolder })
   background: var(--ui-surface);
   color: var(--ui-accent);
   box-shadow: inset 2px 0 0 var(--ui-accent);
+}
+.folder-tree-row.drag-over {
+  color: var(--ui-accent);
+  background: #fff6f1;
+  box-shadow: inset 3px 0 0 var(--ui-accent), inset 0 0 0 1px #ffb18f;
 }
 .folder-tree-row.uncategorized {
   margin-top: 4px;
@@ -524,9 +617,18 @@ defineExpose({ selectedFolderId, selectFolder })
   outline-offset: 2px;
 }
 .folder-drop-hint {
+  max-width: 150px;
+  padding: 2px 6px;
   font-size: 10px;
+  line-height: 1.35;
   color: var(--ui-accent) !important;
+  background: #fff;
+  border: 1px solid #ffc4aa;
+  border-radius: 999px;
   flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .folder-children {
   margin-left: 14px;

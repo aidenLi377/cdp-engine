@@ -752,6 +752,7 @@ import { useCdpShared } from '../composables/useCdpShared'
 import { useSolutionRuntime } from '../composables/useSolutionRuntime'
 import { getNodeDisplayName, serializeCustomFieldsForSolution, serializeNodesForSolution, cloneNodeForDuplicate, insertNodeAtPosition, buildNodeSplits, buildMultiFieldNodeSplits, chunkBySecondaryCategory } from '../utils/solutionState.js'
 import { getCfTypeClass, statusText } from '../utils/display.js'
+import { collectFolderSubtreeIds } from '../utils/folderTree.js'
 import { useFoldersApi } from '../composables/useFoldersApi'
 import { useFolderShareApi } from '../composables/useFolderShareApi'
 import { usePackagesApi } from '../composables/usePackagesApi'
@@ -964,6 +965,10 @@ const canReorderSolutions = computed(
   () =>
     (libraryScope.value === 'mine' || isPublicAdminSolution.value) &&
     Boolean(selectedFolderId.value) &&
+    (
+      selectedFolderId.value === '__uncategorized__'
+      || collectFolderSubtreeIds(folderTree.value, selectedFolderId.value).size === 1
+    ) &&
     statusFilter.value === 'all' &&
     !searchKeyword.value.trim(),
 )
@@ -1244,7 +1249,8 @@ const filteredSolutions = computed(() => {
     if (selectedFolderId.value === '__uncategorized__') {
       list = list.filter(item => !item.folderId)
     } else {
-      list = list.filter(item => item.folderId === selectedFolderId.value)
+      const subtreeIds = collectFolderSubtreeIds(folderTree.value, selectedFolderId.value)
+      list = list.filter(item => subtreeIds.has(item.folderId))
     }
   }
 
@@ -2234,7 +2240,11 @@ function finishCreateCustomField() {
       defaultValue,
       bindings: [...creatingCustomFieldBindings.value],
     })
-    ElMessage.success(`自定义字段「${name}」创建成功`)
+    ElMessage({
+      type: 'success',
+      message: `自定义字段「${name}」创建成功`,
+      duration: 1500,
+    })
   }
   editingCustomFieldId.value = null
   cancelCreateCustomField()

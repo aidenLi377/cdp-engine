@@ -49,7 +49,7 @@ test('automation checks generation service readiness without enforcing parameter
   assert.ok(singleAutomation, 'single automation flow should exist')
   assert.match(batchAutomation, /ensureGeneratedOutputReady/)
   assert.match(singleAutomation, /await buildFinalJson\(\)[\s\S]*?ensureGeneratedOutputReady/)
-  assert.match(batchAutomation, /const jsonText = getGeneratedJsonText\(\)[\s\S]*?sendMessageToDatabankExtension\([\s\S]*?jsonText/)
+  assert.match(batchAutomation, /const jsonText = (?:rewriteBatchInternalDependencyNames\(entry, )?getGeneratedJsonText\(\)\)?[\s\S]*?sendMessageToDatabankExtension\([\s\S]*?jsonText/)
   assert.match(singleAutomation, /const jsonText = getGeneratedJsonText\(\)/)
   assert.match(singleAutomation, /sendDatabankRealtimeCount\(jsonText, crowdName\)/)
   assert.match(singleAutomation, /sendDatabankDirectCreate\(jsonText, crowdName\)/)

@@ -7,7 +7,7 @@ import os
 import re
 import sys
 import zipfile
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from threading import Lock
@@ -804,11 +804,36 @@ def register_routes(
             item["promotion"] = promotion_map.get(
                 (item["id"], str(item.get("_version", 1)))
             )
+        public_folder_promotions: dict[str, dict] = {}
+
+        def collect_public_folder_promotions(folders: list[dict]) -> None:
+            for folder in folders:
+                source_folder_id = folder.get("sourceFolderId")
+                if folder.get("sourceOwnerId") == user_id and source_folder_id:
+                    public_folder_promotions[source_folder_id] = {
+                        "publicFolderId": folder["id"],
+                        "publicName": folder.get("name", ""),
+                        "parentFolderId": folder.get("parentId"),
+                        "promotedAt": folder.get("updatedAt") or folder.get("createdAt"),
+                    }
+                collect_public_folder_promotions(folder.get("children") or [])
+
+        private_folders = folder_store.list_folders("mine", user_id)
+        collect_public_folder_promotions(
+            folder_store.list_folders("public", g.current_user["id"])
+        )
+
+        def attach_folder_promotions(folders: list[dict]) -> None:
+            for folder in folders:
+                folder["promotion"] = public_folder_promotions.get(folder["id"])
+                attach_folder_promotions(folder.get("children") or [])
+
+        attach_folder_promotions(private_folders)
         result = {
             "user": target,
             "counts": user_store.get_user_data_counts(user_id),
             "solutions": private_solutions,
-            "folders": folder_store.list_folders("mine", user_id),
+            "folders": private_folders,
             "tasks": task_store.list_tasks(user_id),
         }
         user_store.record_audit(
@@ -858,6 +883,52 @@ def register_routes(
                 "publicSolutionId": promoted["id"],
                 "name": promoted["name"],
                 "sourceVersion": promoted["derivedFromSolutionVersion"],
+            },
+        )
+        return jsonify(promoted), 201
+
+    @app.route(
+        "/api/admin/users/<user_id>/folders/<folder_id>/promote",
+        methods=["POST"],
+    )
+    def admin_promote_user_folder(user_id: str, folder_id: str):
+        permission_error = require_super_admin()
+        if permission_error is not None:
+            return permission_error
+        target = user_store.get_user(user_id)
+        if target is None:
+            return error_response("USER_NOT_FOUND", "用户不存在", 404)
+        payload = request.get_json(silent=True) or {}
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "迁移信息格式不正确", 400)
+        parent_folder_id = payload.get("parentFolderId")
+        folder_error = validate_public_folder(
+            parent_folder_id, g.current_user["id"]
+        )
+        if folder_error is not None:
+            return folder_error
+        try:
+            promoted = folder_share_store.promote_private_folder(
+                folder_id,
+                user_id,
+                g.current_user["id"],
+                parent_folder_id=parent_folder_id,
+            )
+        except FolderShareAccessError:
+            return error_response(
+                "FOLDER_NOT_FOUND", "该用户的私人方案文件夹不存在", 404
+            )
+        user_store.record_audit(
+            g.current_user["id"],
+            "USER_FOLDER_PROMOTED",
+            target_user_id=user_id,
+            details={
+                "sourceFolderId": folder_id,
+                "publicFolderId": promoted["folder"]["id"],
+                "folderCount": promoted["folderCount"],
+                "solutionCount": promoted["solutionCount"],
+                "promotedCount": promoted["promotedCount"],
+                "synchronizedCount": promoted["synchronizedCount"],
             },
         )
         return jsonify(promoted), 201
@@ -2315,10 +2386,39 @@ def register_routes(
                     return error_response("INVALID_AUDIENCE_COUNT", f"第 {index + 1} 条人数不正确", 400)
                 if crowd_count < 0:
                     return error_response("INVALID_AUDIENCE_COUNT", f"第 {index + 1} 条人数不能为负数", 400)
+            raw_count_obtained_at = row.get("countObtainedAt")
+            count_obtained_at = None
+            if raw_count_obtained_at not in (None, ""):
+                if not isinstance(raw_count_obtained_at, str):
+                    return error_response(
+                        "INVALID_AUDIENCE_COUNT_TIME",
+                        f"第 {index + 1} 条获取人数时间不正确",
+                        400,
+                    )
+                try:
+                    parsed_count_time = datetime.fromisoformat(
+                        raw_count_obtained_at.strip().replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    return error_response(
+                        "INVALID_AUDIENCE_COUNT_TIME",
+                        f"第 {index + 1} 条获取人数时间不正确",
+                        400,
+                    )
+                if parsed_count_time.tzinfo is None:
+                    parsed_count_time = parsed_count_time.replace(tzinfo=timezone.utc)
+                count_obtained_at = parsed_count_time.astimezone(
+                    timezone(timedelta(hours=8))
+                ).replace(tzinfo=None)
             parameters = row.get("parameters", "")
-            if not isinstance(parameters, str):
-                parameters = json.dumps(parameters, ensure_ascii=False, indent=2)
-            normalized_rows.append((crowd_name, crowd_count, parameters))
+            if isinstance(parameters, str):
+                try:
+                    parameters = json.dumps(json.loads(parameters), ensure_ascii=False)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parameters = " ".join(parameters.splitlines()).strip()
+            else:
+                parameters = json.dumps(parameters, ensure_ascii=False)
+            normalized_rows.append((crowd_name, crowd_count, count_obtained_at, parameters))
 
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
@@ -2327,25 +2427,30 @@ def register_routes(
         sheet = workbook.active
         sheet.title = "人群包结果"
         sheet.freeze_panes = "A2"
-        sheet.append(["人群包名称", "对应人数", "人群包参数"])
-        for crowd_name, crowd_count, parameters in normalized_rows:
-            sheet.append([crowd_name, crowd_count, parameters])
+        sheet.append(["人群包名称", "对应人数", "获取人数时间", "人群包参数"])
+        for crowd_name, crowd_count, count_obtained_at, parameters in normalized_rows:
+            sheet.append([crowd_name, crowd_count, count_obtained_at, parameters])
 
         header_fill = PatternFill("solid", fgColor="F47B38")
         for cell in sheet[1]:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center", vertical="center")
-        for row in sheet.iter_rows(min_row=2):
+        sheet.row_dimensions[1].height = 20
+        for row_index, row in enumerate(sheet.iter_rows(min_row=2), start=2):
             row[0].data_type = "s"
-            row[0].alignment = Alignment(vertical="top")
-            row[1].alignment = Alignment(horizontal="right", vertical="top")
-            row[2].data_type = "s"
-            row[2].alignment = Alignment(vertical="top", wrap_text=True)
+            row[0].alignment = Alignment(vertical="center")
+            row[1].alignment = Alignment(horizontal="right", vertical="center")
+            row[2].alignment = Alignment(horizontal="center", vertical="center")
+            row[2].number_format = "yyyy-mm-dd hh:mm:ss"
+            row[3].data_type = "s"
+            row[3].alignment = Alignment(vertical="center", wrap_text=False)
+            sheet.row_dimensions[row_index].height = 18
         sheet.column_dimensions["A"].width = 30
         sheet.column_dimensions["B"].width = 16
-        sheet.column_dimensions["C"].width = 80
-        sheet.auto_filter.ref = f"A1:C{sheet.max_row}"
+        sheet.column_dimensions["C"].width = 22
+        sheet.column_dimensions["D"].width = 80
+        sheet.auto_filter.ref = f"A1:D{sheet.max_row}"
 
         content = io.BytesIO()
         workbook.save(content)

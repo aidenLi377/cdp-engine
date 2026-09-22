@@ -451,9 +451,9 @@
           <textarea
             v-model="draft"
             rows="3"
-            maxlength="4000"
+            maxlength="200000"
             :disabled="!modelStatus?.configured || sending"
-            placeholder="例如：圈最近30天购买过Dior香水的人，排除近7天退款用户…"
+            placeholder="描述圈人需求，或直接粘贴数据引擎JSON…"
             aria-label="描述需要圈选的人群"
             @keydown.enter.exact.prevent="sendMessage()"
           ></textarea>
@@ -1360,6 +1360,7 @@ function applyPlan() {
     nodes: plan.value.nodes,
     audienceName: plan.value.audienceName,
     workflow: plan.value.workflow || currentWorkflow.value,
+    skipReplaceConfirmation: plan.value.skipReplaceConfirmation === true,
   })
 }
 

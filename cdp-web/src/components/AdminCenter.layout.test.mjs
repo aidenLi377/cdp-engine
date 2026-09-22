@@ -224,6 +224,18 @@ test('user plan review keeps workbench summaries and guarded promotion', () => {
   assert.match(adminCenterVue, /用户的私人原件会保留/)
 })
 
+test('user plan folders keep hierarchy and can be copied to the public library in one operation', () => {
+  assert.match(adminCenterVue, /group\.depth/)
+  assert.match(adminCenterVue, /group\.folderCount/)
+  assert.match(adminCenterVue, /'复制整个文件夹'/)
+  assert.match(adminCenterVue, /folderPromotionCandidate/)
+  assert.match(adminCenterVue, /folderPromotionStats\.folderCount/)
+  assert.match(adminCenterVue, /folderPromotionStats\.solutionCount/)
+  assert.match(adminCenterVue, /\/folders\/\$\{folder\.id\}\/promote/)
+  assert.match(adminCenterVue, /JSON\.stringify\(\{ parentFolderId \}\)/)
+  assert.match(adminCenterVue, /用户的私人原件和原有层级不会被修改/)
+})
+
 test('account deletion is explicit and guarded by username confirmation', () => {
   assert.match(adminCenterVue, />注销账号</)
   assert.match(adminCenterVue, /window\.prompt/)

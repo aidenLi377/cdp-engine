@@ -6065,7 +6065,7 @@ body,
 
 .automation-single-mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
   padding: 5px;
   border: 1px solid #ecefed;
@@ -6079,8 +6079,8 @@ body,
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: 56px;
-  padding: 8px 9px;
+  min-height: 50px;
+  padding: 7px 9px;
   color: #70757b;
   font-family: inherit;
   text-align: left;
@@ -6178,6 +6178,15 @@ body,
   border-radius: 50%;
   background: #42a77f;
   box-shadow: 0 0 0 3px rgba(66, 167, 127, .10);
+}
+
+.automation-single-mode-note.is-limit {
+  color: #9a6b21;
+}
+
+.automation-single-mode-note.is-limit i {
+  background: #d89b3d;
+  box-shadow: 0 0 0 3px rgba(216, 155, 61, .11);
 }
 
 .automation-create-route {
@@ -6502,6 +6511,120 @@ body,
   font-weight: 680;
 }
 
+.batch-task-paused-note {
+  margin: 5px 0 7px;
+  padding: 6px 9px;
+  color: #8a641e;
+  font-size: 9px;
+  line-height: 1.45;
+  background: #fffbf2;
+  border: 1px solid #f4ead3;
+  border-radius: 7px;
+}
+
+.batch-task-paused-note.is-error {
+  color: #a94c47;
+  background: #fff8f7;
+  border-color: #f2d9d6;
+}
+
+.batch-dependency-rail {
+  display: flex;
+  min-height: 38px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 7px;
+  padding: 5px 8px;
+  color: #646b73;
+  background: #fbfcfc;
+  border: 1px solid #eceff0;
+  border-radius: 9px;
+}
+
+.batch-dependency-run-key {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  color: #75808a;
+  font-size: 8px;
+  font-weight: 650;
+  letter-spacing: .03em;
+  background: #f1f4f4;
+  border-radius: 5px;
+}
+
+.batch-dependency-stage {
+  display: inline-flex;
+  min-width: 96px;
+  align-items: center;
+  gap: 6px;
+}
+
+.batch-dependency-stage i {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #7c858d;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  background: #eef1f2;
+  border-radius: 50%;
+}
+
+.batch-dependency-stage.is-complete i {
+  color: #238560;
+  background: #e8f5ef;
+}
+
+.batch-dependency-stage span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.batch-dependency-stage small {
+  color: #8b9299;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.batch-dependency-stage strong {
+  margin-top: 2px;
+  color: #414850;
+  font-size: 9px;
+  font-weight: 660;
+  white-space: nowrap;
+}
+
+.batch-dependency-rail > b {
+  width: 18px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: #dfe4e5;
+}
+
+.batch-dependency-auto-continue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: #687078;
+  font-size: 8.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.batch-dependency-auto-continue input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #3a896c;
+}
+
 .batch-task-table-head,
 .batch-task-dialog .batch-run-queue-row.is-selectable {
   display: grid;
@@ -6782,6 +6905,14 @@ body,
 
   .batch-task-progress i {
     width: min(105px, 24vw);
+  }
+
+  .batch-dependency-rail {
+    overflow-x: auto;
+  }
+
+  .batch-dependency-auto-continue {
+    margin-left: 4px;
   }
 
   .batch-task-table-head {

@@ -19,6 +19,11 @@ from .ai_intent_compiler import AiIntentCompiler, IntentValidationError
 from .ai_model_client import AiModelClient, AiResponseError
 from .ai_solution_knowledge import AiSolutionKnowledge
 from .ai_system_knowledge import AiSystemKnowledge
+from .engine_json_reverse import (
+    EngineJsonExtraction,
+    EngineJsonReverseParser,
+    MAX_ENGINE_JSON_MESSAGE_LENGTH,
+)
 from .business_date import (
     business_today,
     latest_selectable_date,
@@ -91,6 +96,7 @@ class AiChatService:
         self.compiler = compiler
         self.solution_knowledge = solution_knowledge
         self.system_knowledge = system_knowledge
+        self.engine_json_reverse_parser = EngineJsonReverseParser(compiler.engine)
 
     def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
@@ -98,6 +104,14 @@ class AiChatService:
         message = str(payload.get("message") or "").strip()
         if not message:
             raise AiChatRequestError("请输入你想圈选的人群")
+        engine_json = self.engine_json_reverse_parser.extract(message)
+        if engine_json.detected:
+            if len(message) > MAX_ENGINE_JSON_MESSAGE_LENGTH:
+                engine_json = EngineJsonExtraction(
+                    True,
+                    error=f"数据引擎JSON不能超过{MAX_ENGINE_JSON_MESSAGE_LENGTH}个字符",
+                )
+            return self._engine_json_response(engine_json)
         if len(message) > MAX_MESSAGE_LENGTH:
             raise AiChatRequestError(f"单次描述不能超过{MAX_MESSAGE_LENGTH}个字符")
 
@@ -401,6 +415,104 @@ class AiChatService:
             matched_solution=matched_solution,
             message=message,
         )
+
+    def _engine_json_response(
+        self,
+        extraction: EngineJsonExtraction,
+    ) -> dict[str, Any]:
+        workflow = {
+            "id": "engine-json-import",
+            "title": "数据引擎JSON反向导入",
+            "applicationMode": "workbench",
+            "reason": "使用当前已发布的组件和参数配置进行确定性反向解析。",
+            "capability": "解析成功后覆盖当前工作台；发现缺失项时不会写入。",
+            "prerequisites": [],
+        }
+        if extraction.error or extraction.payload is None:
+            error = extraction.error or "没有找到完整的数据引擎JSON对象"
+            plan = {
+                "schemaVersion": 1,
+                "status": "invalid",
+                "source": "engine-json",
+                "importMode": "replace",
+                "nodes": [],
+                "generated": None,
+                "questions": [],
+                "warnings": [],
+                "unsupportedNodes": [],
+                "unsupportedParameters": [],
+                "errors": [error],
+                "workflow": workflow,
+            }
+            return {
+                "status": "invalid",
+                "reply": f"这段数据引擎JSON无法解析：{error}。本次没有覆盖工作台。",
+                "intent": None,
+                "plan": plan,
+                "workflow": workflow,
+                "operation": None,
+            }
+
+        parsed = self.engine_json_reverse_parser.parse(extraction.payload)
+        plan = {
+            "schemaVersion": 1,
+            "status": parsed["status"],
+            "source": "engine-json",
+            "importMode": "replace",
+            "skipReplaceConfirmation": True,
+            "audienceName": parsed["crowdName"],
+            "nodes": parsed["nodes"],
+            "generated": parsed["generated"],
+            "questions": [],
+            "warnings": [],
+            "decisions": [],
+            "nextActions": [],
+            "unsupportedNodes": parsed["unsupportedNodes"],
+            "unsupportedParameters": parsed["unsupportedParameters"],
+            "errors": parsed["errors"],
+            "workflow": workflow,
+        }
+        if parsed["success"]:
+            node_count = len(parsed["nodes"])
+            reply = (
+                f"已完整反向解析数据引擎JSON，共恢复{node_count}个工作台节点。"
+                "确认应用后将直接覆盖当前工作台。"
+            )
+        elif parsed["unsupportedNodes"] or parsed["unsupportedParameters"]:
+            missing: list[str] = []
+            for node in parsed["unsupportedNodes"]:
+                signature = json.dumps(
+                    node.get("selectionLv1"), ensure_ascii=False
+                )
+                suffix = f" / {node.get('selectionLv2Name')}" if node.get("selectionLv2Name") else ""
+                missing.append(
+                    f"第{node.get('nodeIndex')}个节点：{signature}{suffix}"
+                )
+            for parameter in parsed["unsupportedParameters"]:
+                prefix = (
+                    f"第{parameter.get('nodeIndex')}个节点"
+                    if parameter.get("nodeIndex")
+                    else "顶层"
+                )
+                missing.append(
+                    f"{prefix}参数：{parameter.get('path')}（{parameter.get('reason')}）"
+                )
+            reply = (
+                "当前系统暂不支持以下节点或参数：\n"
+                + "\n".join(f"- {item}" for item in missing)
+                + "\n本次没有覆盖工作台，请联系管理员补充参数。"
+            )
+        else:
+            errors = "；".join(parsed["errors"]) or "JSON结构不正确"
+            reply = f"这段数据引擎JSON无法解析：{errors}。本次没有覆盖工作台。"
+        return {
+            "status": parsed["status"],
+            "reply": reply,
+            "intent": None,
+            "plan": plan,
+            "workflow": workflow,
+            "operation": None,
+        }
 
     def _compile_response(
         self,

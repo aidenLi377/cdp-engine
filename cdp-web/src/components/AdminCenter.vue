@@ -333,12 +333,35 @@
           <template v-else-if="managedUserData">
             <div v-if="activePlanTab === 'solutions'" class="plan-solution-view">
               <div class="plan-table-head"><span>方案名称</span><span>版本</span><span>状态</span><span>最近更新</span><span>操作</span></div>
-              <section v-for="group in managedSolutionGroups" :key="group.id" class="plan-folder-group">
-                <button class="plan-folder-head" type="button" :aria-expanded="isPlanGroupOpen(group.id)" @click="togglePlanGroup(group.id)">
-                  <ArrowDown :class="{ collapsed: !isPlanGroupOpen(group.id) }" aria-hidden="true" />
-                  <Folder aria-hidden="true" />
-                  <strong>{{ group.name }}</strong><small>{{ group.solutions.length }} 个方案</small>
-                </button>
+              <section
+                v-for="group in managedSolutionGroups"
+                :key="group.id"
+                class="plan-folder-group"
+                :class="{ 'is-child-folder': group.depth > 0 }"
+                :style="{ '--folder-indent': `${group.depth * 22}px` }"
+              >
+                <div class="plan-folder-head">
+                  <button
+                    class="plan-folder-toggle"
+                    type="button"
+                    :aria-expanded="isPlanGroupOpen(group.id)"
+                    @click="togglePlanGroup(group.id)"
+                  >
+                    <ArrowDown :class="{ collapsed: !isPlanGroupOpen(group.id) }" aria-hidden="true" />
+                    <Folder aria-hidden="true" />
+                    <span>
+                      <strong>{{ group.name }}</strong>
+                      <small>{{ group.solutionCount }} 个方案<span v-if="group.folderCount > 1"> · {{ group.folderCount }} 个文件夹</span></small>
+                    </span>
+                  </button>
+                  <button
+                    v-if="group.folder"
+                    class="plan-folder-promote"
+                    type="button"
+                    :disabled="promotingFolderId === group.id"
+                    @click="openFolderPromotion(group.folder)"
+                  >{{ group.folder.promotion ? '同步整个文件夹' : '复制整个文件夹' }}</button>
+                </div>
                 <div v-if="isPlanGroupOpen(group.id)" class="plan-folder-rows">
                   <article v-for="solution in group.solutions" :key="solution.id" class="plan-solution-row">
                     <div><Document aria-hidden="true" /><span><strong>{{ solution.name || '未命名方案' }}</strong><small>{{ solution.nodes?.length || 0 }} 个组件条件</small></span></div>
@@ -353,8 +376,17 @@
               <footer v-else class="plan-data-total">共 {{ managedUserData.solutions?.length || 0 }} 个方案</footer>
             </div>
 
-            <div v-else-if="activePlanTab === 'folders'" class="plan-simple-list">
-              <article v-for="folder in flattenedManagedFolders" :key="folder.id"><Folder aria-hidden="true" /><span><strong>{{ folder.path }}</strong><small>私人方案文件夹</small></span><time>{{ formatDate(folder.updatedAt) || '—' }}</time></article>
+            <div v-else-if="activePlanTab === 'folders'" class="plan-simple-list plan-folder-list">
+              <article
+                v-for="folder in flattenedManagedFolders"
+                :key="folder.id"
+                :style="{ '--folder-indent': `${folder.depth * 22}px` }"
+              >
+                <Folder aria-hidden="true" />
+                <span><strong>{{ folder.name }}</strong><small>{{ folder.depth ? `位于 ${folder.parentPath}` : '顶层私人方案文件夹' }}</small></span>
+                <time>{{ formatDate(folder.updatedAt) || '—' }}</time>
+                <button type="button" @click="openFolderPromotion(folder)">{{ folder.promotion ? '同步到公共库' : '复制到公共库' }}</button>
+              </article>
               <p v-if="!flattenedManagedFolders.length" class="plan-data-empty">该用户还没有私人文件夹</p>
             </div>
 
@@ -1275,6 +1307,76 @@
         </section>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div
+        v-if="folderPromotionCandidate"
+        class="solution-preview-backdrop"
+        role="presentation"
+        @click.self="closeFolderPromotion"
+      >
+        <section class="folder-promotion-dialog" role="dialog" aria-modal="true" aria-labelledby="folder-promotion-title">
+          <header class="folder-promotion-head">
+            <div class="folder-promotion-mark"><Folder aria-hidden="true" /></div>
+            <div>
+              <p class="admin-panel-index">FOLDER / PUBLIC LIBRARY</p>
+              <h2 id="folder-promotion-title">{{ folderPromotionCandidate.promotion ? '同步完整文件夹' : '复制完整文件夹' }}</h2>
+              <small>用户的私人原件和原有层级不会被修改</small>
+            </div>
+            <button type="button" aria-label="关闭文件夹迁移" @click="closeFolderPromotion">×</button>
+          </header>
+
+          <div class="folder-promotion-body">
+            <div class="folder-promotion-source">
+              <span>即将复制</span>
+              <strong>{{ folderPromotionCandidate.name }}</strong>
+              <div>
+                <span><b>{{ folderPromotionStats.folderCount }}</b> 个文件夹</span>
+                <span><b>{{ folderPromotionStats.solutionCount }}</b> 个方案</span>
+              </div>
+            </div>
+
+            <div class="folder-promotion-tree" aria-label="将保留的文件夹结构">
+              <div
+                v-for="folder in folderPromotionRows"
+                :key="folder.id"
+                :style="{ '--folder-indent': `${folder.depth * 21}px` }"
+              >
+                <Folder aria-hidden="true" />
+                <span>{{ folder.name }}</span>
+                <small>{{ folder.solutionCount }} 个直接方案</small>
+              </div>
+            </div>
+
+            <label class="folder-promotion-destination">
+              <span>复制到</span>
+              <select v-model="folderPromotionDestination" :disabled="publicFoldersLoading || Boolean(promotingFolderId)">
+                <option value="__root__">公共方案库 / 根目录</option>
+                <option v-for="folder in flattenedPublicFolders" :key="folder.id" :value="folder.id">
+                  公共方案库 / {{ folder.path }}
+                </option>
+              </select>
+            </label>
+
+            <p class="folder-promotion-note">
+              {{ folderPromotionCandidate.promotion
+                ? '已存在的公共目录会原位同步；新增方案会补充进去，已复制版本不会重复创建。'
+                : '系统会先创建父文件夹，再按原顺序恢复全部子文件夹和方案。' }}
+            </p>
+          </div>
+
+          <footer class="folder-promotion-actions">
+            <button type="button" :disabled="Boolean(promotingFolderId)" @click="closeFolderPromotion">取消</button>
+            <button
+              class="admin-primary-button"
+              type="button"
+              :disabled="Boolean(promotingFolderId)"
+              @click="promoteManagedFolder"
+            >{{ promotingFolderId ? '正在复制完整结构…' : `${folderPromotionCandidate.promotion ? '同步' : '复制'} ${folderPromotionStats.folderCount} 个文件夹和 ${folderPromotionStats.solutionCount} 个方案` }}</button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
   </main>
 </template>
 
@@ -1433,10 +1535,13 @@ const solutionPreviewLoading = ref(false)
 const publicFolders = ref([])
 const publicFoldersLoading = ref(false)
 const promotionDestination = ref('')
+const folderPromotionCandidate = ref(null)
+const folderPromotionDestination = ref('__root__')
 const accountDataLoading = ref(false)
 const securityBusy = ref(false)
 const deletingAccount = ref(false)
 const promotingSolutionId = ref('')
+const promotingFolderId = ref('')
 const temporaryPassword = ref('')
 const dimensionTotalPages = computed(() => (
   dimensionTotal.value > 0
@@ -1638,16 +1743,53 @@ const managedSolutionGroups = computed(() => {
   const solutions = Array.isArray(managedUserData.value?.solutions) ? managedUserData.value.solutions : []
   const folders = flattenedManagedFolders.value
   const folderIds = new Set(folders.map((folder) => folder.id))
-  const groups = folders
-    .map((folder) => ({
-      id: folder.id,
-      name: folder.path,
-      solutions: solutions.filter((solution) => solution.folderId === folder.id),
-    }))
-    .filter((group) => group.solutions.length)
+  const groups = []
+  const visit = (items, depth = 0, ancestorsVisible = true) => {
+    for (const folder of items) {
+      const stats = managedFolderStats(folder, solutions)
+      groups.push({
+        id: folder.id,
+        name: folder.name,
+        folder,
+        depth,
+        visible: ancestorsVisible,
+        folderCount: stats.folderCount,
+        solutionCount: stats.solutionCount,
+        solutions: solutions.filter((solution) => solution.folderId === folder.id),
+      })
+      visit(
+        folder.children || [],
+        depth + 1,
+        ancestorsVisible && isPlanGroupOpen(folder.id),
+      )
+    }
+  }
+  visit(managedUserData.value?.folders || [])
   const uncategorized = solutions.filter((solution) => !solution.folderId || !folderIds.has(solution.folderId))
-  if (uncategorized.length) groups.push({ id: '__uncategorized__', name: '未分类', solutions: uncategorized })
-  return groups
+  if (uncategorized.length) groups.push({
+    id: '__uncategorized__',
+    name: '未分类',
+    folder: null,
+    depth: 0,
+    visible: true,
+    folderCount: 0,
+    solutionCount: uncategorized.length,
+    solutions: uncategorized,
+  })
+  return groups.filter((group) => group.visible)
+})
+const folderPromotionStats = computed(() => managedFolderStats(
+  folderPromotionCandidate.value,
+  managedUserData.value?.solutions || [],
+))
+const folderPromotionRows = computed(() => {
+  if (!folderPromotionCandidate.value) return []
+  return flattenFolders([folderPromotionCandidate.value]).map((folder) => ({
+    ...folder,
+    solutionCount: (managedUserData.value?.solutions || []).filter(
+      (solution) => solution.folderId === folder.id,
+    ).length,
+  }))
 })
 
 watch(userQuery, () => {
@@ -1697,6 +1839,7 @@ function auditActionLabel(action) {
     USER_SESSIONS_REVOKED: '强制退出',
     USER_DELETED: '注销账号',
     USER_SOLUTION_PROMOTED: '迁移公共方案',
+    USER_FOLDER_PROMOTED: '迁移公共方案文件夹',
     USER_DATA_VIEWED: '查看用户数据',
     USER_TUTORIAL_PROGRESS_UPDATED: '调整教程进度',
     INVITE_CREATED: '创建邀请',
@@ -1824,14 +1967,24 @@ function inviteUrl(invite) {
   return new URL(invite.registerPath, window.location.origin).toString()
 }
 
-function flattenFolders(folders, parentPath = '') {
+function flattenFolders(folders, parentPath = '', depth = 0) {
   return folders.flatMap((folder) => {
     const path = parentPath ? `${parentPath} / ${folder.name}` : folder.name
     return [
-      { ...folder, path },
-      ...flattenFolders(folder.children || [], path),
+      { ...folder, path, parentPath, depth },
+      ...flattenFolders(folder.children || [], path, depth + 1),
     ]
   })
+}
+
+function managedFolderStats(folder, solutions = []) {
+  if (!folder) return { folderCount: 0, solutionCount: 0 }
+  const rows = flattenFolders([folder])
+  const folderIds = new Set(rows.map((item) => item.id))
+  return {
+    folderCount: rows.length,
+    solutionCount: solutions.filter((solution) => folderIds.has(solution.folderId)).length,
+  }
 }
 
 async function loadData() {
@@ -2528,6 +2681,8 @@ async function selectPlanUser(user) {
   solutionPreviewLoading.value = false
   publicFolders.value = []
   promotionDestination.value = ''
+  folderPromotionCandidate.value = null
+  folderPromotionDestination.value = '__root__'
   accountDataLoading.value = true
   publicFoldersLoading.value = true
   try {
@@ -2578,6 +2733,7 @@ function closeUserManager() {
   managedUser.value = null
   managedUserData.value = null
   publicFolders.value = []
+  folderPromotionCandidate.value = null
   accountForm.password = ''
   temporaryPassword.value = ''
 }
@@ -2604,6 +2760,18 @@ function closeSolutionPreview() {
   previewNodes.value = []
   solutionPreviewLoading.value = false
   promotionDestination.value = ''
+}
+
+function openFolderPromotion(folder) {
+  if (!folder) return
+  folderPromotionCandidate.value = folder
+  folderPromotionDestination.value = folder.promotion?.parentFolderId || '__root__'
+}
+
+function closeFolderPromotion() {
+  if (promotingFolderId.value) return
+  folderPromotionCandidate.value = null
+  folderPromotionDestination.value = '__root__'
 }
 
 async function saveManagedUser() {
@@ -2701,6 +2869,33 @@ async function promoteManagedSolution(solution) {
     showMessage(error.message || '方案迁移失败', 'error')
   } finally {
     promotingSolutionId.value = ''
+  }
+}
+
+async function promoteManagedFolder() {
+  const folder = folderPromotionCandidate.value
+  const user = managedUser.value
+  if (!folder || !user || promotingFolderId.value) return
+  const parentFolderId = folderPromotionDestination.value === '__root__'
+    ? null
+    : folderPromotionDestination.value
+  const stats = folderPromotionStats.value
+  promotingFolderId.value = folder.id
+  try {
+    const result = await request(
+      `/api/admin/users/${user.id}/folders/${folder.id}/promote`,
+      { method: 'POST', body: JSON.stringify({ parentFolderId }) },
+    )
+    folderPromotionCandidate.value = null
+    folderPromotionDestination.value = '__root__'
+    await selectPlanUser(user)
+    showMessage(
+      `“${folder.name}”已完整复制：${result.folderCount || stats.folderCount} 个文件夹、${result.solutionCount || stats.solutionCount} 个方案`,
+    )
+  } catch (error) {
+    showMessage(error.message || '文件夹迁移失败', 'error')
+  } finally {
+    promotingFolderId.value = ''
   }
 }
 
@@ -5924,14 +6119,22 @@ onBeforeUnmount(() => {
 .plan-solution-row { display: grid; grid-template-columns: minmax(220px, 1.6fr) 58px 70px 130px minmax(205px, auto); align-items: center; gap: 12px; }
 .plan-table-head { min-height: 42px; padding: 0 12px; color: var(--ui-text-tertiary); font-size: 8px; border-bottom: 1px solid var(--ui-divider); }
 .plan-folder-group { border-bottom: 1px solid var(--ui-divider); }
-.plan-folder-head { display: flex; width: 100%; min-height: 47px; align-items: center; gap: 9px; padding: 0 8px; color: var(--ui-ink); font: inherit; text-align: left; background: #fff; border: 0; cursor: pointer; }
+.plan-folder-head { display: flex; width: 100%; min-height: 47px; align-items: center; gap: 9px; padding: 0 8px 0 calc(8px + var(--folder-indent, 0px)); color: var(--ui-ink); background: #fff; }
 .plan-folder-head:hover { background: #fafaf9; }
-.plan-folder-head svg { width: 15px; height: 15px; color: var(--ui-text-secondary); }
-.plan-folder-head svg:first-child { width: 13px; transition: transform 160ms ease; }
+.plan-folder-toggle { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; align-self: stretch; padding: 0; color: inherit; font: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.plan-folder-toggle > span { min-width: 0; }
+.plan-folder-toggle svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-secondary); }
+.plan-folder-toggle svg:first-child { width: 13px; transition: transform 160ms ease; }
 .plan-folder-head svg.collapsed { transform: rotate(-90deg); }
-.plan-folder-head strong { font-size: 11px; font-weight: 650; }
-.plan-folder-head small { color: var(--ui-text-tertiary); font-size: 8px; }
-.plan-folder-rows { padding-left: 30px; }
+.plan-folder-head strong,
+.plan-folder-head small { display: block; }
+.plan-folder-head strong { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.plan-folder-head small { margin-top: 3px; color: var(--ui-text-tertiary); font-size: 8px; }
+.plan-folder-promote { height: 28px; flex: 0 0 auto; padding: 0 10px; color: var(--ui-accent); font: inherit; font-size: 8px; font-weight: 650; background: #fff7f3; border: 1px solid #ffc8ae; border-radius: 7px; cursor: pointer; }
+.plan-folder-promote:hover:not(:disabled) { color: #fff; background: var(--ui-accent); border-color: var(--ui-accent); }
+.plan-folder-promote:disabled { opacity: .55; cursor: wait; }
+.plan-folder-group.is-child-folder { border-left: 1px solid #ece6e2; }
+.plan-folder-rows { padding-left: calc(30px + var(--folder-indent, 0px)); }
 .plan-solution-row { min-height: 58px; padding: 8px 10px; border-top: 1px solid var(--ui-divider); }
 .plan-solution-row > div:first-child { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .plan-solution-row > div:first-child > svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--ui-text-tertiary); }
@@ -5960,7 +6163,40 @@ onBeforeUnmount(() => {
 .plan-simple-list small { margin-top: 4px; color: var(--ui-text-tertiary); font-size: 8px; }
 .plan-simple-list time,
 .task-status { color: var(--ui-text-secondary); font-size: 9px; }
+.plan-folder-list article { grid-template-columns: 24px minmax(0, 1fr) auto auto; padding-left: calc(10px + var(--folder-indent, 0px)); }
+.plan-folder-list article > button { height: 28px; padding: 0 9px; color: var(--ui-accent); font: inherit; font-size: 8px; background: #fff7f3; border: 1px solid #ffc8ae; border-radius: 7px; cursor: pointer; }
+.plan-folder-list article > button:hover { color: #fff; background: var(--ui-accent); }
 .task-data-list article { grid-template-columns: 24px minmax(0, 1fr) 80px auto; }
+
+.folder-promotion-dialog { width: min(620px, calc(100vw - 32px)); overflow: hidden; background: #fff; border: 1px solid var(--ui-control-border); border-radius: 18px; box-shadow: 0 28px 80px rgba(35, 28, 23, .22); }
+.folder-promotion-head { display: grid; grid-template-columns: 46px minmax(0, 1fr) 32px; align-items: center; gap: 13px; padding: 20px 22px; border-bottom: 1px solid var(--ui-divider); }
+.folder-promotion-head h2 { margin: 2px 0 4px; font-size: 18px; }
+.folder-promotion-head small { color: var(--ui-text-tertiary); font-size: 9px; }
+.folder-promotion-head > button { width: 30px; height: 30px; color: var(--ui-text-secondary); font-size: 20px; background: #fff; border: 1px solid var(--ui-divider); border-radius: 50%; cursor: pointer; }
+.folder-promotion-mark { display: grid; width: 44px; height: 44px; place-items: center; color: #fff; background: var(--ui-ink); border-radius: 12px; box-shadow: inset 0 -3px 0 var(--ui-accent); }
+.folder-promotion-mark svg { width: 19px; }
+.folder-promotion-body { display: grid; gap: 15px; padding: 20px 22px; }
+.folder-promotion-source { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 5px 16px; padding: 16px; background: #fff8f4; border: 1px solid #ffd2bd; border-radius: 12px; }
+.folder-promotion-source > span { grid-column: 1 / -1; color: var(--ui-accent); font-size: 8px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.folder-promotion-source > strong { overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.folder-promotion-source > div { display: flex; gap: 6px; }
+.folder-promotion-source > div span { padding: 5px 8px; color: var(--ui-text-secondary); font-size: 8px; background: #fff; border: 1px solid #f1d8cc; border-radius: 999px; }
+.folder-promotion-source b { color: var(--ui-ink); font-size: 10px; }
+.folder-promotion-tree { max-height: 178px; overflow: auto; padding: 7px 0; border: 1px solid var(--ui-divider); border-radius: 11px; }
+.folder-promotion-tree > div { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; min-height: 34px; align-items: center; gap: 7px; padding: 0 12px 0 calc(12px + var(--folder-indent, 0px)); }
+.folder-promotion-tree > div + div { border-top: 1px solid #f4f1ef; }
+.folder-promotion-tree svg { width: 14px; color: var(--ui-text-secondary); }
+.folder-promotion-tree span { overflow: hidden; font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.folder-promotion-tree small { color: var(--ui-text-tertiary); font-size: 8px; }
+.folder-promotion-destination { display: grid; gap: 7px; }
+.folder-promotion-destination > span { color: var(--ui-text-secondary); font-size: 9px; }
+.folder-promotion-destination select { width: 100%; height: 40px; padding: 0 11px; color: var(--ui-ink); font: inherit; font-size: 10px; background: var(--ui-fill); border: 1px solid var(--ui-control-border); border-radius: 9px; outline: none; }
+.folder-promotion-destination select:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.folder-promotion-note { margin: 0; color: var(--ui-text-tertiary); font-size: 9px; line-height: 1.65; }
+.folder-promotion-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 18px; background: #faf9f8; border-top: 1px solid var(--ui-divider); }
+.folder-promotion-actions button { min-height: 38px; padding: 0 15px; color: var(--ui-text-secondary); font: inherit; font-size: 9px; background: #fff; border: 1px solid var(--ui-control-border); border-radius: 9px; cursor: pointer; }
+.folder-promotion-actions .admin-primary-button { color: #fff; background: var(--ui-ink); border-color: var(--ui-ink); box-shadow: inset 3px 0 0 var(--ui-accent); }
+.folder-promotion-actions button:disabled { opacity: .55; cursor: wait; }
 
 .admin-audit-reveal-enter-from,
 .admin-audit-reveal-leave-to {

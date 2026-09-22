@@ -69,6 +69,30 @@ export function summarizeCfDisplayValue(value, mode, widgetType) {
   }
 }
 
+/**
+ * Build a stable comparison key from the value that is effective in the
+ * currently selected widget mode. Date widgets retain both recent/range
+ * values in form state, but only one of them is sent when the plan runs.
+ */
+export function getCfComparableValueKey(value, mode, widgetType) {
+  if (widgetType?.includes('日期') && value && typeof value === 'object' && !Array.isArray(value)) {
+    if (mode === 'range') {
+      return JSON.stringify({
+        mode,
+        value: { dateRange: Array.isArray(value.dateRange) ? value.dateRange : [] },
+      })
+    }
+    if (mode === 'recent') {
+      return JSON.stringify({
+        mode,
+        value: { days: value.days },
+      })
+    }
+  }
+
+  return JSON.stringify({ value, mode })
+}
+
 export function statusText(status) {
   if (status === 'draft') return '草稿'
   if (status === 'published') return '已发布'

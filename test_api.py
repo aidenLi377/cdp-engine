@@ -8,8 +8,10 @@ r"""
 from __future__ import annotations
 
 import io
+import json
 import os
 import unittest
+from datetime import datetime
 
 os.environ["FLASK_ENV"] = "development"
 
@@ -989,7 +991,7 @@ class CdpApiTests(unittest.TestCase):
         self.assertIsInstance(templates, list)
         self.assertTrue(any(name.endswith(".csv") for name in templates))
 
-    def test_export_audience_run_has_exactly_three_columns_and_preserves_special_counts(self):
+    def test_export_audience_run_has_four_columns_and_preserves_special_counts(self):
         response = self.client.post(
             "/api/audience-runs/export",
             json={
@@ -997,16 +999,19 @@ class CdpApiTests(unittest.TestCase):
                     {
                         "crowdName": "新品兴趣人群0921",
                         "crowdCount": 0,
+                        "countObtainedAt": "2026-09-22T07:08:09.000Z",
                         "parameters": '{"crowdName":"新品兴趣人群0921","list":[]}',
                     },
                     {
                         "crowdName": "高潜购买人群0921",
                         "crowdCount": 7257408,
+                        "countObtainedAt": "2026-09-22T07:09:10+00:00",
                         "parameters": '{"compute":"(0)"}',
                     },
                     {
                         "crowdName": "低量级人群0921",
                         "crowdCount": "-",
+                        "countObtainedAt": None,
                         "parameters": '{"compute":"(1)"}',
                     },
                     {
@@ -1024,17 +1029,26 @@ class CdpApiTests(unittest.TestCase):
         )
         from openpyxl import load_workbook
 
-        workbook = load_workbook(io.BytesIO(response.data), read_only=True, data_only=True)
+        workbook = load_workbook(io.BytesIO(response.data), data_only=True)
         sheet = workbook["人群包结果"]
         values = list(sheet.iter_rows(values_only=True))
-        workbook.close()
-        self.assertEqual(values[0], ("人群包名称", "对应人数", "人群包参数"))
-        self.assertEqual(len(values[0]), 3)
+        self.assertEqual(values[0], ("人群包名称", "对应人数", "获取人数时间", "人群包参数"))
+        self.assertEqual(len(values[0]), 4)
         self.assertEqual(values[1][0], "新品兴趣人群0921")
         self.assertEqual(values[1][1], 0)
         self.assertEqual(values[2][1], 7257408)
         self.assertEqual(values[3][1], "-")
         self.assertEqual(values[4][1], "<2000")
+        self.assertEqual(values[1][2], datetime(2026, 9, 22, 15, 8, 9))
+        self.assertEqual(values[2][2], datetime(2026, 9, 22, 15, 9, 10))
+        self.assertIsNone(values[3][2])
+        self.assertNotIn("\n", values[1][3])
+        self.assertEqual(json.loads(values[1][3])["crowdName"], "新品兴趣人群0921")
+        self.assertEqual(sheet["C2"].number_format, "yyyy-mm-dd hh:mm:ss")
+        self.assertFalse(sheet["D2"].alignment.wrap_text)
+        self.assertEqual(sheet.row_dimensions[1].height, 20)
+        self.assertEqual(sheet.row_dimensions[2].height, 18)
+        workbook.close()
 
     def test_errors(self):
         response = self.client.get("/api/non-existent-endpoint")

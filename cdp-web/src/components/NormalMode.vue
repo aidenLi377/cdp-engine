@@ -1293,6 +1293,31 @@
       >
         已选任务中有 {{ batchRealtimeUnsupportedCount }} 个超过 6 个行为，请改用“圈包并计算人数”。
       </p>
+      <p v-if="batchDependencyGraphErrors.length" class="batch-task-paused-note is-error">
+        {{ batchDependencyGraphErrors[0] }}
+      </p>
+
+      <div v-if="batchHasInternalDependencies" class="batch-dependency-rail" aria-label="方案组依赖执行进度">
+        <span class="batch-dependency-run-key">本次 {{ batchRunDateSuffix }}</span>
+        <div class="batch-dependency-stage" :class="{ 'is-complete': batchInternalCreatedPrerequisiteCount === batchInternalPrerequisites.length }">
+          <i aria-hidden="true">1</i>
+          <span><small>建立前置包</small><strong>{{ batchInternalCreatedPrerequisiteCount }}/{{ batchInternalPrerequisites.length }}</strong></span>
+        </div>
+        <b aria-hidden="true"></b>
+        <div class="batch-dependency-stage" :class="{ 'is-complete': batchInternalReadyPrerequisiteCount === batchInternalPrerequisites.length }">
+          <i aria-hidden="true">2</i>
+          <span><small>等待出数</small><strong>{{ batchInternalReadyPrerequisiteCount }}/{{ batchInternalPrerequisites.length }}</strong></span>
+        </div>
+        <b aria-hidden="true"></b>
+        <div class="batch-dependency-stage" :class="{ 'is-complete': batchInternalDependentCompletedCount === batchInternalDependents.length }">
+          <i aria-hidden="true">3</i>
+          <span><small>执行后续包</small><strong>{{ batchInternalDependentCompletedCount }}/{{ batchInternalDependents.length }}</strong></span>
+        </div>
+        <label class="batch-dependency-auto-continue">
+          <input v-model="batchDependencyAutoContinue" type="checkbox" />
+          <span>就绪后自动继续</span>
+        </label>
+      </div>
 
       <div class="batch-task-table-head" aria-hidden="true">
         <span></span>
@@ -1342,9 +1367,15 @@
                 `is-${mode.value}`,
                 { 'is-active': getBatchEntryExecutionMode(row.entry) === mode.value },
               ]"
-              :disabled="databankAutomating || (mode.value === 'calculate_only' && isRealtimeCountUnsupported(row.entry))"
+              :disabled="databankAutomating
+                || (mode.value === 'calculate_only' && isRealtimeCountUnsupported(row.entry))
+                || (row.entry.isInternalPrerequisite && mode.value !== 'create_and_count')"
               :aria-pressed="getBatchEntryExecutionMode(row.entry) === mode.value"
-              :title="mode.value === 'calculate_only' && isRealtimeCountUnsupported(row.entry) ? '超过 6 个行为，不支持实时计算' : mode.description"
+              :title="row.entry.isInternalPrerequisite && mode.value !== 'create_and_count'
+                ? '该人群包被后续任务引用，必须建包并取数'
+                : mode.value === 'calculate_only' && isRealtimeCountUnsupported(row.entry)
+                  ? '超过 6 个行为，不支持实时计算'
+                  : mode.description"
               @click="updateBatchEntryExecutionMode(row.index, mode.value)"
             >
               <el-icon><component :is="mode.icon" /></el-icon>
@@ -1363,6 +1394,10 @@
               <small v-if="row.entry.crowdReused">已复用同名包</small>
               <small v-else-if="getBatchDependencySummary(row.entry)" class="batch-dependency-summary">
                 {{ getBatchDependencySummary(row.entry) }}
+              </small>
+              <small v-else-if="row.entry.isInternalPrerequisite" class="batch-dependency-summary">前置包 · 必须出数</small>
+              <small v-else-if="row.entry.internalDependencies?.length" class="batch-dependency-summary">
+                依赖 {{ row.entry.internalDependencies.length }} 个前置包
               </small>
             </div>
           </el-tooltip>
@@ -1409,9 +1444,9 @@
           <button
             type="button"
             class="automation-single-mode"
-            :class="{ 'is-active': !databankAutoCalculate }"
+            :class="{ 'is-active': !databankAutoCalculate && !singleCreateAndCount }"
             role="radio"
-            :aria-checked="!databankAutoCalculate"
+            :aria-checked="!databankAutoCalculate && !singleCreateAndCount"
             :disabled="databankAutomating"
             @click="setSingleAutomationMode('create_only')"
           >
@@ -1424,10 +1459,26 @@
           <button
             type="button"
             class="automation-single-mode"
+            :class="{ 'is-active': singleCreateAndCount }"
+            role="radio"
+            :aria-checked="singleCreateAndCount"
+            :disabled="databankAutomating"
+            @click="setSingleAutomationMode('create_and_count')"
+          >
+            <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><CircleCheckFilled /></el-icon></span>
+            <span class="automation-single-mode-copy">
+              <strong>建包并取数</strong>
+              <small>每分钟查询人数</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="automation-single-mode"
             :class="{ 'is-active': databankAutoCalculate && batchRealtimeCountMethod === 'api' }"
             role="radio"
             :aria-checked="databankAutoCalculate && batchRealtimeCountMethod === 'api'"
-            :disabled="databankAutomating"
+            :disabled="databankAutomating || singleRealtimeCountUnsupported"
+            :title="singleRealtimeCountUnsupported ? '超过 6 个行为时不支持实时计算，请选择建包并取数' : ''"
             @click="setSingleAutomationMode('api')"
           >
             <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><Histogram /></el-icon></span>
@@ -1442,10 +1493,11 @@
             :class="{ 'is-active': databankAutoCalculate && batchRealtimeCountMethod === 'page' }"
             role="radio"
             :aria-checked="databankAutoCalculate && batchRealtimeCountMethod === 'page'"
-            :disabled="databankAutomating"
+            :disabled="databankAutomating || singleRealtimeCountUnsupported"
+            :title="singleRealtimeCountUnsupported ? '超过 6 个行为时不支持实时计算，请选择建包并取数' : ''"
             @click="setSingleAutomationMode('page')"
           >
-            <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><CircleCheckFilled /></el-icon></span>
+            <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><Monitor /></el-icon></span>
             <span class="automation-single-mode-copy">
               <strong>页面取数</strong>
               <small>打开页面计算</small>
@@ -1476,12 +1528,16 @@
             @click="batchCreateMethod = 'page'"
           ><span class="batch-count-route-dot" aria-hidden="true"></span>页面建包</button>
         </div>
-        <p class="automation-single-mode-note">
+        <p class="automation-single-mode-note" :class="{ 'is-limit': singleRealtimeCountUnsupported }">
           <i aria-hidden="true"></i>
-          {{ !databankAutoCalculate
-            ? (batchCreateMethod === 'api'
-                ? '先查重和预检，再通过接口直接建包；需要安全验证时会停止并提示。'
-                : '通过数据银行页面创建，仍会先检查并跳过同名包。')
+          {{ singleRealtimeCountUnsupported
+            ? `当前包含 ${nodeList.length} 个行为：实时计算不可用，请选择“只圈包”或“建包并取数”。`
+            : singleCreateAndCount
+              ? '先查重并创建或复用人群包，再每 1 分钟查询一次人数；10 分钟后可选择是否继续。'
+              : !databankAutoCalculate
+                ? (batchCreateMethod === 'api'
+                    ? '先查重和预检，再通过接口直接建包；需要安全验证时会停止并提示。'
+                    : '通过数据银行页面创建，仍会先检查并跳过同名包。')
             : batchRealtimeCountMethod === 'api'
               ? '优先复用同名包；未创建时直接通过接口计算人数。'
               : '优先复用同名包；未创建时打开数据银行页面计算。' }}
@@ -1520,14 +1576,18 @@
             v-else
             class="batch-dialog-primary"
             data-tutorial-target="pull-confirm-batch-run"
-            :disabled="batchMode && (batchAutomationSelectedCount === 0 || !batchAutomationNamesValid || batchRealtimeUnsupportedCount > 0)"
+            :disabled="batchMode && (batchAutomationSelectedCount === 0 || !batchAutomationNamesValid || batchRealtimeUnsupportedCount > 0 || batchDependencyGraphErrors.length > 0)"
             @click="confirmBatchAutomation"
           >
             {{ batchMode
               ? (batchAutomationScope === 'failed'
                 ? `重试 ${batchAutomationSelectedCount} 项`
                 : `开始执行 ${batchAutomationSelectedCount} 项`)
-              : '开始自动化圈人' }}
+              : singleCreateAndCount
+                ? '开始建包并取数'
+                : databankAutoCalculate
+                  ? (batchRealtimeCountMethod === 'api' ? '开始接口取数' : '开始页面取数')
+                  : '开始创建人群包' }}
           </el-button>
         </div>
       </div>
@@ -1545,6 +1605,7 @@ import {
   Delete,
   FolderAdd,
   Histogram,
+  Monitor,
   RefreshLeft,
   RefreshRight,
   Search,
@@ -1564,6 +1625,7 @@ import { usePanelResize } from '../composables/usePanelResize'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import { groupBehaviorComponents } from '../utils/behaviorComponentGroups.js'
+import { buildFolderSubtreeCounts, collectFolderSubtreeIds } from '../utils/folderTree.js'
 import {
   loadFavoriteBehaviorComponents,
   saveFavoriteBehaviorComponents,
@@ -1597,7 +1659,7 @@ import {
   setOperationPoolRelation,
   setOperationPoolType,
 } from '../utils/operationPools.js'
-import { getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
+import { getCfComparableValueKey, getCfTypeClass, formatCfDisplayValue, summarizeCfDisplayValue } from '../utils/display.js'
 import { getFieldUiLabel, getNumericSummaryPrefix } from '../utils/fieldUiConfig.js'
 import {
   analyzeBatchCustomFieldCompatibility,
@@ -1705,6 +1767,7 @@ const AUTO_CALCULATE_EXTENSION_VERSION = '2.2.2'
 const CUSTOM_CROWD_EXTENSION_VERSION = '2.2.5'
 const AUDIENCE_TASK_EXTENSION_VERSION = '2.2.15'
 const CROWD_COUNT_POLL_INTERVAL_MS = 30000
+const SINGLE_CROWD_COUNT_POLL_INTERVAL_MS = 60 * 1000
 const CROWD_COUNT_POLL_WINDOW_MS = 10 * 60 * 1000
 const CROWD_NAME_MAX_LENGTH = 20
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
@@ -1914,9 +1977,14 @@ const batchAutomationSelectedIndexes = ref([])
 const batchAutomationCancelling = ref(false)
 const batchExporting = ref(false)
 const databankAutoCalculate = ref(false)
+const singleCreateAndCount = ref(false)
 const batchExecutionMode = ref('create_and_count')
 const batchRealtimeCountMethod = ref('page')
 const batchCreateMethod = ref('api')
+const batchRunDateSuffix = ref('')
+const batchDependencyGraphErrors = ref([])
+const batchDependencyAutoContinue = ref(true)
+const singleRealtimeCountUnsupported = computed(() => !batchMode.value && nodeList.value.length > 6)
 const batchTaskPanelExpanded = ref(true)
 const batchNamingLoading = ref(false)
 const batchNamingMessage = ref('')
@@ -1948,6 +2016,7 @@ let sessionPersistenceDisabled = false
 const crowdCountPollers = new Map()
 let countPollingDecisionTimer = null
 let countPollingDecisionPromise = null
+let internalDependencyResumeTimer = null
 let lastAutoExportSignature = ''
 let activeBatchAutomationRun = null
 
@@ -2030,12 +2099,7 @@ const selectedPublishedFolderName = computed(() =>
 )
 
 const publishedBatchCountByFolder = computed(() => {
-  return publishedSolutions.value.reduce((counts, solution) => {
-    const folderId = solution?.folderId
-    if (!folderId) return counts
-    counts[folderId] = (counts[folderId] || 0) + 1
-    return counts
-  }, {})
+  return buildFolderSubtreeCounts(publishedFolderTree.value, publishedSolutions.value)
 })
 
 const batchPreviewParameterNames = computed(() => {
@@ -2126,13 +2190,39 @@ const batchTaskProgressLabel = computed(() => {
 const batchTaskActiveName = computed(() => (
   String(batchTaskActiveRow.value?.entry?.crowdName || '').trim()
 ))
+const batchInternalPrerequisites = computed(() => (
+  batchEntries.value.filter(entry => entry?.isInternalPrerequisite === true)
+))
+const batchInternalDependents = computed(() => (
+  batchEntries.value.filter(entry => Array.isArray(entry?.internalDependencies) && entry.internalDependencies.length > 0)
+))
+const batchInternalReadyPrerequisiteCount = computed(() => (
+  batchInternalPrerequisites.value.filter(entry => isBatchEntryReadyAsDependency(entry)).length
+))
+const batchInternalCreatedPrerequisiteCount = computed(() => (
+  batchInternalPrerequisites.value.filter(entry => (
+    entry?.crowdFound === true
+      || ['waiting_count', 'checking_count', 'paused_count', 'success'].includes(entry?.automationStatus)
+  )).length
+))
+const batchInternalDependentCompletedCount = computed(() => (
+  batchInternalDependents.value.filter(entry => entry?.automationStatus === 'success').length
+))
+const batchHasInternalDependencies = computed(() => batchInternalDependents.value.length > 0)
 const batchInterruptedCount = computed(() => batchEntries.value.filter(entry => entry.automationInterrupted === true).length)
 const visibleBatchAutomationEntries = computed(() => (
   batchEntries.value
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => batchAutomationScope.value !== 'failed' || entry.automationStatus === 'failed')
+    .sort((left, right) => (
+      Number(left.entry?.executionStage || 1) - Number(right.entry?.executionStage || 1)
+        || left.index - right.index
+    ))
 ))
-const batchAutomationSelectedCount = computed(() => batchAutomationSelectedIndexes.value.length)
+const batchAutomationSelectedCount = computed(() => {
+  const visibleIndexes = new Set(visibleBatchAutomationEntries.value.map(row => row.index))
+  return batchAutomationSelectedIndexes.value.filter(index => visibleIndexes.has(index)).length
+})
 const batchAutomationAllSelected = computed(() => (
   visibleBatchAutomationEntries.value.length > 0
   && batchAutomationSelectedCount.value === visibleBatchAutomationEntries.value.length
@@ -2599,7 +2689,7 @@ function getCfValueSummary(section) {
       const value = node?.formData?.[binding.fieldKey]
       const mode = node?.modeData?.[binding.fieldKey]
       return {
-        key: JSON.stringify({ value, mode }),
+        key: getCfComparableValueKey(value, mode, section.type),
         value,
         mode,
       }
@@ -2632,7 +2722,7 @@ function getCfValueSummaryMeta(section) {
       const value = node?.formData?.[binding.fieldKey]
       const mode = node?.modeData?.[binding.fieldKey]
       return {
-        key: JSON.stringify({ value, mode }),
+        key: getCfComparableValueKey(value, mode, section.type),
         value,
         mode,
       }
@@ -3180,6 +3270,8 @@ async function removePool(pool) {
 
 function resetBatchContext() {
   cancelAllCrowdCountPolling()
+  if (internalDependencyResumeTimer) window.clearTimeout(internalDependencyResumeTimer)
+  internalDependencyResumeTimer = null
   lastAutoExportSignature = ''
   batchMode.value = false
   batchKind.value = 'solutions'
@@ -3195,6 +3287,9 @@ function resetBatchContext() {
   batchExecutionMode.value = 'create_and_count'
   batchRealtimeCountMethod.value = 'page'
   batchCreateMethod.value = 'api'
+  batchRunDateSuffix.value = ''
+  batchDependencyGraphErrors.value = []
+  batchDependencyAutoContinue.value = true
   batchTaskPanelExpanded.value = true
   batchNamingLoading.value = false
   batchNamingMessage.value = ''
@@ -3452,7 +3547,11 @@ function getPublishedSolutionsInFolder() {
   if (selectedPublishedFolderId.value === '__uncategorized__') {
     return publishedSolutions.value.filter(s => !s.folderId)
   }
-  return publishedSolutions.value.filter(s => s.folderId === selectedPublishedFolderId.value)
+  const subtreeIds = collectFolderSubtreeIds(
+    publishedFolderTree.value,
+    selectedPublishedFolderId.value,
+  )
+  return publishedSolutions.value.filter(s => subtreeIds.has(s.folderId))
 }
 
 function openBatchPreview() {
@@ -3612,6 +3711,8 @@ async function enterBatchMode() {
     batchKind.value = 'solutions'
     parameterBatchFieldName.value = ''
     parameterBatchFieldId.value = ''
+    batchRunDateSuffix.value = ''
+    batchDependencyGraphErrors.value = []
     batchEntries.value = entries
     activeBatchIndex.value = 0
     batchFolderName.value = selectedPublishedFolderName.value || '组合方案'
@@ -3665,6 +3766,8 @@ async function createParameterBatchEntries() {
       persistActiveBatchEntry()
       const fieldName = String(parameterBatchSection.value?.name || '').trim()
       const entries = expandCombinationParameterRows(cloneValue(batchEntries.value), cloneValue(parameterBatchRows.value), fieldName, syncCustomFieldValue)
+      batchRunDateSuffix.value = ''
+      batchDependencyGraphErrors.value = []
       batchEntries.value = entries
       batchKind.value = 'parameter'
       parameterBatchFieldName.value = fieldName
@@ -3737,6 +3840,8 @@ async function createParameterBatchEntries() {
     batchKind.value = 'parameter'
     parameterBatchFieldName.value = fieldName
     parameterBatchFieldId.value = customFieldId
+    batchRunDateSuffix.value = ''
+    batchDependencyGraphErrors.value = []
     batchEntries.value = entries
     activeBatchIndex.value = 0
     batchFolderName.value = String(baseRecord.name || '单方案批量任务').trim()
@@ -4083,17 +4188,24 @@ async function confirmReplaceCanvas(
   }
 }
 
-async function applyAiAudiencePlan({ nodes, audienceName, workflow } = {}) {
+async function applyAiAudiencePlan({
+  nodes,
+  audienceName,
+  workflow,
+  skipReplaceConfirmation = false,
+} = {}) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
     ElMessage.warning('AI方案中没有可应用的工作台节点')
     return
   }
-  const confirmed = await confirmReplaceCanvas(
-    '当前画布已有内容，应用AI方案会替换现有状态，是否继续？',
-    '应用AI圈包方案',
-    '确认替换',
-  )
-  if (!confirmed) return
+  if (!skipReplaceConfirmation) {
+    const confirmed = await confirmReplaceCanvas(
+      '当前画布已有内容，应用AI方案会替换现有状态，是否继续？',
+      '应用AI圈包方案',
+      '确认替换',
+    )
+    if (!confirmed) return
+  }
 
   snapshotPaused.value = true
   try {
@@ -4243,6 +4355,8 @@ async function restoreActiveDefaults() {
   }
 
   const currentIndex = activeBatchIndex.value
+  batchRunDateSuffix.value = ''
+  batchDependencyGraphErrors.value = []
   batchEntries.value = batchEntries.value.map((entry) => ({
     ...entry,
     record: cloneValue(entry.sourceRecord),
@@ -4600,7 +4714,7 @@ async function ensureAutomationExtensionReady() {
     && batchRealtimeCountMethod.value === 'api'
   const requiresDirectCreateApi = batchCreateMethod.value === 'api'
     && (batchMode.value ? batchAutomationSelectedHasCreate.value : !databankAutoCalculate.value)
-  if (!databankAutoCalculate.value && !requiresCustomCrowd && !requiresAudienceTask) return true
+  if (!databankAutoCalculate.value && !requiresCustomCrowd && !requiresAudienceTask && !requiresDirectCreateApi) return true
   const minimumVersion = requiresAudienceTask || requiresRealtimeCountApi || requiresDirectCreateApi
     ? AUDIENCE_TASK_EXTENSION_VERSION
     : requiresCustomCrowd
@@ -4847,6 +4961,11 @@ function handleDataBankCommand(command) {
       }
       return
     }
+    if (singleRealtimeCountUnsupported.value && databankAutoCalculate.value) {
+      databankAutoCalculate.value = false
+      singleCreateAndCount.value = true
+      ElMessage.info(`当前包含 ${nodeList.value.length} 个行为，已切换为“建包并取数”`)
+    }
     batchAutomationDialogVisible.value = true
   }
 }
@@ -4867,6 +4986,7 @@ function openBatchAutomationDialog(scope = 'all') {
   batchEntries.value.forEach((entry) => {
     entry.executionMode = getBatchEntryExecutionMode(entry)
   })
+  compileBatchDependencyGraph()
   batchAutomationScope.value = scope === 'failed' ? 'failed' : 'all'
   const candidates = batchEntries.value
     .map((entry, index) => ({ entry, index }))
@@ -4905,7 +5025,10 @@ function buildDatedCrowdName(baseName, dateSuffix, duplicateIndex = 1) {
 }
 
 function prepareBatchCrowdNamesForRun({ force = false } = {}) {
-  const dateSuffix = getShanghaiDateSuffix()
+  const dateSuffix = force || !batchRunDateSuffix.value
+    ? getShanghaiDateSuffix()
+    : batchRunDateSuffix.value
+  batchRunDateSuffix.value = dateSuffix
   const occurrences = new Map()
   const usedNames = new Set()
   batchEntries.value.forEach((entry, index) => {
@@ -4957,6 +5080,14 @@ function updateBatchEntryCrowdName(index, value, { baseName = false } = {}) {
     crowdNameInput.value = crowdName
     if (generatedJson.value) generatedJson.value.crowdName = crowdName
   }
+  const sourceEntryId = String(entry.id || `batch-${index}`)
+  batchEntries.value.forEach((candidate) => {
+    for (const dependency of Array.isArray(candidate?.internalDependencies) ? candidate.internalDependencies : []) {
+      if (String(dependency?.sourceEntryId || '') === sourceEntryId || dependency?.sourceIndex === index) {
+        dependency.finalName = crowdName
+      }
+    }
+  })
   batchEntries.value = [...batchEntries.value]
 }
 
@@ -5032,8 +5163,19 @@ function isBatchAutomationEntrySelected(index) {
 
 function toggleBatchAutomationEntry(index, checked) {
   const selected = new Set(batchAutomationSelectedIndexes.value)
-  if (checked) selected.add(index)
-  else selected.delete(index)
+  if (checked) {
+    expandBatchIndexesWithDependencies([index]).forEach(dependencyIndex => selected.add(dependencyIndex))
+  } else {
+    const stillRequired = [...selected].some((selectedIndex) => (
+      selectedIndex !== index
+        && expandBatchIndexesWithDependencies([selectedIndex]).includes(index)
+    ))
+    if (stillRequired) {
+      ElMessage.info('该人群包是已选任务的前置包，需与后续任务一起执行')
+      return
+    }
+    selected.delete(index)
+  }
   batchAutomationSelectedIndexes.value = [...selected].sort((a, b) => a - b)
 }
 
@@ -5069,7 +5211,9 @@ function getBatchDependencySummary(entry) {
     ? '未找到'
     : first?.state === 'ambiguous'
       ? '存在重名'
-      : '计算中'
+      : first?.state === 'failed'
+        ? '前置任务失败'
+        : '计算中'
   return pending.length > 1 ? `${name} 等 ${pending.length} 项` : `${name} · ${suffix}`
 }
 
@@ -5082,7 +5226,9 @@ function getBatchDependencyTitle(entry) {
       ? '未找到'
       : item?.state === 'ambiguous'
         ? '存在多个同名包'
-        : '仍在计算'
+        : item?.state === 'failed'
+          ? '前置任务执行失败'
+          : '仍在计算'
     return `${item?.crowdName || '自定义人群'}：${state}`
   }).join('；')
 }
@@ -5112,12 +5258,215 @@ function extractCustomCrowdDependencyNames(payload) {
   return names
 }
 
+function normalizeBatchDependencyName(value) {
+  return String(value || '').trim().toLocaleLowerCase()
+}
+
+function getBatchEntryDependencyId(entry, index) {
+  return String(entry?.id || `batch-${index}`)
+}
+
+function collectBatchEntryCustomCrowdNames(entry) {
+  const names = []
+  const appendName = (value) => {
+    const normalized = String(value || '').trim()
+    const resolvedMatch = normalized.match(/^(\d+)#\|#(\d+)$/)
+    if (!normalized || (resolvedMatch && resolvedMatch[1] === resolvedMatch[2])) return
+    if (!names.some(name => normalizeBatchDependencyName(name) === normalizeBatchDependencyName(normalized))) {
+      names.push(normalized)
+    }
+  }
+  for (const node of Array.isArray(entry?.nodes) ? entry.nodes : []) {
+    if (node?.packageType !== '自定义人群') continue
+    const crowdIds = node?.formData?.crowdIds
+    const values = Array.isArray(crowdIds) ? crowdIds : [crowdIds]
+    values.forEach(appendName)
+  }
+  extractCustomCrowdDependencyNames(entry?.generatedJson).forEach(appendName)
+  return names
+}
+
+function isBatchEntryReadyAsDependency(entry) {
+  const count = normalizeCrowdCountValue(entry?.crowdCount)
+  return entry?.automationStatus === 'success'
+    && entry?.countReady === true
+    && count !== null
+    && count !== '-'
+}
+
+function compileBatchDependencyGraph() {
+  const aliasMap = new Map()
+  const graphErrors = []
+  batchEntries.value.forEach((entry, index) => {
+    entry.internalDependencies = []
+    entry.isInternalPrerequisite = false
+    entry.executionStage = 1
+    entry.dependencyGraphError = ''
+    const aliases = [entry?.baseCrowdName, entry?.crowdName]
+      .map(normalizeBatchDependencyName)
+      .filter(Boolean)
+    for (const alias of new Set(aliases)) {
+      const matches = aliasMap.get(alias) || []
+      matches.push(index)
+      aliasMap.set(alias, matches)
+    }
+  })
+
+  batchEntries.value.forEach((entry, index) => {
+    for (const originalName of collectBatchEntryCustomCrowdNames(entry)) {
+      const matches = aliasMap.get(normalizeBatchDependencyName(originalName)) || []
+      if (matches.length === 0) continue
+      if (matches.length > 1) {
+        const message = `“${originalName}”在本方案组中对应多个人群包，请先调整名称`
+        entry.dependencyGraphError = message
+        graphErrors.push(message)
+        continue
+      }
+      const sourceIndex = matches[0]
+      if (sourceIndex === index) {
+        const message = `“${entry.crowdName || originalName}”不能引用自己`
+        entry.dependencyGraphError = message
+        graphErrors.push(message)
+        continue
+      }
+      const sourceEntry = batchEntries.value[sourceIndex]
+      if (entry.internalDependencies.some(reference => reference.sourceIndex === sourceIndex)) continue
+      entry.internalDependencies.push({
+        sourceEntryId: getBatchEntryDependencyId(sourceEntry, sourceIndex),
+        sourceIndex,
+        originalName,
+        finalName: String(sourceEntry?.crowdName || '').trim(),
+      })
+      sourceEntry.isInternalPrerequisite = true
+      sourceEntry.executionMode = 'create_and_count'
+    }
+  })
+
+  const indegree = batchEntries.value.map(entry => entry.internalDependencies.length)
+  const dependents = batchEntries.value.map(() => [])
+  batchEntries.value.forEach((entry, targetIndex) => {
+    entry.internalDependencies.forEach(({ sourceIndex }) => {
+      if (dependents[sourceIndex]) dependents[sourceIndex].push(targetIndex)
+    })
+  })
+  const queue = indegree.map((degree, index) => ({ degree, index }))
+    .filter(item => item.degree === 0)
+    .map(item => item.index)
+  let visited = 0
+  while (queue.length) {
+    const sourceIndex = queue.shift()
+    visited += 1
+    for (const targetIndex of dependents[sourceIndex]) {
+      batchEntries.value[targetIndex].executionStage = Math.max(
+        Number(batchEntries.value[targetIndex].executionStage || 1),
+        Number(batchEntries.value[sourceIndex].executionStage || 1) + 1,
+      )
+      indegree[targetIndex] -= 1
+      if (indegree[targetIndex] === 0) queue.push(targetIndex)
+    }
+  }
+  if (visited !== batchEntries.value.length) {
+    const message = '方案组内的人群包存在循环引用，请调整后再执行'
+    graphErrors.push(message)
+    batchEntries.value.forEach((entry, index) => {
+      if (indegree[index] > 0) entry.dependencyGraphError = message
+    })
+  }
+
+  batchDependencyGraphErrors.value = [...new Set(graphErrors)]
+  batchEntries.value = [...batchEntries.value]
+  return batchDependencyGraphErrors.value.length === 0
+}
+
+function getBatchEntryByDependencyReference(reference) {
+  const sourceIndex = Number(reference?.sourceIndex)
+  const indexed = Number.isInteger(sourceIndex) ? batchEntries.value[sourceIndex] : null
+  if (indexed && getBatchEntryDependencyId(indexed, sourceIndex) === String(reference?.sourceEntryId || '')) {
+    return { entry: indexed, index: sourceIndex }
+  }
+  const index = batchEntries.value.findIndex((entry, entryIndex) => (
+    getBatchEntryDependencyId(entry, entryIndex) === String(reference?.sourceEntryId || '')
+  ))
+  return index >= 0 ? { entry: batchEntries.value[index], index } : null
+}
+
+function buildInternalDependencyResult(entry) {
+  const results = (Array.isArray(entry?.internalDependencies) ? entry.internalDependencies : []).map((reference) => {
+    const source = getBatchEntryByDependencyReference(reference)
+    if (!source) {
+      return { crowdName: reference?.finalName || reference?.originalName, ready: false, state: 'missing' }
+    }
+    const sourceEntry = source.entry
+    const failed = ['failed', 'login_required'].includes(sourceEntry?.automationStatus)
+    return {
+      crowdName: String(sourceEntry?.crowdName || reference?.finalName || reference?.originalName || '').trim(),
+      ready: isBatchEntryReadyAsDependency(sourceEntry),
+      state: failed ? 'failed' : (isBatchEntryReadyAsDependency(sourceEntry) ? 'ready' : 'creating'),
+    }
+  })
+  return { ready: results.length > 0 && results.every(item => item.ready), results }
+}
+
+function rewriteBatchInternalDependencyNames(entry, payload) {
+  if (!Array.isArray(entry?.internalDependencies) || entry.internalDependencies.length === 0) {
+    return typeof payload === 'string' ? payload : JSON.stringify(payload || {})
+  }
+  let parsed
+  try {
+    parsed = typeof payload === 'string' ? JSON.parse(payload) : cloneValue(payload)
+  } catch {
+    return typeof payload === 'string' ? payload : JSON.stringify(payload || {})
+  }
+  const replacements = new Map()
+  entry.internalDependencies.forEach((reference) => {
+    const source = getBatchEntryByDependencyReference(reference)
+    if (!source) return
+    const finalName = String(source.entry?.crowdName || reference?.finalName || '').trim()
+    if (!finalName) return
+    ;[reference?.originalName, reference?.finalName, source.entry?.baseCrowdName, source.entry?.crowdName]
+      .map(normalizeBatchDependencyName)
+      .filter(Boolean)
+      .forEach(alias => replacements.set(alias, finalName))
+    reference.finalName = finalName
+  })
+  for (const node of Array.isArray(parsed?.list) ? parsed.list : []) {
+    const levelOne = node?.selectionLv1
+    if (!Array.isArray(levelOne) || levelOne[0] !== 'CROWD' || levelOne[1] !== 'CUSTOM') continue
+    const crowdIds = node?.selectionLv3?.crowdIds
+    const values = Array.isArray(crowdIds) ? crowdIds : [crowdIds]
+    const rewritten = values.map(value => replacements.get(normalizeBatchDependencyName(value)) || value)
+    if (!node.selectionLv3) node.selectionLv3 = {}
+    node.selectionLv3.crowdIds = Array.isArray(crowdIds) ? rewritten : rewritten[0]
+  }
+  entry.generatedJson = cloneValue(parsed)
+  if (batchEntries.value[activeBatchIndex.value] === entry) generatedJson.value = cloneValue(parsed)
+  return JSON.stringify(parsed)
+}
+
+function expandBatchIndexesWithDependencies(indexes) {
+  const expanded = new Set(indexes)
+  const visit = (index) => {
+    const entry = batchEntries.value[index]
+    for (const reference of Array.isArray(entry?.internalDependencies) ? entry.internalDependencies : []) {
+      const source = getBatchEntryByDependencyReference(reference)
+      if (!source || expanded.has(source.index)) continue
+      expanded.add(source.index)
+      visit(source.index)
+    }
+  }
+  indexes.forEach(visit)
+  return [...expanded].sort((left, right) => (
+    Number(batchEntries.value[left]?.executionStage || 1) - Number(batchEntries.value[right]?.executionStage || 1)
+      || left - right
+  ))
+}
+
 function applyBatchDependencyResult(entry, result) {
   const dependencies = Array.isArray(result?.results) ? result.results : []
   entry.customCrowdDependencies = dependencies
   entry.dependencyCheckedAt = new Date().toISOString()
   entry.loginContext = ''
-  const blocked = dependencies.some(item => ['missing', 'ambiguous'].includes(item?.state))
+  const blocked = dependencies.some(item => ['missing', 'ambiguous', 'failed'].includes(item?.state))
   const ready = result?.ready === true && dependencies.every(item => item?.ready === true)
   if (ready) {
     entry.automationError = ''
@@ -5149,6 +5498,10 @@ function isRealtimeCountUnsupported(entry) {
 function updateBatchEntryExecutionMode(index, mode) {
   const entry = batchEntries.value[index]
   if (!entry || !['calculate_only', 'create_only', 'create_and_count'].includes(mode)) return
+  if (entry.isInternalPrerequisite && mode !== 'create_and_count') {
+    ElMessage.info('该人群包被后续任务引用，需要先建包并取得人数')
+    return
+  }
   if (mode === 'calculate_only' && isRealtimeCountUnsupported(entry)) {
     ElMessage.warning('单个人群包超过 6 个行为时不支持实时计算，请选择“建包并取数”')
     return
@@ -5181,17 +5534,42 @@ function formatCrowdCount(value) {
 
 function setSingleAutomationMode(mode) {
   if (databankAutomating.value) return
-  if (mode === 'create_only') {
-    databankAutoCalculate.value = false
+  if (['api', 'page'].includes(mode) && singleRealtimeCountUnsupported.value) {
+    ElMessage.warning('超过 6 个行为时不支持实时计算，请选择“建包并取数”')
     return
   }
+  if (mode === 'create_only') {
+    databankAutoCalculate.value = false
+    singleCreateAndCount.value = false
+    return
+  }
+  if (mode === 'create_and_count') {
+    databankAutoCalculate.value = false
+    singleCreateAndCount.value = true
+    return
+  }
+  singleCreateAndCount.value = false
   databankAutoCalculate.value = true
   batchRealtimeCountMethod.value = mode === 'api' ? 'api' : 'page'
 }
 
+function getSingleAutomationMode() {
+  if (singleCreateAndCount.value) return 'create_and_count'
+  return databankAutoCalculate.value ? 'calculate_only' : 'create_only'
+}
+
 async function confirmBatchAutomation() {
+  if (batchMode.value) compileBatchDependencyGraph()
+  if (batchMode.value && batchDependencyGraphErrors.value.length > 0) {
+    ElMessage.warning(batchDependencyGraphErrors.value[0])
+    return
+  }
   if (batchMode.value && batchRealtimeUnsupportedCount.value > 0) {
     ElMessage.warning('单个人群包超过 6 个行为时不支持实时计算，请选择“建包并取数”')
+    return
+  }
+  if (!batchMode.value && singleRealtimeCountUnsupported.value && databankAutoCalculate.value) {
+    ElMessage.warning('超过 6 个行为时不支持实时计算，请选择“建包并取数”')
     return
   }
   if (!(await ensureAutomationExtensionReady())) return
@@ -5374,6 +5752,8 @@ async function interruptBatchAutomation() {
 
   if (run) run.cancelled = true
   batchAutomationCancelling.value = true
+  if (internalDependencyResumeTimer) window.clearTimeout(internalDependencyResumeTimer)
+  internalDependencyResumeTimer = null
   cancelAllCrowdCountPolling()
   batchEntries.value.forEach((entry) => {
     if (!['running', 'checking_count', 'waiting_count'].includes(entry.automationStatus)) return
@@ -5419,9 +5799,32 @@ function queueCountPollingDecision() {
   }, 500)
 }
 
-function startCrowdCountPolling(index, { restartWindow = true } = {}) {
+function queueReadyInternalDependencyRuns() {
+  if (!batchDependencyAutoContinue.value || internalDependencyResumeTimer || !batchMode.value) return
+  internalDependencyResumeTimer = window.setTimeout(() => {
+    internalDependencyResumeTimer = null
+    if (databankAutomating.value || batchAutomationCancelling.value || !batchDependencyAutoContinue.value) return
+    const readyIndexes = batchEntries.value
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => (
+        ['waiting_dependency', 'dependency_blocked'].includes(entry?.automationStatus)
+          && Array.isArray(entry?.internalDependencies)
+          && entry.internalDependencies.length > 0
+          && buildInternalDependencyResult(entry).ready === true
+      ))
+      .map(({ index }) => index)
+    if (readyIndexes.length > 0) void startBatchAutomationFlow('current', readyIndexes)
+  }, 350)
+}
+
+function startCrowdCountPolling(index, { restartWindow = true, intervalMs = null } = {}) {
   const entry = batchEntries.value[index]
   if (!entry || entry.countReady) return
+  const pollingInterval = Number(intervalMs) > 0
+    ? Number(intervalMs)
+    : entry.isInternalPrerequisite
+      ? SINGLE_CROWD_COUNT_POLL_INTERVAL_MS
+      : CROWD_COUNT_POLL_INTERVAL_MS
   cancelCrowdCountPolling(index)
   const key = getCrowdPollingKey(entry, index)
   const poller = {
@@ -5456,9 +5859,10 @@ function startCrowdCountPolling(index, { restartWindow = true } = {}) {
       entry.crowdFound = result?.crowdFound === true
       entry.crowdId = result?.crowdId ?? entry.crowdId ?? null
       entry.crowdStatus = result?.crowdStatus || entry.crowdStatus || ''
-      if (result?.countReady === true && Number.isFinite(Number(result?.crowdCount))) {
+      const normalizedCount = normalizeCrowdCountValue(result?.crowdCount)
+      if (result?.countReady === true && normalizedCount !== null && normalizedCount !== '-') {
         entry.countReady = true
-        entry.crowdCount = Number(result.crowdCount)
+        entry.crowdCount = normalizedCount
         entry.automationStatus = 'success'
         entry.loginContext = ''
         entry.automationError = ''
@@ -5466,6 +5870,7 @@ function startCrowdCountPolling(index, { restartWindow = true } = {}) {
         crowdCountPollers.delete(key)
         batchEntries.value = [...batchEntries.value]
         syncPullBatchTutorialStatus()
+        queueReadyInternalDependencyRuns()
         maybeAutoExportBatchResults()
         return
       }
@@ -5482,10 +5887,10 @@ function startCrowdCountPolling(index, { restartWindow = true } = {}) {
         return
       }
       entry.automationStatus = 'waiting_count'
-      entry.automationError = error?.message || '本轮抓取失败，30 秒后重试'
+      entry.automationError = error?.message || `本轮抓取失败，${Math.round(pollingInterval / 1000)} 秒后重试`
     }
     batchEntries.value = [...batchEntries.value]
-    poller.timer = window.setTimeout(poll, CROWD_COUNT_POLL_INTERVAL_MS)
+    poller.timer = window.setTimeout(poll, pollingInterval)
   }
   void poll()
 }
@@ -5513,7 +5918,8 @@ async function exportBatchAudienceResults() {
         rows: batchEntries.value.map(entry => ({
           crowdName: String(entry.crowdName || '').trim(),
           crowdCount: entry.countReady === true ? normalizeCrowdCountValue(entry.crowdCount) : null,
-          parameters: JSON.stringify(entry.generatedJson || {}, null, 2),
+          countObtainedAt: entry.countReady === true ? (entry.countCompletedAt || null) : null,
+          parameters: JSON.stringify(entry.generatedJson || {}),
         })),
       }),
     })
@@ -5596,8 +6002,13 @@ function applyBatchAutomationResult(entry, executionMode, result) {
 
 async function startBatchAutomationFlow(scope = 'current', selectedIndexes = null) {
   if (databankAutomating.value || !batchMode.value) return
+  prepareBatchCrowdNamesForRun()
+  if (!compileBatchDependencyGraph()) {
+    ElMessage.warning(batchDependencyGraphErrors.value[0])
+    return
+  }
 
-  const targetIndexes = Array.isArray(selectedIndexes)
+  const requestedIndexes = Array.isArray(selectedIndexes)
     ? [...new Set(selectedIndexes)]
         .filter(index => Number.isInteger(index) && index >= 0 && index < batchEntries.value.length)
         .sort((a, b) => a - b)
@@ -5609,6 +6020,9 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
             .filter(({ entry }) => entry.automationStatus === 'failed')
             .map(({ index }) => index)
         : [activeBatchIndex.value]
+  const requestedIndexSet = new Set(requestedIndexes)
+  const targetIndexes = expandBatchIndexesWithDependencies(requestedIndexes)
+  const dependencyOnlyIndexes = new Set(targetIndexes.filter(index => !requestedIndexSet.has(index)))
   if (targetIndexes.length === 0) {
     syncPullBatchTutorialStatus()
     ElMessage.info('当前没有需要重试的失败任务')
@@ -5633,6 +6047,12 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
     for (const index of targetIndexes) {
       if (run.cancelled) break
       const entry = batchEntries.value[index]
+      if (dependencyOnlyIndexes.has(index) && (
+        isBatchEntryReadyAsDependency(entry)
+          || ['waiting_count', 'checking_count'].includes(entry?.automationStatus)
+      )) {
+        continue
+      }
       const executionMode = getBatchEntryExecutionMode(entry)
       cancelCrowdCountPolling(index)
       entry.automationStatus = 'running'
@@ -5679,7 +6099,7 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
         duration: 0,
       })
       try {
-        const jsonText = getGeneratedJsonText()
+        const jsonText = rewriteBatchInternalDependencyNames(entry, getGeneratedJsonText())
         const existingCrowd = await sendDatabankCrowdCountQuery(entry.crowdName)
         if (run.cancelled) {
           const cancelledError = new Error('用户已中断任务')
@@ -5702,6 +6122,18 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           }
           syncPullBatchTutorialStatus()
           continue
+        }
+
+        if (entry.internalDependencies.length > 0) {
+          const internalDependencyResult = buildInternalDependencyResult(entry)
+          if (!applyBatchDependencyResult(entry, internalDependencyResult)) {
+            currentPendingMessage.close()
+            batchEntries.value = [...batchEntries.value]
+            syncPullBatchTutorialStatus(entry.automationError)
+            continue
+          }
+          entry.automationStatus = 'running'
+          batchEntries.value = [...batchEntries.value]
         }
 
         const dependencyNames = extractCustomCrowdDependencyNames(jsonText)
@@ -5800,7 +6232,10 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
       batchAutomationCancelling.value = false
     }
     syncPullBatchTutorialStatus(lastErrorMessage)
-    if (!run.cancelled) maybeAutoExportBatchResults()
+    if (!run.cancelled) {
+      queueReadyInternalDependencyRuns()
+      maybeAutoExportBatchResults()
+    }
   }
 }
 
@@ -5808,56 +6243,153 @@ function retryPullAnalysisBatch() {
   void startBatchAutomationFlow('failed')
 }
 
+function waitForSingleCrowdCountInterval() {
+  return new Promise(resolve => window.setTimeout(resolve, SINGLE_CROWD_COUNT_POLL_INTERVAL_MS))
+}
+
+async function waitForSingleCrowdCount(crowdName, showAutomationStage) {
+  let pollingWindowStartedAt = Date.now()
+  let attempt = 0
+
+  while (true) {
+    showAutomationStage('人群包已就绪，1 分钟后查询人数...')
+    await waitForSingleCrowdCountInterval()
+    attempt += 1
+    showAutomationStage(`正在查询人群包人数（第 ${attempt} 次）...`)
+
+    let result = null
+    try {
+      result = await sendDatabankCrowdCountQuery(crowdName)
+      if (result?.countReady === true && Number.isFinite(Number(result?.crowdCount))) {
+        return {
+          ...result,
+          ok: true,
+          countReady: true,
+          crowdCount: Number(result.crowdCount),
+          message: `人数计算完成：${formatCrowdCount(result.crowdCount)}`,
+        }
+      }
+    } catch (error) {
+      if (error?.code === 'DATABANK_LOGIN_REQUIRED') throw error
+      showAutomationStage(`本轮查询未完成，1 分钟后重试：${error?.message || '暂未取得人数'}`)
+    }
+
+    if (Date.now() - pollingWindowStartedAt < CROWD_COUNT_POLL_WINDOW_MS) continue
+
+    const continuePolling = await ElMessageBox.confirm(
+      '人数已经查询 10 分钟，是否继续每分钟查询一次？',
+      '人数仍在计算',
+      {
+        confirmButtonText: '继续查询',
+        cancelButtonText: '暂时停止',
+        type: 'warning',
+      },
+    ).then(() => true).catch(() => false)
+
+    if (!continuePolling) {
+      return {
+        ...(result || {}),
+        ok: true,
+        countReady: false,
+        crowdCount: null,
+        countPollingPaused: true,
+        message: '人群包已创建，人数查询已暂停',
+      }
+    }
+
+    pollingWindowStartedAt = Date.now()
+    showAutomationStage('已继续查询，1 分钟后获取最新人数...')
+  }
+}
+
 async function startAutoDataBankFlow() {
   if (databankAutomating.value) return { ok: false, error: '自动化任务正在执行中' }
+  const crowdName = String(crowdNameInput.value || '').trim()
+  if (!crowdName) {
+    const errorMessage = '请先输入人群包名称'
+    ElMessage.warning(errorMessage)
+    return { ok: false, error: errorMessage }
+  }
   await buildFinalJson()
   if (!ensureGeneratedOutputReady('自动化执行')) {
     return { ok: false, error: '当前参数还没有通过执行前检查' }
   }
 
   databankAutomating.value = true
-  const pendingMessage = ElMessage({
-    message: '自动化圈人后台处理中，请稍候...',
-    type: 'info',
-    duration: 0,
-  })
+  let pendingMessage = null
+  let automationStage = ''
+  const showAutomationStage = (message) => {
+    automationStage = message
+    pendingMessage?.close()
+    pendingMessage = ElMessage({
+      message,
+      type: 'info',
+      duration: 0,
+    })
+  }
+  showAutomationStage('正在准备人群包参数...')
   try {
     const jsonText = getGeneratedJsonText()
-    const useRealtimeApi = databankAutoCalculate.value
+    const executionMode = getSingleAutomationMode()
+    const useRealtimeApi = executionMode === 'calculate_only'
       && batchRealtimeCountMethod.value === 'api'
-    const useDirectCreate = !databankAutoCalculate.value && batchCreateMethod.value === 'api'
-    const crowdName = String(crowdNameInput.value || DEFAULT_CROWD_NAME).trim()
+    const useDirectCreate = ['create_only', 'create_and_count'].includes(executionMode)
+      && batchCreateMethod.value === 'api'
     let result
     if (useRealtimeApi) {
+      showAutomationStage('正在检查同名人群包...')
       const existingCrowd = await sendDatabankCrowdCountQuery(crowdName)
-      result = existingCrowd?.crowdFound === true
-        ? {
-            ...existingCrowd,
-            ok: true,
-            crowdReused: true,
-            message: existingCrowd.countReady
-              ? `已存在同名人群包，人数 ${formatCrowdCount(existingCrowd.crowdCount)}`
-              : '已存在同名人群包，人数 -',
-          }
-        : await sendDatabankRealtimeCount(jsonText, crowdName)
+      if (existingCrowd?.crowdFound === true) {
+        result = {
+          ...existingCrowd,
+          ok: true,
+          crowdReused: true,
+          message: existingCrowd.countReady
+            ? `已存在同名人群包，人数 ${formatCrowdCount(existingCrowd.crowdCount)}`
+            : '已存在同名人群包，人数 -',
+        }
+      } else {
+        const dependencyCount = extractCustomCrowdDependencyNames(jsonText).length
+        showAutomationStage(dependencyCount > 0
+          ? `正在准备 ${dependencyCount} 个自定义人群并通过接口计算人数...`
+          : '正在检查接口环境并计算人数...')
+        result = await sendDatabankRealtimeCount(jsonText, crowdName)
+      }
     } else if (useDirectCreate) {
+      const dependencyCount = extractCustomCrowdDependencyNames(jsonText).length
+      showAutomationStage(dependencyCount > 0
+        ? `正在检查同名包和 ${dependencyCount} 个自定义人群，并通过接口创建...`
+        : '正在检查同名人群包和接口环境，并创建人群包...')
       result = await sendDatabankDirectCreate(jsonText, crowdName)
     } else {
+      showAutomationStage(executionMode === 'calculate_only'
+        ? '正在打开数据银行、导入参数并计算人数...'
+        : executionMode === 'create_and_count'
+          ? '正在打开数据银行、导入参数并创建人群包...'
+          : '正在打开数据银行、导入参数并创建人群包...')
       result = await sendMessageToDatabankExtension(
         jsonText,
-        databankAutoCalculate.value,
-        databankAutoCalculate.value ? 'calculate_only' : 'create_only',
+        executionMode === 'calculate_only',
+        executionMode,
         crowdName,
       )
     }
     if (!result?.ok) {
-      pendingMessage.close()
       const errorMessage = result?.error || result?.message || '自动化圈人失败'
       ElMessage.error(errorMessage)
       return { ok: false, error: errorMessage }
     }
-    pendingMessage.close()
-    const successMessage = useRealtimeApi && result.countReady === true && !result.crowdReused
+    if (executionMode === 'create_and_count' && result.countReady !== true) {
+      result = {
+        ...result,
+        ...(await waitForSingleCrowdCount(crowdName, showAutomationStage)),
+      }
+    }
+    const successMessage = executionMode === 'create_and_count' && result.countReady === true
+      ? `建包并取数完成：${formatCrowdCount(result.crowdCount)} 人`
+      : executionMode === 'create_and_count' && result.countPollingPaused === true
+        ? result.message
+        : useRealtimeApi && result.countReady === true && !result.crowdReused
       ? `接口取数完成：${formatCrowdCount(result.crowdCount)} 人`
       : result.directCreate === true && result.crowdCreated === true
         ? `接口建包成功：${crowdName}${result.crowdId ? `（ID ${result.crowdId}）` : ''}`
@@ -5872,13 +6404,14 @@ async function startAutoDataBankFlow() {
       directCreate: result?.directCreate === true,
       crowdCreated: result?.crowdCreated === true,
       crowdId: result?.crowdId ?? null,
+      countPollingPaused: result?.countPollingPaused === true,
     }
   } catch (error) {
-    pendingMessage.close()
     const errorMessage = error?.message || '自动化圈人失败'
-    ElMessage.error(errorMessage)
+    ElMessage.error(automationStage ? `${automationStage.replace(/^正在/, '').replace(/\.\.\.$/, '')}失败：${errorMessage}` : errorMessage)
     return { ok: false, error: errorMessage }
   } finally {
+    pendingMessage?.close()
     databankAutomating.value = false
   }
 }
@@ -6141,6 +6674,9 @@ function buildWorkbenchSessionPayload() {
       executionMode: batchExecutionMode.value,
       realtimeCountMethod: batchRealtimeCountMethod.value,
       createMethod: batchCreateMethod.value,
+      runDateSuffix: batchRunDateSuffix.value,
+      dependencyAutoContinue: batchDependencyAutoContinue.value,
+      singleExecutionMode: getSingleAutomationMode(),
       parameterFieldName: parameterBatchFieldName.value,
       parameterFieldId: parameterBatchFieldId.value,
     },
@@ -6244,10 +6780,17 @@ async function restoreWorkbenchSession() {
       batchCreateMethod.value = ['api', 'page'].includes(stored.batch.createMethod)
         ? stored.batch.createMethod
         : 'api'
+      batchRunDateSuffix.value = String(
+        stored.batch.runDateSuffix
+          || restoredEntries.find(entry => entry?.runDateSuffix)?.runDateSuffix
+          || '',
+      )
+      batchDependencyAutoContinue.value = stored.batch.dependencyAutoContinue !== false
       batchKind.value = stored.batch.kind === 'parameter' ? 'parameter' : 'solutions'
       parameterBatchFieldName.value = String(stored.batch.parameterFieldName || '')
       parameterBatchFieldId.value = String(stored.batch.parameterFieldId || '')
       batchMode.value = true
+      compileBatchDependencyGraph()
 
       const activeEntry = restoredEntries[activeBatchIndex.value]
       nodeList.value = activeEntry.nodes
@@ -6288,6 +6831,17 @@ async function restoreWorkbenchSession() {
       }
       workbenchMode.value = stored.workbenchMode === 'solution-use' ? 'solution-use' : 'free-build'
       ensureDefaultOperationPool()
+      const storedSingleMode = ['calculate_only', 'create_only', 'create_and_count'].includes(stored.batch?.singleExecutionMode)
+        ? stored.batch.singleExecutionMode
+        : 'create_only'
+      singleCreateAndCount.value = storedSingleMode === 'create_and_count'
+      databankAutoCalculate.value = storedSingleMode === 'calculate_only'
+      batchRealtimeCountMethod.value = ['api', 'page'].includes(stored.batch?.realtimeCountMethod)
+        ? stored.batch.realtimeCountMethod
+        : 'page'
+      batchCreateMethod.value = ['api', 'page'].includes(stored.batch?.createMethod)
+        ? stored.batch.createMethod
+        : 'api'
     }
 
     Object.assign(derivedSolutionMeta, {
@@ -6486,6 +7040,9 @@ watch(
     batchExecutionMode,
     batchRealtimeCountMethod,
     batchCreateMethod,
+    batchRunDateSuffix,
+    batchDependencyAutoContinue,
+    singleCreateAndCount,
     parameterBatchFieldName,
     parameterBatchFieldId,
     emptyOperationPools,

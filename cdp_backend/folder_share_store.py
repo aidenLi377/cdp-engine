@@ -233,6 +233,227 @@ class FolderShareStore:
             suffix += 1
         return candidate
 
+    @staticmethod
+    def _unique_public_root_name(conn, desired: str, parent_id: str | None) -> str:
+        base = desired.strip() or "导入的方案文件夹"
+        candidate = base
+        suffix = 1
+        while conn.execute(
+            """SELECT 1 FROM folders
+               WHERE visibility = 'public' AND parent_id IS ?
+                 AND name = ? COLLATE NOCASE""",
+            (parent_id, candidate),
+        ).fetchone() is not None:
+            candidate = f"{base} ({suffix})"
+            suffix += 1
+        return candidate
+
+    def promote_private_folder(
+        self,
+        folder_id: str,
+        owner_id: str,
+        admin_id: str,
+        *,
+        parent_folder_id: str | None = None,
+    ) -> dict:
+        """Mirror a private folder subtree into the public library atomically."""
+        now_iso = _iso(_utc_now_dt())
+        with get_db(self.db_path) as conn:
+            root = conn.execute(
+                """SELECT * FROM folders
+                   WHERE id = ? AND owner_id = ? AND visibility = 'private'""",
+                (folder_id, owner_id),
+            ).fetchone()
+            if root is None:
+                raise FolderShareAccessError()
+
+            folders = conn.execute(
+                """WITH RECURSIVE subtree(id, name, parent_id, execution_mode, depth) AS (
+                       SELECT id, name, parent_id, execution_mode, 0 FROM folders
+                       WHERE id = ? AND owner_id = ? AND visibility = 'private'
+                       UNION ALL
+                       SELECT child.id, child.name, child.parent_id, child.execution_mode, subtree.depth + 1
+                       FROM folders child
+                       JOIN subtree ON child.parent_id = subtree.id
+                       WHERE child.owner_id = ? AND child.visibility = 'private'
+                   )
+                   SELECT id, name, parent_id, execution_mode, depth FROM subtree
+                   ORDER BY depth ASC, name COLLATE NOCASE ASC, id ASC""",
+                (folder_id, owner_id, owner_id),
+            ).fetchall()
+            source_folder_ids = [row["id"] for row in folders]
+            folder_id_map: dict[str, str] = {}
+            created_folder_count = 0
+            synced_folder_count = 0
+            public_root = None
+
+            for folder in folders:
+                source_id = folder["id"]
+                is_root = source_id == folder_id
+                target_parent_id = (
+                    parent_folder_id
+                    if is_root
+                    else folder_id_map.get(folder["parent_id"])
+                )
+                existing = conn.execute(
+                    """SELECT * FROM folders
+                       WHERE visibility = 'public'
+                         AND source_folder_id = ? AND source_owner_id = ?
+                       LIMIT 1""",
+                    (source_id, owner_id),
+                ).fetchone()
+                if existing is not None:
+                    public_id = existing["id"]
+                    public_name = folder["name"] or "未命名文件夹"
+                    conn.execute(
+                        """UPDATE folders
+                           SET name = ?, parent_id = ?, execution_mode = ?,
+                               updated_by = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (
+                            public_name,
+                            target_parent_id,
+                            folder["execution_mode"] or "create_and_count",
+                            admin_id,
+                            now_iso,
+                            public_id,
+                        ),
+                    )
+                    synced_folder_count += 1
+                else:
+                    public_id = self._new_id("folder")
+                    public_name = (
+                        self._unique_public_root_name(
+                            conn,
+                            folder["name"] or "未命名文件夹",
+                            target_parent_id,
+                        )
+                        if is_root
+                        else (folder["name"] or "未命名文件夹")
+                    )
+                    conn.execute(
+                        """INSERT INTO folders (
+                               id, name, parent_id, execution_mode,
+                               source_folder_id, source_owner_id,
+                               owner_id, visibility, created_by, updated_by,
+                               created_at, updated_at
+                           ) VALUES (?, ?, ?, ?, ?, ?, NULL, 'public', ?, ?, ?, ?)""",
+                        (
+                            public_id,
+                            public_name,
+                            target_parent_id,
+                            folder["execution_mode"] or "create_and_count",
+                            source_id,
+                            owner_id,
+                            admin_id,
+                            admin_id,
+                            now_iso,
+                            now_iso,
+                        ),
+                    )
+                    created_folder_count += 1
+
+                folder_id_map[source_id] = public_id
+                if is_root:
+                    public_root = {
+                        "id": public_id,
+                        "name": public_name,
+                        "parentId": target_parent_id,
+                        "visibility": "public",
+                        "sourceFolderId": source_id,
+                        "sourceOwnerId": owner_id,
+                    }
+
+            placeholders = ",".join("?" for _ in source_folder_ids)
+            private_solutions = conn.execute(
+                f"""SELECT * FROM solutions
+                     WHERE owner_id = ? AND visibility = 'private'
+                       AND folder_id IN ({placeholders})
+                     ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                              sort_order ASC, updated_at DESC, id ASC""",
+                (owner_id, *source_folder_ids),
+            ).fetchall()
+            promoted_count = 0
+            synchronized_count = 0
+            solution_promotions = []
+
+            for solution in private_solutions:
+                target_folder_id = folder_id_map[solution["folder_id"]]
+                source_version = str(solution["_version"] or 1)
+                existing = conn.execute(
+                    """SELECT id FROM solutions
+                       WHERE visibility = 'public'
+                         AND derived_from_solution_id = ?
+                         AND derived_from_solution_version = ?
+                       LIMIT 1""",
+                    (solution["id"], source_version),
+                ).fetchone()
+                if existing is not None:
+                    public_solution_id = existing["id"]
+                    conn.execute(
+                        """UPDATE solutions
+                           SET folder_id = ?, sort_order = ?, updated_by = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (
+                            target_folder_id,
+                            solution["sort_order"],
+                            admin_id,
+                            now_iso,
+                            public_solution_id,
+                        ),
+                    )
+                    synchronized_count += 1
+                else:
+                    public_solution_id = self._new_id("solution")
+                    conn.execute(
+                        """INSERT INTO solutions (
+                               id, name, status, source, folder_id, sort_order,
+                               default_crowd_name, nodes, custom_fields,
+                               workbench_field_ids, base_published_id,
+                               derived_from_solution_id, derived_from_solution_version,
+                               _version, owner_id, visibility, created_by, updated_by,
+                               created_at, updated_at, published_at
+                           ) VALUES (?, ?, 'published', 'admin-promoted', ?, ?, ?, ?, ?, ?,
+                                     NULL, ?, ?, 1, NULL, 'public', ?, ?, ?, ?, ?)""",
+                        (
+                            public_solution_id,
+                            solution["name"] or "未命名方案",
+                            target_folder_id,
+                            solution["sort_order"],
+                            solution["default_crowd_name"] or "",
+                            solution["nodes"],
+                            solution["custom_fields"],
+                            solution["workbench_field_ids"],
+                            solution["id"],
+                            source_version,
+                            admin_id,
+                            admin_id,
+                            now_iso,
+                            now_iso,
+                            now_iso,
+                        ),
+                    )
+                    promoted_count += 1
+                solution_promotions.append(
+                    {
+                        "sourceSolutionId": solution["id"],
+                        "publicSolutionId": public_solution_id,
+                        "folderId": target_folder_id,
+                        "sourceVersion": source_version,
+                    }
+                )
+
+        return {
+            "folder": public_root,
+            "folderCount": len(folder_id_map),
+            "createdFolderCount": created_folder_count,
+            "syncedFolderCount": synced_folder_count,
+            "solutionCount": len(private_solutions),
+            "promotedCount": promoted_count,
+            "synchronizedCount": synchronized_count,
+            "solutionPromotions": solution_promotions,
+        }
+
     def import_share(self, text: str, user_id: str) -> dict:
         now = _utc_now_dt()
         now_iso = _iso(now)
