@@ -16,6 +16,9 @@ flask.log
 cdp-web/node_modules/
 DMP_PluginV2.1-CDP-Merged/node_modules/
 cdp-web/dist/
+.pnpm-store/
+cdp-web/pnpm-lock.yaml
+cdp-web/pnpm-workspace.yaml
 .worktrees/
 
 # Local agent configuration and generated artifacts

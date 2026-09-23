@@ -883,6 +883,8 @@
                 ? '取数中 · 查看'
                 : batchMode && batchDependencyWaitingCount
                   ? '等待依赖 · 查看'
+                : singlePendingCountTaskCount
+                  ? `取数中 · ${singlePendingCountTaskCount}`
                 : databankAutomating
                   ? '执行中…'
                   : '自动化圈人' }}
@@ -1242,48 +1244,7 @@
           <strong>{{ batchAutomationScope === 'failed' ? '全选待重试项' : '全选本次人群包' }}</strong>
         </el-checkbox>
         <div class="batch-picker-head-tools">
-          <div v-if="batchAutomationSelectedHasCalculate" class="batch-count-route" role="radiogroup" aria-label="只算人数的取数方式">
-            <span class="batch-count-route-label">取数方式</span>
-            <button
-              type="button"
-              :class="{ 'is-active': batchRealtimeCountMethod === 'api' }"
-              role="radio"
-              :aria-checked="batchRealtimeCountMethod === 'api'"
-              :disabled="databankAutomating"
-              title="不打开新的圈人页面，直接调用实时人数接口"
-              @click="batchRealtimeCountMethod = 'api'"
-            ><span class="batch-count-route-dot" aria-hidden="true"></span>接口直取</button>
-            <button
-              type="button"
-              :class="{ 'is-active': batchRealtimeCountMethod === 'page' }"
-              role="radio"
-              :aria-checked="batchRealtimeCountMethod === 'page'"
-              :disabled="databankAutomating"
-              title="打开数据银行圈人页面并点击计算人数"
-              @click="batchRealtimeCountMethod = 'page'"
-            ><span class="batch-count-route-dot" aria-hidden="true"></span>页面计算</button>
-          </div>
-          <div v-if="batchAutomationSelectedHasCreate" class="batch-count-route" role="radiogroup" aria-label="创建人群包的方式">
-            <span class="batch-count-route-label">建包方式</span>
-            <button
-              type="button"
-              :class="{ 'is-active': batchCreateMethod === 'api' }"
-              role="radio"
-              :aria-checked="batchCreateMethod === 'api'"
-              :disabled="databankAutomating"
-              title="先查重和预检，再通过接口直接创建；遇到安全验证会停止并提示"
-              @click="batchCreateMethod = 'api'"
-            ><span class="batch-count-route-dot" aria-hidden="true"></span>接口建包</button>
-            <button
-              type="button"
-              :class="{ 'is-active': batchCreateMethod === 'page' }"
-              role="radio"
-              :aria-checked="batchCreateMethod === 'page'"
-              :disabled="databankAutomating"
-              title="打开数据银行页面并按官方流程创建"
-              @click="batchCreateMethod = 'page'"
-            ><span class="batch-count-route-dot" aria-hidden="true"></span>页面建包</button>
-          </div>
+          <span class="batch-interface-only"><i aria-hidden="true"></i>接口执行</span>
           <span>已选 {{ batchAutomationSelectedCount }} / {{ visibleBatchAutomationEntries.length }}</span>
         </div>
       </div>
@@ -1391,6 +1352,9 @@
             <div class="batch-run-status">
               <i :class="`is-${row.entry.automationStatus || 'idle'}`" aria-hidden="true"></i>
               <span>{{ getAutomationStatusLabel(row.entry.automationStatus) }}</span>
+              <small v-if="['waiting_count', 'checking_count'].includes(row.entry.automationStatus)" class="batch-count-wait-meta">
+                {{ getCountPollingSummary(row.entry) }}
+              </small>
               <small v-if="row.entry.crowdReused">已复用同名包</small>
               <small v-else-if="getBatchDependencySummary(row.entry)" class="batch-dependency-summary">
                 {{ getBatchDependencySummary(row.entry) }}
@@ -1425,11 +1389,41 @@
       </div>
 
       <div class="batch-task-reuse-note">
-        三种操作都会先检查同名人群包，已存在则复用结果并跳过重复创建。“只算人数”可在上方切换接口或页面方式。
+        三种操作都会先检查同名人群包，已存在则复用结果并跳过重复创建；建包与取数均通过接口执行。
       </div>
     </div>
 
     <div v-else class="automation-single-panel">
+      <section v-if="singleAudienceTasks.length" class="single-count-task-stack" aria-label="单个人群包取数任务">
+        <header>
+          <span>后台取数</span>
+          <strong>{{ singlePendingCountTaskCount ? `${singlePendingCountTaskCount} 个处理中` : '全部完成' }}</strong>
+        </header>
+        <div class="single-count-task-list">
+          <article v-for="task in singleAudienceTasks" :key="task.id" class="single-count-task-row">
+            <i :class="`is-${task.automationStatus}`" aria-hidden="true"></i>
+            <span>
+              <strong :title="task.crowdName">{{ task.crowdName }}</strong>
+              <small v-if="['waiting_count', 'checking_count'].includes(task.automationStatus)">
+                {{ getCountPollingSummary(task) }}
+              </small>
+              <small v-else>{{ getSingleCountTaskStatusLabel(task) }}</small>
+            </span>
+            <b>{{ task.countReady ? formatCrowdCount(task.crowdCount) : '—' }}</b>
+            <button
+              v-if="['waiting_count', 'checking_count'].includes(task.automationStatus)"
+              type="button"
+              @click="pauseSingleAudienceCountTask(task.id)"
+            >停止</button>
+            <button
+              v-else-if="['paused_count', 'login_required'].includes(task.automationStatus)"
+              type="button"
+              @click="resumeSingleAudienceCountTask(task.id)"
+            >继续</button>
+          </article>
+        </div>
+      </section>
+
       <div class="automation-single-summary">
         <span>当前人群包</span>
         <strong>{{ crowdNameInput || DEFAULT_CROWD_NAME }}</strong>
@@ -1479,68 +1473,24 @@
             :aria-checked="databankAutoCalculate && batchRealtimeCountMethod === 'api'"
             :disabled="databankAutomating || singleRealtimeCountUnsupported"
             :title="singleRealtimeCountUnsupported ? '超过 6 个行为时不支持实时计算，请选择建包并取数' : ''"
-            @click="setSingleAutomationMode('api')"
+            @click="setSingleAutomationMode('calculate_only')"
           >
             <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><Histogram /></el-icon></span>
             <span class="automation-single-mode-copy">
-              <strong>接口取数</strong>
-              <small>快速，不开页面</small>
+              <strong>只算人数</strong>
+              <small>接口直接获取</small>
             </span>
           </button>
-          <button
-            type="button"
-            class="automation-single-mode"
-            :class="{ 'is-active': databankAutoCalculate && batchRealtimeCountMethod === 'page' }"
-            role="radio"
-            :aria-checked="databankAutoCalculate && batchRealtimeCountMethod === 'page'"
-            :disabled="databankAutomating || singleRealtimeCountUnsupported"
-            :title="singleRealtimeCountUnsupported ? '超过 6 个行为时不支持实时计算，请选择建包并取数' : ''"
-            @click="setSingleAutomationMode('page')"
-          >
-            <span class="automation-single-mode-icon" aria-hidden="true"><el-icon><Monitor /></el-icon></span>
-            <span class="automation-single-mode-copy">
-              <strong>页面取数</strong>
-              <small>打开页面计算</small>
-            </span>
-          </button>
-        </div>
-        <div
-          v-if="!databankAutoCalculate"
-          class="batch-count-route automation-create-route"
-          role="radiogroup"
-          aria-label="单个人群包的建包方式"
-        >
-          <span class="batch-count-route-label">建包方式</span>
-          <button
-            type="button"
-            :class="{ 'is-active': batchCreateMethod === 'api' }"
-            role="radio"
-            :aria-checked="batchCreateMethod === 'api'"
-            :disabled="databankAutomating"
-            @click="batchCreateMethod = 'api'"
-          ><span class="batch-count-route-dot" aria-hidden="true"></span>接口建包</button>
-          <button
-            type="button"
-            :class="{ 'is-active': batchCreateMethod === 'page' }"
-            role="radio"
-            :aria-checked="batchCreateMethod === 'page'"
-            :disabled="databankAutomating"
-            @click="batchCreateMethod = 'page'"
-          ><span class="batch-count-route-dot" aria-hidden="true"></span>页面建包</button>
         </div>
         <p class="automation-single-mode-note" :class="{ 'is-limit': singleRealtimeCountUnsupported }">
           <i aria-hidden="true"></i>
           {{ singleRealtimeCountUnsupported
             ? `当前包含 ${nodeList.length} 个行为：实时计算不可用，请选择“只圈包”或“建包并取数”。`
             : singleCreateAndCount
-              ? '先查重并创建或复用人群包，再每 1 分钟查询一次人数；10 分钟后可选择是否继续。'
+              ? '先查重并通过接口创建或复用人群包，随后按 45–75 秒随机间隔持续查询人数。'
               : !databankAutoCalculate
-                ? (batchCreateMethod === 'api'
-                    ? '先查重和预检，再通过接口直接建包；需要安全验证时会停止并提示。'
-                    : '通过数据银行页面创建，仍会先检查并跳过同名包。')
-            : batchRealtimeCountMethod === 'api'
-              ? '优先复用同名包；未创建时直接通过接口计算人数。'
-              : '优先复用同名包；未创建时打开数据银行页面计算。' }}
+                ? '先查重和预检，再通过接口直接建包；需要安全验证时会停止并提示。'
+                : '优先复用同名包；未创建时直接通过接口计算人数。' }}
         </p>
       </section>
     </div>
@@ -1586,7 +1536,7 @@
               : singleCreateAndCount
                 ? '开始建包并取数'
                 : databankAutoCalculate
-                  ? (batchRealtimeCountMethod === 'api' ? '开始接口取数' : '开始页面取数')
+                  ? '开始接口取数'
                   : '开始创建人群包' }}
           </el-button>
         </div>
@@ -1605,7 +1555,6 @@ import {
   Delete,
   FolderAdd,
   Histogram,
-  Monitor,
   RefreshLeft,
   RefreshRight,
   Search,
@@ -1679,6 +1628,11 @@ import {
   removeSessionWorkspace,
   writeSessionWorkspace,
 } from '../utils/sessionWorkspace.js'
+import {
+  getDefaultAudienceExecutionMode,
+  loadAudienceExecutionPreferences,
+  saveAudienceExecutionPreference,
+} from '../utils/audienceExecutionPreferences.js'
 import { validateWorkbenchOutput } from '../utils/workbenchValidation.js'
 import {
   PARAMETER_BATCH_TUTORIAL_ID,
@@ -1766,9 +1720,8 @@ const EXTENSION_PING_TIMEOUT_MS = 3500
 const AUTO_CALCULATE_EXTENSION_VERSION = '2.2.2'
 const CUSTOM_CROWD_EXTENSION_VERSION = '2.2.5'
 const AUDIENCE_TASK_EXTENSION_VERSION = '2.2.15'
-const CROWD_COUNT_POLL_INTERVAL_MS = 30000
-const SINGLE_CROWD_COUNT_POLL_INTERVAL_MS = 60 * 1000
-const CROWD_COUNT_POLL_WINDOW_MS = 10 * 60 * 1000
+const CROWD_COUNT_POLL_INTERVAL_MIN_MS = 45 * 1000
+const CROWD_COUNT_POLL_INTERVAL_MAX_MS = 75 * 1000
 const CROWD_NAME_MAX_LENGTH = 20
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
@@ -1978,9 +1931,11 @@ const batchAutomationCancelling = ref(false)
 const batchExporting = ref(false)
 const databankAutoCalculate = ref(false)
 const singleCreateAndCount = ref(false)
-const batchExecutionMode = ref('create_and_count')
-const batchRealtimeCountMethod = ref('page')
+const singleAudienceTasks = ref([])
+const batchExecutionMode = ref('calculate_only')
+const batchRealtimeCountMethod = ref('api')
 const batchCreateMethod = ref('api')
+const batchExecutionPreferenceKey = ref('')
 const batchRunDateSuffix = ref('')
 const batchDependencyGraphErrors = ref([])
 const batchDependencyAutoContinue = ref(true)
@@ -2014,11 +1969,12 @@ let sessionSaveTimer = null
 let sessionRestorePending = true
 let sessionPersistenceDisabled = false
 const crowdCountPollers = new Map()
-let countPollingDecisionTimer = null
-let countPollingDecisionPromise = null
+const singleAudienceCountPollers = new Map()
 let internalDependencyResumeTimer = null
 let lastAutoExportSignature = ''
 let activeBatchAutomationRun = null
+const pollingClock = ref(Date.now())
+let pollingClockTimer = null
 
 provide('solutionCenterContext', {
   isTutorialSolutionCenter: false,
@@ -2190,6 +2146,9 @@ const batchTaskProgressLabel = computed(() => {
 const batchTaskActiveName = computed(() => (
   String(batchTaskActiveRow.value?.entry?.crowdName || '').trim()
 ))
+const singlePendingCountTaskCount = computed(() => singleAudienceTasks.value.filter(task => (
+  ['waiting_count', 'checking_count'].includes(task?.automationStatus)
+)).length)
 const batchInternalPrerequisites = computed(() => (
   batchEntries.value.filter(entry => entry?.isInternalPrerequisite === true)
 ))
@@ -3284,9 +3243,10 @@ function resetBatchContext() {
   batchAutomationDialogVisible.value = false
   batchAutomationScope.value = 'current'
   batchAutomationSelectedIndexes.value = []
-  batchExecutionMode.value = 'create_and_count'
-  batchRealtimeCountMethod.value = 'page'
+  batchExecutionMode.value = 'calculate_only'
+  batchRealtimeCountMethod.value = 'api'
   batchCreateMethod.value = 'api'
+  batchExecutionPreferenceKey.value = ''
   batchRunDateSuffix.value = ''
   batchDependencyGraphErrors.value = []
   batchDependencyAutoContinue.value = true
@@ -3686,6 +3646,13 @@ async function enterBatchMode() {
 
   batchLoading.value = true
   try {
+    const executionPreferenceKey = selectedPublishedFolderId.value
+      ? `folder:${selectedPublishedFolderId.value}`
+      : `folder-name:${selectedPublishedFolderName.value || '组合方案'}`
+    const rememberedModes = loadAudienceExecutionPreferences(
+      props.sessionOwnerId,
+      executionPreferenceKey,
+    )
     const entries = []
     for (let index = 0; index < batchPreviewSolutions.value.length; index += 1) {
       const item = batchPreviewSolutions.value[index]
@@ -3701,7 +3668,8 @@ async function enterBatchMode() {
         nodes: hydratedNodes,
         sourceNodes: cloneValue(hydratedNodes),
         generatedJson: null,
-        executionMode: 'create_and_count',
+        executionMode: rememberedModes[`solution:${detail.id}`]
+          || getDefaultAudienceExecutionMode(hydratedNodes.length),
         automationStatus: 'idle',
         countReady: false,
         crowdCount: null,
@@ -3717,6 +3685,7 @@ async function enterBatchMode() {
     activeBatchIndex.value = 0
     batchFolderName.value = selectedPublishedFolderName.value || '组合方案'
     batchSourceFolderId.value = selectedPublishedFolderId.value
+    batchExecutionPreferenceKey.value = executionPreferenceKey
     batchMode.value = true
     batchPreviewVisible.value = false
     await activateBatchEntry(0, { skipPersist: true })
@@ -3807,6 +3776,13 @@ async function createParameterBatchEntries() {
   parameterBatchCreating.value = true
   try {
     const nonce = Date.now()
+    const executionPreferenceKey = `parameter:${baseRecord.id || baseRecord.name || 'solution'}`
+    const rememberedModes = loadAudienceExecutionPreferences(
+      props.sessionOwnerId,
+      executionPreferenceKey,
+    )
+    const rememberedMode = rememberedModes[`solution:${baseRecord.id || baseRecord.name || 'solution'}`]
+      || getDefaultAudienceExecutionMode(baseNodes.length)
     const entries = parameterBatchRows.value.map((row, index) => {
       const record = cloneValue(baseRecord)
       const nodes = cloneValue(baseNodes)
@@ -3828,7 +3804,7 @@ async function createParameterBatchEntries() {
         nodes,
         sourceNodes: cloneValue(nodes),
         generatedJson: null,
-        executionMode: 'create_and_count',
+        executionMode: rememberedMode,
         automationStatus: 'idle',
         countReady: false,
         crowdCount: null,
@@ -3846,6 +3822,7 @@ async function createParameterBatchEntries() {
     activeBatchIndex.value = 0
     batchFolderName.value = String(baseRecord.name || '单方案批量任务').trim()
     batchSourceFolderId.value = null
+    batchExecutionPreferenceKey.value = executionPreferenceKey
     batchMode.value = true
     parameterBatchDialogVisible.value = false
     await activateBatchEntry(0, { skipPersist: true })
@@ -5488,7 +5465,21 @@ function getExecutionModeLabel(mode) {
 function getBatchEntryExecutionMode(entry) {
   return ['calculate_only', 'create_only', 'create_and_count'].includes(entry?.executionMode)
     ? entry.executionMode
-    : 'create_and_count'
+    : getDefaultAudienceExecutionMode(entry?.nodes?.length || 0)
+}
+
+function getBatchExecutionPreferenceEntryKey(entry) {
+  const sourceId = entry?.sourceRecord?.id || entry?.record?.id || entry?.id
+  return `solution:${String(sourceId || entry?.solutionName || 'unknown')}`
+}
+
+function rememberBatchEntryExecutionMode(entry, mode) {
+  saveAudienceExecutionPreference(
+    props.sessionOwnerId,
+    batchExecutionPreferenceKey.value,
+    getBatchExecutionPreferenceEntryKey(entry),
+    mode,
+  )
 }
 
 function isRealtimeCountUnsupported(entry) {
@@ -5507,6 +5498,7 @@ function updateBatchEntryExecutionMode(index, mode) {
     return
   }
   entry.executionMode = mode
+  rememberBatchEntryExecutionMode(entry, mode)
   batchEntries.value = [...batchEntries.value]
 }
 
@@ -5534,7 +5526,7 @@ function formatCrowdCount(value) {
 
 function setSingleAutomationMode(mode) {
   if (databankAutomating.value) return
-  if (['api', 'page'].includes(mode) && singleRealtimeCountUnsupported.value) {
+  if (mode === 'calculate_only' && singleRealtimeCountUnsupported.value) {
     ElMessage.warning('超过 6 个行为时不支持实时计算，请选择“建包并取数”')
     return
   }
@@ -5550,7 +5542,7 @@ function setSingleAutomationMode(mode) {
   }
   singleCreateAndCount.value = false
   databankAutoCalculate.value = true
-  batchRealtimeCountMethod.value = mode === 'api' ? 'api' : 'page'
+  batchRealtimeCountMethod.value = 'api'
 }
 
 function getSingleAutomationMode() {
@@ -5728,8 +5720,6 @@ function cancelAllCrowdCountPolling() {
     if (poller.timer) window.clearTimeout(poller.timer)
   }
   crowdCountPollers.clear()
-  if (countPollingDecisionTimer) window.clearTimeout(countPollingDecisionTimer)
-  countPollingDecisionTimer = null
 }
 
 async function interruptBatchAutomation() {
@@ -5776,27 +5766,155 @@ async function interruptBatchAutomation() {
   }
 }
 
-function queueCountPollingDecision() {
-  if (countPollingDecisionTimer || countPollingDecisionPromise) return
-  countPollingDecisionTimer = window.setTimeout(() => {
-    countPollingDecisionTimer = null
-    countPollingDecisionPromise = ElMessageBox.confirm(
-      '已有任务抓取超过 10 分钟，是否继续抓取人数？',
-      '人数仍在计算',
-      {
-        confirmButtonText: '继续抓取',
-        cancelButtonText: '暂不抓取',
-        type: 'warning',
-      },
-    )
-      .then(() => resumePausedCountPolling())
-      .catch(() => {
-        ElMessage.info('人数抓取已暂停，可稍后在任务管理中继续')
-      })
-      .finally(() => {
-        countPollingDecisionPromise = null
-      })
-  }, 500)
+function getRandomCountPollingIntervalMs(random = Math.random) {
+  const spread = CROWD_COUNT_POLL_INTERVAL_MAX_MS - CROWD_COUNT_POLL_INTERVAL_MIN_MS
+  return CROWD_COUNT_POLL_INTERVAL_MIN_MS + Math.round(Math.max(0, Math.min(1, random())) * spread)
+}
+
+function formatPollingElapsed(startedAt) {
+  const elapsedMs = Math.max(0, pollingClock.value - Number(startedAt || pollingClock.value))
+  const totalMinutes = Math.floor(elapsedMs / 60000)
+  if (totalMinutes < 1) return '不足 1 分钟'
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return hours > 0 ? `${hours}小时${minutes}分` : `${minutes}分钟`
+}
+
+function getCountPollingSummary(entry) {
+  const attempts = Math.max(0, Number(entry?.countPollAttempts) || 0)
+  return `已等待 ${formatPollingElapsed(entry?.countPollingStartedAt)} · 已查询 ${attempts} 次`
+}
+
+function getSingleCountTaskStatusLabel(task) {
+  return {
+    success: task?.countReady && task?.countCompletedAt
+      ? `完成于 ${new Date(task.countCompletedAt).toLocaleTimeString('zh-CN', { hour12: false })}`
+      : '已完成',
+    paused_count: '已手动停止',
+    login_required: '登录失效，等待继续',
+    failed: task?.automationError || '查询失败',
+  }[task?.automationStatus] || '等待查询'
+}
+
+function cancelSingleAudienceCountPolling(taskId) {
+  const poller = singleAudienceCountPollers.get(taskId)
+  if (!poller) return
+  poller.cancelled = true
+  if (poller.timer) window.clearTimeout(poller.timer)
+  singleAudienceCountPollers.delete(taskId)
+}
+
+function startSingleAudienceCountPolling(taskId, { restart = false } = {}) {
+  const task = singleAudienceTasks.value.find(item => item.id === taskId)
+  if (!task || task.countReady) return
+  cancelSingleAudienceCountPolling(taskId)
+  const poller = { cancelled: false, timer: null }
+  singleAudienceCountPollers.set(taskId, poller)
+  if (restart || !task.countPollingStartedAt) task.countPollingStartedAt = Date.now()
+  if (restart) task.countPollAttempts = 0
+  task.automationStatus = 'waiting_count'
+  task.automationError = ''
+
+  const scheduleNext = () => {
+    if (poller.cancelled) return
+    const intervalMs = getRandomCountPollingIntervalMs()
+    task.countNextPollAt = new Date(Date.now() + intervalMs).toISOString()
+    singleAudienceTasks.value = [...singleAudienceTasks.value]
+    scheduleWorkbenchSessionSave()
+    poller.timer = window.setTimeout(poll, intervalMs)
+  }
+
+  const poll = async () => {
+    if (poller.cancelled) return
+    task.automationStatus = 'checking_count'
+    task.countPollAttempts = (Number(task.countPollAttempts) || 0) + 1
+    task.countLastCheckedAt = new Date().toISOString()
+    task.countNextPollAt = null
+    singleAudienceTasks.value = [...singleAudienceTasks.value]
+    try {
+      const result = await sendDatabankCrowdCountQuery(task.crowdName)
+      if (poller.cancelled) return
+      const normalizedCount = normalizeCrowdCountValue(result?.crowdCount)
+      if (result?.countReady === true && normalizedCount !== null && normalizedCount !== '-') {
+        task.countReady = true
+        task.crowdCount = normalizedCount
+        task.crowdId = result?.crowdId ?? task.crowdId ?? null
+        task.automationStatus = 'success'
+        task.countCompletedAt = new Date().toISOString()
+        task.automationError = ''
+        singleAudienceCountPollers.delete(taskId)
+        singleAudienceTasks.value = [...singleAudienceTasks.value]
+        scheduleWorkbenchSessionSave()
+        ElMessage.success(`${task.crowdName}：人数 ${formatCrowdCount(normalizedCount)}`)
+        return
+      }
+      task.automationStatus = 'waiting_count'
+      task.automationError = result?.crowdFound === true ? '人群包人数仍在计算' : '正在等待人群包进入列表'
+    } catch (error) {
+      if (poller.cancelled) return
+      if (error?.code === 'DATABANK_LOGIN_REQUIRED') {
+        task.automationStatus = 'login_required'
+        task.automationError = error.message
+        singleAudienceCountPollers.delete(taskId)
+        singleAudienceTasks.value = [...singleAudienceTasks.value]
+        scheduleWorkbenchSessionSave()
+        ElMessage.error('数据引擎登录已失效，请重新登录后继续查询人数')
+        return
+      }
+      task.automationStatus = 'waiting_count'
+      task.automationError = error?.message || '本轮查询未完成，将自动重试'
+    }
+    scheduleNext()
+  }
+
+  scheduleNext()
+}
+
+function createSingleAudienceCountTask(crowdName, result = {}) {
+  const task = {
+    id: `single_count_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    crowdName,
+    crowdId: result?.crowdId ?? null,
+    automationStatus: 'waiting_count',
+    automationError: '',
+    countReady: false,
+    crowdCount: null,
+    countPollingStartedAt: Date.now(),
+    countPollAttempts: 0,
+    countLastCheckedAt: null,
+    countNextPollAt: null,
+    createdAt: new Date().toISOString(),
+  }
+  singleAudienceTasks.value = [task, ...singleAudienceTasks.value].slice(0, 20)
+  startSingleAudienceCountPolling(task.id)
+  scheduleWorkbenchSessionSave()
+  return task
+}
+
+function pauseSingleAudienceCountTask(taskId) {
+  const task = singleAudienceTasks.value.find(item => item.id === taskId)
+  if (!task) return
+  cancelSingleAudienceCountPolling(taskId)
+  task.automationStatus = 'paused_count'
+  task.countNextPollAt = null
+  singleAudienceTasks.value = [...singleAudienceTasks.value]
+  scheduleWorkbenchSessionSave()
+}
+
+function resumeSingleAudienceCountTask(taskId) {
+  startSingleAudienceCountPolling(taskId)
+}
+
+function resumeRestoredSingleAudienceCountTasks() {
+  singleAudienceTasks.value
+    .filter(task => task?.automationStatus === 'waiting_count' && !task?.countReady)
+    .forEach(task => startSingleAudienceCountPolling(task.id))
+}
+
+function cancelAllSingleAudienceCountPolling() {
+  for (const taskId of singleAudienceCountPollers.keys()) {
+    cancelSingleAudienceCountPolling(taskId)
+  }
 }
 
 function queueReadyInternalDependencyRuns() {
@@ -5820,11 +5938,6 @@ function queueReadyInternalDependencyRuns() {
 function startCrowdCountPolling(index, { restartWindow = true, intervalMs = null } = {}) {
   const entry = batchEntries.value[index]
   if (!entry || entry.countReady) return
-  const pollingInterval = Number(intervalMs) > 0
-    ? Number(intervalMs)
-    : entry.isInternalPrerequisite
-      ? SINGLE_CROWD_COUNT_POLL_INTERVAL_MS
-      : CROWD_COUNT_POLL_INTERVAL_MS
   cancelCrowdCountPolling(index)
   const key = getCrowdPollingKey(entry, index)
   const poller = {
@@ -5835,6 +5948,9 @@ function startCrowdCountPolling(index, { restartWindow = true, intervalMs = null
       : Number(entry.countPollingStartedAt),
   }
   entry.countPollingStartedAt = poller.startedAt
+  entry.countPollAttempts = restartWindow ? 0 : (Number(entry.countPollAttempts) || 0)
+  entry.countLastCheckedAt = null
+  entry.countNextPollAt = null
   entry.loginContext = 'count'
   entry.automationStatus = 'waiting_count'
   entry.automationError = ''
@@ -5843,14 +5959,9 @@ function startCrowdCountPolling(index, { restartWindow = true, intervalMs = null
 
   const poll = async () => {
     if (poller.cancelled) return
-    if (Date.now() - poller.startedAt >= CROWD_COUNT_POLL_WINDOW_MS) {
-      crowdCountPollers.delete(key)
-      entry.automationStatus = 'paused_count'
-      entry.automationError = '已抓取 10 分钟，等待确认是否继续'
-      batchEntries.value = [...batchEntries.value]
-      queueCountPollingDecision()
-      return
-    }
+    entry.countPollAttempts = (Number(entry.countPollAttempts) || 0) + 1
+    entry.countLastCheckedAt = new Date().toISOString()
+    entry.countNextPollAt = null
     entry.automationStatus = 'checking_count'
     batchEntries.value = [...batchEntries.value]
     try {
@@ -5887,8 +5998,12 @@ function startCrowdCountPolling(index, { restartWindow = true, intervalMs = null
         return
       }
       entry.automationStatus = 'waiting_count'
-      entry.automationError = error?.message || `本轮抓取失败，${Math.round(pollingInterval / 1000)} 秒后重试`
+      entry.automationError = error?.message || '本轮查询未完成，将自动重试'
     }
+    const pollingInterval = Number(intervalMs) > 0
+      ? Number(intervalMs)
+      : getRandomCountPollingIntervalMs()
+    entry.countNextPollAt = new Date(Date.now() + pollingInterval).toISOString()
     batchEntries.value = [...batchEntries.value]
     poller.timer = window.setTimeout(poll, pollingInterval)
   }
@@ -6069,6 +6184,9 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
       entry.dependencyRefreshing = false
       entry.loginContext = ''
       entry.countPollingStartedAt = null
+      entry.countPollAttempts = 0
+      entry.countLastCheckedAt = null
+      entry.countNextPollAt = null
       batchEntries.value = [...batchEntries.value]
       syncPullBatchTutorialStatus()
       try {
@@ -6151,21 +6269,9 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           batchEntries.value = [...batchEntries.value]
         }
 
-        const useRealtimeApi = executionMode === 'calculate_only'
-          && batchRealtimeCountMethod.value === 'api'
-        const useDirectCreate = ['create_only', 'create_and_count'].includes(executionMode)
-          && batchCreateMethod.value === 'api'
-        const result = useRealtimeApi
+        const result = executionMode === 'calculate_only'
           ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id)
-          : useDirectCreate
-            ? await sendDatabankDirectCreate(jsonText, entry.crowdName, run.id)
-          : await sendMessageToDatabankExtension(
-              jsonText,
-              false,
-              executionMode,
-              entry.crowdName,
-              run.id,
-            )
+          : await sendDatabankDirectCreate(jsonText, entry.crowdName, run.id)
         if (run.cancelled) {
           const cancelledError = new Error('用户已中断任务')
           cancelledError.cancelled = true
@@ -6243,65 +6349,6 @@ function retryPullAnalysisBatch() {
   void startBatchAutomationFlow('failed')
 }
 
-function waitForSingleCrowdCountInterval() {
-  return new Promise(resolve => window.setTimeout(resolve, SINGLE_CROWD_COUNT_POLL_INTERVAL_MS))
-}
-
-async function waitForSingleCrowdCount(crowdName, showAutomationStage) {
-  let pollingWindowStartedAt = Date.now()
-  let attempt = 0
-
-  while (true) {
-    showAutomationStage('人群包已就绪，1 分钟后查询人数...')
-    await waitForSingleCrowdCountInterval()
-    attempt += 1
-    showAutomationStage(`正在查询人群包人数（第 ${attempt} 次）...`)
-
-    let result = null
-    try {
-      result = await sendDatabankCrowdCountQuery(crowdName)
-      if (result?.countReady === true && Number.isFinite(Number(result?.crowdCount))) {
-        return {
-          ...result,
-          ok: true,
-          countReady: true,
-          crowdCount: Number(result.crowdCount),
-          message: `人数计算完成：${formatCrowdCount(result.crowdCount)}`,
-        }
-      }
-    } catch (error) {
-      if (error?.code === 'DATABANK_LOGIN_REQUIRED') throw error
-      showAutomationStage(`本轮查询未完成，1 分钟后重试：${error?.message || '暂未取得人数'}`)
-    }
-
-    if (Date.now() - pollingWindowStartedAt < CROWD_COUNT_POLL_WINDOW_MS) continue
-
-    const continuePolling = await ElMessageBox.confirm(
-      '人数已经查询 10 分钟，是否继续每分钟查询一次？',
-      '人数仍在计算',
-      {
-        confirmButtonText: '继续查询',
-        cancelButtonText: '暂时停止',
-        type: 'warning',
-      },
-    ).then(() => true).catch(() => false)
-
-    if (!continuePolling) {
-      return {
-        ...(result || {}),
-        ok: true,
-        countReady: false,
-        crowdCount: null,
-        countPollingPaused: true,
-        message: '人群包已创建，人数查询已暂停',
-      }
-    }
-
-    pollingWindowStartedAt = Date.now()
-    showAutomationStage('已继续查询，1 分钟后获取最新人数...')
-  }
-}
-
 async function startAutoDataBankFlow() {
   if (databankAutomating.value) return { ok: false, error: '自动化任务正在执行中' }
   const crowdName = String(crowdNameInput.value || '').trim()
@@ -6331,12 +6378,8 @@ async function startAutoDataBankFlow() {
   try {
     const jsonText = getGeneratedJsonText()
     const executionMode = getSingleAutomationMode()
-    const useRealtimeApi = executionMode === 'calculate_only'
-      && batchRealtimeCountMethod.value === 'api'
-    const useDirectCreate = ['create_only', 'create_and_count'].includes(executionMode)
-      && batchCreateMethod.value === 'api'
     let result
-    if (useRealtimeApi) {
+    if (executionMode === 'calculate_only') {
       showAutomationStage('正在检查同名人群包...')
       const existingCrowd = await sendDatabankCrowdCountQuery(crowdName)
       if (existingCrowd?.crowdFound === true) {
@@ -6355,24 +6398,12 @@ async function startAutoDataBankFlow() {
           : '正在检查接口环境并计算人数...')
         result = await sendDatabankRealtimeCount(jsonText, crowdName)
       }
-    } else if (useDirectCreate) {
+    } else {
       const dependencyCount = extractCustomCrowdDependencyNames(jsonText).length
       showAutomationStage(dependencyCount > 0
         ? `正在检查同名包和 ${dependencyCount} 个自定义人群，并通过接口创建...`
         : '正在检查同名人群包和接口环境，并创建人群包...')
       result = await sendDatabankDirectCreate(jsonText, crowdName)
-    } else {
-      showAutomationStage(executionMode === 'calculate_only'
-        ? '正在打开数据银行、导入参数并计算人数...'
-        : executionMode === 'create_and_count'
-          ? '正在打开数据银行、导入参数并创建人群包...'
-          : '正在打开数据银行、导入参数并创建人群包...')
-      result = await sendMessageToDatabankExtension(
-        jsonText,
-        executionMode === 'calculate_only',
-        executionMode,
-        crowdName,
-      )
     }
     if (!result?.ok) {
       const errorMessage = result?.error || result?.message || '自动化圈人失败'
@@ -6380,16 +6411,14 @@ async function startAutoDataBankFlow() {
       return { ok: false, error: errorMessage }
     }
     if (executionMode === 'create_and_count' && result.countReady !== true) {
-      result = {
-        ...result,
-        ...(await waitForSingleCrowdCount(crowdName, showAutomationStage)),
-      }
+      createSingleAudienceCountTask(crowdName, result)
+      result = { ...result, backgroundCountTask: true }
     }
     const successMessage = executionMode === 'create_and_count' && result.countReady === true
       ? `建包并取数完成：${formatCrowdCount(result.crowdCount)} 人`
-      : executionMode === 'create_and_count' && result.countPollingPaused === true
-        ? result.message
-        : useRealtimeApi && result.countReady === true && !result.crowdReused
+      : executionMode === 'create_and_count' && result.backgroundCountTask === true
+        ? '人群包已创建，正在后台等待人数'
+        : executionMode === 'calculate_only' && result.countReady === true && !result.crowdReused
       ? `接口取数完成：${formatCrowdCount(result.crowdCount)} 人`
       : result.directCreate === true && result.crowdCreated === true
         ? `接口建包成功：${crowdName}${result.crowdId ? `（ID ${result.crowdId}）` : ''}`
@@ -6404,7 +6433,7 @@ async function startAutoDataBankFlow() {
       directCreate: result?.directCreate === true,
       crowdCreated: result?.crowdCreated === true,
       crowdId: result?.crowdId ?? null,
-      countPollingPaused: result?.countPollingPaused === true,
+      backgroundCountTask: result?.backgroundCountTask === true,
     }
   } catch (error) {
     const errorMessage = error?.message || '自动化圈人失败'
@@ -6651,6 +6680,7 @@ function buildWorkbenchSessionPayload() {
     loadedSolutionRecord: cloneValue(loadedSolutionRecord.value),
     loadedSolutionFieldIds: [...loadedSolutionFieldIds.value],
     generatedJson: cloneValue(generatedJson.value),
+    singleAudienceTasks: cloneValue(singleAudienceTasks.value),
     derivedSolutionMeta: cloneValue(toRaw(derivedSolutionMeta)),
     ui: {
       jsonViewMode: jsonViewMode.value,
@@ -6674,6 +6704,7 @@ function buildWorkbenchSessionPayload() {
       executionMode: batchExecutionMode.value,
       realtimeCountMethod: batchRealtimeCountMethod.value,
       createMethod: batchCreateMethod.value,
+      executionPreferenceKey: batchExecutionPreferenceKey.value,
       runDateSuffix: batchRunDateSuffix.value,
       dependencyAutoContinue: batchDependencyAutoContinue.value,
       singleExecutionMode: getSingleAutomationMode(),
@@ -6708,6 +6739,14 @@ async function restoreWorkbenchSession() {
 
   snapshotPaused.value = true
   try {
+    singleAudienceTasks.value = (Array.isArray(stored.singleAudienceTasks)
+      ? stored.singleAudienceTasks
+      : []).map(task => ({
+      ...cloneValue(task),
+      automationStatus: task?.automationStatus === 'checking_count'
+        ? 'waiting_count'
+        : (task?.automationStatus || 'paused_count'),
+    })).slice(0, 20)
     const ui = stored.ui || {}
     emptyOperationPools.value = []
     jsonViewMode.value = ['summary', 'json'].includes(ui.jsonViewMode) ? ui.jsonViewMode : 'summary'
@@ -6742,7 +6781,7 @@ async function restoreWorkbenchSession() {
             ? entry.executionMode
             : (['calculate_only', 'create_only', 'create_and_count'].includes(stored.batch?.executionMode)
                 ? stored.batch.executionMode
-                : 'create_and_count'),
+                : getDefaultAudienceExecutionMode(nodes.length)),
           automationStatus: wasInterrupted
             ? 'failed'
             : wasPolling
@@ -6773,13 +6812,12 @@ async function restoreWorkbenchSession() {
         : 'current'
       batchExecutionMode.value = ['calculate_only', 'create_only', 'create_and_count'].includes(stored.batch.executionMode)
         ? stored.batch.executionMode
-        : 'create_and_count'
-      batchRealtimeCountMethod.value = ['api', 'page'].includes(stored.batch.realtimeCountMethod)
-        ? stored.batch.realtimeCountMethod
-        : 'page'
-      batchCreateMethod.value = ['api', 'page'].includes(stored.batch.createMethod)
-        ? stored.batch.createMethod
-        : 'api'
+        : 'calculate_only'
+      batchRealtimeCountMethod.value = 'api'
+      batchCreateMethod.value = 'api'
+      batchExecutionPreferenceKey.value = String(stored.batch.executionPreferenceKey || (
+        stored.batch.sourceFolderId ? `folder:${stored.batch.sourceFolderId}` : ''
+      ))
       batchRunDateSuffix.value = String(
         stored.batch.runDateSuffix
           || restoredEntries.find(entry => entry?.runDateSuffix)?.runDateSuffix
@@ -6836,12 +6874,8 @@ async function restoreWorkbenchSession() {
         : 'create_only'
       singleCreateAndCount.value = storedSingleMode === 'create_and_count'
       databankAutoCalculate.value = storedSingleMode === 'calculate_only'
-      batchRealtimeCountMethod.value = ['api', 'page'].includes(stored.batch?.realtimeCountMethod)
-        ? stored.batch.realtimeCountMethod
-        : 'page'
-      batchCreateMethod.value = ['api', 'page'].includes(stored.batch?.createMethod)
-        ? stored.batch.createMethod
-        : 'api'
+      batchRealtimeCountMethod.value = 'api'
+      batchCreateMethod.value = 'api'
     }
 
     Object.assign(derivedSolutionMeta, {
@@ -7104,6 +7138,9 @@ function disableSessionPersistence() {
 }
 
 onMounted(async () => {
+  pollingClockTimer = window.setInterval(() => {
+    pollingClock.value = Date.now()
+  }, 1000)
   window.addEventListener(CONFIG_VERSION_EVENT, handleConfigVersionChanged)
   window.addEventListener('cdp:workspace-session-clearing', disableSessionPersistence)
   window.addEventListener('cdp:tutorial-confirm-automation', handleTutorialAutomationConfirmed)
@@ -7115,6 +7152,7 @@ onMounted(async () => {
   await Promise.all([loadPackages(), loadPublishedSolutions()])
   const restored = await restoreWorkbenchSession()
   sessionRestorePending = false
+  resumeRestoredSingleAudienceCountTasks()
   if (queuedAiCommand) {
     const command = queuedAiCommand
     queuedAiCommand = null
@@ -7164,6 +7202,9 @@ onActivated(() => {
 
 onBeforeUnmount(() => {
   cancelAllCrowdCountPolling()
+  cancelAllSingleAudienceCountPolling()
+  if (pollingClockTimer) window.clearInterval(pollingClockTimer)
+  pollingClockTimer = null
   clearTimeout(saveTimer)
   clearTimeout(jsonTimer)
   clearTimeout(sessionSaveTimer)

@@ -34,18 +34,16 @@ test('task center enables only ready multi-condition tags with plain status copy
   assert.doesNotMatch(source, /:disabled="tag\.needCondition"/)
 })
 
-test('DMP flow continues from search matching into portrait extraction', () => {
+test('DMP flow replaces page navigation with direct API extraction while preserving selected tag order', () => {
   const start = source.indexOf('async function executeDmp')
   const end = source.indexOf('async function executeViaExtension', start)
   const dmpFlow = source.slice(start, end)
-  const crowdIdCheckAt = dmpFlow.indexOf('!phase1.crowdId')
-  const portraitWaitAt = dmpFlow.indexOf('CDP_AUTOMATE_DMP_WAIT_PORTRAIT')
-  const extractAt = dmpFlow.indexOf('CDP_AUTOMATE_DMP_EXTRACT')
 
-  assert.ok(crowdIdCheckAt >= 0)
-  assert.ok(portraitWaitAt > crowdIdCheckAt)
-  assert.ok(extractAt > portraitWaitAt)
-  assert.doesNotMatch(dmpFlow, /searchOnly/)
+  assert.match(dmpFlow, /sendToExtension\('CDP_DMP_DIRECT_EXTRACT'/)
+  assert.match(dmpFlow, /selectedTags: orderedSelectedTagIds\.value/)
+  assert.match(dmpFlow, /runId: run\.id/)
+  assert.match(dmpFlow, /return result/)
+  assert.doesNotMatch(dmpFlow, /CDP_AUTOMATE_DMP(?:_WAIT_PORTRAIT|_EXTRACT)?/)
 })
 
 test('DataBank flow supports explicit auto apply while preserving manual confirmation pages by default', () => {
@@ -78,8 +76,8 @@ test('task center keeps single run actions and adds batch paste entry points', (
   assert.doesNotMatch(source, /@click="run(?:Databank|Dmp)">测试<\/el-button>/)
 })
 
-test('task center requires the fixed extension patch version', () => {
-  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.11'/)
+test('task center requires the direct DMP extraction extension version', () => {
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.18'/)
   assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
   assert.match(source, /actual\[index\] < expected\[index\]/)
 })

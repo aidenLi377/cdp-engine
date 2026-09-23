@@ -11,7 +11,7 @@ const manifest = JSON.parse(read('manifest.json'))
 
 test('merged manifest preserves DMP Copilot and adds CDP task execution surfaces', () => {
   assert.equal(manifest.manifest_version, 3)
-  assert.equal(manifest.version, '2.2.15')
+  assert.equal(manifest.version, '2.2.18')
   assert.equal(manifest.background.service_worker, 'background.js')
   for (const permission of ['storage', 'clipboardWrite', 'tabs', 'scripting', 'webRequest']) {
     assert.ok(manifest.permissions.includes(permission), `missing permission: ${permission}`)
@@ -82,6 +82,8 @@ test('CDP message bridge and automation handlers use renamed collision-free file
   assert.match(databank, /CROWD_CREATE_PREFLIGHT_PATH/)
   assert.match(databank, /CROWD_CREATE_PATH/)
   assert.match(bridge, /CDP_AUTOMATE_DMP_EXTRACT/)
+  assert.match(bridge, /CDP_DMP_DIRECT_EXTRACT/)
+  assert.match(background, /runDmpDirectExtract/)
   assert.match(background, /databank-automation\.js/)
   assert.match(background, /cdp-dmp-automation\.js/)
   assert.doesNotMatch(background, /\['content\.js'\]/)
@@ -90,6 +92,19 @@ test('CDP message bridge and automation handlers use renamed collision-free file
   assert.match(dmpAutomation, /__dmpAutomationContentScriptLoaded/)
   assert.match(dmpAutomation, /AUTOMATE_DMP_WAIT_PORTRAIT/)
   assert.match(dmpAutomation, /AUTOMATE_DMP_EXTRACT/)
+})
+
+test('DMP direct extraction captures a real portrait payload and preserves the shared result core', () => {
+  const content = read('content.js')
+  const background = read('background.js')
+  const resultCore = read('dmp-result-core.js')
+
+  assert.match(content, /DMP_CAPTURE_ANALYSIS_CONTEXT/)
+  assert.match(background, /DMP_ANALYSIS_CONTEXT_KEY/)
+  assert.match(background, /effectQuery|dmpAnalysisContext\.payload/)
+  assert.match(background, /DmpResultCore\.buildRequest/)
+  assert.match(background, /DmpResultCore\.finalizeRows/)
+  assert.match(resultCore, /function finalizeRows/)
 })
 
 test('merged extension shares DMP settings and loads the result core before automation', () => {

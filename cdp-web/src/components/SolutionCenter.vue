@@ -707,7 +707,7 @@
 
         <div class="folder-share-assurance">
           <span aria-hidden="true">✓</span>
-          <p>导入后将成为你账号下可独立编辑的个人草稿；原分享者后续修改不会同步到这里。</p>
+          <p>导入后将直接成为你账号下的已发布方案；需要修改时可创建编辑草稿。原分享者后续修改不会同步。</p>
         </div>
       </div>
 
@@ -2677,7 +2677,7 @@ async function confirmFolderShareImport() {
       await Promise.all([loadFolders(), loadSolutions()])
     }
     const suffix = libraryScope.value === 'mine' ? '' : '，可在“我的方案”中查看'
-    ElMessage.success(`「${imported.folder?.name || folderSharePreview.value?.folderName || '分享文件夹'}」已导入为可独立编辑的个人草稿${suffix}`)
+    ElMessage.success(`「${imported.folder?.name || folderSharePreview.value?.folderName || '分享文件夹'}」已导入为个人已发布方案${suffix}`)
     folderSharePreview.value = null
     folderShareText.value = ''
   } catch (error) {

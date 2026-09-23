@@ -180,6 +180,21 @@ test('bridge forwards and returns shared DMP settings', () => {
   assert.deepEqual(harness.posted[0].payload.settings.readyTagIds, ['200'])
 })
 
+test('bridge forwards normalized multi-label direct DMP extraction', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_DMP_DIRECT_EXTRACT',
+    requestId: 'dmp-direct-1',
+    crowdName: '接口试验包',
+    selectedTags: ['114554', '114555', '114554'],
+  })
+  assert.equal(harness.forwarded[0].type, 'CDP_DMP_DIRECT_EXTRACT')
+  assert.equal(harness.forwarded[0].crowdName, '接口试验包')
+  assert.deepEqual(Array.from(harness.forwarded[0].selectedTags), ['114554', '114555'])
+  assert.equal(harness.posted[0].payload.requestId, 'dmp-direct-1')
+})
+
 test('bridge forwards hard-stop requests with the correlated run id and acknowledgement', () => {
   const harness = createHarness()
   harness.dispatch({

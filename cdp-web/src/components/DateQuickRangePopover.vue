@@ -31,14 +31,16 @@
           :key="item.key"
           type="button"
           class="date-quick-range-option"
-          @click="selectRange(item.dateRange)"
+          :disabled="item.disabled"
+          :title="item.disabled ? '今天尚无可用的完整日期' : ''"
+          @click="selectRange(item)"
         >
           <span class="date-quick-range-option-label">{{ item.label }}</span>
           <span class="date-quick-range-option-value">{{ formatRange(item.dateRange) }}</span>
         </button>
       </section>
 
-      <div class="date-quick-range-note">日周期以昨天为结束日，月周期不含本月</div>
+      <div class="date-quick-range-note">MTD、YTD 与日周期均截至昨天；完整月周期不含本月</div>
     </div>
   </el-popover>
 </template>
@@ -65,8 +67,9 @@ function formatRange(dateRange) {
     .join(' 至 ')
 }
 
-function selectRange(dateRange) {
-  emit('select', [...dateRange])
+function selectRange(item) {
+  if (item.disabled) return
+  emit('select', [...item.dateRange])
   visible.value = false
 }
 </script>
@@ -134,6 +137,12 @@ function selectRange(dateRange) {
   background: var(--ui-surface, #ffffff);
   outline: none;
   transform: translateX(2px);
+}
+
+.date-quick-range-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+  transform: none;
 }
 
 .date-quick-range-option-label {

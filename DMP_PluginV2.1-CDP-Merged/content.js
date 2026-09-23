@@ -71,6 +71,18 @@ function showToast(message) {
 
 window.addEventListener('DMP_PAYLOAD_INTERCEPTED', (e) => {
     currentPayload = e.detail;
+
+    // Keep the last successful portrait request in extension session storage so
+    // CDP can reuse the exact DMP payload shape without reopening each crowd.
+    try {
+        chrome.runtime.sendMessage({
+            type: 'DMP_CAPTURE_ANALYSIS_CONTEXT',
+            url: currentPayload?.url || '',
+            payload: currentPayload?.payload || null
+        }, () => void chrome.runtime.lastError);
+    } catch (error) {
+        console.warn('[DMP Copilot] failed to share portrait request context:', error?.message || error);
+    }
     
     if (currentPayload.payload && currentPayload.payload.multiGroupOptions && currentPayload.payload.multiGroupOptions.length > 0) {
         const tagId = String(currentPayload.payload.multiGroupOptions[0].tagId);

@@ -1,3 +1,5 @@
+if (typeof importScripts === 'function') importScripts('dmp-result-core.js');
+
 const ALLOWED_ORIGINS = new Set([
   'https://duruo377.top',
   'http://127.0.0.1:5173',
@@ -23,6 +25,8 @@ const MSG_DATABANK_DATAHUB = 'CDP_AUTOMATE_DATABANK_DATAHUB';
 const MSG_DMP = 'CDP_AUTOMATE_DMP';
 const MSG_DMP_WAIT_PORTRAIT = 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT';
 const MSG_DMP_EXTRACT = 'CDP_AUTOMATE_DMP_EXTRACT';
+const MSG_DMP_DIRECT_EXTRACT = 'CDP_DMP_DIRECT_EXTRACT';
+const MSG_DMP_CAPTURE_ANALYSIS_CONTEXT = 'DMP_CAPTURE_ANALYSIS_CONTEXT';
 const MSG_CANCEL_TASK = 'CDP_CANCEL_TASK';
 const MSG_DMP_GET_SETTINGS = 'CDP_DMP_GET_SETTINGS';
 const MSG_DMP_UPDATE_SETTINGS = 'CDP_DMP_UPDATE_SETTINGS';
@@ -66,6 +70,11 @@ const TASK_RUN_KEYS = {
 const taskStorage = chrome.storage?.session || chrome.storage?.local || null;
 const DATABANK_REQUEST_CONTEXT_KEY = 'cdpDatabankRequestContext';
 let databankRequestContext = null;
+const DMP_AUTH_CONTEXT_KEY = 'cdpDmpDirectAuthContext';
+const DMP_ANALYSIS_CONTEXT_KEY = 'cdpDmpAnalysisContext';
+const DMP_AUTH_MAX_AGE_MS = 30 * 60 * 1000;
+let dmpAuthContext = null;
+let dmpAnalysisContext = null;
 const taskStateReady = (async () => {
   if (!taskStorage) return;
   try {
@@ -94,6 +103,98 @@ const databankRequestContextReady = (async () => {
     log('info', 'databank request context restore skipped', error?.message || error);
   }
 })();
+
+const dmpContextReady = (async () => {
+  if (!chrome.storage?.session) return;
+  try {
+    const stored = await chrome.storage.session.get([
+      DMP_AUTH_CONTEXT_KEY,
+      DMP_ANALYSIS_CONTEXT_KEY,
+    ]);
+    if (!dmpAuthContext && stored?.[DMP_AUTH_CONTEXT_KEY]) {
+      dmpAuthContext = stored[DMP_AUTH_CONTEXT_KEY];
+    }
+    if (!dmpAnalysisContext && stored?.[DMP_ANALYSIS_CONTEXT_KEY]) {
+      dmpAnalysisContext = stored[DMP_ANALYSIS_CONTEXT_KEY];
+    }
+  } catch (error) {
+    log('info', 'DMP session context restore skipped', error?.message || error);
+  }
+})();
+
+function storeDmpAuthContextFromUrl(inputUrl) {
+  let url;
+  try { url = new URL(inputUrl); } catch { return false; }
+  if (url.origin !== 'https://dmp.taobao.com') return false;
+  const params = Object.fromEntries(
+    ['_tb_token_', '_csrf', 'csrfId', 'spm']
+      .map((key) => [key, url.searchParams.get(key) || ''])
+      .filter(([, value]) => value),
+  );
+  if (!params._tb_token_ || !params._csrf || !params.csrfId) return false;
+  dmpAuthContext = { params, capturedAt: Date.now() };
+  chrome.storage?.session?.set({ [DMP_AUTH_CONTEXT_KEY]: dmpAuthContext }).catch(() => null);
+  return true;
+}
+
+function captureDmpAuthContext(details) {
+  if (details?.initiator !== 'https://dmp.taobao.com' || !Number.isInteger(details?.tabId) || details.tabId < 0) return;
+  let url;
+  try { url = new URL(details.url); } catch { return; }
+  if (url.origin !== 'https://dmp.taobao.com' || url.pathname !== '/api_2/crowd/') return;
+  storeDmpAuthContextFromUrl(url.toString());
+}
+
+function isFreshDmpContext(context) {
+  return Boolean(context && Date.now() - Number(context.capturedAt) <= DMP_AUTH_MAX_AGE_MS);
+}
+
+function captureDmpAnalysisContext(message, sender, sendResponse) {
+  let senderUrl;
+  let analysisUrl;
+  try {
+    senderUrl = new URL(sender?.tab?.url || '');
+    analysisUrl = new URL(String(message?.url || ''), senderUrl.origin);
+  } catch {
+    sendResponse({ ok: false, error: '画像请求上下文无效' });
+    return;
+  }
+  const isAnalysisPath = /\/api_2\/analysis\/(?:tag\/)?\d+/.test(analysisUrl.pathname);
+  if (senderUrl.origin !== 'https://dmp.taobao.com' || analysisUrl.origin !== senderUrl.origin || !isAnalysisPath) {
+    sendResponse({ ok: false, error: '画像请求来源无效' });
+    return;
+  }
+  const payload = message?.payload;
+  if (!payload || typeof payload !== 'object' || !payload.crowdId) {
+    sendResponse({ ok: false, error: '画像请求载荷无效' });
+    return;
+  }
+
+  dmpAnalysisContext = {
+    url: analysisUrl.toString(),
+    payload: JSON.parse(JSON.stringify(payload)),
+    tabId: sender.tab.id,
+    capturedAt: Date.now(),
+  };
+  storeDmpAuthContextFromUrl(analysisUrl.toString());
+  chrome.storage?.session?.set({ [DMP_ANALYSIS_CONTEXT_KEY]: dmpAnalysisContext }).catch(() => null);
+  sendResponse({ ok: true });
+}
+
+function applyDmpAuthParams(url, context, includeSpm = false) {
+  if (!context || Date.now() - Number(context.capturedAt) > DMP_AUTH_MAX_AGE_MS) return;
+  for (const key of ['_tb_token_', '_csrf', 'csrfId', ...(includeSpm ? ['spm'] : [])]) {
+    const value = context.params?.[key];
+    if (value) url.searchParams.set(key, value);
+  }
+}
+
+if (chrome.webRequest?.onBeforeRequest) {
+  chrome.webRequest.onBeforeRequest.addListener(
+    captureDmpAuthContext,
+    { urls: ['https://dmp.taobao.com/api_2/crowd/*'] },
+  );
+}
 
 function captureDatabankRequestContext(details) {
   const requestHeaders = Array.isArray(details?.requestHeaders) ? details.requestHeaders : [];
@@ -786,10 +887,258 @@ async function runDmpExtract(senderTab, phase1Result, selectedTags, runId, sendR
   }
 }
 
+function buildDmpWarningRow(tagInfo, tagId, detail) {
+  return {
+    '所属大类': tagInfo?.mainCategory || '未知大类',
+    '标签类型': tagInfo?.category || '未知类型',
+    '标签名称': `${tagInfo?.tagName || tagId} ❌`,
+    '特征明细': detail,
+    '人群占比': '-',
+    'CTR': '-',
+    'PPC': '-',
+    _dictTagId: String(tagId),
+  };
+}
+
+function buildDmpTagUrl(templateUrl, tagId) {
+  const url = new URL(templateUrl);
+  const id = String(tagId);
+  if (/\/tag\/\d+/.test(url.pathname)) url.pathname = url.pathname.replace(/\/tag\/\d+/, `/tag/${id}`);
+  else if (/\/analysis\/\d+/.test(url.pathname)) url.pathname = url.pathname.replace(/\/analysis\/\d+/, `/analysis/${id}`);
+  else throw new Error('画像请求模板缺少标签路径');
+  if (url.searchParams.has('tagId')) url.searchParams.set('tagId', id);
+  url.searchParams.set('bizCode', 'dmp');
+  applyDmpAuthParams(url, dmpAuthContext);
+  return url;
+}
+
+async function fetchDmpJsonInCapturedPage(requestUrl, requestInit, requestLabel) {
+  const tabId = Number(dmpAnalysisContext?.tabId);
+  if (!Number.isInteger(tabId) || tabId < 0) {
+    throw new Error('画像请求页面不可用，请重新打开任意画像透视并点击一个普通标签');
+  }
+
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    throw new Error('已激活的达摩盘页面已关闭，请重新打开任意画像透视并点击一个普通标签');
+  }
+  let tabOrigin = '';
+  try { tabOrigin = new URL(tab?.url || '').origin; } catch { /* handled below */ }
+  if (tabOrigin !== 'https://dmp.taobao.com') {
+    throw new Error('已激活的达摩盘页面已离开，请重新进入画像透视并点击一个普通标签');
+  }
+
+  let injectionResults;
+  try {
+    injectionResults = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: async (url, init) => {
+        try {
+          const response = await window.fetch(url, {
+            ...(init || {}),
+            credentials: 'include',
+            cache: 'no-store',
+          });
+          return {
+            requestCompleted: true,
+            status: response.status,
+            ok: response.ok,
+            url: response.url,
+            redirected: response.redirected,
+            contentType: response.headers.get('content-type') || '',
+            text: await response.text(),
+          };
+        } catch (error) {
+          return {
+            requestCompleted: false,
+            error: error?.message || String(error),
+          };
+        }
+      },
+      args: [String(requestUrl), requestInit || {}],
+    });
+  } catch (error) {
+    throw new Error(`${requestLabel}无法在达摩盘页面内执行：${error?.message || error}`);
+  }
+
+  const pageResponse = injectionResults?.[0]?.result;
+  if (!pageResponse?.requestCompleted) {
+    throw new Error(`${requestLabel}请求失败：${pageResponse?.error || '达摩盘页面没有返回结果'}`);
+  }
+  if (pageResponse.status === 401 || pageResponse.status === 403) {
+    throw new Error(`${requestLabel}未通过登录验证，请重新登录并激活画像透视`);
+  }
+  if (!pageResponse.ok) {
+    throw new Error(`${requestLabel}接口返回 HTTP ${pageResponse.status}`);
+  }
+
+  const responseText = String(pageResponse.text || '');
+  if (!responseText.trim()) {
+    throw new Error(`${requestLabel}返回空内容，请刷新画像透视页并重新点击一个普通标签`);
+  }
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    const contentType = pageResponse.contentType || '未知';
+    let responsePath = '';
+    try {
+      const finalUrl = new URL(pageResponse.url || requestUrl);
+      responsePath = `，目标 ${finalUrl.origin}${finalUrl.pathname}`;
+    } catch { /* diagnostics only */ }
+    throw new Error(`${requestLabel}未返回 JSON（HTTP ${pageResponse.status}，类型 ${contentType}${responsePath}）`);
+  }
+}
+
+// Production DMP extraction path. It preserves the page-driven result contract
+// while replacing page navigation with authenticated crowd and tag API calls.
+async function runDmpDirectExtract(crowdName, selectedTags, runId, sendResponse) {
+  try {
+    await dmpContextReady;
+    assertRunNotCancelled(runId);
+    if (!globalThis.DmpResultCore) throw new Error('DMP计算核心未加载');
+    const tagIds = [...new Set((Array.isArray(selectedTags) ? selectedTags : [])
+      .map((tagId) => String(tagId || '').trim())
+      .filter(Boolean))];
+    if (tagIds.length === 0) throw new Error('请至少选择一个画像标签');
+    if (!isFreshDmpContext(dmpAnalysisContext)) {
+      throw new Error('请先登录达摩盘，进入任意人群的画像透视并点击一个普通标签，等待图表加载后再运行');
+    }
+    if (!isFreshDmpContext(dmpAuthContext)) {
+      storeDmpAuthContextFromUrl(dmpAnalysisContext.url);
+    }
+    if (!isFreshDmpContext(dmpAuthContext)) {
+      throw new Error('达摩盘登录状态未捕获或已过期，请重新打开画像透视并点击一个普通标签');
+    }
+
+    const trail = [{ step: 'analysis_context_ready' }];
+    const dictionaryResponse = await fetch(chrome.runtime.getURL('dmp_tags_dictionary.json'));
+    const dictionary = await dictionaryResponse.json();
+    const dictionaryById = new Map(dictionary.map((tag) => [String(tag.tagId), tag]));
+
+    const searchUrl = new URL('https://dmp.taobao.com/api_2/crowd/');
+    searchUrl.searchParams.set('bizCode', 'dmp');
+    searchUrl.searchParams.set('currentPage', '1');
+    searchUrl.searchParams.set('crowdName', crowdName);
+    searchUrl.searchParams.set('pageSize', '20');
+    searchUrl.searchParams.set('listType', '7');
+    applyDmpAuthParams(searchUrl, dmpAuthContext, true);
+    const searchJson = await fetchDmpJsonInCapturedPage(searchUrl.toString(), {
+      method: 'GET', credentials: 'include', cache: 'no-store',
+    }, '人群搜索');
+    assertRunNotCancelled(runId);
+    if (searchJson?.info?.ok !== true || Number(searchJson?.info?.code) !== 0) {
+      throw new Error(`人群搜索接口未通过（code: ${searchJson?.info?.code ?? '未知'}），可能需要重新激活登录状态`);
+    }
+    trail.push({ step: 'searched' });
+    const crowd = (Array.isArray(searchJson?.data?.list) ? searchJson.data.list : [])
+      .find((item) => String(item?.crowdName || '').trim() === crowdName);
+    if (!crowd) throw new Error('未找到名称完全一致的人群包');
+    const crowdId = Number(crowd.crowdId);
+    if (!Number.isSafeInteger(crowdId) || crowdId <= 0) throw new Error('搜索结果缺少有效 crowdId');
+    if (!crowd.selectTagOptionSet || typeof crowd.selectTagOptionSet !== 'object') {
+      throw new Error('搜索结果缺少人群标签表达式');
+    }
+    trail.push({ step: 'matched', crowdId });
+
+    const crowdSelection = JSON.parse(JSON.stringify(crowd.selectTagOptionSet));
+    crowdSelection.name = crowd.crowdName;
+    crowdSelection.id = crowdId;
+    crowdSelection.storageType = crowd.storageType;
+    const payload = JSON.parse(JSON.stringify(dmpAnalysisContext.payload));
+    payload.crowdId = crowdId;
+    payload.selectTagOptionSet = {
+      operator: 1,
+      selectTagOptionSet: [crowdSelection, { operator: 1, selectTagOptionSet: [] }],
+      selects: [],
+    };
+
+    const stored = await chrome.storage.local.get(['dmpConditionCache', 'rebaseExcludedTagIds']);
+    const rawRows = [];
+    for (const tagId of tagIds) {
+      assertRunNotCancelled(runId);
+      const tagInfo = dictionaryById.get(tagId) || {};
+      let request;
+      try {
+        request = globalThis.DmpResultCore.buildRequest(
+          { url: buildDmpTagUrl(dmpAnalysisContext.url, tagId).toString(), payload },
+          tagId,
+          tagInfo,
+          stored.dmpConditionCache || {},
+        );
+      } catch (error) {
+        rawRows.push(buildDmpWarningRow(tagInfo, tagId, `⚠️ 提取失败: ${error?.message || error}`));
+        trail.push({ step: 'tag_failed', tagId });
+        continue;
+      }
+      if (!request.ok) {
+        rawRows.push(buildDmpWarningRow(tagInfo, tagId, '⚠️ 未配置下钻条件'));
+        trail.push({ step: 'tag_skipped', tagId });
+        continue;
+      }
+
+      try {
+        const tagJson = await fetchDmpJsonInCapturedPage(request.url, {
+          method: 'POST', credentials: 'include', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json;charset=UTF-8' },
+          body: JSON.stringify(request.body),
+        }, '标签透视');
+        assertRunNotCancelled(runId);
+        if (tagJson?.info?.ok !== true || Number(tagJson?.info?.code) !== 0) {
+          throw new Error(`标签透视接口未通过（code: ${tagJson?.info?.code ?? '未知'}）`);
+        }
+        if (Array.isArray(tagJson?.data?.chartDataFull)) {
+          rawRows.push(...tagJson.data.chartDataFull.map((item) => ({
+            '所属大类': tagInfo.mainCategory || '未知大类',
+            '标签类型': tagInfo.category || '未知类型',
+            '标签名称': item.tagName || '-',
+            '特征明细': item.optionName || '-',
+            '人群占比': `${Number.parseFloat(item.rate || 0) * 100}%`,
+            'CTR': item.ctrIndex || '-',
+            'PPC': item.ppcIndex || '-',
+            _dictTagId: String(tagId),
+          })));
+        }
+        trail.push({ step: 'tag_extracted', tagId });
+      } catch (error) {
+        rawRows.push(buildDmpWarningRow(tagInfo, tagId, `⚠️ 提取失败: ${error?.message || error}`));
+        trail.push({ step: 'tag_failed', tagId });
+      }
+    }
+
+    const crowdCount = Number(crowd.coverage) || 0;
+    const results = globalThis.DmpResultCore.finalizeRows(
+      rawRows, crowdCount, stored.rebaseExcludedTagIds || [],
+    );
+    trail.push({ step: 'data_extracted', tagCount: tagIds.length, resultCount: results.length });
+    sendResponse({
+      ok: true,
+      trail,
+      crowdId,
+      crowdName,
+      crowdCount: crowdCount || null,
+      extracted: true,
+      results,
+    });
+  } catch (error) {
+    sendResponse({
+      ok: false,
+      cancelled: error?.name === 'AbortError',
+      error: error?.message || '达摩盘接口取数失败',
+    });
+  }
+}
+
 // Main message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const msgType = message?.type;
-  if (![MSG_DATABANK_PARAM, MSG_DATABANK_REALTIME_COUNT, MSG_DATABANK_CREATE_API, MSG_DATABANK_COUNT, MSG_DATABANK_DEPENDENCIES, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_CANCEL_TASK, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
+  if (msgType === MSG_DMP_CAPTURE_ANALYSIS_CONTEXT) {
+    captureDmpAnalysisContext(message, sender, sendResponse);
+    return false;
+  }
+  if (![MSG_DATABANK_PARAM, MSG_DATABANK_REALTIME_COUNT, MSG_DATABANK_CREATE_API, MSG_DATABANK_COUNT, MSG_DATABANK_DEPENDENCIES, MSG_DATABANK_CROWD, MSG_DATABANK_WAIT_APPLY, MSG_DATABANK_DATAHUB, MSG_DMP, MSG_DMP_WAIT_PORTRAIT, MSG_DMP_EXTRACT, MSG_DMP_DIRECT_EXTRACT, MSG_CANCEL_TASK, MSG_DMP_GET_SETTINGS, MSG_DMP_UPDATE_SETTINGS].includes(msgType)) return;
 
   const senderUrl = message.pageUrl || sender.tab?.url || '';
   const senderOrigin = (function() {
@@ -943,6 +1292,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const phase1Result = message.phase1Result || {};
     const selectedTags = message.selectedTags || [];
     runDmpExtract(senderTab, phase1Result, selectedTags, runId, sendResponse);
+    return true;
+  }
+
+  if (msgType === MSG_DMP_DIRECT_EXTRACT) {
+    const crowdName = String(message.crowdName || '').trim();
+    if (!crowdName) {
+      sendResponse({ ok: false, error: '人群包名称不能为空' });
+      return;
+    }
+    const selectedTags = Array.isArray(message.selectedTags) ? message.selectedTags.map(String) : [];
+    runDmpDirectExtract(crowdName, selectedTags, runId, sendResponse);
     return true;
   }
 });

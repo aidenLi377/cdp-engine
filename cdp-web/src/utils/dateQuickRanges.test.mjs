@@ -10,6 +10,11 @@ import {
 
 const referenceDate = new Date(2026, 7, 3, 15, 30)
 
+test('MTD and YTD start at the current period and end yesterday', () => {
+  assert.deepEqual(getQuickDateRange('mtd', referenceDate), ['20260801', '20260802'])
+  assert.deepEqual(getQuickDateRange('ytd', referenceDate), ['20260101', '20260802'])
+})
+
 test('recent 180 days ends yesterday and contains exactly 180 calendar days', () => {
   assert.deepEqual(
     getQuickDateRange('recent180Days', referenceDate),
@@ -75,20 +80,34 @@ test('quick range groups expose UI labels without changing the date range shape'
     {
       label: '日维度',
       items: [
-        { key: 'recent180Days', label: '最近180天', dateRange: ['20260204', '20260802'] },
-        { key: 'previous180Days', label: '上一个180天', dateRange: ['20250808', '20260203'] },
-        { key: 'recent1Year', label: '近一年', dateRange: ['20250803', '20260802'] },
-        { key: 'previous1Year', label: '前一年', dateRange: ['20240803', '20250802'] },
+        { key: 'recent180Days', label: '最近180天', dateRange: ['20260204', '20260802'], disabled: false },
+        { key: 'previous180Days', label: '上一个180天', dateRange: ['20250808', '20260203'], disabled: false },
+        { key: 'recent1Year', label: '近一年', dateRange: ['20250803', '20260802'], disabled: false },
+        { key: 'previous1Year', label: '前一年', dateRange: ['20240803', '20250802'], disabled: false },
+      ],
+    },
+    {
+      label: '累计周期',
+      items: [
+        { key: 'mtd', label: 'MTD · 本月至今', dateRange: ['20260801', '20260802'], disabled: false },
+        { key: 'ytd', label: 'YTD · 年初至今', dateRange: ['20260101', '20260802'], disabled: false },
       ],
     },
     {
       label: '月维度',
       items: [
-        { key: 'recent6Months', label: '最近6个完整月', dateRange: ['20260201', '20260731'] },
-        { key: 'previous6Months', label: '上一个6个月', dateRange: ['20250801', '20260131'] },
+        { key: 'recent6Months', label: '最近6个完整月', dateRange: ['20260201', '20260731'], disabled: false },
+        { key: 'previous6Months', label: '上一个6个月', dateRange: ['20250801', '20260131'], disabled: false },
       ],
     },
   ])
+})
+
+test('MTD and YTD are disabled when yesterday is outside the new period', () => {
+  const groups = createQuickDateRangeGroups(new Date(2026, 0, 1, 9, 0))
+  const cumulative = groups.find(group => group.label === '累计周期')
+  assert.equal(cumulative.items.find(item => item.key === 'mtd').disabled, true)
+  assert.equal(cumulative.items.find(item => item.key === 'ytd').disabled, true)
 })
 
 test('invalid presets fail explicitly instead of returning an incomplete range', () => {

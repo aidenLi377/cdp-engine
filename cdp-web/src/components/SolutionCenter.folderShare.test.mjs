@@ -28,12 +28,13 @@ test('solution center recognizes a user paste without intercepting editable fiel
   assert.match(solutionCenter, /await previewFolderShare\(text\)/)
 })
 
-test('paste preview imports an independent draft folder and refreshes the personal library', () => {
+test('paste preview imports an independent published folder and refreshes the personal library', () => {
   assert.match(shareApi, /createFolderShare/)
   assert.match(shareApi, /previewFolderShare/)
   assert.match(shareApi, /importFolderShare/)
   assert.match(solutionCenter, /await importFolderShare\(folderShareText\.value\)/)
   assert.match(solutionCenter, /await Promise\.all\(\[loadFolders\(\), loadSolutions\(\)\]\)/)
-  assert.match(solutionCenter, /已导入为可独立编辑的个人草稿/)
+  assert.match(solutionCenter, /已导入为个人已发布方案/)
+  assert.match(solutionCenter, /导入后将直接成为你账号下的已发布方案/)
   assert.match(solutionCenter, /粘贴方案口令/)
 })

@@ -8,9 +8,11 @@ import { fileURLToPath } from 'node:url'
 const currentDir = path.dirname(fileURLToPath(import.meta.url))
 const BACKGROUND_SCRIPT_PATH = path.resolve(currentDir, '..', 'background.js')
 const BACKGROUND_SCRIPT_SOURCE = fs.readFileSync(BACKGROUND_SCRIPT_PATH, 'utf8')
+const DMP_RESULT_CORE_SOURCE = fs.readFileSync(path.resolve(currentDir, '..', 'dmp-result-core.js'), 'utf8')
 
 function createBackgroundHarness(options = {}) {
   let runtimeListener = null
+  let dmpRequestListener = null
   let now = 0
   let pingCount = 0
   const messageTrail = []
@@ -19,14 +21,18 @@ function createBackgroundHarness(options = {}) {
   const removeTrail = []
   const windowUpdateTrail = []
   const fetchCalls = []
+  const pageFetchCalls = []
+  const createdTabs = []
   const storageData = {
     dmpConditionCache: { 200: [{ tagId: 200 }], 201: [] },
     columnVisibility: { CTR: false },
     rebaseExcludedTagIds: [300],
   }
+  const sessionData = {}
 
   const chrome = {
     runtime: {
+      getURL(resource) { return `chrome-extension://test/${resource}` },
       onMessage: {
         addListener(listener) {
           runtimeListener = listener
@@ -39,15 +45,21 @@ function createBackgroundHarness(options = {}) {
         return []
       },
       async create() {
+        createdTabs.push(true)
         return { id: 101, windowId: 88, status: 'complete', url: 'https://databank.tmall.com/#/userDefinedAnalyses' }
       },
       async get(tabId) {
         const isSenderTab = tabId === 7
+        const isDmpTab = tabId === 99
         return {
           id: tabId,
           windowId: isSenderTab ? 66 : 88,
           status: 'complete',
-          url: isSenderTab ? 'http://127.0.0.1:5173/' : 'https://databank.tmall.com/#/userDefinedAnalyses',
+          url: isSenderTab
+            ? 'http://127.0.0.1:5173/'
+            : isDmpTab
+              ? 'https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId=1'
+              : 'https://databank.tmall.com/#/userDefinedAnalyses',
         }
       },
       async update(tabId, payload) {
@@ -103,7 +115,18 @@ function createBackgroundHarness(options = {}) {
       },
     },
     scripting: {
-      async executeScript() {},
+      async executeScript(details) {
+        if (!details?.func) return []
+        const [url, init] = details.args || []
+        pageFetchCalls.push({
+          tabId: details.target?.tabId,
+          world: details.world,
+          url: String(url),
+          init,
+        })
+        if (typeof options.pageFetchImpl !== 'function') throw new Error(`Unexpected page fetch: ${url}`)
+        return [{ result: await options.pageFetchImpl(String(url), init) }]
+      },
     },
     storage: {
       local: {
@@ -113,9 +136,14 @@ function createBackgroundHarness(options = {}) {
         async set(patch) { Object.assign(storageData, patch) },
       },
       session: {
-        async get() { return {} },
-        async set() {},
+        async get(keys) { return Object.fromEntries(keys.filter((key) => Object.hasOwn(sessionData, key)).map((key) => [key, sessionData[key]])) },
+        async set(patch) { Object.assign(sessionData, patch) },
         async remove() {},
+      },
+    },
+    webRequest: {
+      onBeforeRequest: {
+        addListener(listener) { dmpRequestListener = listener },
       },
     },
   }
@@ -138,6 +166,7 @@ function createBackgroundHarness(options = {}) {
     },
   }
 
+  vm.runInNewContext(DMP_RESULT_CORE_SOURCE, context, { filename: 'dmp-result-core.js' })
   vm.runInNewContext(BACKGROUND_SCRIPT_SOURCE, context, { filename: BACKGROUND_SCRIPT_PATH })
 
   async function sendProjectMessage(message) {
@@ -151,15 +180,31 @@ function createBackgroundHarness(options = {}) {
     })
   }
 
+  async function captureDmpAnalysisContext(url, payload) {
+    return await new Promise((resolve) => {
+      const keepChannelOpen = runtimeListener(
+        { type: 'DMP_CAPTURE_ANALYSIS_CONTEXT', url, payload },
+        { tab: { id: 99, windowId: 77, url: 'https://dmp.taobao.com/index_new.html#!/insight-new/perspective?crowdId=1' } },
+        (response) => resolve(response),
+      )
+      assert.equal(keepChannelOpen, false)
+    })
+  }
+
   return {
     sendProjectMessage,
+    captureDmpAnalysisContext,
+    captureDmpRequest(details) { dmpRequestListener(details) },
     messageTrail,
     sentPayloads,
     updateTrail,
     removeTrail,
     windowUpdateTrail,
     fetchCalls,
+    pageFetchCalls,
+    createdTabs,
     storageData,
+    sessionData,
   }
 }
 
@@ -170,6 +215,137 @@ function jsonResponse(body, status = 200) {
     async json() { return body },
   }
 }
+
+function pageJsonResponse(body, status = 200) {
+  return {
+    requestCompleted: true,
+    status,
+    ok: status >= 200 && status < 300,
+    url: 'https://dmp.taobao.com/api_2/test',
+    redirected: false,
+    contentType: 'application/json;charset=UTF-8',
+    text: JSON.stringify(body),
+  }
+}
+
+test('direct DMP extraction reuses a captured payload for multiple tags without opening a DMP tab', async () => {
+  const harness = createBackgroundHarness({
+    async fetchImpl(url, init) {
+      if (url.endsWith('/dmp_tags_dictionary.json')) {
+        return jsonResponse([
+          {
+            tagId: '114554', tagName: '用户性别', mainCategory: '用户特征',
+            category: '基础特征', needCondition: false,
+          },
+          {
+            tagId: '114555', tagName: '用户年龄', mainCategory: '用户特征',
+            category: '基础特征', needCondition: false,
+          },
+        ])
+      }
+      throw new Error(`DMP API must not run from the extension service worker: ${url}`)
+    },
+    async pageFetchImpl(url, init) {
+      if (url.includes('/api_2/crowd/')) {
+        const params = new URL(url).searchParams
+        assert.equal(params.get('crowdName'), '接口试验包')
+        assert.equal(params.get('_tb_token_'), 'test-token')
+        assert.equal(params.get('_csrf'), 'test-csrf')
+        assert.equal(params.get('csrfId'), 'test-id')
+        assert.equal(params.get('spm'), 'test-spm')
+        assert.equal(init.credentials, 'include')
+        return pageJsonResponse({
+          info: { ok: true, code: 0 },
+          data: { list: [
+            { crowdId: 1, crowdName: '接口试验包-近似', coverage: 999 },
+            {
+              crowdId: 42, crowdName: '接口试验包', coverage: 100,
+              storageType: 1, selectTagOptionSet: { operator: 1, selects: [{ tagId: 132581 }] },
+            },
+          ] },
+        })
+      }
+      const tagId = url.match(/\/api_2\/analysis\/tag\/(\d+)/)?.[1]
+      assert.ok(['114554', '114555'].includes(tagId))
+      assert.equal(new URL(url).searchParams.get('_tb_token_'), 'test-token')
+      assert.equal(new URL(url).searchParams.get('_csrf'), 'test-csrf')
+      assert.equal(new URL(url).searchParams.get('csrfId'), 'test-id')
+      assert.equal(new URL(url).searchParams.get('spm'), 'test-spm')
+      assert.equal(init.method, 'POST')
+      assert.equal(init.credentials, 'include')
+      const body = JSON.parse(init.body)
+      assert.equal(body.crowdId, 42)
+      assert.equal(body.selectTagOptionSet.selectTagOptionSet[0].id, 42)
+      assert.equal(body.selectTagOptionSet.selectTagOptionSet[0].storageType, 1)
+      assert.deepEqual(body.effectQuery, {
+        indexTypes: ['ctr', 'ppc'], cateId: '50025705', deliverType: 4,
+      })
+      if (tagId === '114555') {
+        return pageJsonResponse({
+          info: { ok: true, code: 0 },
+          data: { chartDataFull: [
+            { tagName: '用户年龄', optionName: '25-29岁', rate: '0.25', ctrIndex: '8', ppcIndex: '1.2-1.4' },
+          ] },
+        })
+      }
+      return pageJsonResponse({
+        info: { ok: true, code: 0 },
+        data: { chartDataFull: [
+          { tagName: '用户性别', optionName: '女性用户', rate: '0.6', ctrIndex: '6', ppcIndex: '1.0-1.2' },
+          { tagName: '用户性别', optionName: '男性用户', rate: '0.4', ctrIndex: '7', ppcIndex: '0.8-1.0' },
+        ] },
+      })
+    },
+  })
+  const captured = await harness.captureDmpAnalysisContext(
+    'https://dmp.taobao.com/api_2/analysis/tag/114554?bizCode=dmp&_tb_token_=test-token&_csrf=test-csrf&csrfId=test-id&spm=test-spm',
+    {
+      version: '2.0',
+      crowdId: 1,
+      selectTagOptionSet: { operator: 1, selectTagOptionSet: [], selects: [] },
+      needUnknown: false,
+      ext: {},
+      effectQuery: { indexTypes: ['ctr', 'ppc'], cateId: '50025705', deliverType: 4 },
+    },
+  )
+  assert.equal(captured.ok, true)
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_DMP_DIRECT_EXTRACT', pageUrl: 'http://127.0.0.1:5173/', runId: 'dmp-run-1',
+    crowdName: '接口试验包', selectedTags: ['114554', '114555'],
+  })
+  assert.equal(response.ok, true)
+  assert.equal(response.crowdId, 42)
+  assert.equal(response.crowdCount, 100)
+  assert.equal(response.results.length, 3)
+  assert.equal(response.results[0]['覆盖人数'], '60')
+  assert.equal(response.results[0]['Rebase'], '60%')
+  assert.equal(response.results[0]['CTR'], '6')
+  assert.equal(response.results[2]['标签名称'], '用户年龄')
+  assert.equal(response.results[2]['覆盖人数'], '25')
+  assert.equal(response.results[2]['Rebase'], '100%')
+  assert.deepEqual(Array.from(response.trail, (item) => item.step), [
+    'analysis_context_ready', 'searched', 'matched',
+    'tag_extracted', 'tag_extracted', 'data_extracted',
+  ])
+  assert.deepEqual(harness.createdTabs, [])
+  assert.deepEqual(harness.updateTrail, [])
+  assert.equal(harness.fetchCalls.length, 1)
+  assert.equal(harness.pageFetchCalls.length, 3)
+  assert.ok(harness.pageFetchCalls.every((call) => call.tabId === 99 && call.world === 'MAIN'))
+})
+
+test('direct DMP extraction stops before requests until a portrait payload has been captured', async () => {
+  const harness = createBackgroundHarness()
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_DMP_DIRECT_EXTRACT', pageUrl: 'http://127.0.0.1:5173/', runId: 'dmp-run-missing-context',
+    crowdName: '待取数人群', selectedTags: ['114554'],
+  })
+
+  assert.equal(response.ok, false)
+  assert.match(response.error, /进入任意人群的画像透视并点击一个普通标签/)
+  assert.deepEqual(harness.fetchCalls, [])
+  assert.deepEqual(harness.createdTabs, [])
+})
 
 test('background waits for the databank page to report ready before sending automation', async () => {
   const harness = createBackgroundHarness()

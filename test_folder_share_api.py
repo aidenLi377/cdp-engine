@@ -127,13 +127,19 @@ class FolderShareApiTests(unittest.TestCase):
             imported_root["id"], imported_root["children"][0]["id"]
         }]
         self.assertEqual(len(copied), 2)
-        self.assertTrue(all(item["status"] == "draft" for item in copied))
+        self.assertTrue(all(item["status"] == "published" for item in copied))
+        self.assertTrue(all(item.get("publishedAt") for item in copied))
         self.assertTrue(all(item["ownerId"] == self.receiver["id"] for item in copied))
         self.assertTrue(all(item["source"] == "shared-import" for item in copied))
 
         copied_root = next(item for item in copied if item["name"] == root_solution["name"])
+        edit_draft_response = self.receiver_client.post(
+            f"/api/solutions/{copied_root['id']}/edit-draft"
+        )
+        self.assertEqual(edit_draft_response.status_code, 201)
+        edit_draft = edit_draft_response.get_json()
         update_response = self.receiver_client.put(
-            f"/api/solutions/{copied_root['id']}",
+            f"/api/solutions/{edit_draft['id']}",
             json={"name": "接收人独立修改"},
         )
         self.assertEqual(update_response.status_code, 200)

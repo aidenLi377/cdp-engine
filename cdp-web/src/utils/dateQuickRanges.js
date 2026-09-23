@@ -9,6 +9,13 @@ const QUICK_RANGE_DEFINITIONS = [
     ],
   },
   {
+    label: '累计周期',
+    items: [
+      { key: 'mtd', label: 'MTD · 本月至今' },
+      { key: 'ytd', label: 'YTD · 年初至今' },
+    ],
+  },
+  {
     label: '月维度',
     items: [
       { key: 'recent6Months', label: '最近6个完整月' },
@@ -58,7 +65,13 @@ export function getQuickDateRange(preset, referenceDate = new Date()) {
   let start
   let end
 
-  if (preset === 'recent180Days') {
+  if (preset === 'mtd') {
+    start = new Date(today.getFullYear(), today.getMonth(), 1)
+    end = addCalendarDays(today, -1)
+  } else if (preset === 'ytd') {
+    start = new Date(today.getFullYear(), 0, 1)
+    end = addCalendarDays(today, -1)
+  } else if (preset === 'recent180Days') {
     end = addCalendarDays(today, -1)
     start = addCalendarDays(end, -179)
   } else if (preset === 'previous180Days') {
@@ -86,9 +99,13 @@ export function getQuickDateRange(preset, referenceDate = new Date()) {
 export function createQuickDateRangeGroups(referenceDate = new Date()) {
   return QUICK_RANGE_DEFINITIONS.map(group => ({
     label: group.label,
-    items: group.items.map(item => ({
-      ...item,
-      dateRange: getQuickDateRange(item.key, referenceDate),
-    })),
+    items: group.items.map(item => {
+      const dateRange = getQuickDateRange(item.key, referenceDate)
+      return {
+        ...item,
+        dateRange,
+        disabled: dateRange[0] > dateRange[1],
+      }
+    }),
   }))
 }

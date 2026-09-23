@@ -14,6 +14,7 @@
     'CDP_AUTOMATE_DMP',
     'CDP_AUTOMATE_DMP_WAIT_PORTRAIT',
     'CDP_AUTOMATE_DMP_EXTRACT',
+    'CDP_DMP_DIRECT_EXTRACT',
     'CDP_CANCEL_TASK',
     'CDP_DMP_GET_SETTINGS',
     'CDP_DMP_UPDATE_SETTINGS',
@@ -101,10 +102,16 @@
         .map(function(item) { return String(item || '').trim(); })
         .filter(Boolean)));
       if (!extMsg.crowdNames.length) { safeRespond(p, { ok: false, error: '自定义人群名称不能为空' }); return; }
-    } else if (p.type === 'CDP_QUERY_DATABANK_CROWD_COUNT' || p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP') {
+    } else if (p.type === 'CDP_QUERY_DATABANK_CROWD_COUNT' || p.type === 'CDP_AUTOMATE_DATABANK_CROWD' || p.type === 'CDP_AUTOMATE_DATABANK_DATAHUB' || p.type === 'CDP_AUTOMATE_DMP' || p.type === 'CDP_DMP_DIRECT_EXTRACT') {
       extMsg.crowdName = p.crowdName || '';
       if (!extMsg.crowdName.trim()) { safeRespond(p, { ok: false, error: '人群包名称不能为空' }); return; }
       if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') extMsg.autoApply = p.autoApply === true;
+      if (p.type === 'CDP_DMP_DIRECT_EXTRACT') {
+        extMsg.selectedTags = Array.from(new Set((Array.isArray(p.selectedTags) ? p.selectedTags : [])
+          .map(function(item) { return String(item || '').trim(); })
+          .filter(Boolean)));
+        if (!extMsg.selectedTags.length) { safeRespond(p, { ok: false, error: '请至少选择一个画像标签' }); return; }
+      }
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' || p.type === 'CDP_CANCEL_TASK') {
       // No payload needed — just forward to background
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {
@@ -144,6 +151,8 @@
       timeoutMs = 300000;  // 5min — DMP phase 1: search + match
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {
       timeoutMs = 300000;  // 5min — portrait page navigation + tag extraction
+    } else if (p.type === 'CDP_DMP_DIRECT_EXTRACT') {
+      timeoutMs = 300000;  // authenticated crowd search plus sequential tag queries
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_CROWD') {
       timeoutMs = 180000;  // 3min — tab open + SPA load + search + match + dialog
     } else if (p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT') {

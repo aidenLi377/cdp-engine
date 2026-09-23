@@ -511,8 +511,8 @@ class FolderShareStore:
                            derived_from_solution_id, derived_from_solution_version,
                            _version, owner_id, visibility, created_by, updated_by,
                            created_at, updated_at, published_at
-                       ) VALUES (?, ?, 'draft', 'shared-import', ?, ?, ?, ?, ?, ?,
-                                 NULL, NULL, NULL, 1, ?, 'private', ?, ?, ?, ?, NULL)""",
+                       ) VALUES (?, ?, 'published', 'shared-import', ?, ?, ?, ?, ?, ?,
+                                 NULL, NULL, NULL, 1, ?, 'private', ?, ?, ?, ?, ?)""",
                     (
                         self._new_id("solution"),
                         solution.get("name") or "未命名方案",
@@ -525,6 +525,7 @@ class FolderShareStore:
                         user_id,
                         user_id,
                         user_id,
+                        now_iso,
                         now_iso,
                         now_iso,
                     ),

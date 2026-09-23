@@ -343,7 +343,7 @@ import {
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
-const EXPECTED_EXTENSION_VERSION = '2.2.11'
+const EXPECTED_EXTENSION_VERSION = '2.2.18'
 const TASK_SESSION_KEY = 'task-center.v1'
 const COMPLETION_TOAST_DURATION_MS = 4000
 const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
@@ -1373,29 +1373,23 @@ async function executeDmp(crowdName, run) {
   if (!settingsReady) throw new Error('无法同步 DMP 设置，请重新加载新版合并插件')
   if (selectedTags.value.length === 0) throw new Error('请选择至少一个已就绪的标签')
 
-  // Phase 1: search → match on crowd list page
-  const phase1 = await sendToExtension('CDP_AUTOMATE_DMP', { crowdName, runId: run.id }, { signal: run.controller.signal })
+  const result = await sendToExtension('CDP_DMP_DIRECT_EXTRACT', {
+    crowdName,
+    selectedTags: orderedSelectedTagIds.value,
+    runId: run.id,
+  }, { signal: run.controller.signal })
   ensureRunActive(run)
-  if (!phase1.ok) throw new Error(phase1.error || '搜索匹配失败')
-  advancePhasesFromTrail(phase1.trail, { 'searched': 2, 'matched': 3, 'row_expanded': 4 }, run)
-  if (!phase1.crowdId) throw new Error('搜索匹配完成但未能提取人群ID（crowdId），无法进入透视')
-
-  // Phase 2: wait for portrait entry to appear (up to 30 min, updates progress)
-  updateProgress(5, '正在判断人群数据是否同步好…', run)
-
-  const phase2 = await sendToExtension('CDP_AUTOMATE_DMP_WAIT_PORTRAIT', { phase1Result: JSON.parse(JSON.stringify(phase1)), runId: run.id }, { signal: run.controller.signal })
-  ensureRunActive(run)
-  if (!phase2.ok) throw new Error(phase2.error || '等待画像透视入口超时')
-  updateProgress(6, phases.value[6], run); await waitForAbortableDelay(500, run.controller.signal)
-
-  // Phase 3: navigate to portrait page → extract data
-  updateProgress(7, phases.value[7], run)
-
-  const phase3 = await sendToExtension('CDP_AUTOMATE_DMP_EXTRACT', { phase1Result: JSON.parse(JSON.stringify(phase1)), selectedTags: orderedSelectedTagIds.value, runId: run.id }, { signal: run.controller.signal })
-  ensureRunActive(run)
-  if (!phase3.ok) throw new Error(phase3.error || '数据提取失败')
-  advancePhasesFromTrail(phase3.trail, { 'entered_portrait': 7, 'payload_intercepted': 8, 'data_extracted': 8 }, run)
-  return phase3
+  if (!result.ok) throw new Error(result.error || '达摩盘接口取数失败')
+  advancePhasesFromTrail(result.trail, {
+    'analysis_context_ready': 2,
+    'searched': 3,
+    'matched': 4,
+    'tag_extracted': 8,
+    'tag_skipped': 8,
+    'tag_failed': 8,
+    'data_extracted': 8,
+  }, run)
+  return result
 }
 
 async function executeViaExtension(crowdName, type, options = {}) {
