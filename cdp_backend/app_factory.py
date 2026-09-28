@@ -70,6 +70,8 @@ from .solution_store import (
     InvalidSolutionStateError,
     SolutionAccessError,
     SolutionAlreadyPromotedError,
+    SolutionVersionConflictError,
+    InvalidParameterWritebackError,
     SolutionNotFoundError,
     SolutionStore,
 )
@@ -2243,6 +2245,24 @@ def register_routes(
             return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能直接修改，请先复制到我的方案", 403)
         return jsonify(updated)
 
+    @app.route("/api/solutions/parameters/write-back", methods=["POST"])
+    def write_back_solution_parameters():
+        payload = request.get_json(silent=True)
+        changes = payload.get("changes") if isinstance(payload, dict) else None
+        if not isinstance(changes, list):
+            return error_response("INVALID_REQUEST", "请提供要写回的方案参数", 400)
+        try:
+            updated = solution_store.write_back_parameters(changes, g.current_user["id"])
+        except InvalidParameterWritebackError:
+            return error_response("INVALID_PARAMETERS", "方案结构已变化，无法安全写回参数", 400)
+        except SolutionVersionConflictError:
+            return error_response("SOLUTION_VERSION_CONFLICT", "方案已被其他操作修改，请重新加载后再写回", 409)
+        except SolutionNotFoundError:
+            return error_response("SOLUTION_NOT_FOUND", "方案不存在或已被删除", 404)
+        except SolutionAccessError:
+            return error_response("PUBLIC_SOLUTION_READ_ONLY", "公共方案不能写回，请先复制到我的方案", 403)
+        return jsonify({"solutions": updated, "count": len(updated)})
+
     @app.route("/api/folders/<folder_id>/share", methods=["POST"])
     def create_folder_share(folder_id: str):
         shared_by = (
@@ -2348,6 +2368,22 @@ def register_routes(
         if scope not in ("mine", "public"):
             return error_response("INVALID_SCOPE", "文件夹类型不正确", 400)
         return jsonify(folder_store.list_folders(scope, g.current_user["id"]))
+
+    @app.route("/api/folders/<folder_id>/copy-to-mine", methods=["POST"])
+    def copy_public_folder_to_mine(folder_id: str):
+        try:
+            copied = folder_share_store.copy_public_folder(folder_id, g.current_user["id"])
+        except FolderShareAccessError:
+            return error_response("PUBLIC_FOLDER_REQUIRED", "只能复制公共方案文件夹", 404)
+        user_store.record_audit(
+            g.current_user["id"],
+            "public_folder_copied",
+            details={"sourceFolderId": folder_id,
+                     "folderId": copied["folder"]["id"],
+                     "folderCount": copied["folderCount"],
+                     "solutionCount": copied["solutionCount"]},
+        )
+        return jsonify(copied), 201
 
     @app.route("/api/audience-runs/export", methods=["POST"])
     def export_audience_run():
@@ -2474,9 +2510,11 @@ def register_routes(
         parent_id = payload.get("parentId")
         scope = payload.get("scope", "mine")
         execution_mode = payload.get("executionMode", "create_and_count")
+        if execution_mode == "create_only":
+            execution_mode = "create_and_count"
         if scope not in ("mine", "public"):
             return error_response("INVALID_SCOPE", "文件夹类型不正确", 400)
-        if execution_mode not in ("calculate_only", "create_only", "create_and_count"):
+        if execution_mode not in ("calculate_only", "create_and_count"):
             return error_response("INVALID_EXECUTION_MODE", "方案组执行方式不正确", 400)
         if scope == "public":
             permission_error = require_super_admin()

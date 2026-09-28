@@ -10,6 +10,7 @@ if (!window.__dmpAutomationContentScriptLoaded) {
   let expandedCrowdRow = null;
 
   window.addEventListener('DMP_PAYLOAD_INTERCEPTED', async (event) => {
+    window.__DMP_PAYLOAD__ = event?.detail || null;
     const options = event?.detail?.payload?.multiGroupOptions;
     if (!Array.isArray(options) || options.length === 0) return;
     const tagId = options[0]?.tagId;

@@ -42,6 +42,10 @@ function createHarness() {
             directCreate: true,
             preflightPassed: true,
           })
+        } else if (payload.type === 'CDP_PREPARE_DATABANK_API_CONTEXT') {
+          callback({ ok: true, ready: payload.openSetup === true, hasOpenTab: true })
+        } else if (payload.type === 'CDP_RELEASE_DATABANK_API_SESSION') {
+          callback({ ok: true, released: true })
         } else if (payload.type === 'CDP_CANCEL_TASK') {
           callback({ ok: true, cancelled: true, closedTabs: 2 })
         } else {
@@ -72,16 +76,15 @@ test('bridge answers CDP connection ping without starting a task', () => {
   const harness = createHarness()
   harness.dispatch({
     source: 'cdp-web',
-    type: 'CDP_AUTOMATE_DATABANK',
+    type: 'CDP_EXTENSION_PING',
     requestId: 'ping',
-    jsonText: '{}',
   })
   assert.equal(harness.forwarded.length, 0)
   assert.equal(harness.posted[0].payload.ok, true)
   assert.equal(harness.posted[0].payload.source, 'databank-extension-bridge')
 })
 
-test('bridge forwards DataBank payload and returns the correlated response', () => {
+test('bridge rejects the removed legacy page-paste operation', () => {
   const harness = createHarness()
   harness.dispatch({
     source: 'cdp-web',
@@ -90,13 +93,8 @@ test('bridge forwards DataBank payload and returns the correlated response', () 
     jsonText: '{"demo":true}',
     autoCalculate: true,
   })
-  assert.equal(harness.forwarded[0].type, 'CDP_AUTOMATE_DATABANK')
-  assert.equal(harness.forwarded[0].jsonText, '{"demo":true}')
-  assert.equal(harness.forwarded[0].autoCalculate, true)
-  assert.equal(harness.posted[0].payload.autoCalculated, true)
-  assert.equal(harness.forwarded[0].pageUrl, 'http://127.0.0.1:5173/')
-  assert.equal(harness.posted[0].payload.requestId, 'request-1')
-  assert.equal(harness.posted[0].payload.ok, true)
+  assert.equal(harness.forwarded.length, 0)
+  assert.equal(harness.posted.length, 0)
 })
 
 test('bridge forwards the opt-in realtime count request without changing its JSON', () => {
@@ -107,11 +105,13 @@ test('bridge forwards the opt-in realtime count request without changing its JSO
     requestId: 'realtime-count-1',
     jsonText: '{"crowdName":"接口试验包","list":[],"compute":""}',
     crowdName: '接口试验包',
+    precheckedNoMatch: true,
   })
 
   assert.equal(harness.forwarded[0].type, 'CDP_QUERY_DATABANK_REALTIME_COUNT')
   assert.equal(harness.forwarded[0].jsonText, '{"crowdName":"接口试验包","list":[],"compute":""}')
   assert.equal(harness.forwarded[0].crowdName, '接口试验包')
+  assert.equal(harness.forwarded[0].precheckedNoMatch, true)
   assert.equal(harness.posted[0].payload.requestId, 'realtime-count-1')
   assert.equal(harness.posted[0].payload.ok, true)
   assert.equal(harness.posted[0].payload.countReady, true)
@@ -127,15 +127,56 @@ test('bridge forwards guarded direct-create requests and exposes the preflight r
     requestId: 'direct-create-1',
     jsonText: '{"crowdName":"接口建包","list":[],"compute":""}',
     crowdName: '接口建包',
+    precheckedNoMatch: true,
   })
 
   assert.equal(harness.forwarded[0].type, 'CDP_CREATE_DATABANK_CROWD_API')
   assert.equal(harness.forwarded[0].crowdName, '接口建包')
+  assert.equal(harness.forwarded[0].precheckedNoMatch, true)
   assert.equal(harness.posted[0].payload.directCreate, true)
   assert.equal(harness.posted[0].payload.preflightPassed, true)
   assert.equal(harness.posted[0].payload.crowdId, 78408082)
   assert.equal(harness.posted[0].payload.crowdName, '接口建包')
   assert.equal(harness.posted[0].payload.message, '已通过接口创建人群包')
+})
+
+test('bridge forwards the DataBank context preparation choice', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_PREPARE_DATABANK_API_CONTEXT',
+    requestId: 'prepare-context-1',
+    openSetup: true,
+    autoWarmup: true,
+    jsonText: '{"crowdName":"首次真实任务","list":[],"compute":""}',
+    crowdName: '首次真实任务',
+    executionMode: 'calculate_only',
+    precheckedNoMatch: true,
+  })
+
+  assert.equal(harness.forwarded[0].type, 'CDP_PREPARE_DATABANK_API_CONTEXT')
+  assert.equal(harness.forwarded[0].openSetup, true)
+  assert.equal(harness.forwarded[0].autoWarmup, true)
+  assert.equal(harness.forwarded[0].crowdName, '首次真实任务')
+  assert.equal(harness.forwarded[0].executionMode, 'calculate_only')
+  assert.equal(harness.forwarded[0].precheckedNoMatch, true)
+  assert.match(harness.forwarded[0].jsonText, /首次真实任务/)
+  assert.equal(harness.posted[0].payload.requestId, 'prepare-context-1')
+  assert.equal(harness.posted[0].payload.ready, true)
+})
+
+test('bridge releases a DataBank batch session without any page payload', () => {
+  const harness = createHarness()
+  harness.dispatch({
+    source: 'cdp-web',
+    type: 'CDP_RELEASE_DATABANK_API_SESSION',
+    requestId: 'release-context-1',
+    runId: 'run-batch-1',
+  })
+
+  assert.equal(harness.forwarded[0].type, 'CDP_RELEASE_DATABANK_API_SESSION')
+  assert.equal(harness.forwarded[0].runId, 'run-batch-1')
+  assert.equal(harness.posted[0].payload.released, true)
 })
 
 test('bridge forwards the explicit DataBank auto apply choice', () => {
@@ -188,10 +229,16 @@ test('bridge forwards normalized multi-label direct DMP extraction', () => {
     requestId: 'dmp-direct-1',
     crowdName: '接口试验包',
     selectedTags: ['114554', '114555', '114554'],
+    batchId: 'dmp-batch-1',
+    batchIndex: 2,
+    batchTotal: 3,
   })
   assert.equal(harness.forwarded[0].type, 'CDP_DMP_DIRECT_EXTRACT')
   assert.equal(harness.forwarded[0].crowdName, '接口试验包')
   assert.deepEqual(Array.from(harness.forwarded[0].selectedTags), ['114554', '114555'])
+  assert.equal(harness.forwarded[0].batchId, 'dmp-batch-1')
+  assert.equal(harness.forwarded[0].batchIndex, 2)
+  assert.equal(harness.forwarded[0].batchTotal, 3)
   assert.equal(harness.posted[0].payload.requestId, 'dmp-direct-1')
 })
 

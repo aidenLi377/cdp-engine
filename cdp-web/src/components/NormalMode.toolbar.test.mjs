@@ -45,7 +45,7 @@ test('workbench toolbar stays on one line without widening the canvas', () => {
   assert.match(css, /\.workbench-toolbar-actions \{[^}]*min-width: 0;/s)
   assert.doesNotMatch(normalModeVue, /databank-auto-calculate-inline/)
   assert.doesNotMatch(css, /\.databank-auto-calculate-inline/)
-  assert.match(css, /\.automation-single-mode-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/s)
+  assert.match(css, /\.automation-single-mode-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/s)
 })
 
 test('workbench phase status is a compact breathing-light indicator', () => {

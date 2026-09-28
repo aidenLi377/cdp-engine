@@ -22,7 +22,11 @@ _FOLDER_KEY_MAP = {
     "updated_at": "updatedAt",
 }
 _FOLDER_COL_MAP = {v: k for k, v in _FOLDER_KEY_MAP.items()}
-_EXECUTION_MODES = {"calculate_only", "create_only", "create_and_count"}
+_EXECUTION_MODES = {"calculate_only", "create_and_count"}
+
+
+def _normalize_execution_mode(value: str | None) -> str:
+    return "create_and_count" if value == "create_only" else (value or "create_and_count")
 
 
 def _utc_now() -> str:
@@ -59,7 +63,7 @@ class FolderStore:
         result = {}
         for col, val in row.items():
             key = _FOLDER_KEY_MAP.get(col, col)
-            result[key] = val
+            result[key] = _normalize_execution_mode(val) if key == "executionMode" else val
         return result
 
     @staticmethod
@@ -67,7 +71,7 @@ class FolderStore:
         result = {}
         for key, val in payload.items():
             col = _FOLDER_COL_MAP.get(key, key)
-            result[col] = val
+            result[col] = _normalize_execution_mode(val) if col == "execution_mode" else val
         return result
 
     def _find_folder(self, conn, folder_id: str) -> dict:
@@ -160,6 +164,7 @@ class FolderStore:
         scope: str = "mine",
         execution_mode: str = "create_and_count",
     ) -> dict:
+        execution_mode = _normalize_execution_mode(execution_mode)
         if scope not in {"mine", "public"}:
             raise ValueError("invalid folder scope")
         if execution_mode not in _EXECUTION_MODES:

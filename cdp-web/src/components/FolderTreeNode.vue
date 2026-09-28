@@ -64,6 +64,14 @@
         <span class="folder-name">{{ folder.name }}</span>
       </template>
       <button
+        v-if="copyEnabled && editingFolderId !== folder.id"
+        type="button"
+        class="folder-share-action"
+        :aria-label="`复制「${folder.name}」到我的方案`"
+        :title="`复制「${folder.name}」及其子文件夹到我的方案`"
+        @click.stop="$emit('copy-folder', folder)"
+      ><el-icon><CopyDocument /></el-icon></button>
+      <button
         v-if="shareEnabled && editingFolderId !== folder.id"
         type="button"
         class="folder-share-action"
@@ -74,7 +82,7 @@
         <el-icon><Share /></el-icon>
       </button>
       <button
-        v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
+        v-if="showBatchBadges && !hasChildren && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
         type="button"
         class="folder-batch-badge"
         :data-tutorial-target="String(folder.id) === String(tutorialBatchFolderId || '') ? 'pull-open-group' : undefined"
@@ -110,11 +118,13 @@
         :batch-counts="batchCounts"
         :show-batch-badges="showBatchBadges"
         :share-enabled="shareEnabled"
+        :copy-enabled="copyEnabled"
         :tutorial-batch-folder-id="tutorialBatchFolderId"
         @toggle-expand="(id) => $emit('toggle-expand', id)"
         @select-folder="(id) => $emit('select-folder', id)"
         @batch-apply="(id) => $emit('batch-apply', id)"
         @share-folder="(item) => $emit('share-folder', item)"
+        @copy-folder="(item) => $emit('copy-folder', item)"
         @context-menu="(ev, f) => $emit('context-menu', ev, f)"
         @drag-enter-folder="(ev, id) => $emit('drag-enter-folder', ev, id)"
         @drag-over-folder="(ev, id) => $emit('drag-over-folder', ev, id)"
@@ -133,7 +143,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
-import { Check, Close, Share } from '@element-plus/icons-vue'
+import { Check, Close, Share, CopyDocument } from '@element-plus/icons-vue'
 
 const props = defineProps({
   folder: { type: Object, required: true },
@@ -148,6 +158,7 @@ const props = defineProps({
   batchCounts: { type: Object, default: () => ({}) },
   showBatchBadges: { type: Boolean, default: false },
   shareEnabled: { type: Boolean, default: false },
+  copyEnabled: { type: Boolean, default: false },
   tutorialBatchFolderId: { type: String, default: '' },
 })
 
@@ -158,6 +169,7 @@ const emit = defineEmits([
   'update-edit-name',
   'batch-apply',
   'share-folder',
+  'copy-folder',
 ])
 
 const editInputRef = ref(null)

@@ -46,6 +46,7 @@
         <span>人群包</span>
         <span>采集时间</span>
         <span>数据量</span>
+        <span>整体覆盖人数</span>
         <span>状态</span>
         <span>横向对比</span>
         <span></span>
@@ -75,6 +76,9 @@
           <span v-if="mode === 'history'" class="dc-history-time">{{ entry.task.time || '—' }}</span>
           <span v-if="mode === 'history'" class="dc-history-size">
             {{ hasResults(entry.task) ? `${entry.task.results.length} 行` : '—' }}
+          </span>
+          <span v-if="mode === 'history'" class="dc-history-coverage">
+            {{ formatCrowdCount(entry.task.crowdCount) }}
           </span>
 
           <button
@@ -450,6 +454,14 @@ function isSelectable(task) {
 
 function statusLabel(status) {
   return ({ completed: '已完成', failed: '失败', cancelled: '已取消', running: '进行中' })[status] || status || '未知'
+}
+
+function formatCrowdCount(value) {
+  if (value === null || value === undefined || value === '') return '—'
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue)
+    ? Math.round(numericValue).toLocaleString('zh-CN')
+    : String(value)
 }
 
 const taskEntries = computed(() => props.tasks.map((task, index) => ({
@@ -973,9 +985,10 @@ input:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
 .dc-history-columns,
 .dc-workspace.is-history .dc-history-row {
   grid-template-columns:
-    minmax(280px, 1.6fr)
+    minmax(260px, 1.5fr)
     minmax(96px, 0.55fr)
     minmax(72px, 0.4fr)
+    minmax(108px, 0.55fr)
     minmax(84px, 0.45fr)
     minmax(96px, 0.5fr)
     28px;
@@ -1025,7 +1038,8 @@ input:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
 .dc-workspace.is-history .dc-history-copy > span { display: none; }
 .dc-history-copy i { font-style: normal; }
 .dc-history-time,
-.dc-history-size {
+.dc-history-size,
+.dc-history-coverage {
   color: var(--dc-muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;

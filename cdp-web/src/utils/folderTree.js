@@ -46,3 +46,19 @@ export function buildFolderSubtreeCounts(folders, items, getFolderId = item => i
   for (const folder of folders || []) countFolder(folder)
   return counts
 }
+
+export function buildLeafFolderDirectCounts(folders, items, getFolderId = item => item?.folderId) {
+  const directCounts = new Map()
+  for (const item of items || []) {
+    const folderId = getFolderId(item)
+    if (!folderId) continue
+    directCounts.set(folderId, (directCounts.get(folderId) || 0) + 1)
+  }
+
+  const counts = {}
+  visitFolderTree(folders, (folder) => {
+    const hasChildren = Array.isArray(folder?.children) && folder.children.length > 0
+    counts[folder.id] = hasChildren ? 0 : (directCounts.get(folder.id) || 0)
+  })
+  return counts
+}

@@ -343,7 +343,8 @@ import {
 
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
-const EXPECTED_EXTENSION_VERSION = '2.2.18'
+const DMP_BATCH_EXECUTION_GAP_MS = 250
+const EXPECTED_EXTENSION_VERSION = '2.2.33'
 const TASK_SESSION_KEY = 'task-center.v1'
 const COMPLETION_TOAST_DURATION_MS = 4000
 const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
@@ -952,7 +953,7 @@ function viewHistoryTask(task) {
   if (Array.isArray(task?.results) && task.results.length) {
     activeTask.value = null
     taskResults.value = normalizeResultRows(task.results)
-    crowdCount.value = task.crowdCount || null
+    crowdCount.value = task.crowdCount ?? null
     return
   }
   taskResults.value = null
@@ -1221,7 +1222,7 @@ async function loadHistory() {
         ...t,
         time: new Date(t.createdAt).toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         results: t.result || t.results || null,
-        crowdCount: t.crowdCount || null,
+        crowdCount: t.crowdCount ?? null,
       }))
       reconcileComparisonSelection()
     }
@@ -1367,8 +1368,8 @@ async function executeDatabank(crowdName, autoApply, run) {
   return phase1
 }
 
-async function executeDmp(crowdName, run) {
-  const settingsReady = await loadDmpSettings(true)
+async function executeDmp(crowdName, run, options = {}) {
+  const settingsReady = options.dmpSettingsReady === true || await loadDmpSettings(true)
   ensureRunActive(run)
   if (!settingsReady) throw new Error('无法同步 DMP 设置，请重新加载新版合并插件')
   if (selectedTags.value.length === 0) throw new Error('请选择至少一个已就绪的标签')
@@ -1377,9 +1378,16 @@ async function executeDmp(crowdName, run) {
     crowdName,
     selectedTags: orderedSelectedTagIds.value,
     runId: run.id,
+    batchId: options.batchTotal > 1 ? run.id : '',
+    batchIndex: options.batchIndex || 0,
+    batchTotal: options.batchTotal || 0,
   }, { signal: run.controller.signal })
   ensureRunActive(run)
-  if (!result.ok) throw new Error(result.error || '达摩盘接口取数失败')
+  if (!result.ok) {
+    const error = new Error(result.error || '达摩盘接口取数失败')
+    error.code = result.code || 'DMP_DIRECT_EXTRACT_FAILED'
+    throw error
+  }
   advancePhasesFromTrail(result.trail, {
     'analysis_context_ready': 2,
     'searched': 3,
@@ -1448,12 +1456,16 @@ async function executeViaExtension(crowdName, type, options = {}) {
   let outcome = 'failed'
 
   try {
-    updateProgress(0, phases.value[0], run); await waitForAbortableDelay(800, run.controller.signal)
-    updateProgress(1, phases.value[1], run)
+    updateProgress(0, phases.value[0], run)
+    const isReusedDmpBatchItem = type === 'dmp' && options.batchTotal > 1 && options.batchIndex > 1
+    if (!isReusedDmpBatchItem) await waitForAbortableDelay(800, run.controller.signal)
+    updateProgress(1, isReusedDmpBatchItem
+      ? '复用本批次画像请求，正在获取数据'
+      : phases.value[1], run)
 
     let result
     if (type === 'databank') { result = await executeDatabank(crowdName, autoApply, run) }
-    else { result = await executeDmp(crowdName, run) }
+    else { result = await executeDmp(crowdName, run, options) }
     ensureRunActive(run)
 
     const finalPhase = phases.value.length - 1
@@ -1464,7 +1476,7 @@ async function executeViaExtension(crowdName, type, options = {}) {
     updateProgress(finalPhase, completionMessage, run)
     const hasResults = result?.results && result.results.length > 0
     const orderedResults = hasResults ? normalizeResultRows(result.results) : null
-    if (hasResults) { taskResults.value = orderedResults; crowdCount.value = result.crowdCount || null }
+    if (hasResults) { taskResults.value = orderedResults; crowdCount.value = result.crowdCount ?? null }
     activeTask.value = { ...activeTask.value, status: 'running', hasResults, message: '执行完成，正在保存任务结果…' }
     await saveTerminalTask(backendTask.id, {
       status: 'completed',
@@ -1559,6 +1571,25 @@ async function cancelTask() {
   }
 }
 
+function cancelActiveRunSilently() {
+  const run = activeRunContext
+  if (!run || run.cancelled) return
+  run.cancelled = true
+  run.cancelling = true
+  run.controller.abort()
+  window.postMessage({
+    source: 'cdp-web',
+    type: 'CDP_CANCEL_TASK',
+    requestId: `task_cancel_silent_${Date.now()}_${++extRequestId}`,
+    runId: run.id,
+  }, window.location.origin)
+}
+
+function handleTaskBeforeUnload() {
+  persistTaskSession()
+  cancelActiveRunSilently()
+}
+
 async function runDatabank() {
   if (!extConnected.value) { ElMessage.error('任务执行器未连接，请先安装或启用 Chrome 扩展'); return }
   if (!canRunDatabank.value) return
@@ -1614,6 +1645,16 @@ async function executeBatch(names, type, options = {}, run) {
   const completedNames = []
   const failedNames = []
 
+  if (type === 'dmp') {
+    const settingsReady = await loadDmpSettings(true)
+    if (!settingsReady) {
+      const error = '无法同步 DMP 设置，请重新加载新版合并插件'
+      ElMessage.error(error)
+      return { completed: 0, failed: names.length, completedNames, failedNames: [...names], error }
+    }
+    options = { ...options, dmpSettingsReady: true }
+  }
+
   for (let index = 0; index < names.length; index += 1) {
     if (!isRunActive(run)) break
     const outcome = await executeViaExtension(names[index], type, {
@@ -1667,7 +1708,8 @@ async function executeBatch(names, type, options = {}, run) {
 
     if (isRunActive(run) && index < names.length - 1) {
       try {
-        await waitForAbortableDelay(BATCH_EXECUTION_GAP_MS, run.controller.signal)
+        const gapMs = type === 'dmp' ? DMP_BATCH_EXECUTION_GAP_MS : BATCH_EXECUTION_GAP_MS
+        await waitForAbortableDelay(gapMs, run.controller.signal)
       } catch (error) {
         if (error?.name === 'AbortError') break
         throw error
@@ -1973,7 +2015,7 @@ async function checkExtension(manual = false) {
         }
       }
       window.addEventListener('message', h, { once: false })
-      window.postMessage({ source: 'cdp-web', type: 'CDP_AUTOMATE_DATABANK', requestId, jsonText: '{}' }, window.location.origin)
+      window.postMessage({ source: 'cdp-web', type: 'CDP_EXTENSION_PING', requestId }, window.location.origin)
       setTimeout(() => { window.removeEventListener('message', h); clearTimeout(t); resolve(null) }, 1300)
     })
     extensionVersion.value = String(result?.version || '')
@@ -2012,7 +2054,7 @@ onMounted(async () => {
   window.addEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
   window.addEventListener('cdp:tutorial-run-dmp-batch', runDmpTutorialBatch)
   window.addEventListener('cdp:tutorial-edit-dmp-batch', editDmpTutorialBatch)
-  window.addEventListener('beforeunload', persistTaskSession)
+  window.addEventListener('beforeunload', handleTaskBeforeUnload)
   loadHistory()
   await checkExtension()
   if (pendingAiCommand) {
@@ -2024,12 +2066,13 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  cancelActiveRunSilently()
   clearInterval(extensionTimer)
   extensionTimer = null
   clearTimeout(completionToastTimer)
   completionToastTimer = null
   persistTaskSession()
-  window.removeEventListener('beforeunload', persistTaskSession)
+  window.removeEventListener('beforeunload', handleTaskBeforeUnload)
   window.removeEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
   window.removeEventListener('cdp:tutorial-run-dmp-batch', runDmpTutorialBatch)
   window.removeEventListener('cdp:tutorial-edit-dmp-batch', editDmpTutorialBatch)

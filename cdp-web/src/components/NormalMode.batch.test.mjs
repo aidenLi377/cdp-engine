@@ -11,9 +11,13 @@ const dynamicFormVue = readFileSync(join(currentDir, 'DynamicForm.vue'), 'utf8')
 const customFieldDialogVue = readFileSync(join(currentDir, 'CustomFieldEditDialog.vue'), 'utf8')
 const globalCss = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'utf8')
 
-test('folder combinations are offered only when at least two published solutions exist', () => {
+test('folder combinations are offered only for leaf folders with at least two direct published solutions', () => {
   assert.match(normalModeVue, /@batch-apply="openBatchPreviewForFolder"/)
-  assert.match(normalModeVue, /function openBatchPreview\(\)/)
+  assert.match(normalModeVue, /buildLeafFolderDirectCounts\(publishedFolderTree\.value, publishedSolutions\.value\)/)
+  assert.match(normalModeVue, /function openBatchPreview\(folderId = selectedPublishedFolderId\.value\)/)
+  assert.match(normalModeVue, /folder\?\.children[\s\S]*?父文件夹不支持组合，请选择一个具体的子文件夹/)
+  assert.match(normalModeVue, /getDirectPublishedSolutionsInFolder\(folderId\)/)
+  assert.match(normalModeVue, /if \(!openBatchPreview\(folderId\)\) return/)
   assert.match(normalModeVue, /:show-batch-badges="true"/)
   assert.match(normalModeVue, /solutions\.length < 2/)
 })
@@ -41,6 +45,19 @@ test('batch workbench switches package detail by configured crowd name', () => {
   assert.match(normalModeVue, /nodeList\.value = nextEntry\.nodes/)
 })
 
+test('batch package rail exposes every package through scrolling, buttons, and keyboard navigation', () => {
+  assert.match(normalModeVue, /ref="batchTabsRef"/)
+  assert.match(normalModeVue, /@wheel="onBatchTabsWheel"/)
+  assert.match(normalModeVue, /@click="scrollBatchTabs\(-1\)"/)
+  assert.match(normalModeVue, /@click="scrollBatchTabs\(1\)"/)
+  assert.match(normalModeVue, /function revealBatchTab\(index, behavior = 'smooth'\)/)
+  assert.match(normalModeVue, /revealBatchTab\(index\)/)
+  assert.match(normalModeVue, /@keydown\.left\.prevent="activateAdjacentBatchEntry\(entryIndex, -1\)"/)
+  assert.match(normalModeVue, /@keydown\.right\.prevent="activateAdjacentBatchEntry\(entryIndex, 1\)"/)
+  assert.match(globalCss, /\.batch-compact-scroll \{[^}]*height: 32px;/s)
+  assert.match(globalCss, /\.batch-compact-tabs \{[^}]*overflow-x: auto;/s)
+})
+
 test('batch parameter editing synchronizes every same-name custom field', () => {
   assert.match(normalModeVue, /composeBatchCustomFieldSections/)
   assert.match(normalModeVue, /String\(field\?\.name \|\| ''\)\.trim\(\) === name/)
@@ -66,31 +83,31 @@ test('copy dialog chooses a source while batch automation directly lists a compa
   assert.match(normalModeVue, /toggleBatchAutomationEntry/)
   assert.match(normalModeVue, /for \(const index of targetIndexes\)/)
   assert.match(normalModeVue, /const executionMode = getBatchEntryExecutionMode\(entry\)/)
-  assert.match(normalModeVue, /sendMessageToDatabankExtension\([\s\S]*?executionMode,[\s\S]*?entry\.crowdName/)
-  assert.match(normalModeVue, /三种操作都会先检查同名人群包/)
+  assert.match(normalModeVue, /sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{ precheckedNoMatch: true \}\)/)
+  assert.match(normalModeVue, /sendDatabankDirectCreateWithReconciliation\([\s\S]*?entry\.crowdName,[\s\S]*?run\.id,[\s\S]*?precheckedNoMatch: true/)
+  assert.match(normalModeVue, /两种操作都会先精确检查同名人群包/)
   assert.match(normalModeVue, /entry\.crowdReused = result\?\.crowdReused === true[\s\S]*?if \(executionMode === 'calculate_only'\)/)
   assert.match(normalModeVue, /class="automation-single-mode-grid"/)
-  assert.match(normalModeVue, /setSingleAutomationMode\('create_only'\)/)
-  assert.match(normalModeVue, /autoCalculate: autoCalculate === true/)
+  assert.doesNotMatch(normalModeVue, /setSingleAutomationMode\('create_only'\)/)
   assert.match(normalModeVue, /AUTO_CALCULATE_EXTENSION_VERSION = '2\.2\.2'/)
   assert.match(normalModeVue, /CUSTOM_CROWD_EXTENSION_VERSION = '2\.2\.5'/)
-  assert.match(normalModeVue, /AUDIENCE_TASK_EXTENSION_VERSION = '2\.2\.15'/)
+  assert.match(normalModeVue, /AUDIENCE_TASK_EXTENSION_VERSION = '2\.2\.33'/)
   assert.match(normalModeVue, /class="batch-interface-only"[\s\S]*?接口执行/)
   assert.doesNotMatch(normalModeVue, /页面计算|页面建包|页面取数/)
   assert.match(normalModeVue, /const batchCreateMethod = ref\('api'\)/)
   assert.match(normalModeVue, /const batchRealtimeCountMethod = ref\('api'\)/)
-  assert.match(normalModeVue, /sendDatabankDirectCreate\(jsonText, entry\.crowdName, run\.id\)/)
-  assert.match(normalModeVue, /executionMode === 'calculate_only'[\s\S]*?sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id\)[\s\S]*?: await sendDatabankDirectCreate/)
+  assert.match(normalModeVue, /executionMode === 'calculate_only'[\s\S]*?contextPreparation\?\.warmupResult\?\.ok === true/)
+  assert.match(normalModeVue, /contextPreparation\.warmupResult[\s\S]*?sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{ precheckedNoMatch: true \}\)[\s\S]*?: await sendDatabankDirectCreateWithReconciliation/)
   assert.match(normalModeVue, /node\?\.packageType === '自定义人群'/)
   assert.match(normalModeVue, /ensureAutomationExtensionReady/)
-  assert.match(normalModeVue, /payload\.autoCalculated !== true/)
+  assert.doesNotMatch(normalModeVue, /function sendMessageToDatabankExtension/)
 })
 
-test('single automation offers three API-only execution choices and safely handles large packages', () => {
+test('single automation offers two API-only execution choices and safely handles large packages', () => {
   assert.match(normalModeVue, /class="automation-single-panel"/)
   assert.match(normalModeVue, /class="automation-single-mode-grid"/)
   assert.match(normalModeVue, /aria-label="单个人群包的执行方式"/)
-  assert.match(normalModeVue, />只圈包</)
+  assert.doesNotMatch(normalModeVue, />只圈包</)
   assert.match(normalModeVue, />建包并取数</)
   assert.match(normalModeVue, />只算人数</)
   assert.match(normalModeVue, /function setSingleAutomationMode\(mode\)[\s\S]*?mode === 'create_and_count'[\s\S]*?singleCreateAndCount\.value = true[\s\S]*?batchRealtimeCountMethod\.value = 'api'/)
@@ -107,14 +124,14 @@ test('single automation offers three API-only execution choices and safely handl
   assert.doesNotMatch(singleFlow, /crowdNameInput\.value \|\| DEFAULT_CROWD_NAME/)
   assert.match(singleFlow, /showAutomationStage\('正在准备人群包参数\.\.\.'\)/)
   assert.match(singleFlow, /showAutomationStage\('正在检查同名人群包\.\.\.'\)[\s\S]*?sendDatabankCrowdCountQuery\(crowdName\)/)
-  assert.match(singleFlow, /正在准备 \$\{dependencyCount\} 个自定义人群并通过接口计算人数/)
-  assert.match(singleFlow, /正在检查接口环境并计算人数/)
-  assert.match(singleFlow, /正在检查同名人群包和接口环境，并创建人群包/)
+  assert.match(singleFlow, /首次使用时将直接用当前人群准备接口环境/)
+  assert.match(singleFlow, /ensureDatabankApiContextReady\(run\.id, \{[\s\S]*?jsonText,[\s\S]*?crowdName,[\s\S]*?executionMode,[\s\S]*?precheckedNoMatch: true/)
+  assert.match(singleFlow, /contextPreparation\?\.warmupResult\?\.ok === true[\s\S]*?contextPreparation\.warmupResult/)
   assert.doesNotMatch(singleFlow, /正在打开数据银行/)
   assert.match(singleFlow, /const executionMode = getSingleAutomationMode\(\)/)
   assert.match(singleFlow, /sendDatabankCrowdCountQuery\(crowdName\)[\s\S]*?existingCrowd\?\.crowdFound === true/)
-  assert.match(singleFlow, /sendDatabankRealtimeCount\(jsonText, crowdName\)/)
-  assert.match(singleFlow, /sendDatabankDirectCreate\(jsonText, crowdName\)/)
+  assert.match(singleFlow, /sendDatabankRealtimeCount\(jsonText, crowdName, run\.id, \{ precheckedNoMatch: true \}\)/)
+  assert.match(singleFlow, /sendDatabankDirectCreateWithReconciliation\([\s\S]*?crowdName,[\s\S]*?run\.id,[\s\S]*?precheckedNoMatch: true/)
   assert.match(singleFlow, /executionMode === 'create_and_count'[\s\S]*?createSingleAudienceCountTask\(crowdName, result\)/)
   assert.match(singleFlow, /backgroundCountTask: true/)
   assert.match(singleFlow, /接口建包成功：\$\{crowdName\}/)
@@ -125,16 +142,36 @@ test('single automation offers three API-only execution choices and safely handl
   assert.doesNotMatch(normalModeVue, /人数已经查询 10 分钟|超过 10 分钟/)
   assert.match(normalModeVue, /requiresRealtimeCountApi[\s\S]*?AUDIENCE_TASK_EXTENSION_VERSION/)
   assert.match(globalCss, /\.automation-single-mode-grid/)
-  assert.match(globalCss, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/)
+  assert.match(globalCss, /\.automation-single-mode-grid \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/s)
   assert.match(globalCss, /\.automation-single-mode\.is-active/)
   assert.match(globalCss, /\.single-count-task-stack/)
 })
 
-test('each audience row exposes three execution modes and the workbench keeps compact task progress', () => {
-  for (const mode of ['create_only', 'calculate_only', 'create_and_count']) {
-    assert.match(folderTreeVue, new RegExp(mode))
+test('automation prepares the DataBank API context and reconciles ambiguous create failures', () => {
+  assert.match(normalModeVue, /CDP_PREPARE_DATABANK_API_CONTEXT/)
+  assert.match(normalModeVue, /async function ensureDatabankApiContextReady\(runId = '', warmupTask = \{\}\)/)
+  assert.match(normalModeVue, /sendDatabankApiContextCheck\(false, true, runId, warmupTask\)/)
+  assert.match(normalModeVue, /正在读取已打开的数据银行接口环境/)
+  assert.match(normalModeVue, /const manualSetupRequired = warmupResult\?\.hasOpenTab === false/)
+  assert.match(normalModeVue, /'DATABANK_PAGE_REQUIRED',[\s\S]*?'DATABANK_REQUEST_CONTEXT_REQUIRED',[\s\S]*?'DATABANK_LOGIN_REQUIRED'/)
+  assert.match(normalModeVue, /if \(!manualSetupRequired\) \{[\s\S]*?数据银行接口环境自动准备失败，请稍后重试/)
+  assert.match(normalModeVue, /首次使用前，完成一次接口初始化/)
+  assert.match(normalModeVue, /点击一次「计算人数」/)
+  assert.match(normalModeVue, /ensureDatabankApiContextReady\(run\.id, \{/)
+  assert.match(normalModeVue, /CDP_RELEASE_DATABANK_API_SESSION/)
+  assert.match(normalModeVue, /async function sendDatabankDirectCreateWithReconciliation/)
+  assert.match(normalModeVue, /creationConfirmedByLookup: true/)
+  assert.match(normalModeVue, /建包响应中断，但已查询到同名人群包，已按成功处理/)
+  assert.match(globalCss, /\.databank-context-message-box/)
+})
+
+test('each audience row exposes two execution modes and the workbench keeps compact task progress', () => {
+  for (const mode of ['calculate_only', 'create_and_count']) {
     assert.match(normalModeVue, new RegExp(mode))
   }
+  assert.doesNotMatch(folderTreeVue, /默认执行|calculate_only|create_and_count/)
+  assert.doesNotMatch(folderTreeVue, /value="create_only"/)
+  assert.doesNotMatch(normalModeVue, />只建包<|>只圈包</)
   assert.match(normalModeVue, /class="batch-task-launch"/)
   assert.doesNotMatch(normalModeVue, /<section class="batch-task-center"/)
   assert.match(normalModeVue, /v-for="mode in BATCH_EXECUTION_MODES"/)
@@ -160,7 +197,8 @@ test('eligible audiences default to count-only and remember choices per user and
   assert.match(normalModeVue, /getDefaultAudienceExecutionMode/)
   assert.match(normalModeVue, /loadAudienceExecutionPreferences/)
   assert.match(normalModeVue, /saveAudienceExecutionPreference/)
-  assert.match(normalModeVue, /const executionPreferenceKey = selectedPublishedFolderId\.value/)
+  assert.match(normalModeVue, /function getBatchExecutionPreferenceKey\(folderId = selectedPublishedFolderId\.value\)/)
+  assert.match(normalModeVue, /const executionPreferenceKey = getBatchExecutionPreferenceKey\(\)/)
   assert.match(normalModeVue, /batchExecutionPreferenceKey\.value = executionPreferenceKey/)
   assert.match(normalModeVue, /function rememberBatchEntryExecutionMode/)
   assert.match(normalModeVue, /rememberBatchEntryExecutionMode\(entry, mode\)/)
@@ -174,14 +212,34 @@ test('batch automation preflights the target and custom crowd dependencies befor
   assert.match(automationFlow, /sendDatabankCrowdCountQuery\(entry\.crowdName\)[\s\S]*?if \(existingCrowd\?\.crowdFound === true\)/)
   assert.match(automationFlow, /extractCustomCrowdDependencyNames\(jsonText\)[\s\S]*?sendDatabankCustomDependencyCheck\(dependencyNames\)/)
   const duplicateCheck = automationFlow.indexOf('sendDatabankCrowdCountQuery(entry.crowdName)')
-  const realtimeExecution = automationFlow.indexOf('sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id)')
-  const createExecution = automationFlow.indexOf('sendDatabankDirectCreate(jsonText, entry.crowdName, run.id)')
+  const realtimeExecution = automationFlow.indexOf('sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, { precheckedNoMatch: true })')
+  const createExecution = automationFlow.indexOf('sendDatabankDirectCreateWithReconciliation(')
   assert.ok(duplicateCheck >= 0 && duplicateCheck < realtimeExecution && duplicateCheck < createExecution)
   assert.match(normalModeVue, /CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES/)
   assert.match(normalModeVue, /waiting_dependency/)
   assert.match(normalModeVue, /dependency_blocked/)
   assert.match(normalModeVue, /refreshBatchEntryDependencies/)
   assert.match(globalCss, /\.batch-run-refresh/)
+})
+
+test('a mixed batch skips API-context preparation for existing crowds and prepares only after the first miss', () => {
+  const automationFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function startBatchAutomationFlow'),
+    normalModeVue.indexOf('function retryPullAnalysisBatch'),
+  )
+  const duplicateCheck = automationFlow.indexOf('sendDatabankCrowdCountQuery(entry.crowdName)')
+  const existingBranchStart = automationFlow.indexOf('if (existingCrowd?.crowdFound === true)')
+  const dependencyStart = automationFlow.indexOf('if (entry.internalDependencies.length > 0)')
+  const contextPreparation = automationFlow.indexOf('ensureDatabankApiContextReady(run.id, {')
+  const createExecution = automationFlow.indexOf('sendDatabankDirectCreateWithReconciliation(')
+  const existingBranch = automationFlow.slice(existingBranchStart, dependencyStart)
+
+  assert.ok(duplicateCheck >= 0)
+  assert.ok(duplicateCheck < existingBranchStart)
+  assert.match(existingBranch, /applyBatchAutomationResult\([\s\S]*?continue/)
+  assert.doesNotMatch(existingBranch, /ensureDatabankApiContextReady/)
+  assert.ok(existingBranchStart < contextPreparation)
+  assert.ok(contextPreparation < createExecution)
 })
 
 test('a batch run resolves internal crowd dependencies before downstream packages execute', () => {
@@ -191,9 +249,13 @@ test('a batch run resolves internal crowd dependencies before downstream package
   assert.match(normalModeVue, /sourceEntry\.isInternalPrerequisite = true[\s\S]*?sourceEntry\.executionMode = 'create_and_count'/)
   assert.match(normalModeVue, /function rewriteBatchInternalDependencyNames\(entry, payload\)/)
   assert.match(normalModeVue, /node\.selectionLv3\.crowdIds = Array\.isArray\(crowdIds\) \? rewritten : rewritten\[0\]/)
+  assert.match(normalModeVue, /function rewriteResolvedCustomCrowdIds\(payload, dependencies\)/)
+  assert.match(normalModeVue, /crowdId: sourceEntry\?\.crowdId \?\? null/)
   assert.match(normalModeVue, /const targetIndexes = expandBatchIndexesWithDependencies\(requestedIndexes\)/)
   assert.match(normalModeVue, /rewriteBatchInternalDependencyNames\(entry, getGeneratedJsonText\(\)\)/)
   assert.match(normalModeVue, /buildInternalDependencyResult\(entry\)/)
+  assert.match(normalModeVue, /rewriteResolvedCustomCrowdIds\(jsonText, internalDependencyResult\.results\)/)
+  assert.match(normalModeVue, /rewriteResolvedCustomCrowdIds\(jsonText, dependencyResult\.results\)/)
   assert.match(normalModeVue, /function queueReadyInternalDependencyRuns\(\)/)
   assert.match(normalModeVue, /executionMode === 'create_and_count' && !entry\.countReady[\s\S]*?startCrowdCountPolling/)
   assert.match(normalModeVue, /建立前置包/)
@@ -290,6 +352,21 @@ test('running batch tasks can be reopened and interrupted without losing complet
   assert.match(normalModeVue, /type: 'CDP_CANCEL_TASK'/)
   assert.match(normalModeVue, /runId,[\s\S]*?window\.location\.origin/)
   assert.match(normalModeVue, /用户已中断，可重新执行该任务/)
+})
+
+test('interrupting a batch cancels count pollers and every batch exit releases its API session', () => {
+  const interruptFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function interruptBatchAutomation'),
+    normalModeVue.indexOf('function getRandomCountPollingIntervalMs'),
+  )
+  const automationFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function startBatchAutomationFlow'),
+    normalModeVue.indexOf('function retryPullAnalysisBatch'),
+  )
+
+  assert.match(interruptFlow, /internalDependencyResumeTimer[\s\S]*?cancelAllCrowdCountPolling\(\)/)
+  assert.match(interruptFlow, /sendDatabankTaskCancel\(run\.id\)/)
+  assert.match(automationFlow, /finally \{[\s\S]*?releaseDatabankApiSession\(run\.id\)/)
 })
 
 test('dash and privacy-threshold counts are successful results and stay textual in Excel export', () => {

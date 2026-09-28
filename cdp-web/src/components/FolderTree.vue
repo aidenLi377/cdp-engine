@@ -71,6 +71,14 @@
           <span class="folder-name">{{ folder.name }}</span>
         </template>
         <button
+          v-if="copyEnabled && editingFolderId !== folder.id"
+          type="button"
+          class="folder-share-action"
+          :aria-label="`复制「${folder.name}」到我的方案`"
+          :title="`复制「${folder.name}」及其子文件夹到我的方案`"
+          @click.stop="copyFolder(folder)"
+        ><el-icon><CopyDocument /></el-icon></button>
+        <button
           v-if="shareEnabled && editingFolderId !== folder.id"
           type="button"
           class="folder-share-action"
@@ -81,7 +89,7 @@
           <el-icon><Share /></el-icon>
         </button>
         <button
-          v-if="showBatchBadges && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
+          v-if="showBatchBadges && !hasFolderChildren(folder) && editingFolderId !== folder.id && getBatchCount(folder.id) >= 2"
           type="button"
           class="folder-batch-badge"
           :data-tutorial-target="String(folder.id) === String(tutorialBatchFolderId || '') ? 'pull-open-group' : undefined"
@@ -115,11 +123,13 @@
           :batch-counts="batchCounts"
           :show-batch-badges="showBatchBadges"
           :share-enabled="shareEnabled"
+          :copy-enabled="copyEnabled"
           :tutorial-batch-folder-id="tutorialBatchFolderId"
           @toggle-expand="toggleExpand"
           @select-folder="selectFolder"
           @batch-apply="openBatchFolder"
           @share-folder="shareFolder"
+          @copy-folder="copyFolder"
           @context-menu="onContextMenu"
           @drag-enter-folder="onDragEnterFolder"
           @drag-over-folder="onDragOverFolder"
@@ -158,6 +168,10 @@
     </div>
 
     <div v-if="!readOnly && creatingParentId !== undefined" class="folder-create-row">
+      <div class="folder-create-heading">
+        <span>新建方案组</span>
+        <button type="button" aria-label="关闭新建方案组" title="关闭" @click="cancelCreate">×</button>
+      </div>
       <div class="folder-create-fields">
         <el-input
           v-model="createName"
@@ -169,18 +183,10 @@
           @keyup.esc="cancelCreate"
           ref="createInputRef"
         />
-        <div class="folder-create-mode" aria-label="方案组默认执行方式">
-          <span>默认执行</span>
-          <el-radio-group v-model="createExecutionMode" size="small">
-            <el-radio-button value="calculate_only">只算人数</el-radio-button>
-            <el-radio-button value="create_only">只圈包</el-radio-button>
-            <el-radio-button value="create_and_count">圈包并取数</el-radio-button>
-          </el-radio-group>
+        <div class="folder-create-actions">
+          <el-button size="small" text @click="cancelCreate">取消</el-button>
+          <el-button size="small" class="folder-create-confirm" @click="finishCreate">创建</el-button>
         </div>
-      </div>
-      <div class="folder-create-actions">
-        <el-button size="small" text @click="finishCreate">确定</el-button>
-        <el-button size="small" text @click="cancelCreate">取消</el-button>
       </div>
     </div>
 
@@ -206,7 +212,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Folder as FolderIcon } from '@element-plus/icons-vue'
-import { Check, Close, Share } from '@element-plus/icons-vue'
+import { Check, Close, Share, CopyDocument } from '@element-plus/icons-vue'
 import FolderTreeNode from './FolderTreeNode.vue'
 import { findFolderById } from '../utils/folderTree.js'
 
@@ -216,16 +222,16 @@ const props = defineProps({
   batchCounts: { type: Object, default: () => ({}) },
   showBatchBadges: { type: Boolean, default: false },
   shareEnabled: { type: Boolean, default: false },
+  copyEnabled: { type: Boolean, default: false },
   tutorialBatchFolderId: { type: String, default: '' },
 })
 
-const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply', 'share-folder', 'tutorial-create-started'])
+const emit = defineEmits(['select-folder', 'folders-changed', 'batch-apply', 'share-folder', 'copy-folder', 'tutorial-create-started'])
 
 const expandedIds = ref(new Set())
 const selectedFolderId = ref(null)
 const creatingParentId = ref(undefined)
 const createName = ref('')
-const createExecutionMode = ref('create_and_count')
 const createInputRef = ref(null)
 const editInputRef = ref(null)
 const editingFolderId = ref(null)
@@ -267,11 +273,14 @@ function shareFolder(folder) {
   emit('share-folder', folder)
 }
 
+function copyFolder(folder) {
+  if (props.copyEnabled && folder?.id) emit('copy-folder', folder)
+}
+
 function startCreate(parentId, tutorialTrigger = false) {
   if (props.readOnly) return
   creatingParentId.value = parentId
   createName.value = ''
-  createExecutionMode.value = 'create_and_count'
   if (tutorialTrigger) emit('tutorial-create-started')
   nextTick(() => {
     createInputRef.value?.focus?.()
@@ -281,7 +290,6 @@ function startCreate(parentId, tutorialTrigger = false) {
 function cancelCreate() {
   creatingParentId.value = undefined
   createName.value = ''
-  createExecutionMode.value = 'create_and_count'
 }
 
 function finishCreate() {
@@ -289,15 +297,9 @@ function finishCreate() {
   const name = createName.value.trim()
   if (!name) return
   const parentId = creatingParentId.value
-  const executionMode = createExecutionMode.value
   contextMenu.value.visible = false
   cancelCreate()
-  emit('folders-changed', {
-    action: 'create',
-    parentId,
-    name,
-    executionMode,
-  })
+  emit('folders-changed', { action: 'create', parentId, name })
 }
 
 function hasFolderChildren(folder) {
@@ -634,51 +636,83 @@ defineExpose({ selectedFolderId, selectFolder })
   margin-left: 14px;
 }
 .folder-create-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
   margin-top: 4px;
-  border: 1px solid #e6e8ed;
-  border-radius: 9px;
-  background: #fbfbfc;
+  border: 1px solid #e2e4e9;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(29, 29, 31, 0.06);
+}
+.folder-create-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+.folder-create-heading > span {
+  color: #30323a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.folder-create-heading > button {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  place-items: center;
+  color: #8a8e98;
+  font: 16px/1 sans-serif;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.folder-create-heading > button:hover,
+.folder-create-heading > button:focus-visible {
+  color: #202126;
+  background: #f2f3f5;
+  outline: none;
 }
 .folder-create-fields {
   display: grid;
   min-width: 0;
-  flex: 1;
-  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
 }
-.folder-create-row .el-input {
-  flex: 1;
+.folder-create-row :deep(.el-input__wrapper) {
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 7px;
 }
-.folder-create-mode {
-  display: grid;
-  gap: 5px;
-}
-.folder-create-mode > span {
-  color: #777d89;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: .08em;
-}
-.folder-create-mode :deep(.el-radio-group) {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
-}
-.folder-create-mode :deep(.el-radio-button__inner) {
-  width: 100%;
-  padding: 0 4px !important;
-  border: 0 !important;
-  border-radius: 5px !important;
-  font-size: 9px !important;
-  box-shadow: none !important;
+.folder-create-row :deep(.el-input__inner) {
+  font-size: 12px;
 }
 .folder-create-actions {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  gap: 2px;
+}
+.folder-create-actions :deep(.el-button) {
+  min-width: 40px;
+  height: 30px;
+  margin: 0;
+  padding: 0 9px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.folder-create-actions :deep(.folder-create-confirm) {
+  color: #fff;
+  border-color: #222328;
+  background: #222328;
+}
+.folder-create-actions :deep(.folder-create-confirm:hover),
+.folder-create-actions :deep(.folder-create-confirm:focus-visible) {
+  border-color: #f26a3d;
+  background: #f26a3d;
 }
 .folder-context-menu {
   position: fixed;

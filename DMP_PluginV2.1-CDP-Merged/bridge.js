@@ -3,9 +3,11 @@
   console.log('[CDP Bridge] loaded on', window.location.href);
 
   var VALID_TYPES = [
-    'CDP_AUTOMATE_DATABANK',
+    'CDP_EXTENSION_PING',
     'CDP_QUERY_DATABANK_REALTIME_COUNT',
     'CDP_CREATE_DATABANK_CROWD_API',
+    'CDP_PREPARE_DATABANK_API_CONTEXT',
+    'CDP_RELEASE_DATABANK_API_SESSION',
     'CDP_QUERY_DATABANK_CROWD_COUNT',
     'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES',
     'CDP_AUTOMATE_DATABANK_CROWD',
@@ -51,6 +53,17 @@
         crowdReused: data.crowdReused === true,
         crowdStatus: data.crowdStatus || '',
         ready: data.ready === true,
+        contextSource: data.source || '',
+        warmedUp: data.warmedUp === true,
+        usedCurrentTask: data.usedCurrentTask === true,
+        warmupResult: data.warmupResult || null,
+        hasOpenTab: data.hasOpenTab === true,
+        openedSetup: data.openedSetup === true,
+        sessionReady: data.sessionReady === true,
+        sessionReused: data.sessionReused === true,
+        released: data.released === true,
+        reusedBatchContext: data.reusedBatchContext === true,
+        contextRefreshed: data.contextRefreshed === true,
         executionMode: data.executionMode || '',
         directRealtime: data.directRealtime === true,
         directCreate: data.directCreate === true,
@@ -75,8 +88,8 @@
 
     console.log('[CDP Bridge] received', p.type, p.requestId);
 
-    // Ping: respond immediately
-    if (typeof p.requestId === 'string' && p.requestId.indexOf('ping') === 0) {
+    // Capability probe: never piggyback on a business operation.
+    if (p.type === 'CDP_EXTENSION_PING') {
       safeRespond(p, { ok: true, ready: true });
       return;
     }
@@ -89,14 +102,18 @@
       runId: String(p.runId || ''),
     };
 
-    if (p.type === 'CDP_AUTOMATE_DATABANK' || p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT' || p.type === 'CDP_CREATE_DATABANK_CROWD_API') {
+    if (p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT' || p.type === 'CDP_CREATE_DATABANK_CROWD_API') {
       extMsg.jsonText = p.jsonText || '';
       extMsg.crowdName = p.crowdName || '';
+      extMsg.precheckedNoMatch = p.precheckedNoMatch === true;
       if (!extMsg.jsonText.trim()) { safeRespond(p, { ok: false, error: 'jsonText 不能为空' }); return; }
-      if (p.type === 'CDP_AUTOMATE_DATABANK') {
-        extMsg.autoCalculate = p.autoCalculate === true;
-        extMsg.executionMode = p.executionMode || '';
-      }
+    } else if (p.type === 'CDP_PREPARE_DATABANK_API_CONTEXT') {
+      extMsg.openSetup = p.openSetup === true;
+      extMsg.autoWarmup = p.autoWarmup === true;
+      extMsg.jsonText = p.jsonText || '';
+      extMsg.crowdName = p.crowdName || '';
+      extMsg.executionMode = p.executionMode || '';
+      extMsg.precheckedNoMatch = p.precheckedNoMatch === true;
     } else if (p.type === 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES') {
       extMsg.crowdNames = Array.from(new Set((Array.isArray(p.crowdNames) ? p.crowdNames : [])
         .map(function(item) { return String(item || '').trim(); })
@@ -110,9 +127,12 @@
         extMsg.selectedTags = Array.from(new Set((Array.isArray(p.selectedTags) ? p.selectedTags : [])
           .map(function(item) { return String(item || '').trim(); })
           .filter(Boolean)));
+        extMsg.batchId = String(p.batchId || '').trim();
+        extMsg.batchIndex = Math.max(0, parseInt(p.batchIndex, 10) || 0);
+        extMsg.batchTotal = Math.max(0, parseInt(p.batchTotal, 10) || 0);
         if (!extMsg.selectedTags.length) { safeRespond(p, { ok: false, error: '请至少选择一个画像标签' }); return; }
       }
-    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' || p.type === 'CDP_CANCEL_TASK') {
+    } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY' || p.type === 'CDP_AUTOMATE_DMP_WAIT_PORTRAIT' || p.type === 'CDP_CANCEL_TASK' || p.type === 'CDP_RELEASE_DATABANK_API_SESSION') {
       // No payload needed — just forward to background
     } else if (p.type === 'CDP_AUTOMATE_DMP_EXTRACT') {
       extMsg.phase1Result = p.phase1Result || {};
@@ -139,7 +159,7 @@
 
     // Send to background with timeout — SPA flows need generous headroom for tab creation, page load, and DOM waits
     var timeoutMs;
-    if (p.type === 'CDP_CANCEL_TASK') {
+    if (p.type === 'CDP_CANCEL_TASK' || p.type === 'CDP_RELEASE_DATABANK_API_SESSION') {
       timeoutMs = 12000;   // hard-stop acknowledgement, including tab cleanup
     } else if (p.type === 'CDP_AUTOMATE_DATABANK_WAIT_APPLY') {
       timeoutMs = 2100000; // 35min — human confirmation wait (up to 30min polling)
@@ -157,10 +177,12 @@
       timeoutMs = 180000;  // 3min — tab open + SPA load + search + match + dialog
     } else if (p.type === 'CDP_QUERY_DATABANK_REALTIME_COUNT') {
       timeoutMs = 60000;   // authenticated API count without page automation
+    } else if (p.type === 'CDP_CREATE_DATABANK_CROWD_API') {
+      timeoutMs = 150000;  // preflight + dependency resolution + create + reconciliation
+    } else if (p.type === 'CDP_PREPARE_DATABANK_API_CONTEXT') {
+      timeoutMs = p.autoWarmup === true ? 120000 : (p.openSetup === true ? 60000 : 20000);
     } else if (p.type === 'CDP_QUERY_DATABANK_CROWD_COUNT' || p.type === 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES') {
       timeoutMs = 30000;   // one authenticated list request
-    } else if (p.type === 'CDP_AUTOMATE_DATABANK') {
-      timeoutMs = 150000;  // 2.5min — parameter paste + optional crowd count calculation
     } else {
       timeoutMs = 60000;
     }

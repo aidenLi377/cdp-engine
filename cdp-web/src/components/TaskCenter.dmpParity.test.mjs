@@ -42,6 +42,9 @@ test('DMP flow replaces page navigation with direct API extraction while preserv
   assert.match(dmpFlow, /sendToExtension\('CDP_DMP_DIRECT_EXTRACT'/)
   assert.match(dmpFlow, /selectedTags: orderedSelectedTagIds\.value/)
   assert.match(dmpFlow, /runId: run\.id/)
+  assert.match(dmpFlow, /batchId: options\.batchTotal > 1 \? run\.id : ''/)
+  assert.match(dmpFlow, /batchIndex: options\.batchIndex \|\| 0/)
+  assert.match(dmpFlow, /batchTotal: options\.batchTotal \|\| 0/)
   assert.match(dmpFlow, /return result/)
   assert.doesNotMatch(dmpFlow, /CDP_AUTOMATE_DMP(?:_WAIT_PORTRAIT|_EXTRACT)?/)
 })
@@ -77,9 +80,22 @@ test('task center keeps single run actions and adds batch paste entry points', (
 })
 
 test('task center requires the direct DMP extraction extension version', () => {
-  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.18'/)
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.33'/)
   assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
   assert.match(source, /actual\[index\] < expected\[index\]/)
+})
+
+test('DMP batches initialize once and reuse the captured portrait request for following crowds', () => {
+  const start = source.indexOf('async function executeBatch')
+  const end = source.indexOf('function openTaskDetails', start)
+  const batchFlow = source.slice(start, end)
+
+  assert.match(source, /const DMP_BATCH_EXECUTION_GAP_MS = 250/)
+  assert.match(source, /isReusedDmpBatchItem = type === 'dmp' && options\.batchTotal > 1 && options\.batchIndex > 1/)
+  assert.match(source, /复用本批次画像请求，正在获取数据/)
+  assert.match(batchFlow, /const settingsReady = await loadDmpSettings\(true\)/)
+  assert.match(batchFlow, /dmpSettingsReady: true/)
+  assert.match(batchFlow, /type === 'dmp' \? DMP_BATCH_EXECUTION_GAP_MS : BATCH_EXECUTION_GAP_MS/)
 })
 
 test('extension download uses the archive version returned by the server', () => {
@@ -351,10 +367,12 @@ test('history selection reopens the comparison rail and history view has no inst
 })
 
 test('full-width history uses structured columns while preserving compact comparison controls', () => {
-  assert.match(comparisonSource, /class="dc-history-columns"[\s\S]*?>人群包<[\s\S]*?>采集时间<[\s\S]*?>数据量<[\s\S]*?>状态<[\s\S]*?>横向对比</)
+  assert.match(comparisonSource, /class="dc-history-columns"[\s\S]*?>人群包<[\s\S]*?>采集时间<[\s\S]*?>数据量<[\s\S]*?>整体覆盖人数<[\s\S]*?>状态<[\s\S]*?>横向对比</)
   assert.match(comparisonSource, /v-if="mode === 'history'" class="dc-history-time"/)
   assert.match(comparisonSource, /v-if="mode === 'history'" class="dc-history-size"/)
-  assert.match(comparisonSource, /\.dc-history-columns,\s*\.dc-workspace\.is-history \.dc-history-row\s*\{[^}]*grid-template-columns:[^}]*minmax\(280px, 1\.6fr\)[^}]*minmax\(96px, 0\.55fr\)[^}]*minmax\(72px, 0\.4fr\)[^}]*minmax\(84px, 0\.45fr\)[^}]*minmax\(96px, 0\.5fr\)[^}]*28px;/s)
+  assert.match(comparisonSource, /v-if="mode === 'history'" class="dc-history-coverage"[\s\S]*?formatCrowdCount\(entry\.task\.crowdCount\)/)
+  assert.match(comparisonSource, /function formatCrowdCount\(value\)[\s\S]*?toLocaleString\('zh-CN'\)/)
+  assert.match(comparisonSource, /\.dc-history-columns,\s*\.dc-workspace\.is-history \.dc-history-row\s*\{[^}]*grid-template-columns:[^}]*minmax\(260px, 1\.5fr\)[^}]*minmax\(96px, 0\.55fr\)[^}]*minmax\(72px, 0\.4fr\)[^}]*minmax\(108px, 0\.55fr\)[^}]*minmax\(84px, 0\.45fr\)[^}]*minmax\(96px, 0\.5fr\)[^}]*28px;/s)
   assert.match(comparisonSource, /\.dc-history-row\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 30px 24px;/s)
   assert.match(comparisonSource, /\.dc-workspace\.is-history \.dc-history-copy > span\s*\{\s*display:\s*none;/s)
   assert.match(comparisonSource, /class="dc-selector"[\s\S]*?class="dc-delete"/)

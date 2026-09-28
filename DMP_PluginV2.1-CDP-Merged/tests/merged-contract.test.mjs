@@ -11,7 +11,7 @@ const manifest = JSON.parse(read('manifest.json'))
 
 test('merged manifest preserves DMP Copilot and adds CDP task execution surfaces', () => {
   assert.equal(manifest.manifest_version, 3)
-  assert.equal(manifest.version, '2.2.18')
+  assert.equal(manifest.version, '2.2.33')
   assert.equal(manifest.background.service_worker, 'background.js')
   for (const permission of ['storage', 'clipboardWrite', 'tabs', 'scripting', 'webRequest']) {
     assert.ok(manifest.permissions.includes(permission), `missing permission: ${permission}`)
@@ -67,7 +67,8 @@ test('CDP message bridge and automation handlers use renamed collision-free file
   const databank = read('databank-automation.js')
   const dmpAutomation = read('cdp-dmp-automation.js')
 
-  assert.match(bridge, /CDP_AUTOMATE_DATABANK/)
+  assert.match(bridge, /CDP_EXTENSION_PING/)
+  assert.doesNotMatch(bridge, /['"]CDP_AUTOMATE_DATABANK['"]/)
   assert.match(bridge, /CDP_QUERY_DATABANK_REALTIME_COUNT/)
   assert.match(bridge, /CDP_CREATE_DATABANK_CROWD_API/)
   assert.match(bridge, /countUnavailable: data\.countUnavailable === true/)
@@ -104,6 +105,10 @@ test('DMP direct extraction captures a real portrait payload and preserves the s
   assert.match(background, /effectQuery|dmpAnalysisContext\.payload/)
   assert.match(background, /DmpResultCore\.buildRequest/)
   assert.match(background, /DmpResultCore\.finalizeRows/)
+  assert.match(background, /ensureDmpDirectContext/)
+  assert.match(background, /auto_portrait/)
+  assert.match(content, /DMP_REQUEST_CAPTURED_PAYLOAD/)
+  assert.match(read('hook.js'), /DMP_REQUEST_CAPTURED_PAYLOAD/)
   assert.match(resultCore, /function finalizeRows/)
 })
 
@@ -146,7 +151,7 @@ test('hard-stop is correlated by run id and reaches both automation content scri
   assert.match(bridge, /runId: String\(p\.runId/)
   assert.match(background, /trackedTabsByRun/)
   assert.match(background, /cancelRun\(runId\)/)
-  assert.match(background, /runDatabankParam\([\s\S]*?runId,[\s\S]*?sendResponse/)
+  assert.doesNotMatch(background, /async function runDatabankParam/)
   assert.match(background, /registerRunTab\(runId, tab\.id\)/)
   assert.match(background, /CANCEL_CDP_AUTOMATION/)
   assert.match(databank, /CANCEL_CDP_AUTOMATION/)

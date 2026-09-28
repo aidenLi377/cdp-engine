@@ -87,5 +87,12 @@ export function useSolutionsApi() {
         signal,
       })
     },
+    writeBackParameters(changes, { signal } = {}) {
+      return request('/api/solutions/parameters/write-back', {
+        method: 'POST',
+        body: JSON.stringify({ changes }),
+        signal,
+      })
+    },
   }
 }

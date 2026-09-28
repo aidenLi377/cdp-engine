@@ -19,6 +19,10 @@ SHARE_PHRASE_PATTERN = re.compile(
 )
 
 
+def _normalize_execution_mode(value: str | None) -> str:
+    return "create_and_count" if value == "create_only" else (value or "create_and_count")
+
+
 def _utc_now_dt() -> datetime:
     return datetime.now(timezone.utc).replace(microsecond=0)
 
@@ -156,7 +160,7 @@ class FolderShareStore:
                         "id": row["id"],
                         "name": row["name"],
                         "parentId": row["parent_id"] if row["id"] != folder_id else None,
-                        "executionMode": row["execution_mode"] or "create_and_count",
+                        "executionMode": _normalize_execution_mode(row["execution_mode"]),
                         "depth": row["depth"],
                     }
                     for row in folders
@@ -313,7 +317,7 @@ class FolderShareStore:
                         (
                             public_name,
                             target_parent_id,
-                            folder["execution_mode"] or "create_and_count",
+                            _normalize_execution_mode(folder["execution_mode"]),
                             admin_id,
                             now_iso,
                             public_id,
@@ -342,7 +346,7 @@ class FolderShareStore:
                             public_id,
                             public_name,
                             target_parent_id,
-                            folder["execution_mode"] or "create_and_count",
+                            _normalize_execution_mode(folder["execution_mode"]),
                             source_id,
                             owner_id,
                             admin_id,
@@ -480,7 +484,7 @@ class FolderShareStore:
                         new_id,
                         name,
                         parent_id,
-                        folder.get("executionMode", "create_and_count"),
+                        _normalize_execution_mode(folder.get("executionMode")),
                         user_id,
                         user_id,
                         user_id,
@@ -493,7 +497,7 @@ class FolderShareStore:
                         "id": new_id,
                         "name": name,
                         "parentId": None,
-                        "executionMode": folder.get("executionMode", "create_and_count"),
+                        "executionMode": _normalize_execution_mode(folder.get("executionMode")),
                         "ownerId": user_id,
                         "visibility": "private",
                         "createdBy": user_id,
@@ -549,3 +553,84 @@ class FolderShareStore:
             "sourceOwnerId": item["owner_id"],
             "shareId": item["id"],
         }
+
+    def copy_public_folder(self, folder_id: str, user_id: str) -> dict:
+        """Copy a public folder tree and its solutions into one private transaction."""
+        now_iso = _iso(_utc_now_dt())
+        with get_db(self.db_path) as conn:
+            root = conn.execute(
+                "SELECT * FROM folders WHERE id = ? AND visibility = 'public'",
+                (folder_id,),
+            ).fetchone()
+            if root is None:
+                raise FolderShareAccessError()
+
+            folders = conn.execute(
+                """WITH RECURSIVE subtree(id, name, parent_id, execution_mode, depth) AS (
+                       SELECT id, name, parent_id, execution_mode, 0 FROM folders
+                       WHERE id = ? AND visibility = 'public'
+                       UNION ALL
+                       SELECT child.id, child.name, child.parent_id, child.execution_mode,
+                              subtree.depth + 1
+                       FROM folders child JOIN subtree ON child.parent_id = subtree.id
+                       WHERE child.visibility = 'public'
+                   )
+                   SELECT * FROM subtree ORDER BY depth, name COLLATE NOCASE, id""",
+                (folder_id,),
+            ).fetchall()
+            ids = [folder["id"] for folder in folders]
+            placeholders = ",".join("?" for _ in ids)
+            solutions = conn.execute(
+                f"""SELECT * FROM solutions
+                     WHERE visibility = 'public' AND folder_id IN ({placeholders})
+                     ORDER BY CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END,
+                              sort_order, name COLLATE NOCASE, id""",
+                ids,
+            ).fetchall()
+
+            folder_map: dict[str, str] = {}
+            copied_root = None
+            for folder in folders:
+                source_id = folder["id"]
+                is_root = source_id == folder_id
+                new_id = self._new_id("folder")
+                folder_map[source_id] = new_id
+                parent_id = None if is_root else folder_map[folder["parent_id"]]
+                name = (
+                    self._unique_root_name(conn, folder["name"] or "未命名文件夹", user_id)
+                    if is_root else (folder["name"] or "未命名文件夹")
+                )
+                execution_mode = _normalize_execution_mode(folder["execution_mode"])
+                conn.execute(
+                    """INSERT INTO folders (
+                           id, name, parent_id, execution_mode, owner_id, visibility,
+                           created_by, updated_by, created_at, updated_at
+                       ) VALUES (?, ?, ?, ?, ?, 'private', ?, ?, ?, ?)""",
+                    (new_id, name, parent_id, execution_mode, user_id, user_id,
+                     user_id, now_iso, now_iso),
+                )
+                if is_root:
+                    copied_root = {"id": new_id, "name": name, "parentId": None,
+                                   "executionMode": execution_mode, "ownerId": user_id,
+                                   "visibility": "private"}
+
+            for solution in solutions:
+                conn.execute(
+                    """INSERT INTO solutions (
+                           id, name, status, source, folder_id, sort_order,
+                           default_crowd_name, nodes, custom_fields,
+                           workbench_field_ids, base_published_id,
+                           derived_from_solution_id, derived_from_solution_version,
+                           _version, owner_id, visibility, created_by, updated_by,
+                           created_at, updated_at, published_at
+                       ) VALUES (?, ?, 'published', 'public-folder-copy', ?, ?, ?, ?, ?, ?,
+                                 NULL, NULL, NULL, 1, ?, 'private', ?, ?, ?, ?, ?)""",
+                    (self._new_id("solution"), solution["name"],
+                     folder_map[solution["folder_id"]], solution["sort_order"],
+                     solution["default_crowd_name"], solution["nodes"],
+                     solution["custom_fields"], solution["workbench_field_ids"],
+                     user_id, user_id, user_id, now_iso, now_iso, now_iso),
+                )
+
+        return {"folder": copied_root, "folderCount": len(folders),
+                "solutionCount": len(solutions)}

@@ -32,5 +32,8 @@ export function useFoldersApi() {
         body: JSON.stringify({ parentId }),
       })
     },
+    copyPublicFolderToMine(id) {
+      return request(`/api/folders/${id}/copy-to-mine`, { method: 'POST' })
+    },
   }
 }

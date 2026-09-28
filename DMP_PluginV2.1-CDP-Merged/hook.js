@@ -4,6 +4,16 @@
     const originalSend = XMLHttpRequest.prototype.send;
     window.__CAPTURED_PAYLOAD__ = null;
 
+    // The portrait page can send its first request before the isolated-world
+    // content script is ready. Replay the real request on demand so automatic
+    // background initialization does not lose it.
+    window.addEventListener('DMP_REQUEST_CAPTURED_PAYLOAD', function() {
+        if (!window.__CAPTURED_PAYLOAD__) return;
+        window.dispatchEvent(new CustomEvent('DMP_PAYLOAD_INTERCEPTED', {
+            detail: window.__CAPTURED_PAYLOAD__
+        }));
+    });
+
     XMLHttpRequest.prototype.open = function(method, url) {
         this._stolenUrl = url;
         return originalOpen.apply(this, arguments);

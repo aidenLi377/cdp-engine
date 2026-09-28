@@ -1,5 +1,9 @@
 const STORAGE_PREFIX = 'cdp.audience-execution-preferences.v1'
-const VALID_MODES = new Set(['calculate_only', 'create_only', 'create_and_count'])
+const VALID_MODES = new Set(['calculate_only', 'create_and_count'])
+
+function normalizeMode(mode) {
+  return mode === 'create_only' ? 'create_and_count' : mode
+}
 
 function getDefaultStorage() {
   if (typeof window === 'undefined') return null
@@ -29,7 +33,9 @@ export function loadAudienceExecutionPreferences(
     const preferences = payload?.groups?.[groupKey]
     if (!preferences || typeof preferences !== 'object') return {}
     return Object.fromEntries(
-      Object.entries(preferences).filter(([, mode]) => VALID_MODES.has(mode)),
+      Object.entries(preferences)
+        .map(([entryKey, mode]) => [entryKey, normalizeMode(mode)])
+        .filter(([, mode]) => VALID_MODES.has(mode)),
     )
   } catch {
     return {}
@@ -43,7 +49,8 @@ export function saveAudienceExecutionPreference(
   mode,
   storage = getDefaultStorage(),
 ) {
-  if (!storage || !ownerId || !groupKey || !entryKey || !VALID_MODES.has(mode)) return false
+  const normalizedMode = normalizeMode(mode)
+  if (!storage || !ownerId || !groupKey || !entryKey || !VALID_MODES.has(normalizedMode)) return false
   try {
     const key = storageKey(ownerId)
     const payload = JSON.parse(storage.getItem(key) || '{}')
@@ -55,7 +62,7 @@ export function saveAudienceExecutionPreference(
         ...groups,
         [groupKey]: {
           ...current,
-          [entryKey]: mode,
+          [entryKey]: normalizedMode,
         },
       },
     }))

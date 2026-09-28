@@ -43,14 +43,24 @@ test('folder rows use a monochrome vector icon instead of a colored emoji', () =
   assert.doesNotMatch(folderTreeNodeVue, /📂/)
 })
 
-test('eligible folders can expose a compact combination badge without replacing folder selection', () => {
+test('only eligible leaf folders expose a compact combination badge without replacing folder selection', () => {
   assert.match(folderTreeVue, /class="folder-batch-badge"/)
+  assert.match(folderTreeVue, /!hasFolderChildren\(folder\)[\s\S]*?getBatchCount\(folder\.id\) >= 2/)
+  assert.match(folderTreeNodeVue, /!hasChildren[\s\S]*?getBatchCount\(folder\.id\) >= 2/)
   assert.match(folderTreeVue, /getBatchCount\(folder\.id\) >= 2/)
   assert.match(folderTreeVue, /@click\.stop="openBatchFolder\(folder\.id\)"/)
   assert.match(folderTreeVue, /emit\('batch-apply', folderId\)/)
   assert.match(folderTreeNodeVue, /@click\.stop="\$emit\('batch-apply', folder\.id\)"/)
   assert.match(folderTreeVue, /<span aria-hidden="true">✦<\/span>/)
   assert.match(folderTreeNodeVue, /<span aria-hidden="true">✦<\/span>/)
+})
+
+test('new solution groups use a compact creation form without asking for execution policy', () => {
+  assert.match(folderTreeVue, /class="folder-create-heading"[\s\S]*?新建方案组/)
+  assert.match(folderTreeVue, /class="folder-create-fields"[\s\S]*?placeholder="方案组名称"/)
+  assert.match(folderTreeVue, /class="folder-create-actions"[\s\S]*?>取消<[\s\S]*?>创建</)
+  assert.doesNotMatch(folderTreeVue, /默认执行|createExecutionMode|folder-create-mode/)
+  assert.match(folderTreeVue, /emit\('folders-changed', \{ action: 'create', parentId, name \}\)/)
 })
 
 test('folder names select and toggle expandable rows with keyboard parity', () => {

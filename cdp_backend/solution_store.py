@@ -59,6 +59,14 @@ class SolutionAlreadyPromotedError(Exception):
     pass
 
 
+class SolutionVersionConflictError(Exception):
+    pass
+
+
+class InvalidParameterWritebackError(Exception):
+    pass
+
+
 class SolutionStore:
     CLIENT_EDITABLE_FIELDS = (
         "name",
@@ -488,6 +496,83 @@ class SolutionStore:
                 updated["nodes"] = nodes
             self._update_row(conn, updated)
         return updated
+
+    def write_back_parameters(self, changes: list[dict], user_id: str) -> list[dict]:
+        """Atomically update values only, preserving names, bindings and structure."""
+        if not changes or len(changes) > 100:
+            raise InvalidParameterWritebackError()
+        now = _utc_now()
+        with get_db(self.db_path) as conn:
+            updated_records = []
+            seen_ids = set()
+            for change in changes:
+                if not isinstance(change, dict):
+                    raise InvalidParameterWritebackError()
+                solution_id = change.get("id")
+                if not isinstance(solution_id, str) or not solution_id or solution_id in seen_ids:
+                    raise InvalidParameterWritebackError()
+                seen_ids.add(solution_id)
+                item = self._find_mutable(conn, solution_id, user_id)
+                version = change.get("expectedVersion")
+                if type(version) is not int or version != item.get("_version"):
+                    raise SolutionVersionConflictError(solution_id)
+
+                incoming_nodes = change.get("nodes")
+                incoming_fields = change.get("customFields")
+                source_nodes = item.get("nodes") or []
+                source_fields = item.get("customFields") or []
+                if not isinstance(incoming_nodes, list) or not isinstance(incoming_fields, list):
+                    raise InvalidParameterWritebackError()
+                if len(incoming_nodes) != len(source_nodes) or len(incoming_fields) != len(source_fields):
+                    raise InvalidParameterWritebackError()
+                node_values = {}
+                for node in incoming_nodes:
+                    if not isinstance(node, dict) or not isinstance(node.get("id"), str):
+                        raise InvalidParameterWritebackError()
+                    if not isinstance(node.get("formData"), dict) or not isinstance(node.get("modeData"), dict):
+                        raise InvalidParameterWritebackError()
+                    if node["id"] in node_values:
+                        raise InvalidParameterWritebackError()
+                    node_values[node["id"]] = node
+                if set(node_values) != {node.get("id") for node in source_nodes}:
+                    raise InvalidParameterWritebackError()
+                next_nodes = [
+                    {**node, "formData": node_values[node["id"]]["formData"],
+                     "modeData": node_values[node["id"]]["modeData"]}
+                    for node in source_nodes
+                ]
+
+                field_values = {}
+                for field in incoming_fields:
+                    if not isinstance(field, dict) or not isinstance(field.get("id"), str):
+                        raise InvalidParameterWritebackError()
+                    if field["id"] in field_values:
+                        raise InvalidParameterWritebackError()
+                    field_values[field["id"]] = field
+                if set(field_values) != {field.get("id") for field in source_fields}:
+                    raise InvalidParameterWritebackError()
+                next_fields = []
+                for field in source_fields:
+                    next_field = dict(field)
+                    incoming = field_values[field["id"]]
+                    if "defaultValue" in incoming:
+                        next_field["defaultValue"] = incoming["defaultValue"]
+                    else:
+                        next_field.pop("defaultValue", None)
+                    next_fields.append(next_field)
+
+                updated_records.append({
+                    **item,
+                    "nodes": next_nodes,
+                    "customFields": next_fields,
+                    "_version": version + 1,
+                    "updatedBy": user_id,
+                    "updatedAt": now,
+                })
+
+            for record in updated_records:
+                self._update_row(conn, record)
+        return updated_records
 
     def move_solution(
         self,

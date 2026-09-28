@@ -157,6 +157,12 @@ function createContentHarness(options = {}) {
   let createCrowdClickCount = 0
   let createConfirmClickCount = 0
   let fetchCallCount = 0
+  const storageValues = new Map(Object.entries(options.storageValues || {}))
+  const fakeStorage = {
+    get length() { return storageValues.size },
+    key(index) { return Array.from(storageValues.keys())[index] ?? null },
+    getItem(key) { return storageValues.get(String(key)) ?? null },
+  }
 
   const trigger = new FakeElement('span', '参数粘贴')
   const loadingMask = new FakeElement('div')
@@ -302,6 +308,7 @@ function createContentHarness(options = {}) {
   }
 
   const document = {
+    cookie: String(options.cookie || ''),
     querySelectorAll(selector) {
       const nodes = [trigger, unrelatedConfirm, coverageRoot, coverageLabel]
       if (countValue.isConnected) nodes.push(countValue)
@@ -360,6 +367,8 @@ function createContentHarness(options = {}) {
     console,
     chrome,
     document,
+    localStorage: fakeStorage,
+    sessionStorage: fakeStorage,
     window: {
       __databankAutomationContentScriptLoaded: false,
       __databankAutomationRunning: false,
@@ -469,6 +478,40 @@ test('content automation clicks calculate count after import confirmation when r
   assert.ok(response.trail.some((entry) => entry.step === 'clicked_calculate_count'))
 })
 
+test('context warm-up imports the fixed payload and returns after starting the official count request', async () => {
+  const harness = createContentHarness()
+  const jsonText = JSON.stringify({
+    crowdName: 'CDP预热12345678',
+    list: [{
+      selectionLv1: ['FULL_LINK', 'FULL_LINK'],
+      selectionLv3: {
+        cate: 'ALL',
+        types: ['15186#|#D_BUY'],
+        dateType: 'RELATIVE_RANGE',
+        dateValue: '30',
+      },
+      fromPoolId: 0,
+    }],
+    compute: '(0)',
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'AUTOMATE_DATABANK',
+    jsonText,
+    autoCalculate: true,
+    executionMode: 'context_warmup',
+    crowdName: 'CDP预热12345678',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.contextWarmup, true)
+  assert.equal(response.countReady, false)
+  assert.equal(harness.getState().calculateClickCount, 1)
+  assert.equal(harness.getState().pastedJsonText, jsonText)
+  assert.ok(response.trail.some((entry) => entry.step === 'count_request_started'))
+  assert.ok(harness.getState().now < 30000)
+})
+
 test('calculated count ignores unrelated nearby numbers when the exact count node is empty', async () => {
   const harness = createContentHarness({ unrelatedNearbyNumber: '3' })
 
@@ -514,6 +557,7 @@ test('calculate-only reuses an exact existing crowd count before opening paramet
           return {
             errCode: 0,
             data: {
+              total: 10000,
               list: [
                 { id: 91, name: '兰蔻8月液精华购买Y25-近似', count: 7, gmtCreate: 3 },
                 { id: 92, name: '兰蔻8月液精华购买Y25', count: 19000, gmtCreate: 2, status: 'CREATED' },
@@ -689,7 +733,7 @@ test('create-and-count reuses an exact existing crowd instead of creating a dupl
   assert.equal(new URL(requestedUrls[0]).searchParams.get('keyword'), '新品兴趣人群0921')
 })
 
-test('create-only reuses an exact existing crowd before opening parameter import', async () => {
+test('legacy create-only requests migrate to create-and-count and still reuse exact matches', async () => {
   const harness = createContentHarness({
     async fetchImpl() {
       return {
@@ -717,12 +761,12 @@ test('create-only reuses an exact existing crowd before opening parameter import
   })
 
   assert.equal(response.ok, true)
-  assert.equal(response.executionMode, 'create_only')
+  assert.equal(response.executionMode, 'create_and_count')
   assert.equal(response.crowdFound, true)
   assert.equal(response.crowdReused, true)
   assert.equal(response.crowdCreated, false)
   assert.equal(response.crowdId, 83)
-  assert.equal(response.message, '已存在同名人群包，已跳过重复创建')
+  assert.equal(response.message, '已存在同名人群包，已复用并等待人数')
   assert.equal(harness.getState().triggerClickCount, 0)
   assert.equal(harness.getState().confirmClickCount, 0)
   assert.equal(harness.getState().createCrowdClickCount, 0)
@@ -740,7 +784,7 @@ test('create mode refuses a modal whose configured name does not match', async (
   const response = await harness.sendAutomationMessage({
     type: 'AUTOMATE_DATABANK',
     jsonText: '{"crowdName":"正确名称0921"}',
-    executionMode: 'create_only',
+    executionMode: 'create_and_count',
     crowdName: '正确名称0921',
   })
 
@@ -783,8 +827,10 @@ test('crowd count query uses the exact name and keeps a zero count', async () =>
   assert.equal(response.countReady, true)
   assert.equal(response.crowdCount, 0)
   assert.equal(response.crowdId, 3)
+  assert.equal(requestedUrls.length, 1)
   const url = new URL(requestedUrls[0])
   assert.equal(url.searchParams.get('keyword'), '新品兴趣人群0921')
+  assert.equal(url.searchParams.get('pageSize'), '10')
   assert.equal(url.searchParams.get('category2NotEqualList'), 'scene_crowd')
 })
 
@@ -805,20 +851,22 @@ test('crowd count query reports expired login for 401 and 403', async () => {
   }
 })
 
-test('custom crowds are resolved with one full-list request before the JSON is pasted', async () => {
+test('custom crowds are resolved with exact live searches before the JSON is pasted', async () => {
   const requestedUrls = []
   const harness = createContentHarness({
     async fetchImpl(url, init) {
       requestedUrls.push({ url, init })
+      const keyword = new URL(url).searchParams.get('keyword')
+      const records = [
+        { name: 'HN919I人群BH', id: '78393014', status: 'CREATED', count: 1234, canSelectOrLookalike: 1 },
+        { name: '第二个人群', id: '78392453', status: 'CREATED', count: 5678, canSelectOrLookalike: 1 },
+      ]
       return {
         ok: true,
         status: 200,
         async json() {
           return {
-            data: [
-              { name: 'HN919I人群BH', id: '78393014' },
-              { name: '第二个人群', bizId: '78392453' },
-            ],
+            data: { list: records.filter(item => item.name === keyword) },
             errCode: 0,
             errMsg: 'Success',
           }
@@ -841,10 +889,11 @@ test('custom crowds are resolved with one full-list request before the JSON is p
   })
 
   assert.equal(response.ok, true)
-  assert.equal(harness.getState().fetchCallCount, 1)
-  assert.equal(requestedUrls.length, 1)
-  assert.match(requestedUrls[0].url, /path=\/api\/dimension\/listChildDimension&type=CROWD&id=CUSTOM/)
-  assert.equal(requestedUrls[0].init.credentials, 'include')
+  assert.equal(harness.getState().fetchCallCount, 2)
+  assert.equal(requestedUrls.length, 2)
+  assert.deepEqual(requestedUrls.map(item => new URL(item.url).searchParams.get('keyword')).sort(), ['HN919I人群BH', '第二个人群'].sort())
+  assert.ok(requestedUrls.every(item => new URL(item.url).searchParams.get('path') === '/api/v1/custom/list'))
+  assert.ok(requestedUrls.every(item => item.init.credentials === 'include'))
   const pasted = JSON.parse(harness.getState().pastedJsonText)
   assert.deepEqual(Array.from(pasted.list[0].selectionLv3.crowdIds), ['78393014#|#78393014'])
   assert.deepEqual(Array.from(pasted.list[1].selectionLv3.crowdIds), ['78392453#|#78392453'])
@@ -865,6 +914,67 @@ test('ordinary JSON does not request the custom crowd list', async () => {
 
   assert.equal(response.ok, true)
   assert.equal(harness.getState().fetchCallCount, 0)
+})
+
+test('realtime count resolves a newly-ready custom crowd through the live search API', async () => {
+  const requests = []
+  const harness = createContentHarness({
+    async fetchImpl(url, init) {
+      requests.push({ url, init })
+      if (String(init?.method || 'GET').toUpperCase() === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              data: {
+                list: [{
+                  name: '刚出数的前置包0924',
+                  id: 78409999,
+                  status: 'CREATED',
+                  count: 4674,
+                  canSelectOrLookalike: 1,
+                }],
+              },
+              errCode: 0,
+              errMsg: 'Success',
+            }
+          },
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        redirected: false,
+        async json() {
+          return { data: 154643, errCode: 0, errMsg: 'Success', codeClass: 'SUCCESS' }
+        },
+      }
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'QUERY_DATABANK_REALTIME_COUNT',
+    crowdName: '下游组合包0924',
+    jsonText: JSON.stringify({
+      crowdName: '下游组合包0924',
+      list: [{
+        selectionLv1: ['CROWD', 'CUSTOM'],
+        selectionLv3: { crowdIds: ['刚出数的前置包0924'] },
+        fromPoolId: 0,
+      }],
+      compute: '(0)',
+    }),
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.crowdCount, 154643)
+  assert.equal(requests.length, 3)
+  assert.equal(new URL(requests[0].url).searchParams.get('keyword'), '下游组合包0924')
+  assert.equal(new URL(requests[1].url).searchParams.get('keyword'), '刚出数的前置包0924')
+  const realtimePayload = JSON.parse(requests[2].init.body)
+  const realtimeModel = JSON.parse(realtimePayload.customModelStr)
+  assert.deepEqual(Array.from(realtimeModel.list[0].selectionLv3.crowdIds), ['78409999#|#78409999'])
 })
 
 test('realtime count sends generated JSON directly and omits captcha', async () => {
@@ -897,6 +1007,7 @@ test('realtime count sends generated JSON directly and omits captcha', async () 
       'x-requested-with': 'XMLHttpRequest',
       'bx-v': '2.5.31',
     },
+    precheckedNoMatch: true,
   })
 
   assert.equal(response.ok, true)
@@ -910,9 +1021,41 @@ test('realtime count sends generated JSON directly and omits captcha', async () 
   assert.equal(Object.hasOwn(outerPayload, 'captcha'), false)
   assert.deepEqual(JSON.parse(outerPayload.customModelStr), { ...model, crowdName: '接口试验包' })
   assert.equal(harness.getState().triggerClickCount, 0)
+  assert.equal(harness.getState().fetchCallCount, 1)
 })
 
-test('direct crowd creation checks duplicates, runs canAcc, then creates without reusing captcha', async () => {
+test('realtime count reuses an exact existing crowd and never calls the realtime endpoint', async () => {
+  const requests = []
+  const harness = createContentHarness({
+    async fetchImpl(url, init = {}) {
+      requests.push({ url: String(url), init })
+      assert.equal(init.method || 'GET', 'GET')
+      return {
+        ok: true,
+        status: 200,
+        redirected: false,
+        async json() {
+          return { data: { list: [{ id: 90, name: '已有取数包', count: 19000, status: 'CREATED' }] }, errCode: 0 }
+        },
+      }
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'QUERY_DATABANK_REALTIME_COUNT',
+    jsonText: '{"crowdName":"已有取数包","list":[],"compute":""}',
+    crowdName: '已有取数包',
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.crowdReused, true)
+  assert.equal(response.crowdCreated, false)
+  assert.equal(response.crowdCount, 19000)
+  assert.equal(response.directRealtime, true)
+  assert.equal(requests.length, 1)
+})
+
+test('direct crowd creation skips the completed outer lookup but keeps the final duplicate guard', async () => {
   const requests = []
   const harness = createContentHarness({
     async fetchImpl(url, init = {}) {
@@ -953,6 +1096,7 @@ test('direct crowd creation checks duplicates, runs canAcc, then creates without
       'x-requested-with': 'XMLHttpRequest',
       'bx-v': '2.5.31',
     },
+    precheckedNoMatch: true,
   })
 
   assert.equal(response.ok, true)
@@ -961,13 +1105,59 @@ test('direct crowd creation checks duplicates, runs canAcc, then creates without
   assert.equal(response.crowdCreated, true)
   assert.equal(response.crowdId, 78408082)
   assert.equal(requests.length, 3)
-  const preflightPayload = JSON.parse(requests[1].init.body)
+  const preflightPayload = JSON.parse(requests[0].init.body)
   const createPayload = JSON.parse(requests[2].init.body)
   assert.equal(preflightPayload.path, '/api/v1/custom/canAcc')
+  assert.equal(requests[1].init.method || 'GET', 'GET')
   assert.equal(createPayload.path, '/api/v1/custom/databank')
   assert.equal(Object.hasOwn(createPayload, 'captcha'), false)
   assert.equal(JSON.parse(createPayload.customModelStr).crowdName, '接口建包0922')
   assert.equal(requests[2].init.headers['x-csrf-token'], 'csrf-create-test')
+})
+
+test('direct crowd creation checks again after preflight and never creates a newly appeared duplicate', async () => {
+  const requests = []
+  let searchCount = 0
+  const harness = createContentHarness({
+    async fetchImpl(url, init = {}) {
+      requests.push({ url: String(url), init })
+      if ((init.method || 'GET') === 'GET') {
+        searchCount += 1
+        return {
+          ok: true,
+          status: 200,
+          redirected: false,
+          async json() {
+            return {
+              data: { list: searchCount === 1 ? [] : [{ id: 91, name: '并发防重包', count: 88, status: 'CREATED' }] },
+              errCode: 0,
+            }
+          },
+        }
+      }
+      const payload = JSON.parse(init.body)
+      assert.equal(payload.path, '/api/v1/custom/canAcc')
+      return { ok: true, status: 200, redirected: false, async json() { return { data: 0, errCode: 0 } } }
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'CREATE_DATABANK_CROWD_API',
+    jsonText: '{"crowdName":"并发防重包","list":[],"compute":""}',
+    crowdName: '并发防重包',
+    requestHeaders: { 'x-csrf-token': 'csrf-create-test' },
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.crowdReused, true)
+  assert.equal(response.crowdCreated, false)
+  assert.equal(response.crowdId, 91)
+  assert.equal(requests.length, 3)
+  assert.ok(response.trail.some((entry) => entry.step === 'create_duplicate_guard_reused'))
+  assert.equal(requests.some(({ init }) => {
+    if (!init?.body) return false
+    return JSON.parse(init.body).path === '/api/v1/custom/databank'
+  }), false)
 })
 
 test('direct crowd creation stops before canAcc when the API context is not initialized', async () => {
@@ -994,6 +1184,57 @@ test('direct crowd creation stops before canAcc when the API context is not init
   assert.equal(response.code, 'DATABANK_REQUEST_CONTEXT_REQUIRED')
   assert.match(response.error, /手动计算一次人数/)
   assert.equal(harness.getState().fetchCallCount, 1)
+})
+
+test('content script prepares API headers from the current DataBank page security context', async () => {
+  const harness = createContentHarness({
+    storageValues: {
+      databank_csrf_token: 'csrf-from-current-page',
+    },
+    async fetchImpl() {
+      return {
+        ok: true,
+        status: 200,
+        redirected: false,
+        async json() {
+          return { data: { list: [{ brandId: '29478' }] }, errCode: 0 }
+        },
+      }
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'PREPARE_DATABANK_API_CONTEXT',
+    requestHeaders: {},
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.ready, true)
+  assert.equal(response.source, 'page_security_context')
+  assert.equal(response.accountKey, 'brand:29478')
+  assert.equal(response.requestHeaders['x-csrf-token'], 'csrf-from-current-page')
+  assert.equal(response.requestHeaders['x-requested-with'], 'XMLHttpRequest')
+})
+
+test('content script identifies the current account from stable cookies without a list request', async () => {
+  const harness = createContentHarness({
+    cookie: 'unb=123456789; tracknick=test_account; _tb_token_=session-token',
+    storageValues: {
+      databank_csrf_token: 'csrf-from-current-page',
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'PREPARE_DATABANK_API_CONTEXT',
+    requestHeaders: {},
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.ready, true)
+  assert.match(response.accountKey, /^account:/)
+  assert.equal(response.accountSource, 'cookie_session')
+  assert.equal(response.requestHeaders['x-csrf-token'], 'csrf-from-current-page')
+  assert.equal(harness.getState().fetchCallCount, 0)
 })
 
 test('direct crowd creation reports captcha requirements instead of replaying an old token', async () => {
@@ -1024,7 +1265,7 @@ test('direct crowd creation reports captcha requirements instead of replaying an
 
   assert.equal(response.ok, false)
   assert.equal(response.code, 'DATABANK_CAPTCHA_REQUIRED')
-  assert.match(response.error, /页面建包/)
+  assert.match(response.error, /安全验证/)
 })
 
 test('direct crowd creation reuses an exact existing crowd before checking API context', async () => {
@@ -1057,7 +1298,10 @@ test('direct crowd creation reuses an exact existing crowd before checking API c
 
 test('realtime count treats numeric data as success even when the API also returns a warning code', async () => {
   const harness = createContentHarness({
-    async fetchImpl() {
+    async fetchImpl(_url, init = {}) {
+      if ((init.method || 'GET') === 'GET') {
+        return { ok: true, status: 200, redirected: false, async json() { return { data: { list: [] }, errCode: 0 } } }
+      }
       return {
         ok: true,
         status: 200,
@@ -1088,7 +1332,10 @@ test('realtime count treats numeric data as success even when the API also retur
 
 test('realtime count records the privacy threshold as a successful less-than-2000 result', async () => {
   const harness = createContentHarness({
-    async fetchImpl() {
+    async fetchImpl(_url, init = {}) {
+      if ((init.method || 'GET') === 'GET') {
+        return { ok: true, status: 200, redirected: false, async json() { return { data: { list: [] }, errCode: 0 } } }
+      }
       return {
         ok: true,
         status: 200,
@@ -1150,7 +1397,7 @@ test('realtime count returns errMsg only when data is null and it is not a thres
 test('a missing custom crowd stops before opening the paste dialog', async () => {
   const harness = createContentHarness({
     async fetchImpl() {
-      return { ok: true, status: 200, async json() { return { data: [], errCode: 0 } } }
+      return { ok: true, status: 200, async json() { return { data: { list: [] }, errCode: 0 } } }
     },
   })
 

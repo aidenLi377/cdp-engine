@@ -148,6 +148,9 @@ export function useSolutionRuntime() {
   }
 
   async function preloadAllPackageMeta() {
+    if (metaBundleLoadedKey && metaBundleLoadedKey === activeMetaVersionKey) {
+      return Object.keys(schemaCache.value).length
+    }
     const metaVersionKey = await ensureActiveMetaVersion()
     if (metaBundleLoadedKey === metaVersionKey) {
       return Object.keys(schemaCache.value).length
@@ -229,6 +232,14 @@ export function useSolutionRuntime() {
   }
 
   async function fetchPackageMeta(packageType) {
+    // A completed bundle is already tied to the active config version. The app-level
+    // version watcher invalidates it when configuration changes, so hydration can use
+    // this hot path without another /api/config/version round-trip for every batch.
+    const preloaded = getCachedPackageMeta(packageType)
+    if (preloaded && metaBundleLoadedKey && metaBundleLoadedKey === activeMetaVersionKey) {
+      return preloaded
+    }
+
     const metaVersionKey = await ensureActiveMetaVersion()
     const cached = getCachedPackageMeta(packageType)
     if (cached) return cached

@@ -83,9 +83,11 @@
         :folders="folderTree"
         :read-only="libraryScope === 'public' && !canManagePublicSolutions"
         :share-enabled="libraryScope === 'mine'"
+        :copy-enabled="libraryScope === 'public'"
         @select-folder="onFolderSelect"
         @folders-changed="handleFolderChange"
         @share-folder="shareFolder"
+        @copy-folder="copyPublicFolder"
         @tutorial-create-started="handleTutorialFolderCreateStarted"
       />
 
@@ -849,6 +851,7 @@ const {
   updateFolder,
   deleteFolder,
   moveFolder,
+  copyPublicFolderToMine,
 } = useFoldersApi()
 
 const {
@@ -2574,6 +2577,29 @@ async function shareFolder(folder) {
     ElMessage.error(error.message || '方案文件夹分享失败')
   } finally {
     sharingFolderId.value = ''
+  }
+}
+
+let copyingPublicFolder = false
+
+async function copyPublicFolder(folder) {
+  if (libraryScope.value !== 'public' || !folder?.id || copyingPublicFolder) return
+  copyingPublicFolder = true
+  try {
+    const copied = await copyPublicFolderToMine(folder.id)
+    ElMessage.success(`已复制 ${copied.folderCount} 个文件夹、${copied.solutionCount} 个方案到“我的方案”`)
+    const switched = await replaceActiveSolutionState(async () => {
+      libraryScope.value = 'mine'
+      selectedFolderId.value = copied.folder.id
+      statusFilter.value = 'all'
+      resetActiveSolution()
+      await Promise.all([loadFolders({ fresh: true }), loadSolutions({ fresh: true })])
+    })
+    if (!switched) ElMessage.info('复制已完成，可在“我的方案”中查看')
+  } catch (error) {
+    ElMessage.error(error.message || '公共方案文件夹复制失败')
+  } finally {
+    copyingPublicFolder = false
   }
 }
 

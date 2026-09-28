@@ -72,6 +72,13 @@ class FolderShareApiTests(unittest.TestCase):
         listed = next(item for item in folders if item["id"] == created["id"])
         self.assertEqual(listed["executionMode"], "calculate_only")
 
+        legacy = self.owner_client.post(
+            "/api/folders",
+            json={"name": "旧版只建包方案组", "scope": "mine", "executionMode": "create_only"},
+        )
+        self.assertEqual(legacy.status_code, 201, legacy.get_data(as_text=True))
+        self.assertEqual(legacy.get_json()["executionMode"], "create_and_count")
+
         invalid = self.owner_client.post(
             "/api/folders",
             json={"name": "错误方案组", "scope": "mine", "executionMode": "unknown"},

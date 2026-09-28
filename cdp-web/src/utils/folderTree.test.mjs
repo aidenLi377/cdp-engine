@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   buildFolderSubtreeCounts,
+  buildLeafFolderDirectCounts,
   collectFolderSubtreeIds,
   findFolderById,
 } from './folderTree.js'
@@ -44,6 +45,23 @@ test('buildFolderSubtreeCounts rolls direct item counts up through every ancesto
     dior: 5,
     kol: 1,
     analysis: 3,
+    competitor: 2,
+  })
+})
+
+test('buildLeafFolderDirectCounts excludes parents and counts only direct items in leaf folders', () => {
+  const counts = buildLeafFolderDirectCounts(folders, [
+    { folderId: 'dior' },
+    { folderId: 'kol' },
+    { folderId: 'analysis' },
+    { folderId: 'competitor' },
+    { folderId: 'competitor' },
+  ])
+
+  assert.deepEqual(counts, {
+    dior: 0,
+    kol: 1,
+    analysis: 0,
     competitor: 2,
   })
 })

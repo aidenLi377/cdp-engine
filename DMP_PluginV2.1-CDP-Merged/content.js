@@ -103,6 +103,10 @@ window.addEventListener('DMP_PAYLOAD_INTERCEPTED', (e) => {
     updateCoverageCount();
 });
 
+// Ask hook.js to replay an official request that may have fired before this
+// document-idle content script attached its listener.
+window.dispatchEvent(new CustomEvent('DMP_REQUEST_CAPTURED_PAYLOAD'));
+
 function updateTagStatusUI(tagId) {
     const checkboxes = document.querySelectorAll('.tag-checkbox');
     checkboxes.forEach(cb => {
