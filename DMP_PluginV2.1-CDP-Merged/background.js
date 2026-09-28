@@ -11,6 +11,21 @@ const DATABANK_PARAM_URL = 'https://databank.tmall.com/#/userDefinedAnalyses';
 const DATABANK_CROWD_URL = 'https://databank.tmall.com/#/customAnalysis';
 const DATABANK_DATAHUB_URL = 'https://databank.tmall.com/#/dataHub';
 const DATABANK_CUSTOM_CROWD_LIST_URL = 'https://databank.tmall.com/api/paasapi';
+const DATABANK_CONTEXT_WARMUP_NAME = '未命名';
+const DATABANK_CONTEXT_WARMUP_JSON = JSON.stringify({
+  crowdName: DATABANK_CONTEXT_WARMUP_NAME,
+  list: [{
+    selectionLv1: ['FULL_LINK', 'FULL_LINK'],
+    selectionLv3: {
+      cate: 'ALL',
+      types: ['15187#|#D_ROYALTY'],
+      dateType: 'RELATIVE_RANGE',
+      dateValue: '30',
+    },
+    fromPoolId: 1,
+  }],
+  compute: '(0)',
+});
 const DMP_CROWD_URL = 'https://dmp.taobao.com/index_new.html#!/crowds-new/list?spm=';
 
 // Message types from frontend (via bridge)
@@ -804,23 +819,13 @@ async function runDatabankContextWarmup(options = {}) {
 
     await waitForReady(tab.id, CONTENT_PING);
     const startedAt = Date.now();
-    const jsonText = String(options?.jsonText || '').trim();
-    const crowdName = String(options?.crowdName || '').trim();
-    if (!jsonText || !crowdName) {
-      throw createDatabankApiError(
-        '缺少当前任务参数，无法在不重复计算的前提下自动准备接口环境',
-        'DATABANK_REQUEST_CONTEXT_REQUIRED',
-      );
-    }
-    const requestedMode = String(options?.executionMode || '').trim();
-    const warmupMode = requestedMode === 'calculate_only' ? 'calculate_only' : 'context_warmup';
     const result = await sendMessageWithRetry(tab.id, {
       type: CONTENT_CMD_DATABANK,
-      jsonText,
+      jsonText: DATABANK_CONTEXT_WARMUP_JSON,
       autoCalculate: true,
-      executionMode: warmupMode,
-      crowdName,
-      precheckedNoMatch: options?.precheckedNoMatch === true,
+      executionMode: 'context_warmup',
+      crowdName: DATABANK_CONTEXT_WARMUP_NAME,
+      precheckedNoMatch: true,
       runId: `context-warmup-${startedAt}`,
     });
     if (!result?.ok) {
@@ -856,10 +861,10 @@ async function runDatabankContextWarmup(options = {}) {
     completed = true;
     return {
       ready: true,
-      source: 'current_task_page_initialization',
+      source: 'lightweight_page_initialization',
       warmedUp: true,
-      usedCurrentTask: true,
-      warmupResult: warmupMode === 'calculate_only' ? result : null,
+      usedCurrentTask: false,
+      warmupResult: null,
       tabId: tab.id,
       restoreUrl,
     };
@@ -1066,9 +1071,8 @@ async function refreshDatabankApiSessionOnce(runId, operationContext, warmupOpti
 
     const inspected = await inspectDatabankApiContext(lockedTab, {})
       .catch(() => ({ ready: false }));
-    let warmed = null;
     if (inspected.ready !== true) {
-      warmed = await runDatabankContextWarmup({
+      await runDatabankContextWarmup({
         ...warmupOptions,
         tab: lockedTab,
         inspected,
@@ -1088,7 +1092,6 @@ async function refreshDatabankApiSessionOnce(runId, operationContext, warmupOpti
       session,
       reusedForBatch: true,
       contextRefreshed: true,
-      warmupResult: warmed?.warmupResult || null,
     };
   })();
   try {
@@ -1121,11 +1124,7 @@ async function sendDatabankApiOperation(commandType, payload, runId, initialCont
     if (refreshed) {
       operationContext = refreshed;
       contextRefreshed = true;
-      result = commandType === CONTENT_CMD_DATABANK_REALTIME_COUNT
-        && refreshed?.warmupResult?.ok === true
-        && refreshed?.warmupResult?.countReady === true
-        ? refreshed.warmupResult
-        : await send();
+      result = await send();
     }
   }
   if (['DATABANK_REQUEST_CONTEXT_REQUIRED', 'DATABANK_LOGIN_REQUIRED', 'DATABANK_CAPTCHA_REQUIRED'].includes(result?.code)) {

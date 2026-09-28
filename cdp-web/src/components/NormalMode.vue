@@ -5212,7 +5212,7 @@ function sendDatabankDirectCreate(jsonText, crowdName, runId = '', options = {})
   })
 }
 
-function sendDatabankApiContextCheck(openSetup = false, autoWarmup = false, runId = '', warmupTask = {}) {
+function sendDatabankApiContextCheck(openSetup = false, autoWarmup = false, runId = '') {
   return new Promise((resolve, reject) => {
     const requestId = `databank_context_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const cleanup = (handler, timer) => {
@@ -5245,10 +5245,6 @@ function sendDatabankApiContextCheck(openSetup = false, autoWarmup = false, runI
       openSetup: openSetup === true,
       autoWarmup: autoWarmup === true,
       runId,
-      jsonText: String(warmupTask?.jsonText || ''),
-      crowdName: String(warmupTask?.crowdName || ''),
-      executionMode: String(warmupTask?.executionMode || ''),
-      precheckedNoMatch: warmupTask?.precheckedNoMatch === true,
     }, window.location.origin)
   })
 }
@@ -5327,7 +5323,7 @@ async function promptDatabankContextSetup(contextResult = {}) {
   }
 }
 
-async function ensureDatabankApiContextReady(runId = '', warmupTask = {}, options = {}) {
+async function ensureDatabankApiContextReady(runId = '', options = {}) {
   try {
     const contextResult = await sendDatabankApiContextCheck(false, false, runId)
     if (contextResult?.ready === true) return { ready: true, ...contextResult }
@@ -5347,7 +5343,7 @@ async function ensureDatabankApiContextReady(runId = '', warmupTask = {}, option
     })
     let warmupResult = null
     try {
-      warmupResult = await sendDatabankApiContextCheck(false, true, runId, warmupTask)
+      warmupResult = await sendDatabankApiContextCheck(false, true, runId)
     } finally {
       preparingMessage.close()
     }
@@ -7237,16 +7233,9 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           batchEntries.value = [...batchEntries.value]
         }
 
-        const contextPreparation = await ensureDatabankApiContextReady(
-          run.id,
-          {
-            jsonText,
-            crowdName: entry.crowdName,
-            executionMode,
-            precheckedNoMatch: true,
-          },
-          { allowPageWarmup: scope !== 'failed' },
-        )
+        const contextPreparation = await ensureDatabankApiContextReady(run.id, {
+          allowPageWarmup: scope !== 'failed',
+        })
         if (contextPreparation?.ready !== true) {
           const contextError = new Error(
             contextPreparation?.error || '数据银行接口环境尚未准备完成',
@@ -7255,23 +7244,19 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           throw contextError
         }
         const result = executionMode === 'calculate_only'
-          && contextPreparation?.warmupResult?.ok === true
-          && contextPreparation?.warmupResult?.countReady === true
-          ? contextPreparation.warmupResult
-          : executionMode === 'calculate_only'
-            ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, {
+          ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, {
+            precheckedNoMatch: true,
+            allowPageWarmup: scope !== 'failed',
+          })
+          : await sendDatabankDirectCreateWithReconciliation(
+            jsonText,
+            entry.crowdName,
+            run.id,
+            {
               precheckedNoMatch: true,
               allowPageWarmup: scope !== 'failed',
-            })
-            : await sendDatabankDirectCreateWithReconciliation(
-              jsonText,
-              entry.crowdName,
-              run.id,
-              {
-                precheckedNoMatch: true,
-                allowPageWarmup: scope !== 'failed',
-              },
-            )
+            },
+          )
         if (run.cancelled) {
           const cancelledError = new Error('用户已中断任务')
           cancelledError.cancelled = true
@@ -7410,13 +7395,8 @@ async function startAutoDataBankFlow() {
       const dependencyCount = extractCustomCrowdDependencyNames(jsonText).length
       showAutomationStage(dependencyCount > 0
         ? `正在准备 ${dependencyCount} 个自定义人群和接口环境...`
-        : '首次使用时将直接用当前人群准备接口环境...')
-      const contextPreparation = await ensureDatabankApiContextReady(run.id, {
-        jsonText,
-        crowdName,
-        executionMode,
-        precheckedNoMatch: true,
-      })
+        : '首次使用时将先用轻量参数准备接口环境...')
+      const contextPreparation = await ensureDatabankApiContextReady(run.id)
       if (contextPreparation?.ready !== true) {
         return { ok: false, error: '数据银行接口环境尚未准备完成' }
       }
@@ -7425,10 +7405,7 @@ async function startAutoDataBankFlow() {
         showAutomationStage(dependencyCount > 0
           ? `正在准备 ${dependencyCount} 个自定义人群并通过接口计算人数...`
           : '正在通过接口计算人数...')
-        result = contextPreparation?.warmupResult?.ok === true
-          && contextPreparation?.warmupResult?.countReady === true
-          ? contextPreparation.warmupResult
-          : await sendDatabankRealtimeCount(jsonText, crowdName, run.id, { precheckedNoMatch: true })
+        result = await sendDatabankRealtimeCount(jsonText, crowdName, run.id, { precheckedNoMatch: true })
       } else {
         showAutomationStage(dependencyCount > 0
           ? `正在检查 ${dependencyCount} 个自定义人群，并通过接口创建...`

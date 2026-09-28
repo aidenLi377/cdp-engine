@@ -1228,7 +1228,7 @@ test('background prepares the DataBank API context from an already-open page wit
   assert.deepEqual(harness.windowUpdateTrail, [])
 })
 
-test('background initializes DataBank with the current task only inside an already-open parameter page', async () => {
+test('background initializes DataBank with the fixed lightweight payload inside an already-open parameter page', async () => {
   const taskJson = '{"crowdName":"首次当前任务","list":[],"compute":""}'
   const harness = createBackgroundHarness({
     async tabsQuery() {
@@ -1268,17 +1268,30 @@ test('background initializes DataBank with the current task only inside an alrea
   assert.equal(response.ok, true)
   assert.equal(response.ready, true)
   assert.equal(response.warmedUp, true)
-  assert.equal(response.source, 'current_task_page_initialization')
-  assert.equal(response.usedCurrentTask, true)
-  assert.equal(response.warmupResult.crowdCount, 19000)
+  assert.equal(response.source, 'lightweight_page_initialization')
+  assert.equal(response.usedCurrentTask, false)
+  assert.equal(response.warmupResult, null)
   assert.equal(harness.createdTabs.length, 0)
   assert.deepEqual(harness.updateTrail, [])
   assert.deepEqual(harness.windowUpdateTrail, [])
   assert.deepEqual(harness.removeTrail, [])
   assert.equal(harness.sessionData.cdpDatabankRequestContext.headers['x-csrf-token'], 'csrf-from-automated-warmup')
-  const warmupPayload = harness.sentPayloads.find((payload) => payload.executionMode === 'calculate_only')
+  const warmupPayload = harness.sentPayloads.find((payload) => payload.executionMode === 'context_warmup')
   assert.ok(warmupPayload)
-  assert.deepEqual(JSON.parse(warmupPayload.jsonText), JSON.parse(taskJson))
+  assert.deepEqual(JSON.parse(warmupPayload.jsonText), {
+    crowdName: '未命名',
+    list: [{
+      selectionLv1: ['FULL_LINK', 'FULL_LINK'],
+      selectionLv3: {
+        cate: 'ALL',
+        types: ['15187#|#D_ROYALTY'],
+        dateType: 'RELATIVE_RANGE',
+        dateValue: '30',
+      },
+      fromPoolId: 1,
+    }],
+    compute: '(0)',
+  })
   assert.equal(warmupPayload.precheckedNoMatch, true)
 })
 
@@ -1321,8 +1334,8 @@ test('background temporarily reuses and restores an open DataBank tab outside th
   })
 
   assert.equal(response.ready, true)
-  assert.equal(response.usedCurrentTask, true)
-  assert.equal(response.warmupResult.crowdCount, 330000)
+  assert.equal(response.usedCurrentTask, false)
+  assert.equal(response.warmupResult, null)
   assert.deepEqual(harness.createdTabs, [])
   assert.deepEqual(harness.windowUpdateTrail, [])
   assert.deepEqual(
@@ -1334,7 +1347,7 @@ test('background temporarily reuses and restores an open DataBank tab outside th
   )
 })
 
-test('background reuses the current task result instead of launching a second warmup calculation', async () => {
+test('background never treats the lightweight warm-up as the current task result', async () => {
   const taskJson = JSON.stringify({
     crowdName: '首次真实任务',
     list: [{
@@ -1380,12 +1393,13 @@ test('background reuses the current task result instead of launching a second wa
   })
 
   assert.equal(response.ready, true)
-  assert.equal(response.usedCurrentTask, true)
-  assert.equal(response.source, 'current_task_page_initialization')
-  assert.equal(response.warmupResult.crowdCount, 154643)
+  assert.equal(response.usedCurrentTask, false)
+  assert.equal(response.source, 'lightweight_page_initialization')
+  assert.equal(response.warmupResult, null)
   const warmupPayload = harness.sentPayloads.find((payload) => payload.type === 'AUTOMATE_DATABANK')
-  assert.equal(warmupPayload.executionMode, 'calculate_only')
-  assert.deepEqual(JSON.parse(warmupPayload.jsonText), JSON.parse(taskJson))
+  assert.equal(warmupPayload.executionMode, 'context_warmup')
+  assert.equal(JSON.parse(warmupPayload.jsonText).crowdName, '未命名')
+  assert.notDeepEqual(JSON.parse(warmupPayload.jsonText), JSON.parse(taskJson))
   assert.equal(warmupPayload.precheckedNoMatch, true)
 })
 

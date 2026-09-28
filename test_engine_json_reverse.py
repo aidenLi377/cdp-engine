@@ -107,6 +107,33 @@ class EngineJsonReverseParserTests(unittest.TestCase):
         self.assertEqual(extracted.payload, payload)
         self.assertIsNone(extracted.error)
 
+    def test_ignores_non_business_node_metadata(self):
+        payload = sample_engine_json(self.engine)
+        for position, item in enumerate(payload["list"]):
+            item["extra"] = {"status": "NORMAL"}
+            item["index"] = position
+            item["lv2MetadataIdMap"] = {"ignored": "metadata"}
+            item["op"] = None
+
+        result = self.parser.parse(payload)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["unsupportedParameters"], [])
+        self.assertEqual(len(result["nodes"]), 2)
+
+    def test_rejects_unknown_non_null_node_operation(self):
+        payload = sample_engine_json(self.engine)
+        payload["list"][1]["op"] = "UNKNOWN_OPERATION"
+
+        result = self.parser.parse(payload)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["status"], "unsupported")
+        self.assertTrue(
+            any(item["path"] == "op" for item in result["unsupportedParameters"])
+        )
+
 
 class EngineJsonReverseChatApiTests(unittest.TestCase):
     def test_chat_uses_reverse_parser_and_never_calls_the_model(self):

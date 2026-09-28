@@ -16,6 +16,7 @@ MAX_ENGINE_JSON_MESSAGE_LENGTH = 200_000
 MULTI_VALUE_WIDGETS = {"搜索多选", "复选组", "下拉多选", "动态多选"}
 VALID_RELATION_OPERATORS = {"n", "u", "d"}
 VALID_POOL_OPERATORS = {"n", "u"}
+IGNORABLE_NODE_METADATA_FIELDS = {"extra", "index", "lv2MetadataIdMap"}
 PRESERVE_FROM_POOL_ID_PACKAGES = {
     ConfigEngine.BRAND_PROMOTION_PACKAGE,
     ConfigEngine.OMNIMEDIA_PACKAGE,
@@ -322,8 +323,19 @@ class EngineJsonReverseParser:
                     regenerated["op"] = "INIT"
                 else:
                     regenerated.pop("op", None)
-                expected = item
-                actual = regenerated
+                expected = {
+                    key: value
+                    for key, value in item.items()
+                    if key not in IGNORABLE_NODE_METADATA_FIELDS
+                }
+                actual = copy.deepcopy(regenerated)
+                # ``op`` is a legacy node-initialization marker, not the
+                # audience relation.  Real exports use both null and INIT;
+                # ``compute`` remains the canonical source for n/u/d.
+                if expected.get("op") in (None, "INIT"):
+                    expected.pop("op", None)
+                if actual.get("op") in (None, "INIT"):
+                    actual.pop("op", None)
                 if expected != actual:
                     for path in self._diff_paths(expected, actual):
                         unsupported.append(
@@ -354,7 +366,7 @@ class EngineJsonReverseParser:
             "tipProperty",
             "fromPoolId",
             "op",
-        } | set(base)
+        } | IGNORABLE_NODE_METADATA_FIELDS | set(base)
         unsupported = [
             self._unsupported_parameter(
                 index,
