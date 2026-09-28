@@ -24,6 +24,31 @@ test('workbench snapshot is versioned, account-scoped, and restored through node
   assert.match(normalModeVue, /window\.addEventListener\('beforeunload', handleWorkbenchBeforeUnload\)/)
 })
 
+test('initial published library request uses the scope restored from the saved session', () => {
+  const mountedFlow = normalModeVue.slice(
+    normalModeVue.indexOf('onMounted(async () => {'),
+    normalModeVue.indexOf('onActivated(() => {'),
+  )
+  const restoreFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function restoreWorkbenchSession()'),
+    normalModeVue.indexOf('function handleKeydown'),
+  )
+  const restoreStart = mountedFlow.indexOf('const restorePromise = restoreWorkbenchSession()')
+  const publishedLoad = mountedFlow.indexOf('loadPublishedSolutions()', restoreStart)
+  const restoreAwait = mountedFlow.indexOf('restorePromise,', publishedLoad)
+  const scopeRestore = restoreFlow.indexOf('publishedLibraryScope.value =')
+  const firstAsyncPause = restoreFlow.indexOf('await ')
+
+  assert.ok(restoreStart >= 0)
+  assert.ok(publishedLoad > restoreStart)
+  assert.ok(restoreAwait > publishedLoad)
+  assert.ok(scopeRestore >= 0 && scopeRestore < firstAsyncPause)
+  assert.doesNotMatch(
+    mountedFlow,
+    /await Promise\.all\(\[loadPackages\(\), loadPublishedSolutions\(\)\]\)[\s\S]*?await restoreWorkbenchSession\(\)/,
+  )
+})
+
 test('copy and publish run integrity checks before side effects', () => {
   const copyStart = normalModeVue.indexOf('async function copyJson')
   const copyValidation = normalModeVue.indexOf("ensureGeneratedOutputReady('复制')", copyStart)
@@ -60,8 +85,11 @@ test('automation checks generation service readiness without enforcing parameter
 test('task center exposes local installation and manual redetection while preserving connection protocol', () => {
   assert.match(taskCenterVue, />\{\{ installingExtension \? '下载中…' : '安装扩展' \}\}<\/button>/)
   assert.match(taskCenterVue, />\{\{ extensionCheckBusy \? '检测中…' : '重新检测' \}\}<\/button>/)
+  assert.match(taskCenterVue, /@click="requestExtensionCheck"/)
   assert.match(taskCenterVue, /fetchWithTimeout\('\/api\/extension\/download'/)
   assert.match(taskCenterVue, /type: 'CDP_EXTENSION_PING'/)
+  assert.match(taskCenterVue, /function requestExtensionCheck\(\)[\s\S]*?window\.location\.reload\(\)/)
+  assert.match(taskCenterVue, /await checkExtension\(consumeExtensionRecheckAfterReload\(\)\)/)
 })
 
 test('group application prepares cached solution records while the preview is open', () => {

@@ -264,6 +264,7 @@ function createBackgroundHarness(options = {}) {
     console,
     chrome,
     URL,
+    AbortController,
     Date: { now: () => now },
     setTimeout(callback, delay = 0) {
       now += Number(delay) || 0
@@ -1146,6 +1147,51 @@ test('DataBank batch context is automatically refreshed at most once after an ex
   assert.equal(countAttempts, 2)
 })
 
+test('a strict API retry never falls back to DataBank page warm-up', async () => {
+  let countAttempts = 0
+  const harness = createBackgroundHarness({
+    async tabsQuery() {
+      return [{
+        id: 407,
+        windowId: 91,
+        active: true,
+        status: 'complete',
+        url: 'https://databank.tmall.com/#/userDefinedAnalyses',
+      }]
+    },
+    databankContextResponse: {
+      ok: true,
+      ready: true,
+      source: 'page_security_context',
+      requestHeaders: { 'x-csrf-token': 'strict-retry-csrf' },
+    },
+    realtimeCountResponse() {
+      countAttempts += 1
+      return { ok: false, code: 'DATABANK_REQUEST_CONTEXT_REQUIRED', error: '接口环境已失效' }
+    },
+  })
+
+  const runId = 'run-strict-api-retry'
+  await harness.sendProjectMessage({
+    type: 'CDP_PREPARE_DATABANK_API_CONTEXT',
+    pageUrl: 'http://127.0.0.1:5173/',
+    runId,
+  })
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_QUERY_DATABANK_REALTIME_COUNT',
+    pageUrl: 'http://127.0.0.1:5173/',
+    jsonText: '{"crowdName":"严格接口重试","list":[],"compute":""}',
+    crowdName: '严格接口重试',
+    runId,
+    allowPageWarmup: false,
+  })
+
+  assert.equal(response.ok, false)
+  assert.equal(response.code, 'DATABANK_REQUEST_CONTEXT_REQUIRED')
+  assert.equal(countAttempts, 1)
+  assert.equal(harness.sentPayloads.some((payload) => payload.type === 'AUTOMATE_DATABANK'), false)
+})
+
 test('background prepares the DataBank API context from an already-open page without focusing it', async () => {
   const harness = createBackgroundHarness({
     async tabsQuery() {
@@ -1513,6 +1559,30 @@ test('background checks an exact crowd name through the API without opening a Da
   assert.equal(response.crowdCount, 4674)
   assert.deepEqual(harness.messageTrail, [])
   assert.deepEqual(harness.updateTrail, [])
+})
+
+test('an exact-name lookup stops its own request before the bridge timeout', async () => {
+  const harness = createBackgroundHarness({
+    async fetchImpl(_url, init = {}) {
+      return await new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const error = new Error('aborted')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+    },
+  })
+
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_QUERY_DATABANK_CROWD_COUNT',
+    pageUrl: 'http://127.0.0.1:5173/',
+    crowdName: '超时查询包',
+  })
+
+  assert.equal(response.ok, false)
+  assert.equal(response.code, 'DATABANK_API_TIMEOUT')
+  assert.match(response.error, /检查同名人群包超时/)
 })
 
 test('background trusts one server-filtered keyword page instead of scanning the full crowd library', async () => {

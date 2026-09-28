@@ -1884,7 +1884,7 @@ const EXTENSION_RESPONSE_TIMEOUT_MS = 170000
 const EXTENSION_PING_TIMEOUT_MS = 3500
 const AUTO_CALCULATE_EXTENSION_VERSION = '2.2.2'
 const CUSTOM_CROWD_EXTENSION_VERSION = '2.2.5'
-const AUDIENCE_TASK_EXTENSION_VERSION = '2.2.33'
+const AUDIENCE_TASK_EXTENSION_VERSION = '2.2.34'
 const CROWD_COUNT_POLL_INTERVAL_MIN_MS = 45 * 1000
 const CROWD_COUNT_POLL_INTERVAL_MAX_MS = 75 * 1000
 const CROWD_NAME_MAX_LENGTH = 20
@@ -5167,6 +5167,7 @@ function sendDatabankRealtimeCount(jsonText, crowdName, runId = '', options = {}
       crowdName,
       runId,
       precheckedNoMatch: options?.precheckedNoMatch === true,
+      allowPageWarmup: options?.allowPageWarmup !== false,
     }, window.location.origin)
   })
 }
@@ -5206,6 +5207,7 @@ function sendDatabankDirectCreate(jsonText, crowdName, runId = '', options = {})
       crowdName,
       runId,
       precheckedNoMatch: options?.precheckedNoMatch === true,
+      allowPageWarmup: options?.allowPageWarmup !== false,
     }, window.location.origin)
   })
 }
@@ -5325,10 +5327,18 @@ async function promptDatabankContextSetup(contextResult = {}) {
   }
 }
 
-async function ensureDatabankApiContextReady(runId = '', warmupTask = {}) {
+async function ensureDatabankApiContextReady(runId = '', warmupTask = {}, options = {}) {
   try {
     const contextResult = await sendDatabankApiContextCheck(false, false, runId)
     if (contextResult?.ready === true) return { ready: true, ...contextResult }
+    if (options?.allowPageWarmup === false) {
+      return {
+        ...contextResult,
+        ready: false,
+        code: contextResult?.code || 'DATABANK_REQUEST_CONTEXT_REQUIRED',
+        error: contextResult?.error || '当前接口环境不可用；重试任务已停止，未切换执行通道',
+      }
+    }
     const preparingMessage = ElMessage({
       type: 'info',
       message: '正在读取已打开的数据银行接口环境…',
@@ -7227,15 +7237,21 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           batchEntries.value = [...batchEntries.value]
         }
 
-        const contextPreparation = await ensureDatabankApiContextReady(run.id, {
-          jsonText,
-          crowdName: entry.crowdName,
-          executionMode,
-          precheckedNoMatch: true,
-        })
+        const contextPreparation = await ensureDatabankApiContextReady(
+          run.id,
+          {
+            jsonText,
+            crowdName: entry.crowdName,
+            executionMode,
+            precheckedNoMatch: true,
+          },
+          { allowPageWarmup: scope !== 'failed' },
+        )
         if (contextPreparation?.ready !== true) {
-          const contextError = new Error('数据银行接口环境尚未准备完成')
-          contextError.code = 'DATABANK_REQUEST_CONTEXT_REQUIRED'
+          const contextError = new Error(
+            contextPreparation?.error || '数据银行接口环境尚未准备完成',
+          )
+          contextError.code = contextPreparation?.code || 'DATABANK_REQUEST_CONTEXT_REQUIRED'
           throw contextError
         }
         const result = executionMode === 'calculate_only'
@@ -7243,12 +7259,18 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           && contextPreparation?.warmupResult?.countReady === true
           ? contextPreparation.warmupResult
           : executionMode === 'calculate_only'
-            ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, { precheckedNoMatch: true })
+            ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, {
+              precheckedNoMatch: true,
+              allowPageWarmup: scope !== 'failed',
+            })
             : await sendDatabankDirectCreateWithReconciliation(
               jsonText,
               entry.crowdName,
               run.id,
-              { precheckedNoMatch: true },
+              {
+                precheckedNoMatch: true,
+                allowPageWarmup: scope !== 'failed',
+              },
             )
         if (run.cancelled) {
           const cancelledError = new Error('用户已中断任务')
@@ -7267,11 +7289,13 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
         }
       } catch (error) {
         if (isDatabankContextError(error)) {
-          entry.automationStatus = 'idle'
-          entry.automationError = '接口环境需要重新初始化，本任务尚未执行'
+          entry.automationStatus = scope === 'failed' ? 'failed' : 'idle'
+          entry.automationError = scope === 'failed'
+            ? (error?.message || '接口环境不可用，重试任务未切换执行通道')
+            : '接口环境需要重新初始化，本任务尚未执行'
           currentPendingMessage.close()
           batchEntries.value = [...batchEntries.value]
-          await promptDatabankContextSetup({ hasOpenTab: true })
+          if (scope !== 'failed') await promptDatabankContextSetup({ hasOpenTab: true })
           break
         }
         entry.automationStatus = error?.code === 'DATABANK_LOGIN_REQUIRED' ? 'login_required' : 'failed'
@@ -8202,8 +8226,15 @@ onMounted(async () => {
   void preloadAllPackageMeta().catch(() => {
     // Individual component loads remain available if background preloading fails.
   })
-  await Promise.all([loadPackages(), loadPublishedSolutions()])
-  const restored = await restoreWorkbenchSession()
+  // Start session restoration first so its synchronous UI phase restores the
+  // saved library scope before the initial published-solutions request reads it.
+  // The slower node hydration still runs in parallel with both initial requests.
+  const restorePromise = restoreWorkbenchSession()
+  const [, , restored] = await Promise.all([
+    loadPackages(),
+    loadPublishedSolutions(),
+    restorePromise,
+  ])
   sessionRestorePending = false
   resumeRestoredSingleAudienceCountTasks()
   if (queuedAiCommand) {

@@ -80,7 +80,7 @@ test('task center keeps single run actions and adds batch paste entry points', (
 })
 
 test('task center requires the direct DMP extraction extension version', () => {
-  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.33'/)
+  assert.match(source, /const EXPECTED_EXTENSION_VERSION = '2\.2\.34'/)
   assert.match(source, /for \(let index = 1; index < 3; index \+= 1\)/)
   assert.match(source, /actual\[index\] < expected\[index\]/)
 })

@@ -17,6 +17,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   const REALTIME_COUNT_PATH = '/api/v1/custom/realtime/count';
   const CROWD_CREATE_PREFLIGHT_PATH = '/api/v1/custom/canAcc';
   const CROWD_CREATE_PATH = '/api/v1/custom/databank';
+  const DATABANK_DIRECT_API_TIMEOUT_MS = 45000;
 
   // -- Crowd flow XPaths (new) --
   const CROWD_SEARCH_XPATH = '/html/body/div[2]/div[2]/div[2]/div[2]/div/div/div[2]/div/div[2]/div/div/div/div[2]/div/div/div[1]/div/div[1]/div[2]/span/input';
@@ -877,6 +878,21 @@ if (!window.__databankAutomationContentScriptLoaded) {
     return error;
   }
 
+  async function fetchDatabankApi(url, init = {}, timeoutMs = DATABANK_DIRECT_API_TIMEOUT_MS) {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null;
+    try {
+      return await fetch(url, {
+        ...init,
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+    } finally {
+      if (timeoutId !== null) clearTimeout(timeoutId);
+    }
+  }
+
   function buildDatabankApiHeaders(requestHeaders, options = {}) {
     const csrfToken = findStoredCsrfToken(requestHeaders);
     if (options.requireCsrf === true && !csrfToken) {
@@ -899,7 +915,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
   async function postDatabankApi(path, model, headers, operationLabel) {
     let response;
     try {
-      response = await fetch(CUSTOM_CROWD_LIST_URL, {
+      response = await fetchDatabankApi(CUSTOM_CROWD_LIST_URL, {
         method: 'POST',
         credentials: 'include',
         cache: 'no-store',
@@ -911,6 +927,12 @@ if (!window.__databankAutomationContentScriptLoaded) {
         }),
       });
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw databankDirectApiError(
+          `${operationLabel}超时，请稍后重试`,
+          'DATABANK_API_TIMEOUT'
+        );
+      }
       throw databankDirectApiError(`${operationLabel}失败：${error?.message || '网络请求失败'}`);
     }
     assertAutomationActive();
@@ -1131,7 +1153,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
 
     let response;
     try {
-      response = await fetch(CUSTOM_CROWD_LIST_URL, {
+      response = await fetchDatabankApi(CUSTOM_CROWD_LIST_URL, {
         method: 'POST',
         credentials: 'include',
         cache: 'no-store',
@@ -1143,6 +1165,9 @@ if (!window.__databankAutomationContentScriptLoaded) {
         }),
       });
     } catch (error) {
+      if (error?.name === 'AbortError') {
+        throw realtimeCountError('接口取数超时，请稍后重试', 'DATABANK_API_TIMEOUT');
+      }
       throw realtimeCountError('接口取数失败：' + (error?.message || '网络请求失败'));
     }
     assertAutomationActive();

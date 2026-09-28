@@ -83,7 +83,7 @@ test('copy dialog chooses a source while batch automation directly lists a compa
   assert.match(normalModeVue, /toggleBatchAutomationEntry/)
   assert.match(normalModeVue, /for \(const index of targetIndexes\)/)
   assert.match(normalModeVue, /const executionMode = getBatchEntryExecutionMode\(entry\)/)
-  assert.match(normalModeVue, /sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{ precheckedNoMatch: true \}\)/)
+  assert.match(normalModeVue, /sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{[\s\S]*?precheckedNoMatch: true/)
   assert.match(normalModeVue, /sendDatabankDirectCreateWithReconciliation\([\s\S]*?entry\.crowdName,[\s\S]*?run\.id,[\s\S]*?precheckedNoMatch: true/)
   assert.match(normalModeVue, /两种操作都会先精确检查同名人群包/)
   assert.match(normalModeVue, /entry\.crowdReused = result\?\.crowdReused === true[\s\S]*?if \(executionMode === 'calculate_only'\)/)
@@ -91,13 +91,13 @@ test('copy dialog chooses a source while batch automation directly lists a compa
   assert.doesNotMatch(normalModeVue, /setSingleAutomationMode\('create_only'\)/)
   assert.match(normalModeVue, /AUTO_CALCULATE_EXTENSION_VERSION = '2\.2\.2'/)
   assert.match(normalModeVue, /CUSTOM_CROWD_EXTENSION_VERSION = '2\.2\.5'/)
-  assert.match(normalModeVue, /AUDIENCE_TASK_EXTENSION_VERSION = '2\.2\.33'/)
+  assert.match(normalModeVue, /AUDIENCE_TASK_EXTENSION_VERSION = '2\.2\.34'/)
   assert.match(normalModeVue, /class="batch-interface-only"[\s\S]*?接口执行/)
   assert.doesNotMatch(normalModeVue, /页面计算|页面建包|页面取数/)
   assert.match(normalModeVue, /const batchCreateMethod = ref\('api'\)/)
   assert.match(normalModeVue, /const batchRealtimeCountMethod = ref\('api'\)/)
   assert.match(normalModeVue, /executionMode === 'calculate_only'[\s\S]*?contextPreparation\?\.warmupResult\?\.ok === true/)
-  assert.match(normalModeVue, /contextPreparation\.warmupResult[\s\S]*?sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{ precheckedNoMatch: true \}\)[\s\S]*?: await sendDatabankDirectCreateWithReconciliation/)
+  assert.match(normalModeVue, /contextPreparation\.warmupResult[\s\S]*?sendDatabankRealtimeCount\(jsonText, entry\.crowdName, run\.id, \{[\s\S]*?precheckedNoMatch: true[\s\S]*?: await sendDatabankDirectCreateWithReconciliation/)
   assert.match(normalModeVue, /node\?\.packageType === '自定义人群'/)
   assert.match(normalModeVue, /ensureAutomationExtensionReady/)
   assert.doesNotMatch(normalModeVue, /function sendMessageToDatabankExtension/)
@@ -149,7 +149,7 @@ test('single automation offers two API-only execution choices and safely handles
 
 test('automation prepares the DataBank API context and reconciles ambiguous create failures', () => {
   assert.match(normalModeVue, /CDP_PREPARE_DATABANK_API_CONTEXT/)
-  assert.match(normalModeVue, /async function ensureDatabankApiContextReady\(runId = '', warmupTask = \{\}\)/)
+  assert.match(normalModeVue, /async function ensureDatabankApiContextReady\(runId = '', warmupTask = \{\}, options = \{\}\)/)
   assert.match(normalModeVue, /sendDatabankApiContextCheck\(false, true, runId, warmupTask\)/)
   assert.match(normalModeVue, /正在读取已打开的数据银行接口环境/)
   assert.match(normalModeVue, /const manualSetupRequired = warmupResult\?\.hasOpenTab === false/)
@@ -212,7 +212,7 @@ test('batch automation preflights the target and custom crowd dependencies befor
   assert.match(automationFlow, /sendDatabankCrowdCountQuery\(entry\.crowdName\)[\s\S]*?if \(existingCrowd\?\.crowdFound === true\)/)
   assert.match(automationFlow, /extractCustomCrowdDependencyNames\(jsonText\)[\s\S]*?sendDatabankCustomDependencyCheck\(dependencyNames\)/)
   const duplicateCheck = automationFlow.indexOf('sendDatabankCrowdCountQuery(entry.crowdName)')
-  const realtimeExecution = automationFlow.indexOf('sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, { precheckedNoMatch: true })')
+  const realtimeExecution = automationFlow.indexOf('sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, {')
   const createExecution = automationFlow.indexOf('sendDatabankDirectCreateWithReconciliation(')
   assert.ok(duplicateCheck >= 0 && duplicateCheck < realtimeExecution && duplicateCheck < createExecution)
   assert.match(normalModeVue, /CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES/)
@@ -230,7 +230,7 @@ test('a mixed batch skips API-context preparation for existing crowds and prepar
   const duplicateCheck = automationFlow.indexOf('sendDatabankCrowdCountQuery(entry.crowdName)')
   const existingBranchStart = automationFlow.indexOf('if (existingCrowd?.crowdFound === true)')
   const dependencyStart = automationFlow.indexOf('if (entry.internalDependencies.length > 0)')
-  const contextPreparation = automationFlow.indexOf('ensureDatabankApiContextReady(run.id, {')
+  const contextPreparation = automationFlow.indexOf('ensureDatabankApiContextReady(')
   const createExecution = automationFlow.indexOf('sendDatabankDirectCreateWithReconciliation(')
   const existingBranch = automationFlow.slice(existingBranchStart, dependencyStart)
 
@@ -323,6 +323,17 @@ test('formal batch automation preserves successes and retries only failed or int
   assert.match(normalModeVue, /entry\.automationStatus === 'failed'/)
   assert.match(normalModeVue, /startBatchAutomationFlow\('failed'\)/)
   assert.match(normalModeVue, /可仅重试失败任务/)
+})
+
+test('failed-task retries remain API-only and never fall back to page calculation', () => {
+  const automationFlow = normalModeVue.slice(
+    normalModeVue.indexOf('async function startBatchAutomationFlow'),
+    normalModeVue.indexOf('function retryPullAnalysisBatch'),
+  )
+  assert.match(normalModeVue, /if \(options\?\.allowPageWarmup === false\) \{[\s\S]*?未切换执行通道/)
+  assert.match(automationFlow, /allowPageWarmup: scope !== 'failed'/)
+  assert.match(automationFlow, /entry\.automationStatus = scope === 'failed' \? 'failed' : 'idle'/)
+  assert.match(automationFlow, /if \(scope !== 'failed'\) await promptDatabankContextSetup/)
 })
 
 test('a running package restored after interruption is converted into an actionable failed item', () => {

@@ -106,6 +106,7 @@
       extMsg.jsonText = p.jsonText || '';
       extMsg.crowdName = p.crowdName || '';
       extMsg.precheckedNoMatch = p.precheckedNoMatch === true;
+      extMsg.allowPageWarmup = p.allowPageWarmup !== false;
       if (!extMsg.jsonText.trim()) { safeRespond(p, { ok: false, error: 'jsonText 不能为空' }); return; }
     } else if (p.type === 'CDP_PREPARE_DATABANK_API_CONTEXT') {
       extMsg.openSetup = p.openSetup === true;
@@ -188,7 +189,7 @@
     }
     var sent = false;
     var timer = setTimeout(function() {
-      if (!sent) { sent = true; console.log('[CDP Bridge] timeout after ' + timeoutMs + 'ms'); safeRespond(p, { ok: false, error: '插件响应超时，请刷新页面后重试' }); }
+      if (!sent) { sent = true; console.log('[CDP Bridge] timeout after ' + timeoutMs + 'ms'); safeRespond(p, { ok: false, code: 'CDP_PLUGIN_RESPONSE_TIMEOUT', error: '插件响应超时，请刷新页面后重试' }); }
     }, timeoutMs);
 
     try {

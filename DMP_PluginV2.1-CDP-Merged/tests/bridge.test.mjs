@@ -106,12 +106,14 @@ test('bridge forwards the opt-in realtime count request without changing its JSO
     jsonText: '{"crowdName":"接口试验包","list":[],"compute":""}',
     crowdName: '接口试验包',
     precheckedNoMatch: true,
+    allowPageWarmup: false,
   })
 
   assert.equal(harness.forwarded[0].type, 'CDP_QUERY_DATABANK_REALTIME_COUNT')
   assert.equal(harness.forwarded[0].jsonText, '{"crowdName":"接口试验包","list":[],"compute":""}')
   assert.equal(harness.forwarded[0].crowdName, '接口试验包')
   assert.equal(harness.forwarded[0].precheckedNoMatch, true)
+  assert.equal(harness.forwarded[0].allowPageWarmup, false)
   assert.equal(harness.posted[0].payload.requestId, 'realtime-count-1')
   assert.equal(harness.posted[0].payload.ok, true)
   assert.equal(harness.posted[0].payload.countReady, true)

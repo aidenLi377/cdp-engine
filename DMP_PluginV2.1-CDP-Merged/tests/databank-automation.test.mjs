@@ -404,6 +404,7 @@ function createContentHarness(options = {}) {
     },
     URL,
     URLSearchParams,
+    AbortController,
     setTimeout(callback, delay = 0) {
       now += Number(delay) || 0
       if (dialogOpen && options.enableConfirmAfterMs != null && now >= options.enableConfirmAfterMs) {
@@ -1022,6 +1023,32 @@ test('realtime count sends generated JSON directly and omits captcha', async () 
   assert.deepEqual(JSON.parse(outerPayload.customModelStr), { ...model, crowdName: '接口试验包' })
   assert.equal(harness.getState().triggerClickCount, 0)
   assert.equal(harness.getState().fetchCallCount, 1)
+})
+
+test('realtime count aborts the underlying request before the bridge timeout', async () => {
+  const harness = createContentHarness({
+    async fetchImpl(_url, init = {}) {
+      return await new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          const error = new Error('aborted')
+          error.name = 'AbortError'
+          reject(error)
+        }, { once: true })
+      })
+    },
+  })
+
+  const response = await harness.sendAutomationMessage({
+    type: 'QUERY_DATABANK_REALTIME_COUNT',
+    jsonText: '{"crowdName":"接口超时包","list":[],"compute":""}',
+    crowdName: '接口超时包',
+    requestHeaders: { 'x-csrf-token': 'timeout-csrf' },
+    precheckedNoMatch: true,
+  })
+
+  assert.equal(response.ok, false)
+  assert.equal(response.code, 'DATABANK_API_TIMEOUT')
+  assert.match(response.error, /接口取数超时/)
 })
 
 test('realtime count reuses an exact existing crowd and never calls the realtime endpoint', async () => {

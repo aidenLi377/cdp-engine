@@ -73,6 +73,7 @@ const taskStorage = chrome.storage?.session || chrome.storage?.local || null;
 const DATABANK_REQUEST_CONTEXT_KEY = 'cdpDatabankRequestContext';
 const DATABANK_REQUEST_CONTEXTS_KEY = 'cdpDatabankRequestContexts';
 const DATABANK_CREATE_GUARDS_KEY = 'cdpDatabankCreateGuards';
+const DATABANK_CROWD_QUERY_TIMEOUT_MS = 20000;
 let databankRequestContext = null;
 const databankRequestContexts = new Map();
 let databankContextWarmupPromise = null;
@@ -1097,7 +1098,7 @@ async function refreshDatabankApiSessionOnce(runId, operationContext, warmupOpti
   }
 }
 
-async function sendDatabankApiOperation(commandType, payload, runId, initialContext = null) {
+async function sendDatabankApiOperation(commandType, payload, runId, initialContext = null, options = {}) {
   let operationContext = initialContext || await resolveDatabankApiOperationContext(runId);
   const send = async () => await sendMessageWithRetry(operationContext.tab.id, {
     type: commandType,
@@ -1107,7 +1108,7 @@ async function sendDatabankApiOperation(commandType, payload, runId, initialCont
   });
   let result = await send();
   let contextRefreshed = false;
-  if (result?.code === 'DATABANK_REQUEST_CONTEXT_REQUIRED') {
+  if (result?.code === 'DATABANK_REQUEST_CONTEXT_REQUIRED' && options?.allowPageWarmup !== false) {
     const refreshed = await refreshDatabankApiSessionOnce(runId, operationContext, {
       jsonText: payload?.jsonText,
       crowdName: payload?.crowdName,
@@ -1146,7 +1147,7 @@ async function runDatabankRealtimeCount(jsonText, crowdName, runId, sendResponse
       jsonText,
       crowdName,
       precheckedNoMatch: options?.precheckedNoMatch === true,
-    }, runId);
+    }, runId, null, options);
     assertRunNotCancelled(runId);
     sendResponse(result);
   } catch (error) {
@@ -1219,7 +1220,7 @@ async function runDatabankDirectCreate(jsonText, crowdName, runId, sendResponse,
         jsonText,
         crowdName,
         precheckedNoMatch: options?.precheckedNoMatch === true,
-      }, runId, operationContext);
+      }, runId, operationContext, options);
       if (result?.ok === true) {
         guard.state = 'confirmed';
         guard.promise = null;
@@ -1293,15 +1294,33 @@ function buildCustomCrowdSearchUrl(crowdName, page = 1, pageSize = 10) {
   return url.toString();
 }
 
+async function fetchDatabankCrowdList(url) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), DATABANK_CROWD_QUERY_TIMEOUT_MS)
+    : null;
+  try {
+    return await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { Accept: 'application/json' },
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw createDatabankApiError('检查同名人群包超时，请稍后重试', 'DATABANK_API_TIMEOUT');
+    }
+    throw error;
+  } finally {
+    if (timeoutId !== null) clearTimeout(timeoutId);
+  }
+}
+
 async function fetchCustomCrowdExactMatches(crowdName) {
   const expectedName = normalizeCustomCrowdName(crowdName);
   if (!expectedName) throw createDatabankApiError('查询人群包前缺少名称');
-  const response = await fetch(buildCustomCrowdSearchUrl(expectedName), {
-    method: 'GET',
-    credentials: 'include',
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-  });
+  const response = await fetchDatabankCrowdList(buildCustomCrowdSearchUrl(expectedName));
   if (response.status === 401 || response.status === 403) {
     throw createDatabankApiError('数据银行登录已失效，请重新登录后再试', 'DATABANK_LOGIN_REQUIRED');
   }
@@ -2097,6 +2116,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     runDatabankRealtimeCount(jsonText, crowdName, runId, sendResponse, {
       precheckedNoMatch: message.precheckedNoMatch === true,
+      allowPageWarmup: message.allowPageWarmup !== false,
     });
     return true;
   }
@@ -2114,6 +2134,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     runDatabankDirectCreate(jsonText, crowdName, runId, sendResponse, {
       precheckedNoMatch: message.precheckedNoMatch === true,
+      allowPageWarmup: message.allowPageWarmup !== false,
     });
     return true;
   }

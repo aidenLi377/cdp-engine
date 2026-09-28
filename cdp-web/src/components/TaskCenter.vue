@@ -22,7 +22,7 @@
           <button
             type="button"
             :disabled="extensionCheckBusy"
-            @click="checkExtension(true)"
+            @click="requestExtensionCheck"
           >{{ extensionCheckBusy ? '检测中…' : '重新检测' }}</button>
         </div>
       </div>
@@ -344,7 +344,7 @@ import {
 const API = '/api/tasks'
 const BATCH_EXECUTION_GAP_MS = 2500
 const DMP_BATCH_EXECUTION_GAP_MS = 250
-const EXPECTED_EXTENSION_VERSION = '2.2.33'
+const EXPECTED_EXTENSION_VERSION = '2.2.34'
 const TASK_SESSION_KEY = 'task-center.v1'
 const COMPLETION_TOAST_DURATION_MS = 4000
 const MONITOR_VIEWS = new Set(['result', 'history', 'comparison'])
@@ -469,6 +469,7 @@ const extensionState = ref('checking')
 const extensionVersion = ref('')
 const extensionCheckBusy = ref(false)
 const installingExtension = ref(false)
+const EXTENSION_RECHECK_AFTER_RELOAD_KEY = 'cdp.extension.recheck-after-reload'
 let extensionEverConnected = false
 let extensionTimer = null
 let taskSessionPersistenceDisabled = false
@@ -2050,13 +2051,43 @@ async function checkExtension(manual = false) {
   }
 }
 
+function consumeExtensionRecheckAfterReload() {
+  try {
+    const shouldNotify = sessionStorage.getItem(EXTENSION_RECHECK_AFTER_RELOAD_KEY) === '1'
+    sessionStorage.removeItem(EXTENSION_RECHECK_AFTER_RELOAD_KEY)
+    return shouldNotify
+  } catch {
+    return false
+  }
+}
+
+function requestExtensionCheck() {
+  if (extensionCheckBusy.value) return
+  if (extConnected.value) {
+    void checkExtension(true)
+    return
+  }
+
+  // Chrome does not inject a newly installed or re-enabled static content
+  // script into an already open page. Reload once so bridge.js is attached,
+  // then the mounted check below reports the result to the user.
+  try {
+    sessionStorage.setItem(EXTENSION_RECHECK_AFTER_RELOAD_KEY, '1')
+  } catch {
+    // Reloading still enables bridge injection when sessionStorage is blocked.
+  }
+  extensionState.value = 'checking'
+  extensionCheckBusy.value = true
+  window.location.reload()
+}
+
 onMounted(async () => {
   window.addEventListener('cdp:workspace-session-clearing', disableTaskSessionPersistence)
   window.addEventListener('cdp:tutorial-run-dmp-batch', runDmpTutorialBatch)
   window.addEventListener('cdp:tutorial-edit-dmp-batch', editDmpTutorialBatch)
   window.addEventListener('beforeunload', handleTaskBeforeUnload)
   loadHistory()
-  await checkExtension()
+  await checkExtension(consumeExtensionRecheckAfterReload())
   if (pendingAiCommand) {
     const command = pendingAiCommand
     pendingAiCommand = null
