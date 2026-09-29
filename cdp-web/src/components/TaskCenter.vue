@@ -60,7 +60,7 @@
             <div class="tc-test-label">达摩盘</div>
           </div>
           <div class="tc-test-controls">
-            <el-input v-if="!dmpBatchMode" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
+            <el-input v-if="!dmpBatchMode" ref="dmpCrowdInputRef" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
             <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ dmpBatch.items.length }} 个</span>
             <TaskBatchPopover
               v-model="dmpBatchDraft"
@@ -128,7 +128,7 @@
           <span class="tc-tags-count">已选 {{ selectedTags.length }}</span>
         </div>
         <div class="tc-tags-search">
-          <input v-model="tagSearch" placeholder="搜索标签…" class="tc-tags-search-input" />
+          <input ref="dmpTagSearchRef" v-model="tagSearch" placeholder="搜索标签…" class="tc-tags-search-input" />
         </div>
         <div class="tc-tags-body">
           <template v-for="group in filteredTagGroups" :key="group.mainCategory">
@@ -285,9 +285,27 @@
         </section>
 
         <section class="tc-empty-monitor" v-else-if="!activeTask">
-          <div class="tc-empty-icon">&#9674;</div>
-          <div class="tc-empty-title">等待任务发起</div>
+          <div class="tc-empty-eyebrow">取数引导</div>
+          <h2 class="tc-empty-title">输入人群包，获取画像结果</h2>
           <div class="tc-empty-desc">输入人群包名称并点击运行，任务进度将在此处实时展示。</div>
+          <ol class="tc-empty-steps" aria-label="取数步骤">
+            <li :class="{ complete: dmpCrowdNames.length > 0 }">
+              <span class="tc-empty-step-number">1</span>
+              <span><strong>输入人群包</strong><small>{{ dmpCrowdNames.length ? '已填写' : '左侧输入或批量添加' }}</small></span>
+            </li>
+            <li :class="{ complete: selectedTags.length > 0 }">
+              <span class="tc-empty-step-number">2</span>
+              <span><strong>选择画像指标</strong><small>已选 {{ selectedTags.length }} 项</small></span>
+            </li>
+            <li>
+              <span class="tc-empty-step-number">3</span>
+              <span><strong>点击运行</strong><small>在这里查看进度和结果</small></span>
+            </li>
+          </ol>
+          <button v-if="!dmpCrowdNames.length && !dmpBatchMode" type="button" class="tc-empty-cta" @click="focusDmpCrowdInput">去输入人群包名称</button>
+          <div v-else-if="!dmpCrowdNames.length" class="tc-empty-next">在左侧「批量」中添加人群包后即可继续。</div>
+          <button v-else-if="!selectedTags.length" type="button" class="tc-empty-cta" @click="focusDmpTagSearch">去选择画像指标</button>
+          <div v-else class="tc-empty-next">{{ extConnected ? '准备就绪，点击左侧「运行」开始取数。' : '扩展连接后，点击左侧「运行」开始取数。' }}</div>
           <button v-if="taskHistory.length" type="button" class="tc-empty-history" @click="monitorView = 'history'">查看已有任务记录</button>
         </section>
       </section>
@@ -312,7 +330,7 @@
 
 <script setup>
 import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import DmpComparisonWorkspace from './DmpComparisonWorkspace.vue'
 import TaskBatchPopover from './TaskBatchPopover.vue'
 import tagDictionary from '../data/dmp_tags_dictionary.json'
@@ -402,6 +420,17 @@ function savePersisted(k, val) {
 
 const databankCrowd = ref(loadPersisted('databankCrowd', ''))
 const dmpCrowd = ref(loadPersisted('dmpCrowd', ''))
+const dmpCrowdInputRef = ref(null)
+const dmpTagSearchRef = ref(null)
+
+function focusDmpCrowdInput() {
+  dmpCrowdInputRef.value?.focus()
+}
+
+function focusDmpTagSearch() {
+  dmpTagSearchRef.value?.focus()
+}
+
 const databankBatchMode = ref(false)
 const dmpBatchMode = ref(false)
 const databankBatchText = ref(String(taskSessionState.databankBatchText || ''))
@@ -1609,6 +1638,24 @@ async function runDatabank() {
   }
 }
 
+async function confirmDmpLoginReady() {
+  try {
+    await ElMessageBox.confirm(
+      '系统将使用当前浏览器的登录状态执行自动化取数，请确认已经登录达摩盘。',
+      '开始前确认登录状态',
+      {
+        confirmButtonText: '已登录，开始取数',
+        cancelButtonText: '返回检查',
+        type: 'info',
+        customClass: 'dmp-login-confirm-message',
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function runDmp() {
   const names = [...dmpCrowdNames.value]
   if (!extConnected.value) {
@@ -1619,6 +1666,9 @@ async function runDmp() {
   if (selectedTags.value.length === 0) {
     ElMessage.warning('请先在特征大盘中选择至少一个已就绪的标签')
     return { completed: 0, failed: names.length, completedNames: [], failedNames: names, error: '未选择画像标签' }
+  }
+  if (!await confirmDmpLoginReady()) {
+    return { completed: 0, failed: 0, completedNames: [], failedNames: [], cancelled: true }
   }
   monitorView.value = 'result'
   taskRunning.value = 'dmp'
@@ -2438,10 +2488,21 @@ onBeforeUnmount(() => {
 .tc-btn-csv { color: var(--ui-ink) !important; background: var(--ui-surface) !important; border-color: var(--ui-control-border) !important; }
 
 /* 空状态 */
-.tc-empty-monitor { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
-.tc-empty-icon { font-size: 36px; color: rgba(0,0,0,0.04); }
-.tc-empty-title { font-size: 14px; font-weight: 500; color: rgba(0,0,0,0.20); }
-.tc-empty-desc { font-size: 11px; color: rgba(0,0,0,0.12); text-align: center; line-height: 1.5; }
+.tc-empty-monitor { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+.tc-empty-eyebrow { color: #e96b42; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; }
+.tc-empty-title { margin: 10px 0 8px; color: #1d1d1f !important; font-size: 22px; font-weight: 650; line-height: 1.3; }
+.tc-empty-desc { max-width: 540px; color: #62666d !important; font-size: 13px; line-height: 1.6; }
+.tc-empty-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; width: min(100%, 660px); margin: 26px 0 0; padding: 0; list-style: none; text-align: left; }
+.tc-empty-steps li { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 72px; padding: 12px; border: 1px solid #e2e6ec; border-radius: 10px; background: #fff; }
+.tc-empty-step-number { display: grid; flex: 0 0 26px; width: 26px; height: 26px; place-items: center; border-radius: 50%; background: #f0f2f5; color: #68717d; font-size: 12px; font-weight: 700; }
+.tc-empty-steps li.complete .tc-empty-step-number { background: #fff0e9; color: #d25c34; }
+.tc-empty-steps strong { display: block; color: #262a31; font-size: 13px; font-weight: 650; }
+.tc-empty-steps small { display: block; margin-top: 3px; color: #757b84; font-size: 11px; line-height: 1.35; }
+.tc-empty-cta { min-height: 40px; margin-top: 24px; padding: 0 16px; border: 1px solid #1d1d1f; border-radius: 8px; background: #1d1d1f; color: #fff; font-size: 13px; font-weight: 650; cursor: pointer; }
+.tc-empty-cta:hover { background: #343438; }
+.tc-empty-cta:focus-visible, .tc-empty-history:focus-visible { outline: 2px solid #e96b42; outline-offset: 3px; }
+.tc-empty-next { margin-top: 24px; color: #515862; font-size: 12px; line-height: 1.5; }
+.tc-empty-monitor .tc-empty-history { margin-top: 14px; font-size: 12px; }
 
 /* 任务记录 */
 .tc-history-card { flex: 1 1 0; min-height: 120px; display: flex; flex-direction: column; background: transparent; border: 0; border-radius: 0; padding: 12px 16px; overflow: hidden; transition: none; }

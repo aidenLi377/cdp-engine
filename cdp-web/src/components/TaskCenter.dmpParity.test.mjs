@@ -116,6 +116,11 @@ test('run buttons use task-specific prerequisites and explain missing DMP tags o
   assert.doesNotMatch(dmpRule, /selectedTags/)
   assert.match(runDmp, /selectedTags\.value\.length === 0/)
   assert.match(runDmp, /请先在特征大盘中选择至少一个已就绪的标签/)
+  assert.match(source, /async function confirmDmpLoginReady\(\)/)
+  assert.match(source, /请确认已经登录达摩盘/)
+  assert.match(source, /confirmButtonText: '已登录，开始取数'/)
+  assert.match(runDmp, /if \(!await confirmDmpLoginReady\(\)\)/)
+  assert.ok(runDmp.indexOf('confirmDmpLoginReady') < runDmp.indexOf("monitorView.value = 'result'"))
 })
 
 test('batch execution has no frontend item cap and keeps one history record per crowd package', () => {

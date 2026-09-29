@@ -590,7 +590,7 @@ test('calculate-only reuses an exact existing crowd count before opening paramet
   assert.equal(new URL(requestedUrls[0]).searchParams.get('keyword'), '兰蔻8月液精华购买Y25')
 })
 
-test('calculate-only completes with a dash when the exact existing crowd has no numeric count', async () => {
+test('calculate-only keeps polling when the exact existing crowd has no numeric count', async () => {
   const harness = createContentHarness({
     async fetchImpl() {
       return {
@@ -619,9 +619,9 @@ test('calculate-only completes with a dash when the exact existing crowd has no 
 
   assert.equal(response.ok, true)
   assert.equal(response.crowdReused, true)
-  assert.equal(response.countReady, true)
-  assert.equal(response.countUnavailable, true)
-  assert.equal(response.crowdCount, '-')
+  assert.equal(response.countReady, false)
+  assert.equal(response.countPending, true)
+  assert.equal(response.crowdCount, null)
   assert.equal(harness.getState().triggerClickCount, 0)
   assert.equal(harness.getState().calculateClickCount, 0)
 })
@@ -831,7 +831,7 @@ test('crowd count query uses the exact name and keeps a zero count', async () =>
   assert.equal(requestedUrls.length, 1)
   const url = new URL(requestedUrls[0])
   assert.equal(url.searchParams.get('keyword'), '新品兴趣人群0921')
-  assert.equal(url.searchParams.get('pageSize'), '10')
+  assert.equal(url.searchParams.get('pageSize'), '20')
   assert.equal(url.searchParams.get('category2NotEqualList'), 'scene_crowd')
 })
 

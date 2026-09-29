@@ -609,7 +609,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
       .trim();
   }
 
-  function buildCustomCrowdListUrl(crowdName, page = 1, pageSize = 10) {
+  function buildCustomCrowdListUrl(crowdName, page = 1, pageSize = 20) {
     const url = new URL(CUSTOM_CROWD_LIST_URL);
     url.search = new URLSearchParams({
       path: '/api/v1/custom/list',
@@ -717,7 +717,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
       throw new Error('查询人群包人数失败：' + (body.errMsg || '数据引擎接口返回错误'));
     }
     const matches = (Array.isArray(body?.data?.list) ? body.data.list : [])
-      .filter((item) => normalizeCustomCrowdName(item?.name) === expectedName);
+      .filter((candidate) => normalizeCustomCrowdName(candidate?.name) === expectedName);
     matches.sort((left, right) => Number(right?.gmtCreate || 0) - Number(left?.gmtCreate || 0));
     const item = matches[0] || null;
     const rawCount = item?.count;
@@ -732,6 +732,7 @@ if (!window.__databankAutomationContentScriptLoaded) {
       crowdId: item?.id ?? null,
       baseId: item?.baseId ?? null,
       crowdStatus: item?.status || '',
+      brandId: item?.brandId ?? null,
       canSelectOrLookalike: item?.canSelectOrLookalike ?? null,
       gmtCreate: item?.gmtCreate ?? null,
       gmtModified: item?.gmtModified ?? null,
@@ -1116,26 +1117,25 @@ if (!window.__databankAutomationContentScriptLoaded) {
     if (normalizedCrowdName && options?.precheckedNoMatch !== true) {
       const existingCrowd = await fetchCustomCrowdCount(normalizedCrowdName);
       if (existingCrowd.crowdFound) {
-        const countUnavailable = existingCrowd.countReady !== true;
         return {
           ...existingCrowd,
           ok: true,
           executionMode: 'calculate_only',
           autoCalculated: false,
           directRealtime: true,
-          countReady: true,
-          crowdCount: countUnavailable ? '-' : existingCrowd.crowdCount,
-          countDisplay: countUnavailable ? '-' : String(existingCrowd.crowdCount),
+          countReady: existingCrowd.countReady === true,
+          crowdCount: existingCrowd.countReady ? existingCrowd.crowdCount : null,
+          countDisplay: existingCrowd.countReady ? String(existingCrowd.crowdCount) : '',
           crowdCreated: false,
           crowdReused: true,
-          countUnavailable,
+          countPending: existingCrowd.countReady !== true,
           trail: [{
             step: 'existing_crowd_reused_for_count',
             crowdName: normalizedCrowdName,
             crowdId: existingCrowd.crowdId,
           }],
-          message: countUnavailable
-            ? '已存在同名人群包，人数记为“-”并跳过实时计算'
+          message: existingCrowd.countReady !== true
+            ? '已存在同名人群包，人数仍在计算中'
             : '已存在同名人群包，已直接取得人数并跳过实时计算',
         };
       }
@@ -1252,24 +1252,24 @@ if (!window.__databankAutomationContentScriptLoaded) {
       });
 
       if (existingCrowd.crowdFound) {
-        const countUnavailable = resolvedMode === 'calculate_only' && !existingCrowd.countReady;
+        const countPending = resolvedMode === 'calculate_only' && !existingCrowd.countReady;
         return {
           ok: true,
           trail,
           executionMode: resolvedMode,
           autoCalculated: resolvedMode === 'calculate_only',
-          countReady: resolvedMode === 'calculate_only' ? true : existingCrowd.countReady,
-          crowdCount: countUnavailable ? '-' : existingCrowd.crowdCount,
+          countReady: existingCrowd.countReady,
+          crowdCount: existingCrowd.crowdCount,
           crowdFound: true,
           crowdId: existingCrowd.crowdId,
           crowdStatus: existingCrowd.crowdStatus || '',
           crowdCreated: false,
           crowdReused: true,
           crowdName: normalizedCrowdName,
-          countUnavailable,
+          countPending,
           message: resolvedMode === 'calculate_only'
-            ? (countUnavailable
-                ? '已存在同名人群包，人数记为“-”并跳过实时计算'
+            ? (countPending
+                ? '已存在同名人群包，人数仍在计算中'
                 : '已存在同名人群包，已直接取得人数并跳过实时计算')
             : (existingCrowd.countReady
                 ? '已存在同名人群包，已复用并取得人数'

@@ -1869,6 +1869,10 @@ html.is-panel-resizing * {
   font-variant-numeric: tabular-nums;
 }
 
+.workbench-writeback-action.el-button {
+  margin-left: 2px;
+}
+
 .workbench-toolbar-icon-btn.el-button {
   width: 28px !important;
   height: 28px !important;
@@ -5523,6 +5527,15 @@ body,
   box-shadow: inset 3px 0 0 rgba(255,107,74,0.72);
 }
 
+.parameter-batch-guide.is-date-batch {
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+}
+
+.parameter-batch-guide.is-date-batch > div:nth-child(2) > span {
+  font-size: 11px;
+}
+
 .parameter-batch-guide-index {
   color: #e65f3c;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -5566,6 +5579,52 @@ body,
   background: #fff;
 }
 
+.parameter-batch-date-sheet {
+  grid-column: 2;
+  width: 100%;
+  max-width: 520px;
+  table-layout: fixed;
+  border: 1px solid rgba(29,29,31,0.12);
+  border-spacing: 0;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.parameter-batch-date-sheet th,
+.parameter-batch-date-sheet td {
+  width: 50%;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.parameter-batch-date-sheet th {
+  color: #2b292c;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f7f6f5;
+}
+
+.parameter-batch-date-sheet th small {
+  display: block;
+  margin-bottom: 2px;
+  color: #d95d3d;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.parameter-batch-date-sheet td {
+  color: #555157;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  background: #fff;
+  border-top: 1px solid rgba(29,29,31,0.08);
+}
+
+.parameter-batch-date-sheet th + th,
+.parameter-batch-date-sheet td + td {
+  border-left: 1px solid rgba(29,29,31,0.08);
+}
+
 .parameter-batch-editor-head {
   display: flex;
   align-items: center;
@@ -5587,6 +5646,11 @@ body,
 .parameter-batch-editor-head small {
   color: #a09ca0;
   font-size: 9px;
+}
+
+.parameter-batch-editor-head .parameter-batch-date-paste-hint {
+  color: #a54a31;
+  font-size: 10px;
 }
 
 .parameter-batch-clear,
@@ -5898,6 +5962,15 @@ body,
     grid-template-columns: 30px minmax(0, 1fr);
   }
 
+  .parameter-batch-guide.is-date-batch {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .parameter-batch-date-sheet {
+    grid-column: 2;
+    max-width: 320px;
+  }
+
   .parameter-batch-guide-example {
     display: none !important;
   }
@@ -5966,6 +6039,15 @@ body,
 
   .parameter-batch-guide {
     grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .parameter-batch-guide.is-date-batch {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .parameter-batch-date-sheet {
+    grid-column: 2;
+    max-width: 320px;
   }
 
   .parameter-batch-dialog-head p,
@@ -6655,7 +6737,7 @@ body,
   gap: 6px;
   padding: 0 9px;
   color: #4e6f63;
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 650;
   background: #f3f8f6;
   border: 1px solid #dce9e3;
@@ -6667,6 +6749,46 @@ body,
   height: 5px;
   background: #2f9870;
   border-radius: 50%;
+}
+
+.batch-task-diagnostics {
+  margin: 2px 0 8px;
+  color: #777e7b;
+  font-size: 10px;
+}
+
+.batch-task-diagnostics summary {
+  width: max-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.batch-task-diagnostics > div {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+  padding: 7px 9px;
+  background: #fbfcfb;
+  border: 1px solid #ecefed;
+  border-radius: 7px;
+}
+
+.batch-task-diagnostics span {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr) 62px;
+  gap: 8px;
+  align-items: center;
+}
+
+.batch-task-diagnostics b,
+.batch-task-diagnostics em {
+  color: #555d59;
+  font-style: normal;
+  font-weight: 620;
+}
+
+.batch-task-diagnostics em {
+  text-align: right;
 }
 
 .batch-task-status-tooltip {
@@ -7009,6 +7131,37 @@ body,
   font-size: 9px;
   background: #fafafa;
   border-radius: 6px;
+}
+
+.automation-login-prerequisite {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 2px 1px;
+  color: #626965;
+  font-size: 11px;
+  border-top: 1px solid #edf0ee;
+}
+
+.automation-login-prerequisite > i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  background: #2f9870;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(47, 152, 112, .08);
+}
+
+.automation-login-prerequisite strong {
+  margin-right: 4px;
+  color: #303633;
+  font-weight: 680;
+}
+
+.dmp-login-confirm-message .el-message-box__message {
+  color: #5f6662;
+  line-height: 1.65;
 }
 
 .batch-task-export.el-button {

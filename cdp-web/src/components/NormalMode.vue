@@ -240,15 +240,6 @@
 
         <div class="workbench-secondary-actions">
           <template v-if="workbenchMode === 'solution-use'">
-            <el-button
-              v-if="!isParameterBatch"
-              class="workbench-compact-action"
-              size="small"
-              :loading="writingBackParameters"
-              :disabled="!canWriteBackParameters || writingBackParameters"
-              :title="canWriteBackParameters ? '将当前参数值写回我的原方案' : '公共方案不可写回，请先复制到我的方案'"
-              @click="writeCurrentParametersBack"
-            >写回我的方案</el-button>
             <button
               v-if="batchMode"
               type="button"
@@ -260,6 +251,15 @@
               <span>任务</span>
               <strong>{{ batchSucceededCount }}/{{ batchEntries.length }}</strong>
             </button>
+            <el-button
+              v-if="!isParameterBatch"
+              class="workbench-compact-action workbench-writeback-action"
+              size="small"
+              :loading="writingBackParameters"
+              :disabled="!canWriteBackParameters || writingBackParameters"
+              :title="canWriteBackParameters ? '将当前参数值写回我的原方案' : '公共方案不可写回，请先复制到我的方案'"
+              @click="writeCurrentParametersBack"
+            >写回我的方案</el-button>
             <el-button
               v-if="!batchMode && deferredSolutionSplitSummary"
               class="workbench-compact-action pending-split"
@@ -994,17 +994,31 @@
       <div class="parameter-batch-dialog-head">
         <div class="parameter-batch-kicker">EXCEL PASTE · {{ batchMode ? 'COMBINATION' : 'SINGLE SOLUTION' }}</div>
         <h3>批量设置 · {{ parameterBatchSection?.name || '方案参数' }}</h3>
-        <p>保留当前方案中的时间、品类等参数，只按 Excel 的行拆分人群包。</p>
+        <p>每行生成一组人群包；当前字段按 Excel 的行分别设置，其余参数沿用方案。</p>
       </div>
     </template>
 
-    <div class="parameter-batch-guide">
+    <div class="parameter-batch-guide" :class="{ 'is-date-batch': isDateBatchParameterSection(parameterBatchSection) }">
       <div class="parameter-batch-guide-index">01</div>
       <div>
-        <strong>从 Excel 直接复制并粘贴</strong>
-        <span>每一行生成 {{ parameterBatchSourceCount }} 个人群包；同一行的多个单元格作为该参数的多个选项。</span>
+        <strong v-if="isDateBatchParameterSection(parameterBatchSection)">按 Excel 两列填写，再粘贴到下方</strong>
+        <strong v-else>从 Excel 直接复制并粘贴</strong>
+        <span v-if="isDateBatchParameterSection(parameterBatchSection)">固定日期每行一组：第一列开始时间，第二列结束时间。日期格式为 YYYY-MM-DD；复制数据行即可，不用复制表头。</span>
+        <span v-else>每一行生成 {{ parameterBatchSourceCount }} 个人群包；同一行的多个单元格作为该参数的多个选项。</span>
+        <span v-if="isDateBatchParameterSection(parameterBatchSection)">过去 N 天只需一列，例如“过去 30 天”。执行时只在名称末尾追加当天日期。</span>
       </div>
-      <div class="parameter-batch-guide-example" aria-label="粘贴格式示例">
+      <table v-if="isDateBatchParameterSection(parameterBatchSection)" class="parameter-batch-date-sheet" aria-label="Excel 时间两列填写示例">
+        <thead>
+          <tr>
+            <th scope="col"><small>第一列</small>开始时间</th>
+            <th scope="col"><small>第二列</small>结束时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>{{ parameterBatchDateExample.start }}</td><td>{{ parameterBatchDateExample.end }}</td></tr>
+        </tbody>
+      </table>
+      <div v-else class="parameter-batch-guide-example" aria-label="粘贴格式示例">
         <span>品牌1</span><span>品牌2</span>
         <span>品牌3</span><span></span>
         <span>品牌4</span><span>品牌5</span>
@@ -1014,7 +1028,8 @@
     <div class="parameter-batch-editor-head">
       <div>
         <strong>粘贴区域</strong>
-        <small v-if="getParameterBatchLimit(parameterBatchSection)">
+        <small v-if="isDateBatchParameterSection(parameterBatchSection)" class="parameter-batch-date-paste-hint">复制 Excel 两列日期的数据行，不含表头</small>
+        <small v-else-if="getParameterBatchLimit(parameterBatchSection)">
           每行最多 {{ getParameterBatchLimit(parameterBatchSection) }} 项
         </small>
       </div>
@@ -1032,18 +1047,18 @@
       resize="none"
       class="parameter-batch-textarea"
       :data-tutorial-target="['parameter-paste-brands', 'combo-paste'].some(isGuidedTutorialStep) ? 'parameter-batch-input' : undefined"
-      placeholder="点击这里，从 Excel 复制后直接粘贴（Ctrl + V）"
+      :placeholder="isDateBatchParameterSection(parameterBatchSection) ? '从 Excel 复制开始时间、结束时间两列的数据行后，直接粘贴到这里（无需表头）' : '点击这里，从 Excel 复制后直接粘贴（Ctrl + V）'"
       @input="refreshParameterBatchRows"
     />
 
     <div class="parameter-batch-metrics" aria-live="polite">
       <div><strong>{{ parameterBatchRows.length }}</strong><span>识别行数</span></div>
-      <div><strong>{{ parameterBatchTotalValues }}</strong><span>参数值</span></div>
+      <div><strong>{{ parameterBatchTotalValues }}</strong><span>{{ isDateBatchParameterSection(parameterBatchSection) ? '时间条件' : '参数值' }}</span></div>
       <div :class="{ 'has-error': parameterBatchInvalidCount > 0 }">
         <strong>{{ parameterBatchInvalidCount }}</strong><span>需处理</span>
       </div>
       <p v-if="parameterBatchTaskCount > 100">单次最多生成 100 个人群包，请分批粘贴。</p>
-      <p v-else-if="parameterBatchRows.length">已自动检查空值、行内重复、重复行、选项匹配和每行数量限制。</p>
+      <p v-else-if="parameterBatchRows.length">{{ isDateBatchParameterSection(parameterBatchSection) ? '已检查日期格式、先后顺序、可选范围和重复行。' : '已自动检查空值、行内重复、重复行、选项匹配和每行数量限制。' }}</p>
       <p v-else>粘贴后会先预览，不会立即执行建包。</p>
     </div>
 
@@ -1089,7 +1104,7 @@
             :class="{ invalid: row.invalidValues.includes(value) }"
           >{{ value }}</span>
         </div>
-        <el-input v-model="row.crowdName" size="small" maxlength="80" />
+        <el-input v-model="row.crowdName" size="small" :maxlength="isDateBatchParameterSection(parameterBatchSection) ? getParameterBatchDateNameLimit() : 80" />
         <span class="parameter-batch-row-status">
           <i></i>{{ getParameterBatchRowStatus(row) }}
         </span>
@@ -1306,6 +1321,19 @@
           <span>已选 {{ batchAutomationSelectedCount }} / {{ visibleBatchAutomationEntries.length }}</span>
         </div>
       </div>
+      <details
+        v-if="batchTaskCanViewDiagnostics && batchTaskPhaseTimings.length"
+        class="batch-task-diagnostics"
+      >
+        <summary>阶段耗时 · 管理员可见</summary>
+        <div>
+          <span v-for="(timing, timingIndex) in batchTaskPhaseTimings" :key="`${timing.startedAt}-${timingIndex}`">
+            <b>{{ timing.stage }}</b>
+            <small>{{ timing.detail }}</small>
+            <em>{{ formatBatchPhaseDuration(timing.durationMs) }}</em>
+          </span>
+        </div>
+      </details>
       <p
         v-if="batchRealtimeUnsupportedCount"
         class="batch-task-paused-note"
@@ -1367,7 +1395,8 @@
             <el-input
               :model-value="row.entry.crowdName"
               size="small"
-              maxlength="20"
+              :maxlength="isDateParameterBatch() ? DATE_PARAMETER_CROWD_NAME_MAX_LENGTH : CROWD_NAME_MAX_LENGTH"
+              :title="row.entry.crowdName"
               :disabled="databankAutomating"
               :aria-label="`第 ${row.index + 1} 个人群包名称`"
               @update:model-value="value => updateBatchEntryCrowdName(row.index, value)"
@@ -1536,6 +1565,11 @@
       </section>
     </div>
 
+    <div class="automation-login-prerequisite" role="note">
+      <i aria-hidden="true"></i>
+      <span><strong>开始前确认</strong> 请确认当前浏览器已登录数据引擎</span>
+    </div>
+
     <template #footer>
       <div class="batch-dialog-footer automation-dialog-footer">
         <div class="automation-dialog-actions" :class="{ 'is-single': !batchMode }">
@@ -1650,7 +1684,7 @@
 
       <p class="audience-schedule-environment-note">
         <i aria-hidden="true"></i>
-        浏览器保持开启且数据银行已登录时会自动执行；环境暂不可用会保留任务，恢复后自动补跑。
+        浏览器、X-Data 页面保持开启且数据银行已登录时会自动执行；环境暂不可用会保留任务，恢复后自动补跑。
       </p>
 
       <section v-if="visibleAudienceSchedules.length" class="audience-schedule-list" aria-label="已设置的定时任务">
@@ -1774,10 +1808,14 @@ import {
   collectUniqueCustomFieldNames,
 } from '../utils/solutionBatch.js'
 import {
+  buildDatedParameterCrowdName,
+  buildDateParameterBatchRows,
   buildParameterBatchRows,
   collectBatchAllowedValues,
   isBatchableParameterSection,
+  isDateBatchParameterSection,
 } from '../utils/parameterBatch.js'
+import { formatQuickDateValue, getQuickRangeSelectableStart } from '../utils/dateQuickRanges.js'
 import { fetchWithTimeout } from '../utils/apiClient.js'
 import { expandCombinationParameterRows } from '../utils/combinationParameterBatch.js'
 import { matchesTutorialBrandColumn, getParameterTutorialProgress } from '../utils/parameterBatchTutorial.js'
@@ -1812,6 +1850,7 @@ import {
 
 const props = defineProps({
   sessionOwnerId: { type: String, default: '' },
+  currentUserRole: { type: String, default: '' },
   aiCommand: { type: Object, default: null },
 })
 
@@ -1888,6 +1927,7 @@ const AUDIENCE_TASK_EXTENSION_VERSION = '2.2.34'
 const CROWD_COUNT_POLL_INTERVAL_MIN_MS = 45 * 1000
 const CROWD_COUNT_POLL_INTERVAL_MAX_MS = 75 * 1000
 const CROWD_NAME_MAX_LENGTH = 20
+const DATE_PARAMETER_CROWD_NAME_MAX_LENGTH = 80
 const WORKBENCH_SESSION_KEY = 'workbench.v1'
 const WORKBENCH_SESSION_VERSION = 1
 const BATCH_EXECUTION_MODES = [
@@ -2092,8 +2132,12 @@ const batchCopying = ref(false)
 const batchAutomationDialogVisible = ref(false)
 const batchAutomationScope = ref('current')
 const batchAutomationSelectedIndexes = ref([])
+const batchTaskTargetIndexes = ref([])
 const batchAutomationCancelling = ref(false)
 const batchExporting = ref(false)
+const batchTaskStage = ref('等待开始')
+const batchTaskStageDetail = ref('选择任务后即可开始')
+const batchTaskPhaseTimings = ref([])
 const audienceScheduleDialogVisible = ref(false)
 const audienceScheduleRunAt = ref(null)
 const audienceScheduleRepeat = ref('once')
@@ -2142,7 +2186,7 @@ let sessionPersistenceDisabled = false
 const crowdCountPollers = new Map()
 const singleAudienceCountPollers = new Map()
 let internalDependencyResumeTimer = null
-let lastAutoExportSignature = ''
+let batchTaskStageStartedAt = 0
 let activeBatchAutomationRun = null
 let activeSingleAutomationRun = null
 let audienceScheduleTimer = null
@@ -2290,34 +2334,67 @@ const batchPausedCount = computed(() => batchEntries.value.filter(entry => (
     || (entry.automationStatus === 'login_required' && !['dependency', 'preflight'].includes(entry.loginContext))
 )).length)
 const batchCountReadyCount = computed(() => batchEntries.value.filter(entry => entry.countReady === true).length)
-const batchTaskCanExport = computed(() => (
-  batchEntries.value.length > 0
+const batchTaskCanExport = computed(() => {
+  const indexes = batchTaskTargetIndexes.value.length > 0
+    ? batchTaskTargetIndexes.value
+    : batchAutomationSelectedIndexes.value
+  const entries = [...new Set(indexes)]
+    .map(index => batchEntries.value[index])
+    .filter(Boolean)
+  return entries.length > 0
     && !databankAutomating.value
-    && batchEntries.value.every(entry => entry.automationStatus === 'success')
-))
+    && entries.every(entry => entry.automationStatus === 'success')
+})
 const batchTaskHasActivity = computed(() => (
   batchEntries.value.some(entry => (entry.automationStatus || 'idle') !== 'idle')
 ))
+const batchTaskCanViewDiagnostics = computed(() => (
+  ['super_admin', 'config_admin'].includes(props.currentUserRole)
+))
+const batchTaskProgressIndexes = computed(() => {
+  const source = batchTaskTargetIndexes.value.length > 0
+    ? batchTaskTargetIndexes.value
+    : batchAutomationSelectedIndexes.value
+  return [...new Set(source)].filter(index => (
+    Number.isInteger(index) && index >= 0 && index < batchEntries.value.length
+  ))
+})
+const batchTaskProgressEntries = computed(() => (
+  batchTaskProgressIndexes.value.map(index => batchEntries.value[index]).filter(Boolean)
+))
+const batchTaskProgressSucceededCount = computed(() => (
+  batchTaskProgressEntries.value.filter(entry => entry.automationStatus === 'success').length
+))
+const batchTaskProgressWaitingCount = computed(() => (
+  batchTaskProgressEntries.value.filter(entry => ['waiting_count', 'checking_count'].includes(entry.automationStatus)).length
+))
+const batchTaskProgressDependencyWaitingCount = computed(() => (
+  batchTaskProgressEntries.value.filter(entry => (
+    ['checking_dependency', 'waiting_dependency', 'dependency_blocked'].includes(entry.automationStatus)
+      || (entry.automationStatus === 'login_required' && entry.loginContext !== 'count')
+  )).length
+))
 const batchTaskProgressPercent = computed(() => (
-  batchEntries.value.length > 0
-    ? Math.round((batchSucceededCount.value / batchEntries.value.length) * 100)
+  batchTaskProgressEntries.value.length > 0
+    ? Math.round((batchTaskProgressSucceededCount.value / batchTaskProgressEntries.value.length) * 100)
     : 0
 ))
-const batchTaskActiveRow = computed(() => batchEntries.value
-  .map((entry, index) => ({ entry, index }))
+const batchTaskActiveRow = computed(() => batchTaskProgressIndexes.value
+  .map(index => ({ entry: batchEntries.value[index], index }))
   .find(({ entry }) => entry.automationStatus === 'running')
-  || batchEntries.value
-    .map((entry, index) => ({ entry, index }))
+  || batchTaskProgressIndexes.value
+    .map(index => ({ entry: batchEntries.value[index], index }))
     .find(({ entry }) => ['checking_count', 'waiting_count', 'checking_dependency', 'waiting_dependency', 'dependency_blocked'].includes(entry.automationStatus)))
 const batchTaskCanInterrupt = computed(() => databankAutomating.value || batchWaitingCount.value > 0)
 const batchTaskProgressLabel = computed(() => {
   const row = batchTaskActiveRow.value
   if (row?.entry?.automationStatus === 'running') {
-    return `正在执行 ${row.index + 1} / ${batchEntries.value.length}`
+    const position = batchTaskProgressIndexes.value.indexOf(row.index) + 1
+    return `正在执行 ${position} / ${batchTaskProgressEntries.value.length}`
   }
-  if (batchWaitingCount.value > 0) return `后台取数 ${batchWaitingCount.value} 项`
-  if (batchDependencyWaitingCount.value > 0) return `等待依赖 ${batchDependencyWaitingCount.value} 项`
-  return `已完成 ${batchSucceededCount.value} / ${batchEntries.value.length}`
+  if (batchTaskProgressWaitingCount.value > 0) return `后台取数 ${batchTaskProgressWaitingCount.value} 项`
+  if (batchTaskProgressDependencyWaitingCount.value > 0) return `等待依赖 ${batchTaskProgressDependencyWaitingCount.value} 项`
+  return `已完成 ${batchTaskProgressSucceededCount.value} / ${batchTaskProgressEntries.value.length}`
 })
 const batchTaskActiveName = computed(() => (
   String(batchTaskActiveRow.value?.entry?.crowdName || '').trim()
@@ -2409,6 +2486,14 @@ const canWriteBackParameters = computed(() => {
 })
 const parameterBatchSourceCount = computed(() => batchMode.value ? batchEntries.value.length : 1)
 const parameterBatchTaskCount = computed(() => parameterBatchRows.value.length * parameterBatchSourceCount.value)
+const parameterBatchDateExample = computed(() => {
+  const end = new Date()
+  end.setDate(end.getDate() - 1)
+  const start = new Date(end)
+  start.setDate(start.getDate() - 29)
+  const display = (date) => formatQuickDateValue(date).replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')
+  return { start: display(start), end: display(end) }
+})
 const parameterBatchTotalValues = computed(() => (
   parameterBatchRows.value.reduce((total, row) => total + row.values.length, 0)
 ))
@@ -2599,13 +2684,27 @@ function refreshParameterBatchRows() {
   const existingNames = new Map(
     parameterBatchRows.value.map((row) => [JSON.stringify(row.values), row.crowdName]),
   )
-  parameterBatchRows.value = buildParameterBatchRows(parameterBatchText.value, {
-    allowedValues: collectBatchAllowedValues(section),
-    maxItems: getParameterBatchLimit(section),
-    baseName: batchMode.value
-      ? '组合人群'
-      : String(crowdNameInput.value || currentSolution.value?.defaultCrowdName || '人群包').trim(),
-  }).map((row) => ({
+  const baseName = batchMode.value
+    ? '组合人群'
+    : String(crowdNameInput.value || currentSolution.value?.defaultCrowdName || '人群包').trim()
+  const rows = isDateBatchParameterSection(section)
+    ? (() => {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      return buildDateParameterBatchRows(parameterBatchText.value, {
+        baseName,
+        minimumDate: formatQuickDateValue(getQuickRangeSelectableStart(today)),
+        maximumDate: formatQuickDateValue(yesterday),
+      })
+    })()
+    : buildParameterBatchRows(parameterBatchText.value, {
+      allowedValues: collectBatchAllowedValues(section),
+      maxItems: getParameterBatchLimit(section),
+      baseName,
+    })
+  parameterBatchRows.value = rows.map((row) => ({
     ...row,
     crowdName: existingNames.get(JSON.stringify(row.values)) || row.crowdName,
   }))
@@ -2670,14 +2769,26 @@ function removeParameterBatchRow(rowId) {
   if (!target) return
   const remainingRows = parameterBatchRows.value.filter((row) => row.id !== rowId)
   parameterBatchText.value = remainingRows
-    .map((row) => row.values.join('\t'))
+    .map((row) => row.sourceText ?? row.values.join('\t'))
     .join('\n')
   refreshParameterBatchRows()
+}
+
+function getParameterBatchDateNameLimit() {
+  if (!batchMode.value) return DATE_PARAMETER_CROWD_NAME_MAX_LENGTH - 5
+  const longestSourceSuffix = Math.max(0, ...batchEntries.value.map((entry, index) => (
+    Array.from(`｜${index + 1}·${entry.record?.name || '方案'}`).length
+  )))
+  return Math.max(1, DATE_PARAMETER_CROWD_NAME_MAX_LENGTH - 5 - longestSourceSuffix)
 }
 
 function getParameterBatchNameIssue(row) {
   const name = String(row?.crowdName || '').trim()
   if (!name) return '请填写人群包名称'
+  if (isDateBatchParameterSection(parameterBatchSection.value)
+    && Array.from(name).length > getParameterBatchDateNameLimit()) {
+    return `名称过长，请预留执行日期；当前最多 ${getParameterBatchDateNameLimit()} 个字符`
+  }
   const duplicateCount = parameterBatchRows.value.filter(
     (item) => String(item?.crowdName || '').trim() === name,
   ).length
@@ -3429,7 +3540,7 @@ function resetBatchContext() {
   cancelAllCrowdCountPolling()
   if (internalDependencyResumeTimer) window.clearTimeout(internalDependencyResumeTimer)
   internalDependencyResumeTimer = null
-  lastAutoExportSignature = ''
+  batchTaskStageStartedAt = 0
   batchMode.value = false
   batchKind.value = 'solutions'
   batchEntries.value = []
@@ -3443,6 +3554,10 @@ function resetBatchContext() {
   batchAutomationDialogVisible.value = false
   batchAutomationScope.value = 'current'
   batchAutomationSelectedIndexes.value = []
+  batchTaskTargetIndexes.value = []
+  batchTaskStage.value = '等待开始'
+  batchTaskStageDetail.value = '选择任务后即可开始'
+  batchTaskPhaseTimings.value = []
   batchExecutionMode.value = 'calculate_only'
   batchRealtimeCountMethod.value = 'api'
   batchCreateMethod.value = 'api'
@@ -4128,10 +4243,10 @@ async function createParameterBatchEntries() {
       const record = cloneValue(baseRecord)
       const nodes = cloneValue(baseNodes)
       const customFields = Array.isArray(record.customFields) ? record.customFields : []
-      syncCustomFieldValue(nodes, customFieldId, customFields, cloneValue(row.values))
+      syncCustomFieldValue(nodes, customFieldId, customFields, cloneValue(row.parameterValue ?? row.values))
       record.customFields = customFields.map((field) => (
         field.id === customFieldId
-          ? { ...field, defaultValue: cloneValue(row.values) }
+          ? { ...field, defaultValue: cloneValue(row.parameterValue ?? row.values) }
           : field
       ))
       record.defaultCrowdName = String(row.crowdName || '').trim()
@@ -4151,6 +4266,7 @@ async function createParameterBatchEntries() {
         crowdCount: null,
         parameterBatchValues: cloneValue(row.values),
         parameterBatchSourceRow: row.sourceRow,
+        parameterBatchIsDate: Boolean(row.parameterValue),
       }
     })
 
@@ -5335,22 +5451,26 @@ async function ensureDatabankApiContextReady(runId = '', options = {}) {
         error: contextResult?.error || '当前接口环境不可用；重试任务已停止，未切换执行通道',
       }
     }
-    const preparingMessage = ElMessage({
-      type: 'info',
-      message: '正在读取已打开的数据银行接口环境…',
-      duration: 0,
-      showClose: false,
-    })
+    const preparingMessage = options?.silent === true
+      ? null
+      : ElMessage({
+          type: 'info',
+          message: '正在读取已打开的数据银行接口环境…',
+          duration: 0,
+          showClose: false,
+        })
     let warmupResult = null
     try {
       warmupResult = await sendDatabankApiContextCheck(false, true, runId)
     } finally {
-      preparingMessage.close()
+      preparingMessage?.close()
     }
     if (warmupResult?.ready === true) {
-      ElMessage.success(warmupResult?.warmedUp
-        ? '已通过当前数据银行页面准备好接口环境，正在继续任务'
-        : '已取得接口安全信息，正在继续任务')
+      if (options?.silent !== true) {
+        ElMessage.success(warmupResult?.warmedUp
+          ? '已通过当前数据银行页面准备好接口环境，正在继续任务'
+          : '已取得接口安全信息，正在继续任务')
+      }
       return { ready: true, ...warmupResult }
     }
     const manualSetupRequired = warmupResult?.hasOpenTab === false
@@ -5365,7 +5485,9 @@ async function ensureDatabankApiContextReady(runId = '', options = {}) {
     const ready = await promptDatabankContextSetup({ ...contextResult, ...warmupResult })
     return { ...contextResult, ...warmupResult, ready }
   } catch (error) {
-    ElMessage.warning(error?.message || '接口环境检查失败，请稍后重试')
+    if (options?.silent !== true) {
+      ElMessage.warning(error?.message || '接口环境检查失败，请稍后重试')
+    }
     return { ready: false, error: error?.message || '接口环境检查失败' }
   }
 }
@@ -5553,6 +5675,44 @@ function openBatchFailureRecovery() {
   openBatchAutomationDialog('failed')
 }
 
+function formatBatchPhaseDuration(durationMs) {
+  const milliseconds = Math.max(0, Number(durationMs) || 0)
+  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`
+  if (milliseconds < 60000) return `${(milliseconds / 1000).toFixed(1)} 秒`
+  return `${Math.floor(milliseconds / 60000)} 分 ${Math.round((milliseconds % 60000) / 1000)} 秒`
+}
+
+function finishBatchTaskStage(finishedAt = Date.now()) {
+  if (!batchTaskStageStartedAt || !batchTaskStage.value) return
+  batchTaskPhaseTimings.value.push({
+    stage: batchTaskStage.value,
+    detail: batchTaskStageDetail.value,
+    startedAt: batchTaskStageStartedAt,
+    finishedAt,
+    durationMs: Math.max(0, finishedAt - batchTaskStageStartedAt),
+  })
+  batchTaskStageStartedAt = 0
+}
+
+function setBatchTaskStage(stage, detail = '', { reset = false } = {}) {
+  const now = Date.now()
+  if (reset) {
+    batchTaskPhaseTimings.value = []
+    batchTaskStageStartedAt = 0
+  } else {
+    finishBatchTaskStage(now)
+  }
+  batchTaskStage.value = String(stage || '处理中')
+  batchTaskStageDetail.value = String(detail || '')
+  batchTaskStageStartedAt = now
+}
+
+function completeBatchTaskStage(stage, detail = '') {
+  finishBatchTaskStage()
+  batchTaskStage.value = String(stage || '已完成')
+  batchTaskStageDetail.value = String(detail || '')
+}
+
 function openBatchAutomationDialog(scope = 'all') {
   if (databankAutomating.value) {
     batchAutomationScope.value = 'all'
@@ -5575,6 +5735,7 @@ function openBatchAutomationDialog(scope = 'all') {
   batchAutomationSelectedIndexes.value = (
     batchTaskHasActivity.value ? pendingCandidates : candidates
   ).map(({ index }) => index)
+  batchTaskTargetIndexes.value = [...batchAutomationSelectedIndexes.value]
   batchNamingMessage.value = ''
   batchEntries.value = [...batchEntries.value]
   batchAutomationDialogVisible.value = true
@@ -5905,11 +6066,34 @@ function buildDatedCrowdName(baseName, dateSuffix, duplicateIndex = 1) {
   return `${truncateCrowdName(baseName, availableLength)}${tail}`
 }
 
+function isDateParameterBatch() {
+  if (batchKind.value !== 'parameter' || batchEntries.value.length === 0) return false
+  const fieldName = String(parameterBatchFieldName.value || '').trim()
+  return batchEntries.value.every((entry) => (
+    entry.parameterBatchIsDate === true
+    || (entry.record?.customFields || []).some((field) => (
+      String(field?.name || '').trim() === fieldName
+      && String(field?.type || '').includes('日期')
+    ))
+  ))
+}
+
 function prepareBatchCrowdNamesForRun({ force = false } = {}) {
   const dateSuffix = force || !batchRunDateSuffix.value
     ? getShanghaiDateSuffix()
     : batchRunDateSuffix.value
   batchRunDateSuffix.value = dateSuffix
+  if (isDateParameterBatch()) {
+    batchEntries.value.forEach((entry, index) => {
+      const { baseName, crowdName } = buildDatedParameterCrowdName(entry, dateSuffix, index)
+      if (entry.runDateSuffix === dateSuffix && entry.crowdName === crowdName) return
+      entry.baseCrowdName = baseName
+      entry.runDateSuffix = dateSuffix
+      updateBatchEntryCrowdName(index, crowdName)
+    })
+    batchEntries.value = [...batchEntries.value]
+    return
+  }
   const occurrences = new Map()
   const usedNames = new Set()
   batchEntries.value.forEach((entry, index) => {
@@ -5938,7 +6122,8 @@ function prepareBatchCrowdNamesForRun({ force = false } = {}) {
 function getBatchCrowdNameIssue(index) {
   const name = String(batchEntries.value[index]?.crowdName || '').trim()
   if (!name) return '请填写人群包名称'
-  if (Array.from(name).length > CROWD_NAME_MAX_LENGTH) return `名称不能超过 ${CROWD_NAME_MAX_LENGTH} 个字符`
+  const maxLength = isDateParameterBatch() ? DATE_PARAMETER_CROWD_NAME_MAX_LENGTH : CROWD_NAME_MAX_LENGTH
+  if (Array.from(name).length > maxLength) return `名称不能超过 ${maxLength} 个字符`
   const duplicateCount = batchEntries.value.filter(
     entry => String(entry?.crowdName || '').trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
   ).length
@@ -5948,10 +6133,17 @@ function getBatchCrowdNameIssue(index) {
 function updateBatchEntryCrowdName(index, value, { baseName = false } = {}) {
   const entry = batchEntries.value[index]
   if (!entry) return
-  const crowdName = truncateCrowdName(value)
+  const dateParameterBatch = isDateParameterBatch()
+  const crowdName = dateParameterBatch ? String(value || '').trim() : truncateCrowdName(value)
   if (baseName) {
     entry.baseCrowdName = String(value || '').trim()
     entry.runDateSuffix = ''
+  } else if (dateParameterBatch) {
+    const suffix = entry.runDateSuffix ? `_${entry.runDateSuffix}` : ''
+    entry.baseCrowdName = suffix && crowdName.endsWith(suffix)
+      ? crowdName.slice(0, -suffix.length)
+      : crowdName
+    if (!suffix || !crowdName.endsWith(suffix)) entry.runDateSuffix = ''
   }
   entry.crowdName = crowdName
   if (entry.record) entry.record.defaultCrowdName = crowdName
@@ -6058,12 +6250,14 @@ function toggleBatchAutomationEntry(index, checked) {
     selected.delete(index)
   }
   batchAutomationSelectedIndexes.value = [...selected].sort((a, b) => a - b)
+  if (!databankAutomating.value) batchTaskTargetIndexes.value = [...batchAutomationSelectedIndexes.value]
 }
 
 function toggleAllBatchAutomationEntries(checked) {
   batchAutomationSelectedIndexes.value = checked
     ? visibleBatchAutomationEntries.value.map(row => row.index)
     : []
+  if (!databankAutomating.value) batchTaskTargetIndexes.value = [...batchAutomationSelectedIndexes.value]
 }
 
 function getAutomationStatusLabel(status) {
@@ -6986,13 +7180,16 @@ function resumePausedCountPolling() {
 async function exportBatchAudienceResults() {
   if (!batchEntries.value.length || batchExporting.value) return
   persistActiveBatchEntry()
+  const exportEntries = batchTaskProgressEntries.value.length > 0
+    ? batchTaskProgressEntries.value
+    : batchEntries.value
   batchExporting.value = true
   try {
     const response = await fetchWithTimeout('/api/audience-runs/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        rows: batchEntries.value.map(entry => ({
+        rows: exportEntries.map(entry => ({
           crowdName: String(entry.crowdName || '').trim(),
           crowdCount: entry.countReady === true ? normalizeCrowdCountValue(entry.crowdCount) : null,
           countObtainedAt: entry.countReady === true ? (entry.countCompletedAt || null) : null,
@@ -7022,14 +7219,8 @@ async function exportBatchAudienceResults() {
 }
 
 function maybeAutoExportBatchResults() {
-  if (databankAutomating.value || !batchEntries.value.length) return
-  if (!batchEntries.value.every(entry => entry.automationStatus === 'success')) return
-  const signature = batchEntries.value.map(entry => (
-    `${entry.id}:${entry.automationCompletedAt || entry.countCompletedAt || ''}:${entry.crowdCount ?? ''}`
-  )).join('|')
-  if (!signature || signature === lastAutoExportSignature) return
-  lastAutoExportSignature = signature
-  void exportBatchAudienceResults()
+  if (!batchTaskCanExport.value) return
+  completeBatchTaskStage('全部完成', '结果已就绪，可随时导出 Excel')
 }
 
 function applyBatchAutomationResult(entry, executionMode, result) {
@@ -7039,7 +7230,12 @@ function applyBatchAutomationResult(entry, executionMode, result) {
   entry.crowdReused = result?.crowdReused === true
   const normalizedCount = normalizeCrowdCountValue(result?.crowdCount)
   if (executionMode === 'calculate_only') {
-    if (result?.countUnavailable === true) {
+    if (result?.countPending === true || (entry.crowdFound && result?.countReady !== true)) {
+      entry.countReady = false
+      entry.crowdCount = null
+      entry.automationStatus = 'waiting_count'
+      entry.countCompletedAt = null
+    } else if (result?.countUnavailable === true) {
       entry.countReady = true
       entry.crowdCount = '-'
       entry.automationStatus = 'success'
@@ -7110,16 +7306,15 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
     cancelled: false,
   }
   activeBatchAutomationRun = run
+  batchTaskTargetIndexes.value = [...targetIndexes]
   batchAutomationCancelling.value = false
   databankAutomating.value = true
-  const pendingMessage = ElMessage({
-    message: `正在自动化圈人：0 / ${targetIndexes.length}`,
-    type: 'info',
-    duration: 0,
-  })
+  setBatchTaskStage('准备本次任务', `已锁定 ${targetIndexes.length} 个人群包`, { reset: true })
+  const pendingMessage = { close() {} }
 
   let completed = 0
   let lastErrorMessage = ''
+  let batchContextPreparation = null
   try {
     for (const index of targetIndexes) {
       if (run.cancelled) break
@@ -7151,6 +7346,7 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
       entry.countNextPollAt = null
       batchEntries.value = [...batchEntries.value]
       syncPullBatchTutorialStatus()
+      setBatchTaskStage('准备人群包参数', `${entry.crowdName} · ${completed + 1}/${targetIndexes.length}`)
       try {
         await activateBatchEntry(index)
         if (run.cancelled) break
@@ -7173,13 +7369,10 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
         continue
       }
 
-      const currentPendingMessage = ElMessage({
-        message: `正在检查“${entry.crowdName}” · ${completed + 1}/${targetIndexes.length}`,
-        type: 'info',
-        duration: 0,
-      })
+      const currentPendingMessage = { close() {} }
       try {
         let jsonText = rewriteBatchInternalDependencyNames(entry, getGeneratedJsonText())
+        setBatchTaskStage('检查同名人群包', `${entry.crowdName} · 接口精确查询`)
         const existingCrowd = await sendDatabankCrowdCountQuery(entry.crowdName)
         if (run.cancelled) {
           const cancelledError = new Error('用户已中断任务')
@@ -7192,12 +7385,13 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
             ...existingCrowd,
             ok: true,
             crowdReused: true,
-            countUnavailable: executionMode === 'calculate_only' && existingCrowd?.countReady !== true,
+            countPending: existingCrowd?.countReady !== true,
           })
           completed += 1
           currentPendingMessage.close()
           batchEntries.value = [...batchEntries.value]
-          if (executionMode === 'create_and_count' && !entry.countReady) {
+          if (!entry.countReady) {
+            setBatchTaskStage('等待同名包出数', `${entry.crowdName} 仍在计算，已加入后台轮询`)
             startCrowdCountPolling(index, { restartWindow: true })
           }
           syncPullBatchTutorialStatus()
@@ -7205,6 +7399,7 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
         }
 
         if (entry.internalDependencies.length > 0) {
+          setBatchTaskStage('检查前置人群', `${entry.crowdName} · 核验方案组内部依赖`)
           const internalDependencyResult = buildInternalDependencyResult(entry)
           if (!applyBatchDependencyResult(entry, internalDependencyResult)) {
             currentPendingMessage.close()
@@ -7219,6 +7414,7 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
 
         const dependencyNames = extractCustomCrowdDependencyNames(jsonText)
         if (dependencyNames.length > 0) {
+          setBatchTaskStage('检查自定义人群', `${entry.crowdName} · ${dependencyNames.length} 个依赖`)
           entry.automationStatus = 'checking_dependency'
           batchEntries.value = [...batchEntries.value]
           const dependencyResult = await sendDatabankCustomDependencyCheck(dependencyNames)
@@ -7233,16 +7429,24 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           batchEntries.value = [...batchEntries.value]
         }
 
-        const contextPreparation = await ensureDatabankApiContextReady(run.id, {
-          allowPageWarmup: scope !== 'failed',
-        })
-        if (contextPreparation?.ready !== true) {
+        if (batchContextPreparation?.ready !== true) {
+          setBatchTaskStage('准备接口环境', `${entry.crowdName} · 本批次仅初始化一次`)
+          batchContextPreparation = await ensureDatabankApiContextReady(run.id, {
+            allowPageWarmup: scope !== 'failed',
+            silent: true,
+          })
+        }
+        if (batchContextPreparation?.ready !== true) {
           const contextError = new Error(
-            contextPreparation?.error || '数据银行接口环境尚未准备完成',
+            batchContextPreparation?.error || '数据银行接口环境尚未准备完成',
           )
-          contextError.code = contextPreparation?.code || 'DATABANK_REQUEST_CONTEXT_REQUIRED'
+          contextError.code = batchContextPreparation?.code || 'DATABANK_REQUEST_CONTEXT_REQUIRED'
           throw contextError
         }
+        setBatchTaskStage(
+          executionMode === 'calculate_only' ? '接口计算人数' : '接口创建人群包',
+          `${entry.crowdName} · ${completed + 1}/${targetIndexes.length}`,
+        )
         const result = executionMode === 'calculate_only'
           ? await sendDatabankRealtimeCount(jsonText, entry.crowdName, run.id, {
             precheckedNoMatch: true,
@@ -7269,7 +7473,7 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
         completed += 1
         currentPendingMessage.close()
         batchEntries.value = [...batchEntries.value]
-        if (executionMode === 'create_and_count' && !entry.countReady) {
+        if (!entry.countReady) {
           startCrowdCountPolling(index, { restartWindow: true })
         }
       } catch (error) {
@@ -7311,12 +7515,16 @@ async function startBatchAutomationFlow(scope = 'current', selectedIndexes = nul
           && batchEntries.value[index]?.loginContext !== 'count')
     )).length
     if (failedCount > 0) {
+      completeBatchTaskStage('部分任务未完成', `${completed} 个已处理，${failedCount} 个需要重试`)
       ElMessage.warning(`已完成 ${completed} 个，${failedCount} 个执行失败，可仅重试失败任务`)
     } else if (dependencyWaitingCount > 0) {
+      setBatchTaskStage('等待自定义人群', `${dependencyWaitingCount} 个任务将在依赖就绪后继续`)
       ElMessage.warning(`已处理 ${completed} 个，${dependencyWaitingCount} 个正在等待自定义人群就绪`)
     } else if (waitingCount > 0) {
+      setBatchTaskStage('后台等待人数', `${waitingCount} 个人群包仍在平台计算中`)
       ElMessage.success(`已处理 ${completed} 个人群包，正在后台抓取人数`)
     } else {
+      completeBatchTaskStage('全部完成', `${completed} 个人群包已完成，可导出 Excel`)
       ElMessage.success(`已完成 ${completed} 个人群包的自动化圈人`)
     }
   } catch (error) {
@@ -7389,7 +7597,8 @@ async function startAutoDataBankFlow() {
         crowdReused: true,
         message: existingCrowd.countReady
           ? `已存在同名人群包，人数 ${formatCrowdCount(existingCrowd.crowdCount)}`
-          : '已存在同名人群包，人数 -',
+          : '已存在同名人群包，人数仍在计算中',
+        countPending: existingCrowd.countReady !== true,
       }
     } else {
       const dependencyCount = extractCustomCrowdDependencyNames(jsonText).length
@@ -7424,7 +7633,7 @@ async function startAutoDataBankFlow() {
       ElMessage.error(errorMessage)
       return { ok: false, error: errorMessage }
     }
-    if (executionMode === 'create_and_count' && result.countReady !== true) {
+    if (result.countReady !== true && (executionMode === 'create_and_count' || result.crowdReused === true)) {
       createSingleAudienceCountTask(crowdName, result)
       result = { ...result, backgroundCountTask: true }
     }
@@ -7432,6 +7641,8 @@ async function startAutoDataBankFlow() {
       ? `建包并取数完成：${formatCrowdCount(result.crowdCount)} 人`
       : executionMode === 'create_and_count' && result.backgroundCountTask === true
         ? '人群包已创建，正在后台等待人数'
+        : executionMode === 'calculate_only' && result.backgroundCountTask === true
+          ? '同名人群包仍在计算，正在后台等待人数'
         : executionMode === 'calculate_only' && result.countReady === true && !result.crowdReused
       ? `接口取数完成：${formatCrowdCount(result.crowdCount)} 人`
       : result.directCreate === true && result.crowdCreated === true

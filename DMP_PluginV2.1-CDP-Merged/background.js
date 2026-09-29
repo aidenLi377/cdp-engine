@@ -902,6 +902,8 @@ async function runDatabankApiContextCheck(openSetup, autoWarmup, runId, sendResp
           hasOpenTab: true,
           sessionReady: true,
           sessionReused: true,
+          accountKey: existingSession.accountKey,
+          accountSource: databankRequestContext?.accountSource || '',
         });
         return;
       }
@@ -927,6 +929,8 @@ async function runDatabankApiContextCheck(openSetup, autoWarmup, runId, sendResp
           openedSetup: false,
           sessionReady: Boolean(session),
           sessionReused: false,
+          accountKey: String(session?.accountKey || inspected.accountKey || ''),
+          accountSource: inspected.accountSource || '',
         });
         return;
       }
@@ -957,6 +961,8 @@ async function runDatabankApiContextCheck(openSetup, autoWarmup, runId, sendResp
           openedSetup: false,
           sessionReady: Boolean(session),
           sessionReused: false,
+          accountKey: String(session?.accountKey || databankRequestContext?.accountKey || ''),
+          accountSource: databankRequestContext?.accountSource || '',
         });
       } catch (error) {
         sendResponse({
@@ -1001,6 +1007,8 @@ async function runDatabankApiContextCheck(openSetup, autoWarmup, runId, sendResp
       sessionReady: Boolean(session),
       sessionReused: false,
       error: finalInspection.error || '',
+      accountKey: String(session?.accountKey || finalInspection.accountKey || ''),
+      accountSource: finalInspection.accountSource || '',
     });
   } catch (error) {
     sendResponse({ ok: false, ready: false, error: error?.message || '接口环境检查失败' });
@@ -1280,7 +1288,7 @@ function normalizeCustomCrowdName(value) {
     .trim();
 }
 
-function buildCustomCrowdSearchUrl(crowdName, page = 1, pageSize = 10) {
+function buildCustomCrowdSearchUrl(crowdName, page = 1, pageSize = 20) {
   const url = new URL(DATABANK_CUSTOM_CROWD_LIST_URL);
   url.searchParams.set('path', '/api/v1/custom/list');
   url.searchParams.set('source', 'CUSTOM');
@@ -1354,6 +1362,7 @@ function summarizeCustomCrowd(item) {
     crowdStatus: String(item?.status || '').trim(),
     crowdCount: countReady ? Number(item.count) : null,
     countReady,
+    brandId: item?.brandId ?? null,
     canSelectOrLookalike: item?.canSelectOrLookalike ?? null,
   };
 }
@@ -1380,42 +1389,51 @@ async function runDatabankCrowdCountQuery(crowdName, sendResponse) {
 
 async function runDatabankCustomDependencyCheck(crowdNames, sendResponse) {
   try {
-    const results = [];
-    for (const crowdName of crowdNames) {
+    const checkDependency = async (crowdName) => {
       const exactMatches = sortCrowdsNewestFirst(await fetchCustomCrowdExactMatches(crowdName));
       if (exactMatches.length === 0) {
-        results.push({
+        return {
           crowdName,
           state: 'missing',
           ready: false,
           message: '未找到同名自定义人群',
           exactMatchCount: 0,
-        });
-        continue;
+        };
       }
       if (exactMatches.length > 1) {
-        results.push({
+        return {
           crowdName,
           state: 'ambiguous',
           ready: false,
           message: `找到 ${exactMatches.length} 个同名自定义人群`,
           exactMatchCount: exactMatches.length,
-        });
-        continue;
+        };
       }
       const summary = summarizeCustomCrowd(exactMatches[0]);
       const selectable = summary.canSelectOrLookalike === null
         || summary.canSelectOrLookalike === undefined
         || Number(summary.canSelectOrLookalike) !== 0;
       const ready = summary.crowdStatus === 'CREATED' && summary.countReady && selectable;
-      results.push({
+      return {
         ...summary,
         state: ready ? 'ready' : 'waiting',
         ready,
         message: ready ? '已计算完成' : '仍在计算中',
         exactMatchCount: 1,
-      });
-    }
+      };
+    };
+    const results = new Array(crowdNames.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < crowdNames.length) {
+        const index = cursor;
+        cursor += 1;
+        results[index] = await checkDependency(crowdNames[index]);
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(3, crowdNames.length) }, () => worker()),
+    );
     sendResponse({
       ok: true,
       ready: results.every((item) => item.ready),

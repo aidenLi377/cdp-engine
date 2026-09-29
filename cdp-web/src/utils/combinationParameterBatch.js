@@ -11,17 +11,22 @@ export function expandCombinationParameterRows(sources, rows, fieldName, syncVal
     const nodes = structuredClone(source.nodes)
     const fields = record.customFields.filter(field => String(field.name || '').trim() === name)
     fields.forEach(field => {
-      syncValue(nodes, field.id, record.customFields, structuredClone(row.values))
-      field.defaultValue = structuredClone(row.values)
+      syncValue(nodes, field.id, record.customFields, structuredClone(row.parameterValue ?? row.values))
+      field.defaultValue = structuredClone(row.parameterValue ?? row.values)
     })
-    const prefix = String(row.crowdName || row.values.join('+')).slice(0, 45)
-    record.defaultCrowdName = `${prefix}｜${sourceIndex + 1}·${record.name || '方案'}`.slice(0, 80)
+    const prefix = String(row.crowdName || row.values.join('+'))
+    const expandedName = `${prefix}｜${sourceIndex + 1}·${record.name || '方案'}`
+    if (row.parameterValue && Array.from(expandedName).length > 75) {
+      throw new Error('时间批量的人群包名称过长，请在预览中缩短名称后重试')
+    }
+    record.defaultCrowdName = row.parameterValue ? expandedName : expandedName.slice(0, 80)
     return {
       id: `combination_parameter_${nonce}_${rowIndex}_${sourceIndex}`,
       solutionName: record.name || '未命名方案', crowdName: record.defaultCrowdName,
       record, nodes, sourceRecord: structuredClone(record), sourceNodes: structuredClone(nodes),
       generatedJson: null, automationStatus: 'idle',
       parameterBatchValues: structuredClone(row.values), parameterBatchSourceRow: row.sourceRow,
+      parameterBatchIsDate: Boolean(row.parameterValue),
     }
   }))
 }

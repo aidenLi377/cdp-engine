@@ -1549,7 +1549,7 @@ test('background checks an exact crowd name through the API without opening a Da
   const harness = createBackgroundHarness({
     async fetchImpl(url) {
       assert.equal(new URL(url).searchParams.get('keyword'), '目标人群0921')
-      assert.equal(new URL(url).searchParams.get('pageSize'), '10')
+      assert.equal(new URL(url).searchParams.get('pageSize'), '20')
       return jsonResponse({
         errCode: 0,
         data: {
@@ -1599,19 +1599,16 @@ test('an exact-name lookup stops its own request before the bridge timeout', asy
   assert.match(response.error, /检查同名人群包超时/)
 })
 
-test('background trusts one server-filtered keyword page instead of scanning the full crowd library', async () => {
+test('background trusts the server-filtered keyword search instead of scanning the full crowd library', async () => {
   const harness = createBackgroundHarness({
     async fetchImpl(url) {
       assert.equal(new URL(url).searchParams.get('page'), '1')
-      assert.equal(new URL(url).searchParams.get('pageSize'), '10')
+      assert.equal(new URL(url).searchParams.get('pageSize'), '20')
       return jsonResponse({
         errCode: 0,
         data: {
-          total: 10000,
-          list: [
-            { id: 101, name: '分页目标', status: 'CREATED', count: 321 },
-            ...Array.from({ length: 9 }, (_, index) => ({ id: index + 1, name: `分页近似-${index}` })),
-          ],
+          total: 1,
+          list: [{ id: 101, name: '分页目标', status: 'CREATED', count: 321 }],
         },
       })
     },
@@ -1656,6 +1653,38 @@ test('background classifies custom crowd dependencies as ready, waiting, missing
   assert.equal(response.ready, false)
   assert.deepEqual(Array.from(response.results, (item) => item.state), ['ready', 'waiting', 'missing', 'ambiguous'])
   assert.deepEqual(harness.messageTrail, [])
+})
+
+test('background checks custom crowd dependencies with at most three concurrent API requests', async () => {
+  let activeRequests = 0
+  let maxActiveRequests = 0
+  const harness = createBackgroundHarness({
+    async fetchImpl(url) {
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      activeRequests -= 1
+      const keyword = new URL(url).searchParams.get('keyword')
+      return jsonResponse({
+        errCode: 0,
+        data: {
+          total: 1,
+          list: [{ id: keyword, name: keyword, status: 'CREATED', count: 1, canSelectOrLookalike: 1 }],
+        },
+      })
+    },
+  })
+
+  const response = await harness.sendProjectMessage({
+    type: 'CDP_CHECK_DATABANK_CUSTOM_DEPENDENCIES',
+    pageUrl: 'http://127.0.0.1:5173/',
+    crowdNames: ['依赖一', '依赖二', '依赖三', '依赖四', '依赖五'],
+  })
+
+  assert.equal(response.ok, true)
+  assert.equal(response.ready, true)
+  assert.equal(response.results.length, 5)
+  assert.equal(maxActiveRequests, 3)
 })
 
 test('background returns a login-required code for unauthenticated crowd queries', async () => {

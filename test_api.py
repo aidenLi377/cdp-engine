@@ -419,6 +419,7 @@ class CdpApiTests(unittest.TestCase):
                     "bhv": "15316#|#onebp_click",
                     "onebp_scene": ["19113#|#376"],
                     "dateType": "RELATIVE_RANGE",
+                    "dateValue": "180",
                     "dayFrequency": {"op": "OPEN_OPEN"},
                 },
             ),
@@ -465,6 +466,31 @@ class CdpApiTests(unittest.TestCase):
                         "compute": "(0)",
                     },
                 )
+
+    def test_effect_promotion_recent_30_days_for_every_behavior(self):
+        scenarios = (
+            ("曝光", "货品运营"),
+            ("点击", "货品运营"),
+            ("观看", "超级直播"),
+        )
+        for behavior, scene in scenarios:
+            with self.subTest(behavior=behavior):
+                response = self.client.post(
+                    "/api/generate",
+                    json={
+                        "_package": "效果推广",
+                        "account": "dior迪奥官方旗舰店",
+                        "bhv": behavior,
+                        "onebp_scene": [scene],
+                        "dayFrequency": {"min": "", "max": ""},
+                        "time": {"val": {"days": 30}, "min": "recent"},
+                    },
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                selection = response.get_json()["list"][0]["selectionLv3"]
+                self.assertEqual(selection["dateType"], "RELATIVE_RANGE")
+                self.assertEqual(selection["dateValue"], "30")
+                self.assertEqual(selection["dayFrequency"], {"op": "OPEN_OPEN"})
 
     def test_effect_promotion_rejects_scene_from_another_behavior(self):
         response = self.client.post(

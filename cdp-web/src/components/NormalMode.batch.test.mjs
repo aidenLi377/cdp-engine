@@ -100,6 +100,8 @@ test('copy dialog chooses a source while batch automation directly lists a compa
   assert.match(normalModeVue, /node\?\.packageType === '自定义人群'/)
   assert.match(normalModeVue, /ensureAutomationExtensionReady/)
   assert.doesNotMatch(normalModeVue, /function sendMessageToDatabankExtension/)
+  assert.match(normalModeVue, /class="automation-login-prerequisite"[\s\S]*?请确认当前浏览器已登录数据引擎/)
+  assert.match(globalCss, /\.automation-login-prerequisite/)
 })
 
 test('single automation offers two API-only execution choices and safely handles large packages', () => {
@@ -174,6 +176,11 @@ test('each audience row exposes two execution modes and the workbench keeps comp
   assert.doesNotMatch(folderTreeVue, /value="create_only"/)
   assert.doesNotMatch(normalModeVue, />只建包<|>只圈包</)
   assert.match(normalModeVue, /class="batch-task-launch"/)
+  assert.ok(
+    normalModeVue.indexOf('class="batch-task-launch"')
+      < normalModeVue.indexOf('class="workbench-compact-action workbench-writeback-action"'),
+  )
+  assert.match(globalCss, /\.workbench-writeback-action\.el-button \{[^}]*margin-left: 2px;/s)
   assert.doesNotMatch(normalModeVue, /<section class="batch-task-center"/)
   assert.match(normalModeVue, /v-for="mode in BATCH_EXECUTION_MODES"/)
   assert.match(normalModeVue, /@click="updateBatchEntryExecutionMode\(row\.index, mode\.value\)"/)
@@ -241,6 +248,32 @@ test('a mixed batch skips API-context preparation for existing crowds and prepar
   assert.doesNotMatch(existingBranch, /ensureDatabankApiContextReady/)
   assert.ok(existingBranchStart < contextPreparation)
   assert.ok(contextPreparation < createExecution)
+  assert.match(automationFlow, /let batchContextPreparation = null/)
+  assert.match(automationFlow, /if \(batchContextPreparation\?\.ready !== true\)[\s\S]*?ensureDatabankApiContextReady/)
+})
+
+test('batch task progress follows only this run selection and completed results wait for manual export', () => {
+  assert.doesNotMatch(normalModeVue, /batch-task-stage-card/)
+  assert.match(normalModeVue, /const batchTaskTargetIndexes = ref\(\[\]\)/)
+  assert.match(normalModeVue, /const batchTaskProgressEntries = computed/)
+  assert.match(normalModeVue, /batchTaskProgressSucceededCount\.value \/ batchTaskProgressEntries\.value\.length/)
+  assert.match(normalModeVue, /completeBatchTaskStage\('全部完成', '结果已就绪，可随时导出 Excel'\)/)
+  const autoExport = normalModeVue.slice(
+    normalModeVue.indexOf('function maybeAutoExportBatchResults'),
+    normalModeVue.indexOf('function applyBatchAutomationResult'),
+  )
+  assert.doesNotMatch(autoExport, /exportBatchAudienceResults\(/)
+})
+
+test('existing crowds still calculating enter background polling instead of succeeding with a dash', () => {
+  const resultHandler = normalModeVue.slice(
+    normalModeVue.indexOf('function applyBatchAutomationResult'),
+    normalModeVue.indexOf('async function startBatchAutomationFlow'),
+  )
+  assert.match(resultHandler, /result\?\.countPending === true/)
+  assert.match(resultHandler, /entry\.automationStatus = 'waiting_count'/)
+  assert.match(normalModeVue, /countPending: existingCrowd\?\.countReady !== true/)
+  assert.match(normalModeVue, /if \(!entry\.countReady\)[\s\S]*?startCrowdCountPolling/)
 })
 
 test('a batch run resolves internal crowd dependencies before downstream packages execute', () => {
@@ -258,7 +291,7 @@ test('a batch run resolves internal crowd dependencies before downstream package
   assert.match(normalModeVue, /rewriteResolvedCustomCrowdIds\(jsonText, internalDependencyResult\.results\)/)
   assert.match(normalModeVue, /rewriteResolvedCustomCrowdIds\(jsonText, dependencyResult\.results\)/)
   assert.match(normalModeVue, /function queueReadyInternalDependencyRuns\(\)/)
-  assert.match(normalModeVue, /executionMode === 'create_and_count' && !entry\.countReady[\s\S]*?startCrowdCountPolling/)
+  assert.match(normalModeVue, /if \(!entry\.countReady\) \{[\s\S]*?startCrowdCountPolling/)
   assert.match(normalModeVue, /建立前置包/)
   assert.match(normalModeVue, /等待出数/)
   assert.match(normalModeVue, /执行后续包/)
@@ -298,10 +331,26 @@ test('parameter batch dialog keeps its actions visible while rows scroll', () =>
 test('Excel parameter rows become independent entries on the same solution', () => {
   assert.match(normalModeVue, /buildParameterBatchRows/)
   assert.match(normalModeVue, /每一行生成 \{\{ parameterBatchSourceCount \}\} 个人群包/)
-  assert.match(normalModeVue, /syncCustomFieldValue\(nodes, customFieldId, customFields, cloneValue\(row\.values\)\)/)
+  assert.match(normalModeVue, /syncCustomFieldValue\(nodes, customFieldId, customFields, cloneValue\(row\.parameterValue \?\? row\.values\)\)/)
   assert.match(normalModeVue, /parameterBatchValues: cloneValue\(row\.values\)/)
   assert.match(normalModeVue, /batchKind\.value = 'parameter'/)
   assert.match(normalModeVue, /await activateBatchEntry\(0, \{ skipPersist: true \}\)/)
+})
+
+test('date parameter batch explains both recent days and fixed Excel date columns', () => {
+  assert.match(normalModeVue, /buildDateParameterBatchRows\(parameterBatchText\.value/)
+  assert.match(normalModeVue, /第一列开始时间，第二列结束时间/)
+  assert.match(normalModeVue, /<table v-if="isDateBatchParameterSection\(parameterBatchSection\)" class="parameter-batch-date-sheet"/)
+  assert.match(normalModeVue, /第一列<\/small>开始时间/)
+  assert.match(normalModeVue, /第二列<\/small>结束时间/)
+  assert.match(normalModeVue, /复制 Excel 两列日期的数据行，不含表头/)
+  assert.match(globalCss, /\.parameter-batch-date-sheet \{[^}]*width: 100%;/s)
+  assert.match(globalCss, /\.parameter-batch-guide\.is-date-batch \{[^}]*grid-template-columns: 30px minmax\(0, 1fr\);/s)
+  assert.match(normalModeVue, /已检查日期格式、先后顺序、可选范围和重复行/)
+  assert.match(normalModeVue, /row\.sourceText \?\? row\.values\.join/)
+  assert.match(normalModeVue, /parameterBatchIsDate: Boolean\(row\.parameterValue\)/)
+  assert.match(normalModeVue, /if \(isDateParameterBatch\(\)\) \{[\s\S]*?buildDatedParameterCrowdName\(entry, dateSuffix, index\)/)
+  assert.match(normalModeVue, /const crowdName = dateParameterBatch \? String\(value \|\| ''\)\.trim\(\) : truncateCrowdName\(value\)/)
 })
 
 test('the row-specific parameter cannot be overwritten by shared batch edits', () => {

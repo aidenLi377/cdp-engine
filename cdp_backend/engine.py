@@ -752,16 +752,8 @@ class ConfigEngine:
         canonical = dict(base_template)
         selection_lv3 = canonical.get("selectionLv3")
         if isinstance(selection_lv3, dict):
-            selection_lv3 = dict(selection_lv3)
-            # The official click payload omits dateValue for a relative date,
-            # even though the same UI selection includes it for exposure/view.
-            if (
-                selection_lv3.get("bhv") == "15316#|#onebp_click"
-                and selection_lv3.get("dateType") == "RELATIVE_RANGE"
-            ):
-                selection_lv3.pop("dateValue", None)
             canonical["selectionLv3"] = cls._order_mapping(
-                selection_lv3,
+                dict(selection_lv3),
                 cls.EFFECT_PROMOTION_SELECTION_LV3_ORDER,
             )
         return cls._order_mapping(

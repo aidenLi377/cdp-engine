@@ -62,6 +62,17 @@
 
         <div class="app-shell-account">
           <button
+            class="app-extension-download"
+            type="button"
+            :disabled="downloadingExtension"
+            :aria-busy="downloadingExtension"
+            title="下载最新版浏览器插件"
+            @click="downloadExtension"
+          >
+            <el-icon><Download /></el-icon>
+            <span>{{ downloadingExtension ? '下载中…' : '下载插件' }}</span>
+          </button>
+          <button
             class="app-tutorial-link"
             :class="{ active: appMode === 'tutorials', 'is-complete': tutorialsComplete }"
             type="button"
@@ -119,6 +130,7 @@
           <NormalMode
             v-if="appMode === 'workbench'"
             :session-owner-id="currentUser?.id"
+            :current-user-role="currentUser?.role"
             :ai-command="aiWorkbenchCommand"
           />
           <SolutionCenter
@@ -196,7 +208,8 @@
 <script setup>
 import { computed, defineAsyncComponent, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { Bell, ChatDotRound, Reading } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Bell, ChatDotRound, Download, Reading } from '@element-plus/icons-vue'
 import LoginView from './components/LoginView.vue'
 import RegisterView from './components/RegisterView.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
@@ -248,6 +261,7 @@ const backendOnline = ref(true)
 const authState = ref('checking')
 const currentUser = ref(null)
 const profileOpen = ref(false)
+const downloadingExtension = ref(false)
 const feedbackOpen = ref(false)
 const feedbackPrefill = ref(null)
 const aiDrawerVisible = ref(false)
@@ -256,6 +270,38 @@ const aiWorkbenchCommand = ref(null)
 const aiTaskCommand = ref(null)
 const aiTaskExecutionState = ref(null)
 let aiCommandSequence = 0
+
+async function downloadExtension() {
+  if (downloadingExtension.value) return
+  downloadingExtension.value = true
+  try {
+    const response = await fetchWithTimeout('/api/extension/download', { cache: 'no-store' })
+    if (response.status === 401) window.dispatchEvent(new CustomEvent('cdp:auth-required'))
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      throw new Error(data?.message || '插件下载失败，请稍后重试')
+    }
+
+    const disposition = response.headers.get('Content-Disposition') || ''
+    const archiveName = disposition.match(/filename="?([^";]+)"?/i)?.[1]?.trim().split(/[\\/]/).pop() || ''
+    const filename = /^DMP_PluginV\d+(?:\.\d+){1,3}-CDP-Merged\.zip$/.test(archiveName)
+      ? archiveName
+      : 'CDP-浏览器插件.zip'
+    const blobUrl = URL.createObjectURL(await response.blob())
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    ElMessage.success('插件已下载，请解压并在浏览器扩展管理页加载')
+  } catch (error) {
+    ElMessage.error(error?.message || '插件下载失败，请稍后重试')
+  } finally {
+    downloadingExtension.value = false
+  }
+}
 
 function openFeedback(prefill = null) {
   feedbackPrefill.value = prefill
@@ -819,6 +865,43 @@ onBeforeUnmount(() => {
   border-left-color: var(--ui-divider);
 }
 
+.app-extension-download {
+  display: inline-flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 13px;
+  color: #fff;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #1679c5;
+  border: 1px solid #1679c5;
+  border-radius: 999px;
+  box-shadow: 0 3px 10px rgba(22, 121, 197, .2);
+  cursor: pointer;
+  transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.app-extension-download:hover:not(:disabled) {
+  background: #0f69ad;
+  box-shadow: 0 5px 14px rgba(22, 121, 197, .28);
+  transform: translateY(-1px);
+}
+
+.app-extension-download:focus-visible {
+  outline: 2px solid var(--ui-accent-ring);
+  outline-offset: 2px;
+}
+
+.app-extension-download:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
 .app-feedback-link,
 .app-tutorial-link,
 .app-announcement-link {
@@ -968,6 +1051,14 @@ onBeforeUnmount(() => {
 }
 
 .app-shell-logout:hover { color: var(--ui-accent); }
+
+@media (max-width: 1120px) {
+  .app-shell-account {
+    flex-wrap: wrap;
+    padding-left: 0;
+    border-left: 0;
+  }
+}
 
 @keyframes auth-dot {
   from { transform: translateY(2px); opacity: 0.35; }
