@@ -73,6 +73,7 @@
             <span>{{ downloadingExtension ? '下载中…' : '下载插件' }}</span>
           </button>
           <button
+            v-if="SHOW_TUTORIAL"
             class="app-tutorial-link"
             :class="{ active: appMode === 'tutorials', 'is-complete': tutorialsComplete }"
             type="button"
@@ -152,7 +153,7 @@
             @current-user-updated="handleCurrentUserUpdated"
           />
           <TutorialCenter
-            v-else-if="appMode === 'tutorials'"
+            v-else-if="SHOW_TUTORIAL && appMode === 'tutorials'"
             :initial-tutorial-id="tutorialCenterInitialId"
             :focus-start-token="tutorialCenterFocusToken"
             :celebration-token="tutorialCenterCelebrationToken"
@@ -181,18 +182,21 @@
         @close="feedbackOpen = false"
       />
       <TutorialWelcomeDialog
+        v-if="SHOW_TUTORIAL"
         :open="tutorialWelcomeOpen"
         :progress-items="tutorialProgressItems"
         @dismiss="dismissTutorialWelcome"
         @experience="handleTutorialWelcomeExperience"
       />
-      <GuidedTutorialOverlay />
+      <GuidedTutorialOverlay v-if="SHOW_TUTORIAL" />
       <AiFloatingLauncher
+        v-if="SHOW_AI"
         :owner-id="currentUser?.id"
         :hidden="aiDrawerVisible"
         @open="openAiAudience()"
       />
       <AiAudienceDrawer
+        v-if="SHOW_AI"
         v-model="aiDrawerVisible"
         :existing-node-count="aiExistingNodeCount"
         :execution-state="aiTaskExecutionState"
@@ -255,6 +259,9 @@ const AnnouncementCenter = defineAsyncComponent(() => import('./components/Annou
 const HEALTH_FAILURE_THRESHOLD = 3
 const APP_MODE_SESSION_KEY = 'app-mode.v1'
 const STANDARD_APP_MODES = new Set(['workbench', 'solutions', 'task-center', 'tutorials', 'announcements'])
+// Keep unfinished launch surfaces available in code while hiding them from the live UI.
+const SHOW_TUTORIAL = false
+const SHOW_AI = false
 
 const appMode = ref('workbench')
 const backendOnline = ref(true)
@@ -309,6 +316,7 @@ function openFeedback(prefill = null) {
 }
 
 function openAiAudience(context = {}) {
+  if (!SHOW_AI) return
   aiExistingNodeCount.value = Number(context?.existingNodeCount || 0)
   aiDrawerVisible.value = true
 }
@@ -367,6 +375,7 @@ function resetAiExecution() {
 }
 
 function handleAiShortcut(event) {
+  if (!SHOW_AI) return
   if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k') return
   event.preventDefault()
   openAiAudience()
@@ -439,6 +448,7 @@ const tutorialsComplete = computed(() =>
 )
 
 function canUseAppMode(mode, user = currentUser.value) {
+  if (mode === 'tutorials') return SHOW_TUTORIAL
   if (STANDARD_APP_MODES.has(mode)) return true
   return mode === 'admin' && ['super_admin', 'config_admin'].includes(user?.role)
 }
@@ -508,10 +518,10 @@ function startAuthenticatedLoops() {
   stopAuthenticatedLoops()
   if (document.hidden || authState.value !== 'authenticated') return
   checkHealth()
-  void refreshTutorialProgress()
+  if (SHOW_TUTORIAL) void refreshTutorialProgress()
   healthTimer = setInterval(checkHealth, 30000)
   sessionTimer = setInterval(checkSession, 60000)
-  tutorialProgressTimer = setInterval(() => void refreshTutorialProgress(), 3000)
+  if (SHOW_TUTORIAL) tutorialProgressTimer = setInterval(() => void refreshTutorialProgress(), 3000)
 }
 
 async function checkSession() {
@@ -593,6 +603,7 @@ async function refreshAnnouncementState() {
 }
 
 function scheduleTutorialWelcome() {
+  if (!SHOW_TUTORIAL) return
   clearTimeout(tutorialWelcomeTimer)
   const userId = currentUser.value?.id
   if (
@@ -614,6 +625,7 @@ function scheduleTutorialWelcome() {
 }
 
 async function refreshTutorialProgress({ offerWelcome = false } = {}) {
+  if (!SHOW_TUTORIAL) return
   if (authState.value !== 'authenticated' || tutorialProgressCheckInFlight) return
   const requestedUserId = currentUser.value?.id
   tutorialProgressCheckInFlight = true
@@ -630,6 +642,7 @@ async function refreshTutorialProgress({ offerWelcome = false } = {}) {
 }
 
 function handleTutorialProgressChanged(event) {
+  if (!SHOW_TUTORIAL) return
   const item = event.detail
   if (!item?.tutorialId) {
     void refreshTutorialProgress()
@@ -651,6 +664,7 @@ function handleTutorialProgressChanged(event) {
 }
 
 function openTutorialCenter() {
+  if (!SHOW_TUTORIAL) return
   tutorialWelcomeOpen.value = false
   if (appMode.value !== 'tutorials') tutorialReturnMode.value = appMode.value
   appMode.value = 'tutorials'
