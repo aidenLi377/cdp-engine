@@ -556,7 +556,7 @@
       <div class="admin-panel-head dimension-head">
         <div>
           <p class="admin-panel-index">03 / DICTIONARIES</p>
-          <h2>维表配置</h2>
+          <h2>公共维表与配置</h2>
         </div>
         <span class="admin-panel-count">{{ dimensions.length }} 类维表</span>
       </div>
@@ -659,6 +659,51 @@
             </select>
             <button type="button" @click="applyDimensionFilters">查询</button>
           </div>
+
+          <section
+            v-if="isMappingDimension"
+            :key="selectedDimensionFile"
+            class="dimension-consistency-inline"
+            :class="{ 'has-conflicts': selectedDimensionConsistency?.conflictCount }"
+            :aria-label="`${dimensionDisplayName(selectedDimensionFile)}映射检测`"
+          >
+            <div class="dimension-consistency-summary">
+              <span class="dimension-consistency-indicator" aria-hidden="true"></span>
+              <div>
+                <strong>{{ dimensionDisplayName(selectedDimensionFile) }}映射检测</strong>
+                <small v-if="dimensionConsistencyError">没有异常</small>
+                <small v-else-if="dimensionConsistencyLoading && !selectedDimensionConsistency">正在检查启用记录…</small>
+                <small v-else-if="selectedDimensionConsistency">
+                  {{ selectedDimensionConsistency.nameColumn }} ↔ {{ selectedDimensionConsistency.valueColumn }} ·
+                  {{ selectedDimensionConsistency.checkedRows.toLocaleString() }} 条启用记录 ·
+                  {{ selectedDimensionConsistency.conflictCount ? `发现 ${selectedDimensionConsistency.conflictCount} 组冲突` : '没有异常' }}
+                </small>
+                <small v-else>没有异常</small>
+              </div>
+              <button type="button" :disabled="dimensionConsistencyLoading" @click="loadDimensionConsistency">
+                {{ dimensionConsistencyLoading ? '检测中…' : '重新检测' }}
+              </button>
+            </div>
+            <details v-if="selectedDimensionConsistency?.conflictCount" class="dimension-consistency-results">
+              <summary>查看冲突明细 <span aria-hidden="true">⌄</span></summary>
+              <div class="dimension-consistency-list">
+                <article v-for="conflict in selectedDimensionConsistency.conflicts" :key="`${conflict.type}-${conflict.key}`">
+                  <div class="dimension-consistency-conflict-head">
+                    <strong>{{ conflict.type === 'value_to_names' ? selectedDimensionConsistency.valueColumn : selectedDimensionConsistency.nameColumn }}：{{ conflict.key }}</strong>
+                    <small>{{ conflict.type === 'value_to_names' ? '对应多个名称' : '对应多个编码' }}</small>
+                  </div>
+                  <p>{{ conflict.mappedValues.join('、') }}</p>
+                  <div v-for="row in conflict.rows" :key="row.id" class="dimension-consistency-row">
+                    <span>{{ row.packageName }}</span>
+                    <span>{{ row.name }}</span>
+                    <span>{{ row.value }}</span>
+                    <em v-if="row.hasChanges">待发布</em>
+                  </div>
+                  <button type="button" @click="focusConsistencyConflict(selectedDimensionFile, conflict.key)">在维表中查看</button>
+                </article>
+              </div>
+            </details>
+          </section>
 
           <div v-if="dimensionEditorOpen" class="dimension-editor">
             <div class="dimension-editor-head">
@@ -1112,9 +1157,9 @@
         >
           <header class="dimension-import-head">
             <div>
-              <p class="admin-panel-index">BATCH / XLSX</p>
+              <p class="admin-panel-index">{{ dimensionImportMode === 'json' ? 'BATCH / JSON' : 'BATCH / XLSX' }}</p>
               <h2 id="dimension-import-title">批量导入{{ dimensionDisplayName(selectedDimensionFile) }}维表</h2>
-              <p>先核对表头、数据格式和影响范围，确认后才会写入待发布草稿。</p>
+              <p>{{ dimensionImportMode === 'json' ? '粘贴单店铺官方 JSON，预检后合并导入；未出现在本次 JSON 中的记录保持不变。' : '先核对表头、数据格式和影响范围，确认后才会写入待发布草稿。' }}</p>
             </div>
             <button type="button" aria-label="关闭批量导入" :disabled="dimensionImportBusy" @click="closeDimensionImport">×</button>
           </header>
@@ -1122,11 +1167,11 @@
           <div v-if="dimensionImportComplete" class="dimension-import-complete">
             <span aria-hidden="true">✓</span>
             <p class="admin-panel-index">IMPORT READY</p>
-            <h3>{{ dimensionImportComplete.rowCount.toLocaleString() }} 行数据已导入草稿</h3>
-            <p>
-              新增 {{ dimensionImportComplete.created.toLocaleString() }} 行，自动跳过
-              {{ (dimensionImportComplete.skipped || 0).toLocaleString() }} 行重复数据；尚未影响圈包线上配置。
+            <h3>{{ dimensionImportComplete.rowCount.toLocaleString() }} 条记录已处理</h3>
+            <p v-if="dimensionImportMode === 'json'">
+              新增 {{ dimensionImportComplete.created || 0 }} 条、恢复已有记录 {{ dimensionImportComplete.restored || 0 }} 条、修改名称或 ID {{ dimensionImportComplete.updated || 0 }} 条、停用旧记录 {{ dimensionImportComplete.disabled || 0 }} 条；跳过 {{ dimensionImportComplete.skipped || 0 }} 条。结果已进入待发布草稿。
             </p>
+            <p v-else>新增 {{ dimensionImportComplete.created || 0 }} 条，跳过 {{ dimensionImportComplete.skipped || 0 }} 条重复记录；结果已进入待发布草稿。</p>
             <div>
               <button class="admin-primary-button" type="button" @click="closeDimensionImport">返回维表</button>
             </div>
@@ -1142,6 +1187,12 @@
                 <p><span></span>导入后进入待发布，需通过“发布配置”才会同步到数据引擎人群圈包。</p>
               </section>
 
+              <div v-if="isMappingDimension" class="dimension-import-mode" role="tablist" aria-label="导入方式">
+                <button type="button" role="tab" :aria-selected="dimensionImportMode === 'json'" :class="{ active: dimensionImportMode === 'json' }" @click="setDimensionImportMode('json')">粘贴官方 JSON</button>
+                <button type="button" role="tab" :aria-selected="dimensionImportMode === 'excel'" :class="{ active: dimensionImportMode === 'excel' }" @click="setDimensionImportMode('excel')">导入 Excel</button>
+              </div>
+
+              <template v-if="dimensionImportMode === 'excel'">
               <section class="dimension-import-schema" aria-label="Excel 表头要求">
                 <div>
                   <strong>表头必须完全一致</strong>
@@ -1179,6 +1230,33 @@
                 </span>
                 <i>{{ dimensionImportBusy ? '核对中' : '选择文件' }}</i>
               </button>
+              </template>
+
+              <section v-else class="dimension-import-json">
+                <div class="dimension-import-json-head">
+                  <div>
+                    <strong>{{ selectedDimensionFile === '品牌维表.csv' ? '品牌：name + id' : '类目：cateFullName + cateId（包含 children）' }}</strong>
+                    <small>自动读取完整 data 数组；类目层级名称会转换为维表使用的 &gt; 格式。</small>
+                  </div>
+                  <label v-if="dimensionPackages.length > 1">
+                    <span>适用的包</span>
+                    <select v-model="dimensionImportPackage" @change="dimensionImportPreview = null">
+                      <option value="">请选择</option>
+                      <option v-for="name in dimensionPackages" :key="name" :value="name">{{ name }}</option>
+                    </select>
+                  </label>
+                </div>
+                <textarea
+                  v-model="dimensionImportJsonText"
+                  :placeholder="officialJsonPlaceholder"
+                  spellcheck="false"
+                  aria-label="粘贴官方 JSON"
+                  @input="dimensionImportPreview = null"
+                ></textarea>
+                <button type="button" class="dimension-import-json-preview" :disabled="dimensionImportBusy || !dimensionImportJsonText.trim()" @click="previewOfficialJsonImport">
+                  {{ dimensionImportBusy ? '核对中…' : '预检 JSON' }}
+                </button>
+              </section>
 
               <template v-if="dimensionImportPreview">
                 <section class="dimension-import-review" :class="{ invalid: !dimensionImportPreview.valid }">
@@ -1188,36 +1266,46 @@
                       <h3>
                         {{ !dimensionImportPreview.valid
                           ? `发现 ${dimensionImportPreview.errorCount || 1} 个问题`
-                          : dimensionImportPreview.created > 0
+                          : dimensionImportActionCount > 0
                             ? '数据核对通过'
-                            : '没有可导入的新记录' }}
+                            : '没有需要导入的记录' }}
                       </h3>
                     </div>
-                    <span :class="{ passed: dimensionImportPreview.valid && dimensionImportPreview.created > 0, empty: dimensionImportPreview.valid && !dimensionImportPreview.created }">
-                      {{ !dimensionImportPreview.valid ? '暂不可导入' : dimensionImportPreview.created > 0 ? '可以导入' : '全部跳过' }}
+                    <span :class="{ passed: dimensionImportPreview.valid && dimensionImportActionCount > 0, empty: dimensionImportPreview.valid && !dimensionImportActionCount }">
+                      {{ !dimensionImportPreview.valid ? '暂不可导入' : dimensionImportActionCount > 0 ? '可以导入' : '全部跳过' }}
                     </span>
                   </header>
 
-                  <div class="dimension-import-metrics">
+                  <div class="dimension-import-metrics" :class="{ 'is-json': dimensionImportMode === 'json' }">
                     <article>
                       <small>数据行数</small>
                       <strong>{{ dimensionImportPreview.rowCount.toLocaleString() }}</strong>
                       <span>行</span>
                     </article>
                     <article>
-                      <small>表头列数</small>
-                      <strong>{{ dimensionImportPreview.columnCount.toLocaleString() }}</strong>
-                      <span>列</span>
+                      <small>{{ dimensionImportMode === 'json' ? '恢复已有记录' : '表头列数' }}</small>
+                      <strong>{{ (dimensionImportMode === 'json' ? dimensionImportPreview.restored || 0 : dimensionImportPreview.columnCount).toLocaleString() }}</strong>
+                      <span>{{ dimensionImportMode === 'json' ? '条' : '列' }}</span>
                     </article>
                     <article>
-                      <small>可导入新记录</small>
+                      <small>可新增记录</small>
                       <strong>{{ (dimensionImportPreview.created || 0).toLocaleString() }}</strong>
                       <span>行</span>
                     </article>
+                    <article v-if="dimensionImportMode === 'json'">
+                      <small>修改名称或 ID</small>
+                      <strong>{{ (dimensionImportPreview.updated || 0).toLocaleString() }}</strong>
+                      <span>条</span>
+                    </article>
+                    <article v-if="dimensionImportMode === 'json'">
+                      <small>将停用旧记录</small>
+                      <strong>{{ (dimensionImportPreview.disabled || 0).toLocaleString() }}</strong>
+                      <span>条</span>
+                    </article>
                     <article>
-                      <small>数据库已存在</small>
-                      <strong>{{ (dimensionImportPreview.existing || 0).toLocaleString() }}</strong>
-                      <span>行</span>
+                      <small>{{ dimensionImportMode === 'json' ? '自动跳过' : '数据库已存在' }}</small>
+                      <strong>{{ (dimensionImportMode === 'json' ? dimensionImportPreview.skipped || 0 : dimensionImportPreview.existing || 0).toLocaleString() }}</strong>
+                      <span>{{ dimensionImportMode === 'json' ? '条' : '行' }}</span>
                     </article>
                   </div>
 
@@ -1230,12 +1318,45 @@
 
                   <div v-if="dimensionImportPreview.valid" class="dimension-import-impact">
                     <span></span>
-                    <p>
+                    <p v-if="dimensionImportMode === 'json'">
+                      按本次 JSON 合并：新增 <strong>{{ dimensionImportPreview.created || 0 }}</strong> 条；恢复已有记录 <strong>{{ dimensionImportPreview.restored || 0 }}</strong> 条；修改名称或 ID <strong>{{ dimensionImportPreview.updated || 0 }}</strong> 条；停用同 ID 或同名的旧冲突记录 <strong>{{ dimensionImportPreview.disabled || 0 }}</strong> 条；跳过 <strong>{{ dimensionImportPreview.skipped || 0 }}</strong> 条。未出现在本次 JSON 中的其他记录不变；确认后写入待发布草稿。
+                    </p>
+                    <p v-else>
                       本次只导入 <strong>{{ (dimensionImportPreview.created || 0).toLocaleString() }}</strong> 条新记录；
                       数据库已存在 <strong>{{ (dimensionImportPreview.existing || 0).toLocaleString() }}</strong> 条、文件内重复
                       <strong>{{ (dimensionImportPreview.duplicateInFile || 0).toLocaleString() }}</strong> 条，全部自动跳过且不会覆盖原值。
                     </p>
                   </div>
+
+                  <section v-if="dimensionImportMode === 'json' && dimensionImportPreview.updateRows?.length" class="dimension-import-updates">
+                    <strong>将修改 {{ dimensionImportPreview.updateRows.length }} 条名称或 ID</strong>
+                    <div v-for="row in dimensionImportPreview.updateRows" :key="`${row.row}-${row.beforeValue}`">
+                      <span>#{{ row.row }} · {{ row.afterValue }}</span>
+                      <p>{{ row.afterName }} · ID {{ row.afterValue }}</p>
+                      <small v-for="change in row.fieldChanges || []" :key="change.field">
+                        {{ change.field }}：{{ change.before ?? '空' }} → {{ change.after ?? '空' }}
+                      </small>
+                      <small v-for="reason in row.stateChanges || []" :key="reason">状态：{{ reason }}</small>
+                    </div>
+                  </section>
+
+                  <section v-if="dimensionImportMode === 'json' && dimensionImportPreview.restoreRows?.length" class="dimension-import-updates">
+                    <strong>将恢复 {{ dimensionImportPreview.restoreRows.length }} 条已有记录</strong>
+                    <small>这些记录的名称和 ID 与官方 JSON 相同，只是当前已停用或删除。</small>
+                    <div v-for="row in dimensionImportPreview.restoreRows" :key="`${row.row}-${row.afterValue}`">
+                      <span>#{{ row.row }} · {{ row.afterValue }}</span>
+                      <p>{{ row.afterName }}</p>
+                      <small v-for="reason in row.stateChanges || []" :key="reason">{{ reason }}</small>
+                    </div>
+                  </section>
+
+                  <section v-if="dimensionImportMode === 'json' && dimensionImportPreview.disabledRows?.length" class="dimension-import-updates">
+                    <strong>将停用 {{ dimensionImportPreview.disabledRows.length }} 条旧记录</strong>
+                    <div v-for="row in dimensionImportPreview.disabledRows" :key="`${row.row}-${row.value}-${row.name}`">
+                      <span>{{ row.row ? `#${row.row} · ` : '' }}{{ row.value }} · {{ row.reason }}</span>
+                      <p>{{ row.name }}</p>
+                    </div>
+                  </section>
 
                   <section v-if="dimensionImportSkippedRows.length" class="dimension-import-skipped">
                     <header>
@@ -1247,7 +1368,7 @@
                     </header>
                     <div class="dimension-import-skipped-table">
                       <div class="dimension-import-skipped-head">
-                        <span>Excel 行</span><span>跳过原因</span><span>适用的包</span><span>名称</span><span>标识信息</span>
+                        <span>{{ dimensionImportMode === 'json' ? 'JSON 序号' : 'Excel 行' }}</span><span>跳过原因</span><span>适用的包</span><span>名称</span><span>标识信息</span>
                       </div>
                       <div
                         v-for="row in pagedDimensionImportSkippedRows"
@@ -1271,10 +1392,10 @@
                   </section>
 
                   <div v-if="!dimensionImportPreview.valid" class="dimension-import-errors">
-                    <p>请修正 Excel 后重新选择文件</p>
+                    <p>{{ dimensionImportMode === 'json' ? '请修正 JSON 后重新预检' : '请修正 Excel 后重新选择文件' }}</p>
                     <ul>
                       <li v-for="(issue, index) in dimensionImportPreview.issues" :key="`${issue.row}-${issue.column}-${index}`">
-                        <span>第 {{ issue.row }} 行 · {{ issue.column }}</span>
+                        <span>第 {{ issue.row }} {{ dimensionImportMode === 'json' ? '条' : '行' }} · {{ issue.column }}</span>
                         <strong>{{ issue.message }}</strong>
                       </li>
                     </ul>
@@ -1288,19 +1409,21 @@
 
             <footer class="dimension-import-actions">
               <div>
-                <strong>{{ dimensionImportPreview?.sheetName || '等待选择文件' }}</strong>
+                <strong>{{ dimensionImportMode === 'json' ? (dimensionImportPreview?.packageName || '等待粘贴官方 JSON') : (dimensionImportPreview?.sheetName || '等待选择文件') }}</strong>
                 <small v-if="dimensionImportPreview?.expiresAt">预检结果 30 分钟内有效</small>
-                <small v-else-if="dimensionImportPreview?.valid && !dimensionImportPreview?.created">全部记录都将跳过，无需执行导入</small>
+                <small v-else-if="dimensionImportPreview?.valid && !dimensionImportActionCount">全部记录都将跳过，无需执行导入</small>
                 <small v-else>确认前不会写入任何数据</small>
               </div>
               <button type="button" :disabled="dimensionImportBusy" @click="closeDimensionImport">取消</button>
               <button
                 class="admin-primary-button"
                 type="button"
-                :disabled="!dimensionImportPreview?.valid || !dimensionImportPreview?.importId || !dimensionImportPreview?.created || dimensionImportBusy"
+                :disabled="!dimensionImportPreview?.valid || !(dimensionImportMode === 'json' ? dimensionImportPreview?.previewToken : dimensionImportPreview?.importId) || !dimensionImportActionCount || dimensionImportBusy"
                 @click="confirmDimensionImport"
               >
-                {{ dimensionImportBusy ? '处理中…' : `确认导入 ${dimensionImportPreview?.created || 0} 条新记录` }}
+                {{ dimensionImportBusy ? '处理中…' : dimensionImportMode === 'json'
+                  ? `确认：新增 ${dimensionImportPreview?.created || 0}、恢复 ${dimensionImportPreview?.restored || 0}、修改 ${dimensionImportPreview?.updated || 0}${dimensionImportPreview?.disabled ? `、停用 ${dimensionImportPreview.disabled}` : ''}`
+                  : `确认导入 ${dimensionImportActionCount} 条记录` }}
               </button>
             </footer>
           </template>
@@ -1381,7 +1504,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   ArrowDown,
   Check,
@@ -1455,7 +1578,7 @@ const PERMISSION_ROWS = [
   { key: 'plans', label: '数据引擎取数模板', description: '访问个人模板与公共模板', icon: Collection },
   { key: 'tasks', label: '达摩盘取数', description: '访问取数执行、查看与任务管理', icon: Operation },
   { key: 'system', label: '系统管理', description: '管理账号、邀请、用户数据与日志', icon: Setting },
-  { key: 'dimensions', label: '维表与配置', description: '维护维表并发布配置版本', icon: Document },
+  { key: 'dimensions', label: '公共维表与配置', description: '维护公共维表并发布配置版本', icon: Document },
 ]
 
 const STATUS_LABELS = {
@@ -1488,6 +1611,9 @@ const configVersions = ref([])
 const configVersionsLoading = ref(false)
 const rollbackBusyVersion = ref(0)
 const dimensions = ref([])
+const dimensionConsistency = ref({ checks: [], totalConflicts: 0 })
+const dimensionConsistencyLoading = ref(false)
+const dimensionConsistencyError = ref('')
 const configStatus = ref({ currentVersion: 0, pendingChanges: 0 })
 const publishNote = ref('')
 const publishing = ref(false)
@@ -1507,6 +1633,9 @@ const editingRow = ref(null)
 const dimensionFormData = reactive({})
 const dimensionSaving = ref(false)
 const dimensionImportOpen = ref(false)
+const dimensionImportMode = ref('excel')
+const dimensionImportJsonText = ref('')
+const dimensionImportPackage = ref('')
 const dimensionImportBusy = ref(false)
 const dimensionImportDragging = ref(false)
 const dimensionImportFileInput = ref(null)
@@ -1568,10 +1697,17 @@ const canManageAccounts = computed(() => props.currentUserRole === 'super_admin'
 const canDeleteDimensions = computed(() => props.currentUserRole === 'super_admin')
 const canImportDimensions = computed(() => ['config_admin', 'super_admin'].includes(props.currentUserRole))
 const canDeleteAuditLogs = computed(() => props.currentUserRole === 'super_admin')
+const isMappingDimension = computed(() => ['类目维表.csv', '品牌维表.csv'].includes(selectedDimensionFile.value))
+const selectedDimensionConsistency = computed(() => dimensionConsistency.value.checks.find(
+  (item) => item.dimensionFile === selectedDimensionFile.value,
+) || null)
 const dimensionImportExpectedColumns = computed(() => {
   if (dimensionColumns.value.length) return dimensionColumns.value
   return dimensions.value.find((item) => item.file === selectedDimensionFile.value)?.requiredColumns || []
 })
+const officialJsonPlaceholder = computed(() => selectedDimensionFile.value === '品牌维表.csv'
+  ? '{"data":[{"name":"品牌名称","id":"12345"}]}'
+  : '{"data":[{"cateFullName":"一级->二级","cateId":12345,"children":null}]}')
 const fieldOptionOrderPackages = computed(() => [
   ...new Set(fieldOptionOrderItems.value.map(item => item.packageName)),
 ])
@@ -1598,6 +1734,12 @@ const dimensionImportSkippedRows = computed(() => {
 const dimensionImportSkipTotalPages = computed(() => Math.ceil(
   dimensionImportSkippedRows.value.length / DIMENSION_IMPORT_SKIP_PAGE_SIZE,
 ))
+const dimensionImportActionCount = computed(() => (
+  Number(dimensionImportPreview.value?.created || 0)
+  + Number(dimensionImportPreview.value?.updated || 0)
+  + Number(dimensionImportPreview.value?.restored || 0)
+  + Number(dimensionImportPreview.value?.disabled || 0)
+))
 const pagedDimensionImportSkippedRows = computed(() => {
   const start = (dimensionImportSkipPage.value - 1) * DIMENSION_IMPORT_SKIP_PAGE_SIZE
   return dimensionImportSkippedRows.value.slice(start, start + DIMENSION_IMPORT_SKIP_PAGE_SIZE)
@@ -1605,6 +1747,35 @@ const pagedDimensionImportSkippedRows = computed(() => {
 const dimensionImportChecks = computed(() => {
   const preview = dimensionImportPreview.value
   if (!preview) return []
+  if (dimensionImportMode.value === 'json') {
+    const issueCodes = new Set((preview.issues || []).map((issue) => issue.code))
+    const mappingIssue = [...issueCodes].some((code) => /MULTIPLE|MAPPING|EXISTING_ROWS/.test(code))
+    const skipped = Number(preview.skipped || 0)
+    return [
+      {
+        label: 'JSON 结构',
+        passed: !preview.errorCount || mappingIssue,
+        detail: `${preview.rowCount.toLocaleString()} 条官方记录已解析`,
+      },
+      {
+        label: 'ID 与名称对应',
+        passed: !mappingIssue,
+        detail: mappingIssue ? '发现同一 ID 对应多个名称，或同一名称对应多个 ID' : '一对一映射检查通过',
+      },
+      {
+        label: '重复数据处理',
+        passed: skipped === 0,
+        warning: skipped > 0,
+        detail: `已有 ${preview.existing || 0} 条 · JSON 内重复 ${preview.duplicateInFile || 0} 条`,
+      },
+      {
+        label: '已有记录处理',
+        passed: !preview.restored && !preview.updated && !preview.disabled,
+        warning: preview.restored > 0 || preview.updated > 0 || preview.disabled > 0,
+        detail: `${preview.restored || 0} 条恢复 · ${preview.updated || 0} 条修改映射 · ${preview.disabled || 0} 条旧冲突停用`,
+      },
+    ]
+  }
   const issueCodes = new Set((preview.issues || []).map((issue) => issue.code))
   const formatIssues = [...issueCodes].filter((code) => code !== 'HEADER_MISMATCH')
   const headersPassed = Boolean(preview.headersValid)
@@ -1668,8 +1839,8 @@ const navigationItems = computed(() => {
     ] : []),
     {
       id: 'config',
-      label: '维表与配置',
-      description: '新增、编辑、启停维表记录，并安全发布圈包配置。',
+      label: '公共维表与配置',
+      description: '新增、编辑、启停公共维表记录，检查类目与品牌映射，并发布圈包配置。',
       badge: configStatus.value.pendingChanges || '',
     },
     {
@@ -2003,6 +2174,7 @@ async function loadData() {
     }
     await Promise.all([
       loadDimensionRows(),
+      ...(isMappingDimension.value ? [loadDimensionConsistency()] : []),
       loadConfigAuditLogs({ silent: true }),
       loadConfigVersions({ silent: true }),
     ])
@@ -2049,6 +2221,7 @@ async function refreshConfigSummary() {
   dimensions.value = dimensionList || []
   configStatus.value = nextConfigStatus || { currentVersion: 0, pendingChanges: 0 }
   setFieldOptionOrderItems(nextFieldOptionOrders || [])
+  if (isMappingDimension.value) await loadDimensionConsistency()
 }
 
 async function loadFieldOptionOrders() {
@@ -2133,6 +2306,31 @@ function dimensionDisplayName(file) {
   return String(file || '').replace('维表.csv', '')
 }
 
+async function loadDimensionConsistency() {
+  dimensionConsistencyLoading.value = true
+  dimensionConsistencyError.value = ''
+  try {
+    const result = await request('/api/admin/config/dimension-consistency', { cache: 'no-store' })
+    dimensionConsistency.value = result || { checks: [], totalConflicts: 0 }
+  } catch (error) {
+    dimensionConsistency.value = { checks: [], totalConflicts: 0 }
+    dimensionConsistencyError.value = error.message || '映射检测失败，请重试'
+  } finally {
+    dimensionConsistencyLoading.value = false
+  }
+}
+
+async function focusConsistencyConflict(file, key) {
+  closeDimensionImport()
+  closeDimensionEditor()
+  selectedDimensionFile.value = file
+  dimensionPage.value = 1
+  dimensionPackage.value = ''
+  dimensionQuery.value = key
+  await loadDimensionRows()
+  adminCenterRoot.value?.querySelector('.dimension-content')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+}
+
 async function exportDimensionRows() {
   if (dimensionExporting.value || !selectedDimensionFile.value) return
   const filename = selectedDimensionFile.value
@@ -2195,6 +2393,7 @@ function selectDimension(file) {
   dimensionPackage.value = ''
   closeDimensionEditor()
   loadDimensionRows()
+  if (isMappingDimension.value) loadDimensionConsistency()
   if (configAuditScope.value === 'current') loadConfigAuditLogs()
 }
 
@@ -2266,6 +2465,11 @@ function openCreateRow() {
     dimensionFormData[column] = ''
   })
   dimensionEditorOpen.value = true
+  nextTick(() => {
+    const editor = adminCenterRoot.value?.querySelector('.dimension-editor')
+    editor?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    editor?.querySelector('input')?.focus({ preventScroll: true })
+  })
 }
 
 function openEditRow(row) {
@@ -2515,6 +2719,8 @@ function resetDimensionImport() {
   dimensionImportBusy.value = false
   dimensionImportDragging.value = false
   dimensionImportFileName.value = ''
+  dimensionImportJsonText.value = ''
+  dimensionImportPackage.value = ''
   dimensionImportPreview.value = null
   dimensionImportComplete.value = null
   dimensionImportSkipPage.value = 1
@@ -2525,7 +2731,17 @@ function openDimensionImport() {
   if (!canImportDimensions.value || !selectedDimensionFile.value) return
   closeDimensionEditor()
   resetDimensionImport()
+  dimensionImportMode.value = isMappingDimension.value ? 'json' : 'excel'
+  dimensionImportPackage.value = dimensionPackage.value || (dimensionPackages.value.length === 1 ? dimensionPackages.value[0] : '')
   dimensionImportOpen.value = true
+}
+
+function setDimensionImportMode(mode) {
+  if (dimensionImportBusy.value || dimensionImportMode.value === mode) return
+  dimensionImportMode.value = mode
+  dimensionImportPreview.value = null
+  dimensionImportComplete.value = null
+  dimensionImportSkipPage.value = 1
 }
 
 function closeDimensionImport() {
@@ -2587,6 +2803,34 @@ async function previewDimensionImport(file) {
   }
 }
 
+async function previewOfficialJsonImport() {
+  if (dimensionImportBusy.value) return
+  if (!dimensionImportJsonText.value.trim()) {
+    showMessage('请先粘贴官方 JSON', 'error')
+    return
+  }
+  dimensionImportPreview.value = null
+  dimensionImportComplete.value = null
+  dimensionImportSkipPage.value = 1
+  dimensionImportBusy.value = true
+  try {
+    const preview = await request(
+      `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/official-json/preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ text: dimensionImportJsonText.value, packageName: dimensionImportPackage.value }),
+        timeoutMs: 60_000,
+      },
+    )
+    dimensionImportPreview.value = preview
+    if (!preview.valid) showMessage(`JSON 预检发现 ${preview.errorCount || 1} 个问题`, 'error')
+  } catch (error) {
+    showMessage(error.message || 'JSON 预检失败', 'error')
+  } finally {
+    dimensionImportBusy.value = false
+  }
+}
+
 async function loadConfigVersions({ silent = false } = {}) {
   configVersionsLoading.value = true
   try {
@@ -2632,13 +2876,27 @@ async function rollbackConfigVersion(version) {
 
 async function confirmDimensionImport() {
   const preview = dimensionImportPreview.value
-  if (!preview?.valid || !preview?.importId || !preview?.created || dimensionImportBusy.value) return
+  if (!preview?.valid || !dimensionImportActionCount.value || dimensionImportBusy.value) return
+  if (dimensionImportMode.value === 'json' ? !preview.previewToken : !preview.importId) return
   dimensionImportBusy.value = true
   try {
-    const result = await request(
-      `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/${encodeURIComponent(preview.importId)}/confirm`,
-      { method: 'POST', timeoutMs: 60_000 },
-    )
+    const result = dimensionImportMode.value === 'json'
+      ? await request(
+        `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/official-json/confirm`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            text: dimensionImportJsonText.value,
+            packageName: preview.packageName,
+            previewToken: preview.previewToken,
+          }),
+          timeoutMs: 60_000,
+        },
+      )
+      : await request(
+        `/api/admin/dimensions/${encodeURIComponent(selectedDimensionFile.value)}/import/${encodeURIComponent(preview.importId)}/confirm`,
+        { method: 'POST', timeoutMs: 60_000 },
+      )
     dimensionImportComplete.value = result
     dimensionPage.value = 1
     await Promise.all([
@@ -4434,6 +4692,51 @@ onBeforeUnmount(() => {
 .config-discard:hover:not(:disabled) { color: var(--ui-danger); }
 .config-discard:disabled { cursor: not-allowed; opacity: 0.35; }
 
+.dimension-consistency-inline {
+  margin: 0 0 15px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-divider);
+  border-left: 3px solid var(--ui-success);
+  border-radius: 8px;
+}
+.dimension-consistency-inline.has-conflicts { border-left-color: var(--ui-accent); }
+.dimension-consistency-summary { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 12px; }
+.dimension-consistency-indicator { flex: 0 0 auto; width: 6px; height: 6px; background: var(--ui-success); border-radius: 50%; }
+.has-conflicts .dimension-consistency-indicator { background: var(--ui-accent); }
+.dimension-consistency-summary > div { min-width: 0; flex: 1; }
+.dimension-consistency-summary strong,
+.dimension-consistency-summary small { display: block; }
+.dimension-consistency-summary strong { color: var(--ui-ink); font-size: 11px; font-weight: 600; }
+.dimension-consistency-summary small { margin-top: 3px; color: var(--ui-text-secondary); font-size: 10px; line-height: 1.5; }
+.dimension-consistency-summary button,
+.dimension-consistency-list article > button {
+  flex: 0 0 auto;
+  padding: 4px 6px;
+  color: var(--ui-text-secondary);
+  font: inherit;
+  font-size: 10px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.dimension-consistency-summary button:hover,
+.dimension-consistency-list article > button:hover { color: var(--ui-accent); }
+.dimension-consistency-summary button:disabled { opacity: .5; cursor: wait; }
+.dimension-consistency-results { border-top: 1px solid var(--ui-divider); }
+.dimension-consistency-results > summary { display: flex; align-items: center; justify-content: space-between; padding: 9px 13px; color: var(--ui-accent); font-size: 10px; font-weight: 600; cursor: pointer; list-style: none; }
+.dimension-consistency-results > summary::-webkit-details-marker { display: none; }
+.dimension-consistency-results[open] > summary span { transform: rotate(180deg); }
+.dimension-consistency-list { max-height: 330px; padding: 0 13px 10px; overflow: auto; }
+.dimension-consistency-list article { padding: 12px 0; border-top: 1px solid var(--ui-divider); }
+.dimension-consistency-conflict-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 10px; }
+.dimension-consistency-conflict-head strong { overflow-wrap: anywhere; color: var(--ui-ink); font-size: 11px; }
+.dimension-consistency-conflict-head small { color: var(--ui-danger); font-size: 10px; }
+.dimension-consistency-list article p { margin: 6px 0 10px; overflow-wrap: anywhere; color: var(--ui-text-secondary); font-size: 10px; }
+.dimension-consistency-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) auto; gap: 8px; padding: 6px 0; border-top: 1px solid var(--ui-divider); color: var(--ui-text-secondary); font-size: 10px; }
+.dimension-consistency-row span { min-width: 0; overflow-wrap: anywhere; }
+.dimension-consistency-row em { color: var(--ui-accent); font-style: normal; }
+.dimension-consistency-list article > button { margin-top: 7px; padding-left: 0; }
+
 .dimension-layout {
   display: grid;
   grid-template-columns: 190px minmax(0, 1fr);
@@ -4972,6 +5275,23 @@ onBeforeUnmount(() => {
 }
 .dimension-import-target p span { width: 6px; height: 6px; flex: 0 0 auto; background: var(--ui-accent); border-radius: 50%; }
 
+.dimension-import-mode { display: inline-flex; gap: 4px; margin-top: 16px; padding: 3px; background: var(--ui-surface); border: 1px solid var(--ui-divider); border-radius: 9px; }
+.dimension-import-mode button { min-height: 31px; padding: 0 12px; color: var(--ui-text-secondary); font: inherit; font-size: 10px; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.dimension-import-mode button.active { color: var(--ui-ink); background: var(--ui-fill); box-shadow: 0 1px 4px rgba(0, 0, 0, .1); font-weight: 600; }
+.dimension-import-json { display: grid; gap: 11px; margin-top: 15px; }
+.dimension-import-json-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.dimension-import-json-head strong,
+.dimension-import-json-head small,
+.dimension-import-json-head label span { display: block; }
+.dimension-import-json-head strong { font-size: 11px; }
+.dimension-import-json-head small { margin-top: 5px; color: var(--ui-text-tertiary); font-size: 9px; }
+.dimension-import-json-head label { flex: 0 0 180px; color: var(--ui-text-secondary); font-size: 9px; }
+.dimension-import-json-head select { width: 100%; height: 31px; margin-top: 5px; padding: 0 8px; color: var(--ui-ink); font: inherit; background: var(--ui-fill); border: 1px solid var(--ui-control-border); border-radius: 7px; }
+.dimension-import-json textarea { width: 100%; min-height: 155px; padding: 12px 13px; box-sizing: border-box; resize: vertical; color: var(--ui-ink); font: 11px/1.6 "SF Mono", "Cascadia Code", ui-monospace, monospace; background: var(--ui-surface); border: 1px solid var(--ui-control-border); border-radius: 10px; outline: none; }
+.dimension-import-json textarea:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px var(--ui-accent-ring); }
+.dimension-import-json-preview { justify-self: end; min-height: 34px; padding: 0 15px; color: #fff; font: inherit; font-size: 10px; background: var(--ui-ink); border: 0; border-radius: 8px; cursor: pointer; }
+.dimension-import-json-preview:disabled { opacity: .4; cursor: not-allowed; }
+
 .dimension-import-schema {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr);
@@ -5089,6 +5409,7 @@ onBeforeUnmount(() => {
   border-radius: 11px;
   overflow: hidden;
 }
+.dimension-import-metrics.is-json { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .dimension-import-metrics article { position: relative; min-height: 76px; padding: 13px 14px; border-left: 1px solid var(--ui-divider); }
 .dimension-import-metrics article:first-child { border-left: 0; }
 .dimension-import-metrics small { display: block; color: var(--ui-text-tertiary); font-size: 9px; }
@@ -5136,6 +5457,14 @@ onBeforeUnmount(() => {
 .dimension-import-impact > span { width: 6px; height: 6px; flex: 0 0 auto; background: var(--ui-success); border-radius: 50%; }
 .dimension-import-impact p { margin: 0; color: var(--ui-text-secondary); font-size: 9px; line-height: 1.6; }
 .dimension-import-impact strong { color: var(--ui-ink); }
+
+.dimension-import-updates { display: grid; gap: 8px; max-height: 180px; margin-top: 14px; overflow-y: auto; }
+.dimension-import-updates > strong { font-size: 11px; }
+.dimension-import-updates > div { padding: 9px 10px; background: var(--ui-surface); border: 1px solid var(--ui-divider); border-radius: 8px; }
+.dimension-import-updates span { color: var(--ui-accent); font: 600 9px/1.4 "SF Mono", ui-monospace, monospace; }
+.dimension-import-updates p { margin: 5px 0 0; overflow-wrap: anywhere; color: var(--ui-text-secondary); font-size: 10px; line-height: 1.5; }
+.dimension-import-updates b { color: var(--ui-accent); }
+.dimension-import-updates small { display: block; margin-top: 4px; color: var(--ui-text-tertiary); font-size: 9px; }
 
 .dimension-import-skipped {
   margin-top: 14px;
@@ -6647,8 +6976,11 @@ onBeforeUnmount(() => {
   .dimension-import-actions { padding-right: 18px; padding-left: 18px; }
   .dimension-import-schema { grid-template-columns: 1fr; gap: 10px; }
   .dimension-import-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dimension-import-metrics.is-json { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dimension-import-metrics article:nth-child(3) { border-top: 1px solid var(--ui-divider); border-left: 0; }
   .dimension-import-metrics article:nth-child(4) { border-top: 1px solid var(--ui-divider); }
+  .dimension-import-metrics.is-json article:nth-child(n + 3) { border-top: 1px solid var(--ui-divider); }
+  .dimension-import-metrics.is-json article:nth-child(odd) { border-left: 0; }
   .dimension-import-skipped-table { overflow-x: auto; }
   .dimension-import-skipped-head,
   .dimension-import-skipped-row { min-width: 690px; }

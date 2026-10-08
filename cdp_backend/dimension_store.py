@@ -8,11 +8,14 @@ source files in place.
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from .constants import (
     BEHAVIOR_DIM_FILE,
+    BRAND_DIM_FILE,
+    CATEGORY_DIM_FILE,
     SCENE_DIM_FILE,
     DIMENSION_FILES,
     DIMENSION_NAME_COLUMNS,
@@ -251,21 +254,22 @@ class DimensionStore:
         ]
 
     def seed_from_csv(self) -> None:
-        """Import existing CSV rows once, without overwriting admin changes."""
+        """Seed fresh dimensions only; the database owns all later edits."""
         with get_db(self.db_path) as conn:
+            has_published_config = conn.execute(
+                "SELECT 1 FROM config_versions LIMIT 1"
+            ).fetchone() is not None
             for filename in DIMENSION_FILES:
+                if has_published_config or conn.execute(
+                    "SELECT 1 FROM dimension_rows WHERE dimension_file = ? LIMIT 1",
+                    (filename,),
+                ).fetchone():
+                    continue
                 path = project_path(filename)
                 try:
                     frame, _ = read_csv_flexible(path)
                 except Exception:
                     continue
-                existing_keys = {
-                    row["natural_key"]
-                    for row in conn.execute(
-                        "SELECT natural_key FROM dimension_rows WHERE dimension_file = ?",
-                        (filename,),
-                    ).fetchall()
-                }
                 now = _utc_now()
                 for _, raw_row in frame.iterrows():
                     data = {
@@ -279,8 +283,6 @@ class DimensionStore:
                     package_name = data.get("适用的包", "")
                     display_name = data[self._name_column(filename)]
                     natural_key = self._natural_key(filename, data)
-                    if natural_key in existing_keys:
-                        continue
                     conn.execute(
                         """INSERT OR IGNORE INTO dimension_rows (
                             id, dimension_file, natural_key, package_name, display_name,
@@ -335,6 +337,81 @@ class DimensionStore:
                     }
                 )
         return result
+
+    def check_mapping_consistency(self) -> dict:
+        """Find non-bijective category and brand mappings across all packages.
+
+        The check uses the effective draft rows shown in the admin editor, so
+        disabled and staged-for-deletion records do not create false alarms.
+        """
+        specs = (
+            (CATEGORY_DIM_FILE, "类目名称", "cateId"),
+            (BRAND_DIM_FILE, "品牌名称", "Value"),
+        )
+        checks = []
+        with get_db(self.db_path) as conn:
+            for filename, name_column, value_column in specs:
+                source_rows = conn.execute(
+                    """SELECT id, package_name, data, has_changes
+                       FROM dimension_rows
+                       WHERE dimension_file = ? AND enabled = 1 AND deleted = 0
+                       AND NOT (is_published = 1 AND published_deleted = 1
+                                AND has_changes = 0)
+                       ORDER BY package_name, display_name, id""",
+                    (filename,),
+                ).fetchall()
+                by_value: dict[str, list[dict]] = {}
+                by_name: dict[str, list[dict]] = {}
+                checked_rows = 0
+                for source in source_rows:
+                    data = self._row_to_data(source)
+                    name = str(data.get(name_column) or "").strip()
+                    value = str(data.get(value_column) or "").strip()
+                    if not name or not value:
+                        continue
+                    checked_rows += 1
+                    row = {
+                        "id": source["id"],
+                        "packageName": source["package_name"],
+                        "name": name,
+                        "value": value,
+                        "hasChanges": bool(source["has_changes"]),
+                    }
+                    by_value.setdefault(value, []).append(row)
+                    by_name.setdefault(name, []).append(row)
+
+                conflicts = []
+                for value, rows in by_value.items():
+                    names = sorted({row["name"] for row in rows})
+                    if len(names) > 1:
+                        conflicts.append({
+                            "type": "value_to_names",
+                            "key": value,
+                            "mappedValues": names,
+                            "rows": rows,
+                        })
+                for name, rows in by_name.items():
+                    values = sorted({row["value"] for row in rows})
+                    if len(values) > 1:
+                        conflicts.append({
+                            "type": "name_to_values",
+                            "key": name,
+                            "mappedValues": values,
+                            "rows": rows,
+                        })
+                conflicts.sort(key=lambda item: (item["type"], item["key"]))
+                checks.append({
+                    "dimensionFile": filename,
+                    "nameColumn": name_column,
+                    "valueColumn": value_column,
+                    "checkedRows": checked_rows,
+                    "conflictCount": len(conflicts),
+                    "conflicts": conflicts,
+                })
+        return {
+            "checks": checks,
+            "totalConflicts": sum(check["conflictCount"] for check in checks),
+        }
 
     def list_rows(
         self,
@@ -735,6 +812,49 @@ class DimensionStore:
             "total": len(normalized_rows),
         }
 
+    @classmethod
+    def _mapping_import_issues(cls, conn, filename: str, rows: list[dict]) -> list[dict]:
+        if filename not in {CATEGORY_DIM_FILE, BRAND_DIM_FILE}:
+            return []
+        name_column = cls._name_column(filename)
+        value_column = "cateId" if filename == CATEGORY_DIM_FILE else "Value"
+        by_name = {}
+        by_value = {}
+        for row in conn.execute(
+            """SELECT package_name, data FROM dimension_rows
+               WHERE dimension_file = ? AND enabled = 1 AND deleted = 0""",
+            (filename,),
+        ).fetchall():
+            data = cls._row_to_data(row)
+            name, value = data.get(name_column, ""), data.get(value_column, "")
+            if name and value:
+                by_name.setdefault(name, set()).add(value)
+                by_value.setdefault(value, set()).add(name)
+        issues = []
+        incoming_names = {}
+        incoming_values = {}
+        for item in rows:
+            data = item["data"]
+            name, value = data.get(name_column, ""), data.get(value_column, "")
+            row_number = item["rowNumber"]
+            if not name or not value:
+                continue
+            if (name in incoming_names and incoming_names[name] != value) or (
+                name in by_name and value not in by_name[name]
+            ):
+                issues.append({"row": row_number, "column": value_column,
+                               "code": "NAME_TO_MULTIPLE_IDS",
+                               "message": f"{name_column}“{name}”对应多个 ID，请先核对"})
+            if (value in incoming_values and incoming_values[value] != name) or (
+                value in by_value and name not in by_value[value]
+            ):
+                issues.append({"row": row_number, "column": name_column,
+                               "code": "ID_TO_MULTIPLE_NAMES",
+                               "message": f"ID {value} 对应多个{name_column}，请先核对"})
+            incoming_names.setdefault(name, value)
+            incoming_values.setdefault(value, name)
+        return issues
+
     def create_import_preview(
         self,
         filename: str,
@@ -749,6 +869,7 @@ class DimensionStore:
         if not isinstance(rows, list) or not rows:
             raise DimensionValidationError("导入数据不能为空")
         normalized_rows = []
+        all_rows = []
         duplicate_rows = []
         seen: dict[str, int] = {}
         for index, item in enumerate(rows, start=2):
@@ -762,6 +883,7 @@ class DimensionStore:
                 "rowNumber": row_number,
                 "data": self._normalize_data(filename, raw_data),
             }
+            all_rows.append(normalized)
             natural_key = self._natural_key(filename, normalized["data"])
             if natural_key in seen:
                 duplicate_rows.append(
@@ -781,6 +903,11 @@ class DimensionStore:
         ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         import_id = ""
         with get_db(self.db_path) as conn:
+            mapping_issues = self._mapping_import_issues(conn, filename, all_rows)
+            if mapping_issues:
+                error = DimensionConflictError("导入数据中的 ID 与名称不唯一")
+                error.issues = mapping_issues
+                raise error
             conn.execute(
                 "UPDATE dimension_import_jobs SET status = 'expired' "
                 "WHERE status = 'pending' AND expires_at <= ?",
@@ -849,6 +976,258 @@ class DimensionStore:
             "existingRows": existing_rows,
             "duplicateRows": duplicate_rows,
         }
+
+    def _plan_official_json_import(self, conn, filename: str, rows: list[dict]) -> dict:
+        if filename not in {CATEGORY_DIM_FILE, BRAND_DIM_FILE}:
+            raise DimensionValidationError("只有品牌和类目维表支持官方 JSON")
+        name_column = self._name_column(filename)
+        value_column = "cateId" if filename == CATEGORY_DIM_FILE else "Value"
+        normalized_rows = [
+            {"rowNumber": int(item["rowNumber"]), "data": self._normalize_data(filename, item["data"])}
+            for item in rows
+        ]
+        package_name = normalized_rows[0]["data"]["适用的包"] if normalized_rows else ""
+        issues = []
+        duplicate_rows = []
+        unique_rows = []
+        seen_pairs = {}
+        seen_names = {}
+        seen_values = {}
+        for item in normalized_rows:
+            data = item["data"]
+            name, value = data[name_column], data[value_column]
+            pair = (name, value)
+            row_number = item["rowNumber"]
+            if pair in seen_pairs:
+                duplicate_rows.append(self._import_row_reference(
+                    filename, item, duplicate_of_row=seen_pairs[pair]
+                ))
+                continue
+            if name in seen_names and seen_names[name][0] != value:
+                issues.append({"row": row_number, "column": value_column,
+                               "code": "NAME_TO_MULTIPLE_IDS",
+                               "message": f"{name_column}“{name}”在本次 JSON 中对应不同 ID（第 {seen_names[name][1]} 行）"})
+            if value in seen_values and seen_values[value][0] != name:
+                issues.append({"row": row_number, "column": name_column,
+                               "code": "ID_TO_MULTIPLE_NAMES",
+                               "message": f"ID {value} 在本次 JSON 中对应不同名称（第 {seen_values[value][1]} 行）"})
+            seen_pairs[pair] = row_number
+            seen_names.setdefault(name, (value, row_number))
+            seen_values.setdefault(value, (name, row_number))
+            unique_rows.append(item)
+
+        existing_rows = conn.execute(
+            "SELECT * FROM dimension_rows WHERE dimension_file = ? ORDER BY id", (filename,)
+        ).fetchall()
+        existing_by_name = {}
+        existing_by_value = {}
+        active_by_name = {}
+        active_by_value = {}
+        for row in existing_rows:
+            data = self._row_to_data(row)
+            existing_by_name.setdefault((row["package_name"], data.get(name_column, "")), []).append(row)
+            existing_by_value.setdefault((row["package_name"], data.get(value_column, "")), []).append(row)
+            if not row["deleted"] and not self._is_published_tombstone(row) and row["enabled"]:
+                active_by_name.setdefault(data.get(name_column, ""), []).append((row, data))
+                active_by_value.setdefault(data.get(value_column, ""), []).append((row, data))
+
+        actions = []
+        existing_refs = []
+        update_rows = []
+        restore_rows = []
+        disabled_rows = []
+        retired_ids = set()
+        for item in unique_rows:
+            data = item["data"]
+            name, value = data[name_column], data[value_column]
+            row_number = item["rowNumber"]
+            name_matches = existing_by_name.get((package_name, name), [])
+            id_matches = [row for row in existing_by_value.get((package_name, value), [])
+                          if not self._is_published_tombstone(row) and not row["deleted"]]
+            if len(name_matches) > 1:
+                issues.append({"row": row_number, "column": value_column,
+                               "code": "AMBIGUOUS_EXISTING_MAPPING",
+                               "message": f"{name} / {value} 在当前包中对应多条记录，无法自动更新"})
+                continue
+            by_name = name_matches[0] if name_matches else None
+            by_id = next((row for row in id_matches
+                          if self._row_to_data(row).get(name_column) == name), None)
+            if by_id is None and id_matches:
+                by_id = id_matches[0]
+            target = by_name or by_id
+            related_rows = {
+                row["id"]: (row, old)
+                for row, old in active_by_name.get(name, []) + active_by_value.get(value, [])
+            }
+            to_retire = []
+            for row, old in related_rows.values():
+                if target is not None and row["id"] == target["id"]:
+                    continue
+                old_name, old_value = old.get(name_column, ""), old.get(value_column, "")
+                if row["package_name"] == package_name:
+                    if old_name in seen_names and old_name != name:
+                        issues.append({"row": row_number, "column": name_column,
+                                       "code": "AMBIGUOUS_EXISTING_MAPPING",
+                                       "message": f"旧记录“{old_name}”也在本次 JSON 中，请先人工核对"})
+                        break
+                    to_retire.append((row, old))
+                    continue
+                if old_value == value and old_name != name:
+                    issues.append({"row": row_number, "column": value_column,
+                                   "code": "ID_TO_MULTIPLE_NAMES",
+                                   "message": f"ID {value} 已对应“{old_name}”（{row['package_name']}），无法再对应“{name}”"})
+                    break
+                if old_name == name and old_value != value:
+                    issues.append({"row": row_number, "column": name_column,
+                                   "code": "NAME_TO_MULTIPLE_IDS",
+                                   "message": f"名称“{name}”已对应 ID {old_value}（{row['package_name']}）"})
+                    break
+            if issues and issues[-1]["row"] == row_number:
+                continue
+            for stale_row, stale_data in to_retire:
+                if stale_row["id"] in retired_ids:
+                    continue
+                retired_ids.add(stale_row["id"])
+                actions.append({"action": "disable", "rowNumber": row_number,
+                                "rowId": stale_row["id"], "before": stale_data,
+                                "beforeUpdatedAt": stale_row["updated_at"]})
+                disabled_rows.append({"row": row_number, "packageName": package_name,
+                                      "name": stale_data.get(name_column, ""),
+                                      "value": stale_data.get(value_column, ""),
+                                      "reason": "与官方名称或 ID 冲突"})
+            if target is None:
+                actions.append({"action": "create", "rowNumber": row_number, "data": data})
+                continue
+            before = self._row_to_data(target)
+            merged = {**before, **data}
+            if (before == merged and target["enabled"] and not target["deleted"]
+                    and not self._is_published_tombstone(target)):
+                existing_refs.append(self._import_row_reference(
+                    filename, item, existing_row_id=target["id"]
+                ))
+                continue
+            mapping_changed = before.get(name_column) != name or before.get(value_column) != value
+            action = "update" if mapping_changed else "restore"
+            actions.append({"action": action, "rowNumber": row_number,
+                            "rowId": target["id"], "data": merged,
+                            "before": before, "beforeUpdatedAt": target["updated_at"],
+                            "beforeEnabled": bool(target["enabled"]),
+                            "beforeDeleted": bool(target["deleted"])})
+            state_changes = []
+            if target["deleted"] or self._is_published_tombstone(target):
+                state_changes.append("恢复已删除记录")
+            if not target["enabled"]:
+                state_changes.append("重新启用停用记录")
+            detail = {"row": row_number, "packageName": package_name,
+                      "beforeName": before.get(name_column, ""), "afterName": name,
+                      "beforeValue": before.get(value_column, ""), "afterValue": value,
+                      "fieldChanges": self._diff_data(before, merged),
+                      "stateChanges": state_changes}
+            (update_rows if mapping_changed else restore_rows).append(detail)
+
+        created = sum(item["action"] == "create" for item in actions)
+        updated = sum(item["action"] == "update" for item in actions)
+        restored = sum(item["action"] == "restore" for item in actions)
+        disabled = sum(item["action"] == "disable" for item in actions)
+        skipped = len(existing_refs) + len(duplicate_rows)
+        token_source = json.dumps({"file": filename, "actions": actions,
+                                   "skipped": skipped, "issues": issues},
+                                  ensure_ascii=False, sort_keys=True)
+        token = hashlib.sha256(token_source.encode("utf-8")).hexdigest()
+        return {
+            "valid": not issues,
+            "issues": issues[:100],
+            "errorCount": len(issues),
+            "created": created,
+            "updated": updated,
+            "restored": restored,
+            "disabled": disabled,
+            "existing": len(existing_refs),
+            "duplicateInFile": len(duplicate_rows),
+            "skipped": skipped,
+            "existingRows": existing_refs,
+            "duplicateRows": duplicate_rows,
+            "updateRows": update_rows,
+            "restoreRows": restore_rows,
+            "disabledRows": disabled_rows,
+            "previewToken": token if not issues else "",
+            "actions": actions,
+        }
+
+    def preview_official_json_import(self, filename: str, rows: list[dict]) -> dict:
+        with get_db(self.db_path) as conn:
+            plan = self._plan_official_json_import(conn, filename, rows)
+        return {key: value for key, value in plan.items() if key != "actions"}
+
+    def confirm_official_json_import(
+        self, filename: str, rows: list[dict], user_id: str,
+        preview_token: str, source_row_count: int,
+    ) -> dict:
+        with get_db(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            plan = self._plan_official_json_import(conn, filename, rows)
+            if not plan["valid"] or plan["previewToken"] != preview_token:
+                raise DimensionImportStateError("维表在预检后发生了变化，请重新核对 JSON")
+            if not plan["created"] and not plan["updated"] and not plan["restored"] and not plan["disabled"]:
+                raise DimensionImportStateError("没有需要导入的记录")
+            now = _utc_now()
+            for item in plan["actions"]:
+                if item["action"] == "disable":
+                    conn.execute(
+                        """UPDATE dimension_rows SET enabled = 0, deleted = 0,
+                           has_changes = 1, updated_by = ?, updated_at = ? WHERE id = ?""",
+                        (user_id, now, item["rowId"]),
+                    )
+                    continue
+                data = item["data"]
+                natural_key = self._natural_key(filename, data)
+                if item["action"] == "create":
+                    conn.execute(
+                        """INSERT INTO dimension_rows (
+                            id, dimension_file, natural_key, package_name, display_name,
+                            data, enabled, published_data, published_enabled,
+                            is_published, has_changes, deleted, created_by, updated_by,
+                            created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 0, 0, 1, 0, ?, ?, ?, ?)""",
+                        (f"dim_{uuid4().hex}", filename, natural_key,
+                         data["适用的包"], data[self._name_column(filename)],
+                         json.dumps(data, ensure_ascii=False), user_id, user_id, now, now),
+                    )
+                else:
+                    current = conn.execute(
+                        "SELECT * FROM dimension_rows WHERE id = ?", (item["rowId"],)
+                    ).fetchone()
+                    published_data = (
+                        self._decode_json_object(current["published_data"])
+                        if current["is_published"] else None
+                    )
+                    has_changes = not (
+                        current["is_published"] and published_data == data
+                        and current["published_enabled"] and not current["published_deleted"]
+                    )
+                    conn.execute(
+                        """UPDATE dimension_rows SET natural_key = ?, package_name = ?,
+                           display_name = ?, data = ?, enabled = 1, deleted = 0,
+                           has_changes = ?, updated_by = ?, updated_at = ? WHERE id = ?""",
+                        (natural_key, data["适用的包"], data[self._name_column(filename)],
+                         json.dumps(data, ensure_ascii=False), int(has_changes),
+                         user_id, now, item["rowId"]),
+                    )
+            result = {"created": plan["created"], "updated": plan["updated"],
+                      "restored": plan["restored"],
+                      "disabled": plan["disabled"],
+                      "skipped": plan["skipped"],
+                      "rowCount": plan["created"] + plan["updated"] + plan["restored"] + plan["disabled"],
+                      "sourceRowCount": source_row_count,
+                      "columnCount": len(REQUIRED_DIMENSION_COLUMNS[filename])}
+            self._record_config_audit(
+                conn, actor_user_id=user_id, action="DIMENSION_ROWS_IMPORTED",
+                dimension_file=filename, created_at=now,
+                details={"summary": "通过官方 JSON 批量导入维表记录", **result,
+                         "sourceName": "官方品牌 JSON" if filename == BRAND_DIM_FILE else "官方类目 JSON",
+                         "replace": False},
+            )
+        return result
 
     def _apply_import_rows(
         self,
@@ -1010,20 +1389,29 @@ class DimensionStore:
                     filename,
                     json.loads(job["rows_json"]),
                 )
-                current_plan = self._plan_import(conn, filename, normalized_rows)
+                if self._mapping_import_issues(conn, filename, normalized_rows):
+                    state_error = "维表映射在预检后发生了变化，请重新核对导入内容"
+                    conn.execute(
+                        "UPDATE dimension_import_jobs SET status = 'expired' WHERE id = ?",
+                        (import_id,),
+                    )
+                    continue_import = False
+                else:
+                    continue_import = True
+                current_plan = self._plan_import(conn, filename, normalized_rows) if continue_import else None
                 expected_plan = {
                     "created": job["created_count"],
                     "updated": 0,
                     "unchanged": 0,
                     "total": job["created_count"],
                 }
-                if current_plan != expected_plan:
+                if continue_import and current_plan != expected_plan:
                     conn.execute(
                         "UPDATE dimension_import_jobs SET status = 'expired' WHERE id = ?",
                         (import_id,),
                     )
                     state_error = "维表在预检后发生了变化，请重新核对导入数量"
-                else:
+                elif continue_import:
                     result = self._apply_import_rows(
                         conn,
                         filename,
@@ -1051,8 +1439,15 @@ class DimensionStore:
         user_id: str,
         replace: bool = False,
     ) -> dict:
+        if replace and filename in {CATEGORY_DIM_FILE, BRAND_DIM_FILE}:
+            raise DimensionValidationError("品牌和类目维表只支持合并导入，不能停用未上传记录")
         normalized_rows = self._normalize_import_rows(filename, rows)
         with get_db(self.db_path) as conn:
+            mapping_issues = self._mapping_import_issues(conn, filename, normalized_rows)
+            if mapping_issues:
+                error = DimensionConflictError("导入数据中的 ID 与名称不唯一")
+                error.issues = mapping_issues
+                raise error
             result = self._apply_import_rows(
                 conn,
                 filename,

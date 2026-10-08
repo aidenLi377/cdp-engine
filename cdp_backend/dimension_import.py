@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 import zipfile
 from datetime import date, datetime, time
 from io import BytesIO
@@ -11,7 +12,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
-from .constants import REQUIRED_DIMENSION_COLUMNS
+from .constants import BRAND_DIM_FILE, CATEGORY_DIM_FILE, REQUIRED_DIMENSION_COLUMNS
 
 MAX_IMPORT_BYTES = 10 * 1024 * 1024
 MAX_IMPORT_ROWS = 20_000
@@ -23,6 +24,82 @@ IDENTIFIER_COLUMNS = {"ID", "Value", "parentId", "BizID", "cateId"}
 
 class DimensionImportFileError(ValueError):
     pass
+
+
+def parse_official_dimension_json(text: str, dimension_file: str, package_name: str) -> dict:
+    """Convert the official brand list or category tree into dimension rows."""
+    if dimension_file not in {BRAND_DIM_FILE, CATEGORY_DIM_FILE}:
+        raise DimensionImportFileError("只有品牌和类目维表支持粘贴官方 JSON")
+    if not isinstance(text, str) or not text.strip():
+        raise DimensionImportFileError("请粘贴官方 JSON")
+    if len(text.encode("utf-8")) > MAX_IMPORT_BYTES:
+        raise DimensionImportFileError("JSON 内容不能超过 10 MB")
+    package_name = str(package_name or "").strip()
+    if not package_name:
+        raise DimensionImportFileError("请选择适用的包")
+    try:
+        payload = json.loads(text, parse_int=str)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise DimensionImportFileError("JSON 格式不正确，请检查后重试") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise DimensionImportFileError("官方 JSON 须包含 data 数组")
+
+    items = payload["data"]
+    if not items:
+        raise DimensionImportFileError("data 数组不能为空")
+    pending = list(reversed(items))
+    rows: list[dict] = []
+    issues: list[dict] = []
+    scanned = 0
+    while pending:
+        item = pending.pop()
+        scanned += 1
+        row_number = scanned
+        if row_number > MAX_IMPORT_ROWS:
+            raise DimensionImportFileError(f"单次最多导入 {MAX_IMPORT_ROWS:,} 条记录")
+        if not isinstance(item, dict):
+            issues.append(_issue(row_number, "整条记录", "INVALID_ROW", "记录必须是对象"))
+            continue
+        if dimension_file == BRAND_DIM_FILE:
+            name = item.get("name")
+            identifier = item.get("id")
+            name_column, value_column = "品牌名称", "Value"
+        else:
+            name = item.get("cateFullName")
+            identifier = item.get("cateId")
+            name_column, value_column = "类目名称", "cateId"
+            children = item.get("children")
+            if children is not None and not isinstance(children, list):
+                issues.append(_issue(row_number, "children", "INVALID_CHILDREN", "children 必须是数组或 null"))
+            elif children:
+                pending.extend(reversed(children))
+
+        name = name.strip() if isinstance(name, str) else ""
+        if dimension_file == CATEGORY_DIM_FILE:
+            name = name.replace("->", ">")
+        if not name or len(name) > MAX_CELL_CHARACTERS:
+            issues.append(_issue(row_number, name_column, "INVALID_NAME", f"{name_column}不能为空且不能超过 {MAX_CELL_CHARACTERS} 字"))
+        if isinstance(identifier, bool) or not isinstance(identifier, (str, int)):
+            value = ""
+        else:
+            value = str(identifier).strip()
+        if not value or not value.isdecimal() or len(value) > MAX_CELL_CHARACTERS:
+            issues.append(_issue(row_number, value_column, "INVALID_ID", f"{value_column}必须是非空数字 ID"))
+        if name and value and value.isdecimal() and len(name) <= MAX_CELL_CHARACTERS and len(value) <= MAX_CELL_CHARACTERS:
+            rows.append({
+                "rowNumber": row_number,
+                "data": {"适用的包": package_name, name_column: name, value_column: value},
+            })
+
+    return {
+        "rows": rows,
+        "rowCount": scanned,
+        "columnCount": 3,
+        "sourceName": "官方品牌 JSON" if dimension_file == BRAND_DIM_FILE else "官方类目 JSON",
+        "issues": issues[:100],
+        "errorCount": len(issues),
+        "valid": not issues and bool(rows),
+    }
 
 
 def _issue(row: int, column: str, code: str, message: str) -> dict:

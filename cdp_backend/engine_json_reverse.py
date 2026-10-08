@@ -5,14 +5,13 @@ from __future__ import annotations
 import copy
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
 
 from .engine import ConfigEngine
 
 
 MAX_ENGINE_JSON_NODES = 50
-MAX_ENGINE_JSON_MESSAGE_LENGTH = 200_000
+MAX_ENGINE_JSON_TEXT_LENGTH = 200_000
 MULTI_VALUE_WIDGETS = {"搜索多选", "复选组", "下拉多选", "动态多选"}
 VALID_RELATION_OPERATORS = {"n", "u", "d"}
 VALID_POOL_OPERATORS = {"n", "u"}
@@ -25,75 +24,47 @@ PRESERVE_FROM_POOL_ID_PACKAGES = {
 MISSING = object()
 
 
-@dataclass(frozen=True)
-class EngineJsonExtraction:
-    detected: bool
-    payload: dict[str, Any] | None = None
-    error: str | None = None
-
-
 class EngineJsonReverseParser:
     """Reverse the exact JSON emitted by :class:`ConfigEngine`."""
 
     def __init__(self, engine: ConfigEngine) -> None:
         self.engine = engine
 
-    def extract(self, message: str) -> EngineJsonExtraction:
-        """Extract an engine payload from plain JSON, prose, or a JSON fence."""
+    def parse_text(self, text: str) -> dict[str, Any]:
+        """Validate pasted engine JSON and return a preview without changing state."""
 
-        text = str(message or "").strip().lstrip("\ufeff")
-        if not text:
-            return EngineJsonExtraction(False)
-
-        fenced = re.findall(
-            r"```(?:json)?\s*([\s\S]*?)```",
-            text,
-            flags=re.IGNORECASE,
-        )
-        candidates = [candidate.strip() for candidate in fenced if candidate.strip()]
-        if text.startswith("{"):
-            candidates.append(text)
-
-        decoder = json.JSONDecoder()
-        for start in (match.start() for match in re.finditer(r"\{", text)):
-            try:
-                value, _ = decoder.raw_decode(text[start:])
-            except json.JSONDecodeError:
-                continue
-            if self._looks_like_engine_json(value):
-                return EngineJsonExtraction(True, value)
-
-        parse_errors: list[str] = []
-        for candidate in candidates:
-            try:
-                value = json.loads(candidate)
-            except json.JSONDecodeError as exc:
-                parse_errors.append(
-                    f"第{exc.lineno}行第{exc.colno}列附近不是有效JSON"
-                )
-                continue
-            if self._looks_like_engine_json(value):
-                return EngineJsonExtraction(True, value)
-
-        mentions_engine_shape = bool(
-            re.search(r'"(?:crowdName|list|compute)"\s*:', text)
-        )
-        if fenced or mentions_engine_shape:
-            return EngineJsonExtraction(
-                True,
-                error=parse_errors[0] if parse_errors else "没有找到完整的数据引擎JSON对象",
+        if not isinstance(text, str) or not text.strip():
+            return self._invalid_result("请粘贴数据引擎JSON")
+        if len(text) > MAX_ENGINE_JSON_TEXT_LENGTH:
+            return self._invalid_result(
+                f"数据引擎JSON不能超过{MAX_ENGINE_JSON_TEXT_LENGTH}个字符"
             )
-        return EngineJsonExtraction(False)
+        source = text.strip().lstrip("\ufeff")
+        fence = re.fullmatch(r"```(?:json)?\s*([\s\S]*?)```", source, re.IGNORECASE)
+        if fence:
+            source = fence.group(1).strip()
+        try:
+            payload = json.loads(source)
+        except json.JSONDecodeError as exc:
+            return self._invalid_result(f"第{exc.lineno}行第{exc.colno}列附近不是有效JSON")
+        return self.parse(payload)
 
     @staticmethod
-    def _looks_like_engine_json(value: Any) -> bool:
-        return (
-            isinstance(value, dict)
-            and isinstance(value.get("list"), list)
-            and "compute" in value
-        )
+    def _invalid_result(message: str) -> dict[str, Any]:
+        return {
+            "success": False,
+            "status": "invalid",
+            "crowdName": "",
+            "nodes": [],
+            "generated": None,
+            "unsupportedNodes": [],
+            "unsupportedParameters": [],
+            "errors": [message],
+        }
 
     def parse(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return self._invalid_result("数据引擎JSON必须是对象")
         crowd_name = str(payload.get("crowdName") or "未命名").strip() or "未命名"
         result: dict[str, Any] = {
             "success": False,
@@ -106,11 +77,10 @@ class EngineJsonReverseParser:
             "errors": [],
         }
 
-        if not isinstance(payload, dict):
-            result["errors"].append("数据引擎JSON必须是对象")
-            return result
-
-        unknown_top = sorted(set(payload) - {"crowdName", "list", "compute"})
+        unknown_top = sorted(
+            key for key in set(payload) - {"crowdName", "list", "compute"}
+            if payload[key] is not None
+        )
         for key in unknown_top:
             result["unsupportedParameters"].append(
                 self._unsupported_parameter(-1, "", key, payload.get(key), "顶层字段未配置")
@@ -139,6 +109,7 @@ class EngineJsonReverseParser:
                     {
                         "nodeIndex": index + 1,
                         "selectionLv1": None,
+                        "selectionLv2": None,
                         "selectionLv2Name": "",
                         "reason": "节点不是JSON对象",
                     }
@@ -146,12 +117,17 @@ class EngineJsonReverseParser:
                 continue
             package_name = self._match_package(item)
             if not package_name:
+                selection_lv2 = item.get("selectionLv2")
+                reason = "当前组件配置中没有匹配的节点类型"
+                if selection_lv2 is not None:
+                    reason += f"；未识别的selectionLv2：{json.dumps(selection_lv2, ensure_ascii=False)}"
                 result["unsupportedNodes"].append(
                     {
                         "nodeIndex": index + 1,
                         "selectionLv1": copy.deepcopy(item.get("selectionLv1")),
+                        "selectionLv2": copy.deepcopy(selection_lv2),
                         "selectionLv2Name": str(item.get("selectionLv2Name") or ""),
-                        "reason": "当前组件配置中没有匹配的节点类型",
+                        "reason": reason,
                     }
                 )
                 continue
@@ -323,12 +299,12 @@ class EngineJsonReverseParser:
                     regenerated["op"] = "INIT"
                 else:
                     regenerated.pop("op", None)
-                expected = {
+                expected = self._without_null_fields({
                     key: value
                     for key, value in item.items()
                     if key not in IGNORABLE_NODE_METADATA_FIELDS
-                }
-                actual = copy.deepcopy(regenerated)
+                })
+                actual = self._without_null_fields(regenerated)
                 # ``op`` is a legacy node-initialization marker, not the
                 # audience relation.  Real exports use both null and INIT;
                 # ``compute`` remains the canonical source for n/u/d.
@@ -336,6 +312,29 @@ class EngineJsonReverseParser:
                     expected.pop("op", None)
                 if actual.get("op") in (None, "INIT"):
                     actual.pop("op", None)
+                # Official exports can omit the level-2 display label for
+                # commodity or advertising nodes. It is safe to accept Xdata's
+                # derived label only when the underlying level-2 code is
+                # present and exactly matches the regenerated code.
+                if (
+                    "selectionLv2Name" not in expected
+                    and "selectionLv2" in expected
+                    and expected["selectionLv2"] == actual.get("selectionLv2")
+                ):
+                    actual.pop("selectionLv2Name", None)
+                # Official category exports sometimes include an empty brand
+                # selection. Xdata omits unselected multi-value filters when
+                # generating JSON; this one empty configured filter is equivalent
+                # to omission, while non-empty brand codes still need exact parity.
+                if package_name == ConfigEngine.CATEGORY_PUBLIC_PACKAGE:
+                    expected_filters = (expected.get("selectionLv3") or {}).get("extraFilters") or {}
+                    actual_filters = (actual.get("selectionLv3") or {}).get("extraFilters") or {}
+                    if (
+                        expected_filters.get("stdBrand") == []
+                        and "stdBrand" not in actual_filters
+                        and form_data.get("stdBrand") == []
+                    ):
+                        expected_filters.pop("stdBrand", None)
                 if expected != actual:
                     for path in self._diff_paths(expected, actual):
                         unsupported.append(
@@ -376,6 +375,7 @@ class EngineJsonReverseParser:
                 "节点顶层字段未配置",
             )
             for key in sorted(set(item) - allowed_top)
+            if item[key] is not None
         ]
 
         selection_lv3 = item.get("selectionLv3")
@@ -407,6 +407,8 @@ class EngineJsonReverseParser:
             allowed_lv3.add("bhv_type")
 
         for key in sorted(set(selection_lv3) - allowed_lv3):
+            if selection_lv3[key] is None:
+                continue
             unsupported.append(
                 self._unsupported_parameter(
                     index,
@@ -429,6 +431,8 @@ class EngineJsonReverseParser:
             )
         elif isinstance(extra_filters, dict):
             for key in sorted(set(extra_filters) - allowed_extra):
+                if extra_filters[key] is None:
+                    continue
                 unsupported.append(
                     self._unsupported_parameter(
                         index,
@@ -915,6 +919,22 @@ class EngineJsonReverseParser:
                 paths.extend(cls._diff_paths(left, right, f"{path}[{index}]"))
             return paths
         return [] if expected == actual else [path or "节点"]
+
+    @classmethod
+    def _without_null_fields(cls, value: Any) -> Any:
+        """Treat null object fields like omitted fields during parity checks.
+
+        Array positions remain intact: a null element can carry business meaning.
+        """
+        if isinstance(value, dict):
+            return {
+                key: cls._without_null_fields(child)
+                for key, child in value.items()
+                if child is not None
+            }
+        if isinstance(value, list):
+            return [cls._without_null_fields(child) for child in value]
+        return copy.deepcopy(value)
 
     @staticmethod
     def _unsupported_parameter(

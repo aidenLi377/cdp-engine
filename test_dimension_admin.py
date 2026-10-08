@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import json
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -64,7 +65,7 @@ class DimensionAdminApiTests(unittest.TestCase):
         store = DimensionStore(self.db_path)
         store.import_rows(filename, [
             {"适用的包": "导出测试包", "类目名称": f"导出测试{i:03}",
-             "cateId": "001234567890123456789", "备注": "=1+1"}
+             "cateId": "001234567890123456789" if i == 0 else f"001234567890123456{i:03}", "备注": "=1+1"}
             for i in range(205)
         ], "export-test")
         response = client.get(f"/api/admin/dimensions/{filename}/export",
@@ -203,6 +204,277 @@ class DimensionAdminApiTests(unittest.TestCase):
         )
         self.assertEqual(confirm.status_code, 403)
 
+    def test_category_and_brand_mapping_consistency_checks_both_directions(self):
+        path = "/api/admin/config/dimension-consistency"
+        self.assertEqual(self.app.test_client().get(path).status_code, 401)
+        self.assertEqual(self.login("normal", "normal-password").get(path).status_code, 403)
+        client = self.login("config", "config-password")
+
+        for filename, name_column, value_column, prefix in (
+            ("类目维表.csv", "类目名称", "cateId", "映射检测类目"),
+            ("品牌维表.csv", "品牌名称", "Value", "映射检测品牌"),
+        ):
+            for package, name, value in (
+                ("映射检测包甲", f"{prefix}甲", f"{prefix}001"),
+                ("映射检测包甲", f"{prefix}乙", f"{prefix}001"),
+                ("映射检测包丙", f"{prefix}甲", f"{prefix}002"),
+            ):
+                response = client.post(
+                    f"/api/admin/dimensions/{filename}",
+                    json={"data": {
+                        "适用的包": package,
+                        name_column: name,
+                        value_column: value,
+                    }},
+                )
+                self.assertEqual(response.status_code, 201)
+
+        response = client.get(path)
+        self.assertEqual(response.status_code, 200)
+        checks = {item["dimensionFile"]: item for item in response.get_json()["checks"]}
+        for filename, prefix in (
+            ("类目维表.csv", "映射检测类目"),
+            ("品牌维表.csv", "映射检测品牌"),
+        ):
+            conflicts = checks[filename]["conflicts"]
+            value_conflict = next(item for item in conflicts if item["type"] == "value_to_names" and item["key"] == f"{prefix}001")
+            name_conflict = next(item for item in conflicts if item["type"] == "name_to_values" and item["key"] == f"{prefix}甲")
+            self.assertEqual(value_conflict["mappedValues"], [f"{prefix}乙", f"{prefix}甲"])
+            self.assertEqual(name_conflict["mappedValues"], [f"{prefix}001", f"{prefix}002"])
+            self.assertEqual({row["packageName"] for row in value_conflict["rows"]}, {"映射检测包甲"})
+
+        brand_value_conflict = next(
+            item for item in checks["品牌维表.csv"]["conflicts"]
+            if item["type"] == "value_to_names" and item["key"] == "映射检测品牌001"
+        )
+        other_brand = next(row for row in brand_value_conflict["rows"] if row["name"] == "映射检测品牌乙")
+        disabled = client.patch(
+            f"/api/admin/dimensions/品牌维表.csv/{other_brand['id']}/status",
+            json={"enabled": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        brand_conflicts = next(
+            item["conflicts"] for item in client.get(path).get_json()["checks"]
+            if item["dimensionFile"] == "品牌维表.csv"
+        )
+        self.assertFalse(any(
+            item["type"] == "value_to_names" and item["key"] == "映射检测品牌001"
+            for item in brand_conflicts
+        ))
+        self.assertTrue(any(
+            item["type"] == "name_to_values" and item["key"] == "映射检测品牌甲"
+            for item in brand_conflicts
+        ))
+
+    def test_official_json_import_previews_updates_and_keeps_exact_deduplication(self):
+        from cdp_backend.dimension_store import DimensionStore
+
+        client = self.login("config", "config-password")
+        package = "类目公域行为"
+        created = client.post(
+            "/api/admin/dimensions/品牌维表.csv",
+            json={"data": {"适用的包": package, "品牌名称": "官方 JSON 旧名", "Value": "990008811"}},
+        )
+        self.assertEqual(created.status_code, 201)
+        duplicate_id = client.post(
+            "/api/admin/dimensions/品牌维表.csv",
+            json={"data": {"适用的包": package, "品牌名称": "官方 JSON 冲突旧名", "Value": "990008811"}},
+        )
+        self.assertEqual(duplicate_id.status_code, 201)
+        brand_json = json.dumps({"data": [
+            {"name": "官方 JSON 新名", "id": "990008811"},
+            {"name": "官方 JSON 新名", "id": "990008811"},
+            {"name": "官方 JSON 新品牌", "id": "990008812"},
+        ]}, ensure_ascii=False)
+        path = "/api/admin/dimensions/品牌维表.csv/import/official-json"
+        preview_response = client.post(path + "/preview", json={"text": brand_json})
+        self.assertEqual(preview_response.status_code, 200)
+        preview = preview_response.get_json()
+        self.assertTrue(preview["valid"])
+        self.assertEqual((preview["created"], preview["updated"], preview["disabled"], preview["duplicateInFile"]), (1, 1, 1, 1))
+        self.assertIn(preview["updateRows"][0]["beforeName"], {"官方 JSON 旧名", "官方 JSON 冲突旧名"})
+        confirmed = client.post(path + "/confirm", json={
+            "text": brand_json, "packageName": preview["packageName"],
+            "previewToken": preview["previewToken"],
+        })
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.get_json()["rowCount"], 3)
+        self.assertEqual(client.post(path + "/confirm", json={
+            "text": brand_json, "packageName": preview["packageName"],
+            "previewToken": preview["previewToken"],
+        }).status_code, 409)
+        rows = client.get("/api/admin/dimensions/品牌维表.csv", query_string={"q": "官方 JSON", "pageSize": 10}).get_json()["rows"]
+        self.assertEqual({row["data"]["品牌名称"] for row in rows if row["enabled"]}, {"官方 JSON 新名", "官方 JSON 新品牌"})
+        self.assertEqual(len([row for row in rows if not row["enabled"]]), 1)
+        self.assertTrue(all(row["hasChanges"] for row in rows))
+        published_names = {row["品牌名称"] for row in DimensionStore(self.db_path).read_dimension_rows("品牌维表.csv")}
+        self.assertNotIn("官方 JSON 新名", published_names)
+
+        category_json = json.dumps({"data": [{
+            "cateFullName": "官方测试->一级", "cateId": 990009901,
+            "children": [{"cateFullName": "官方测试->一级->二级", "cateId": 990009902, "children": None}],
+        }]}, ensure_ascii=False)
+        category_path = "/api/admin/dimensions/类目维表.csv/import/official-json"
+        category_preview = client.post(category_path + "/preview", json={"text": category_json}).get_json()
+        self.assertTrue(category_preview["valid"])
+        self.assertEqual(category_preview["created"], 2)
+        result = client.post(category_path + "/confirm", json={
+            "text": category_json, "packageName": category_preview["packageName"],
+            "previewToken": category_preview["previewToken"],
+        })
+        self.assertEqual(result.status_code, 200)
+        category_rows = client.get("/api/admin/dimensions/类目维表.csv", query_string={"q": "官方测试", "pageSize": 10}).get_json()["rows"]
+        self.assertEqual({row["data"]["类目名称"] for row in category_rows}, {"官方测试>一级", "官方测试>一级>二级"})
+
+    def test_official_json_preview_separates_restored_rows_from_mapping_updates(self):
+        client = self.login("config", "config-password")
+        path = "/api/admin/dimensions/品牌维表.csv"
+        brand = {"适用的包": "类目公域行为", "品牌名称": "预览状态测试品牌", "Value": "990008899"}
+        created = client.post(path, json={"data": brand})
+        self.assertEqual(created.status_code, 201)
+        row_id = created.get_json()["id"]
+        payload = json.dumps({"data": [{"name": brand["品牌名称"], "id": brand["Value"]}]}, ensure_ascii=False)
+        preview_path = path + "/import/official-json/preview"
+
+        identical = client.post(preview_path, json={"text": payload}).get_json()
+        self.assertEqual((identical["created"], identical["updated"], identical["skipped"]), (0, 0, 1))
+
+        disabled = client.patch(path + f"/{row_id}/status", json={"enabled": False})
+        self.assertEqual(disabled.status_code, 200)
+        preview = client.post(preview_path, json={"text": payload}).get_json()
+        self.assertEqual((preview["created"], preview["updated"], preview["restored"], preview["skipped"]), (0, 0, 1, 0))
+        self.assertEqual(preview["updateRows"], [])
+        self.assertEqual(preview["restoreRows"][0]["afterName"], brand["品牌名称"])
+        self.assertEqual(preview["restoreRows"][0]["afterValue"], brand["Value"])
+        self.assertEqual(preview["restoreRows"][0]["fieldChanges"], [])
+        self.assertEqual(preview["restoreRows"][0]["stateChanges"], ["重新启用停用记录"])
+        confirmed = client.post(path + "/import/official-json/confirm", json={
+            "text": payload, "packageName": preview["packageName"],
+            "previewToken": preview["previewToken"],
+        })
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.get_json()["restored"], 1)
+        self.assertEqual(confirmed.get_json()["updated"], 0)
+
+    def test_official_json_preview_identifies_previously_deleted_mapping_as_restore(self):
+        client = self.login("root", "root-password")
+        path = "/api/admin/dimensions/品牌维表.csv"
+        brand = {"适用的包": "类目公域行为", "品牌名称": "曾删除的官方品牌", "Value": "990008898"}
+        created = client.post(path, json={"data": brand})
+        self.assertEqual(created.status_code, 201)
+        row_id = created.get_json()["id"]
+        self.assertEqual(client.post("/api/admin/config/publish", json={"note": "测试发布"}).status_code, 201)
+        self.assertEqual(client.delete(path + f"/{row_id}").status_code, 200)
+        self.assertEqual(client.post("/api/admin/config/publish", json={"note": "测试删除"}).status_code, 201)
+
+        payload = json.dumps({"data": [{"name": brand["品牌名称"], "id": brand["Value"]}]}, ensure_ascii=False)
+        preview = client.post(path + "/import/official-json/preview", json={"text": payload}).get_json()
+        self.assertTrue(preview["valid"])
+        self.assertEqual((preview["created"], preview["updated"], preview["restored"]), (0, 0, 1))
+        self.assertEqual(preview["restoreRows"][0]["stateChanges"], ["恢复已删除记录", "重新启用停用记录"])
+
+    def test_store_json_merge_keeps_unmentioned_category_rows(self):
+        client = self.login("config", "config-password")
+        path = "/api/admin/dimensions/类目维表.csv"
+        package = "店铺局部类目测试包"
+        old_rows = [
+            ("保留类目", "990009931"),
+            ("旧卫生巾名称", "990009932"),
+            ("同 ID 的另一旧名", "990009932"),
+            ("本店 JSON 未包含的其他类目", "990009933"),
+        ]
+        for name, value in old_rows:
+            response = client.post(path, json={"data": {"适用的包": package, "类目名称": name, "cateId": value}})
+            self.assertEqual(response.status_code, 201)
+        other_package = client.post(path, json={"data": {
+            "适用的包": "另一个包", "类目名称": "另一个包的类目", "cateId": "990009934",
+        }})
+        self.assertEqual(other_package.status_code, 201)
+        text = json.dumps({"data": [
+            {"cateFullName": "保留类目", "cateId": "990009931"},
+            {"cateFullName": "新卫生巾名称", "cateId": "990009932"},
+        ]}, ensure_ascii=False)
+        preview_path = path + "/import/official-json/preview"
+        preview = client.post(preview_path, json={"text": text, "packageName": package}).get_json()
+        self.assertTrue(preview["valid"])
+        self.assertEqual((preview["updated"], preview["disabled"], preview["skipped"]), (1, 1, 1))
+        self.assertEqual(preview["disabledRows"][0]["reason"], "与官方名称或 ID 冲突")
+        self.assertEqual(client.post(preview_path, json={
+            "text": text, "packageName": package, "replace": True,
+        }).status_code, 400)
+        self.assertEqual(client.post(path + "/import/official-json/confirm", json={
+            "text": text, "packageName": package, "previewToken": preview["previewToken"],
+            "replace": True,
+        }).status_code, 400)
+
+        confirmed = client.post(path + "/import/official-json/confirm", json={
+            "text": text, "packageName": package, "previewToken": preview["previewToken"],
+        })
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.get_json()["disabled"], 1)
+        selected_rows = client.get(path, query_string={"package": package, "pageSize": 20}).get_json()["rows"]
+        self.assertEqual({row["data"]["类目名称"] for row in selected_rows if row["enabled"]},
+                         {"保留类目", "新卫生巾名称", "本店 JSON 未包含的其他类目"})
+        outside = client.get(path, query_string={"package": "另一个包", "pageSize": 20}).get_json()["rows"]
+        self.assertTrue(any(row["id"] == other_package.get_json()["id"] and row["enabled"] for row in outside))
+        self.assertEqual(client.post("/api/admin/config/publish", json={"note": "店铺局部类目合并"}).status_code, 201)
+        from cdp_backend.dimension_store import DimensionStore
+        published = DimensionStore(self.db_path).read_dimension_rows("类目维表.csv")
+        selected_names = {row["类目名称"] for row in published if row["适用的包"] == package}
+        self.assertEqual(selected_names, {"保留类目", "新卫生巾名称", "本店 JSON 未包含的其他类目"})
+
+    def test_legacy_import_cannot_replace_category_or_brand_rows(self):
+        client = self.login("config", "config-password")
+        for filename, name_column, value_column in (
+            ("类目维表.csv", "类目名称", "cateId"),
+            ("品牌维表.csv", "品牌名称", "Value"),
+        ):
+            with self.subTest(filename=filename):
+                path = f"/api/admin/dimensions/{filename}"
+                existing = {"适用的包": "局部导入保护测试包", name_column: "保留记录", value_column: "990008841"}
+                added = {"适用的包": "局部导入保护测试包", name_column: "新记录", value_column: "990008842"}
+                self.assertEqual(client.post(path, json={"data": existing}).status_code, 201)
+                response = client.post(path + "/import", json={"rows": [added], "replace": True})
+                self.assertEqual(response.status_code, 400)
+                rows = client.get(path, query_string={"package": "局部导入保护测试包", "pageSize": 10}).get_json()["rows"]
+                self.assertEqual(len(rows), 1)
+                self.assertTrue(rows[0]["enabled"])
+                self.assertEqual(rows[0]["data"][name_column], "保留记录")
+
+    def test_json_and_excel_import_reject_nonunique_id_name_mappings(self):
+        client = self.login("config", "config-password")
+        path = "/api/admin/dimensions/品牌维表.csv/import/official-json/preview"
+        self.assertEqual(self.app.test_client().post(path, json={}).status_code, 401)
+        self.assertEqual(self.login("normal", "normal-password").post(path, json={}).status_code, 403)
+        bad_json = json.dumps({"data": [
+            {"name": "重复 ID 品牌甲", "id": "990008821"},
+            {"name": "重复 ID 品牌乙", "id": "990008821"},
+        ]}, ensure_ascii=False)
+        preview = client.post(path, json={"text": bad_json}).get_json()
+        self.assertFalse(preview["valid"])
+        self.assertIn("ID_TO_MULTIPLE_NAMES", {issue["code"] for issue in preview["issues"]})
+
+        duplicate_name_json = json.dumps({"data": [
+            {"name": "重复名称品牌", "id": "990008822"},
+            {"name": "重复名称品牌", "id": "990008823"},
+        ]}, ensure_ascii=False)
+        name_preview = client.post(path, json={"text": duplicate_name_json}).get_json()
+        self.assertFalse(name_preview["valid"])
+        self.assertIn("NAME_TO_MULTIPLE_IDS", {issue["code"] for issue in name_preview["issues"]})
+
+        existing = client.get("/api/admin/dimensions/类目维表.csv", query_string={"pageSize": 1}).get_json()["rows"][0]
+        excel = self.excel_file(
+            ["适用的包", "类目名称", "cateId"],
+            [[existing["data"]["适用的包"], "同 ID 新类目", existing["data"]["cateId"]]],
+        )
+        response = client.post(
+            "/api/admin/dimensions/类目维表.csv/import/preview",
+            data={"file": excel}, content_type="multipart/form-data",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.get_json()["valid"])
+        self.assertIn("ID_TO_MULTIPLE_NAMES", {issue["code"] for issue in response.get_json()["issues"]})
+
     def test_config_admin_can_preview_and_confirm_excel_import(self):
         client = self.login("config", "config-password")
         filename = "类目维表.csv"
@@ -210,7 +482,7 @@ class DimensionAdminApiTests(unittest.TestCase):
             f"/api/admin/dimensions/{filename}",
             query_string={"q": "3C数码配件>USB数码周边", "pageSize": 10},
         ).get_json()["rows"][0]
-        updated_id = f"{existing['data']['cateId']}9"
+        updated_id = existing["data"]["cateId"]
         new_name = "测试类目>Excel批量导入"
         excel = self.excel_file(
             ["适用的包", "类目名称", "cateId"],

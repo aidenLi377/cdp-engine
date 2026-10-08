@@ -3,6 +3,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse } from '@vue/compiler-sfc'
+import { compile } from '@vue/compiler-dom'
+import * as Vue from 'vue'
+import { renderToString } from '@vue/server-renderer'
 
 const currentDir = dirname(fileURLToPath(import.meta.url))
 const adminCenterVue = readFileSync(join(currentDir, 'AdminCenter.vue'), 'utf8')
@@ -16,7 +20,7 @@ test('system management exposes direct functional sections without a task dashbo
   assert.match(adminCenterVue, /id: 'invites'[\s\S]*label: '邀请管理'/)
   assert.match(adminCenterVue, /id: 'plans'[\s\S]*label: '用户方案数据'/)
   assert.match(adminCenterVue, /id: 'tutorial-progress'[\s\S]*label: '教程进度管理'/)
-  assert.match(adminCenterVue, /id: 'config'[\s\S]*label: '维表与配置'/)
+  assert.match(adminCenterVue, /id: 'config'[\s\S]*label: '公共维表与配置'/)
   assert.match(adminCenterVue, /id: 'releases'[\s\S]*label: '配置发布记录'/)
   assert.match(adminCenterVue, /id: 'logs'[\s\S]*label: '操作日志'/)
   assert.match(adminCenterVue, /id: 'feedback'[\s\S]*label: '用户反馈'/)
@@ -28,6 +32,17 @@ test('system management exposes direct functional sections without a task dashbo
   assert.doesNotMatch(dataSafetyVue, /ROOT ONLY|总管理员/)
   assert.doesNotMatch(feedbackAdminVue, /ROOT ONLY|总管理员/)
   assert.doesNotMatch(feedbackDrawerVue, /ROOT ONLY|总管理员|仅 admin/)
+})
+
+test('mapping check appears only inside the selected category or brand table', () => {
+  assert.match(adminCenterVue, /v-if="isMappingDimension"/)
+  assert.match(adminCenterVue, /\['类目维表\.csv', '品牌维表\.csv'\]/)
+  assert.ok(adminCenterVue.indexOf('class="dimension-filters"') < adminCenterVue.indexOf('class="dimension-consistency-inline"'))
+  assert.match(adminCenterVue, /没有异常/)
+  assert.match(adminCenterVue, /\/api\/admin\/config\/dimension-consistency/)
+  assert.match(adminCenterVue, /对应多个名称/)
+  assert.match(adminCenterVue, /对应多个编码/)
+  assert.match(adminCenterVue, /focusConsistencyConflict/)
 })
 
 test('dimension pagination exposes page size, item total, and total pages', () => {
@@ -77,17 +92,88 @@ test('dimension Excel import is permission-gated and requires preview before con
   assert.match(adminCenterVue, /accept="\.xlsx,application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet"/)
   assert.match(adminCenterVue, /\/import\/preview/)
   assert.match(adminCenterVue, /dimensionImportPreview\.rowCount\.toLocaleString\(\)/)
-  assert.match(adminCenterVue, /dimensionImportPreview\.columnCount\.toLocaleString\(\)/)
-  assert.match(adminCenterVue, /可导入新记录/)
+  assert.match(adminCenterVue, /dimensionImportPreview\.columnCount/)
+  assert.match(adminCenterVue, /可新增记录/)
   assert.match(adminCenterVue, /数据库已存在/)
   assert.match(adminCenterVue, /已跳过的记录/)
   assert.match(adminCenterVue, /dimensionImportSkippedRows/)
   assert.match(adminCenterVue, /文件内重复/)
   assert.match(adminCenterVue, /全部自动跳过且不会覆盖原值/)
-  assert.match(adminCenterVue, /!dimensionImportPreview\?\.valid \|\| !dimensionImportPreview\?\.importId \|\| !dimensionImportPreview\?\.created/)
+  assert.match(adminCenterVue, /!dimensionImportPreview\?\.valid \|\| !\(dimensionImportMode === 'json'/)
   assert.match(adminCenterVue, /\/import\/\$\{encodeURIComponent\(preview\.importId\)\}\/confirm/)
-  assert.match(adminCenterVue, /确认导入 \$\{dimensionImportPreview\?\.created \|\| 0\} 条新记录/)
+  assert.match(adminCenterVue, /确认导入 \$\{dimensionImportActionCount\} 条记录/)
   assert.match(adminCenterVue, /导入后进入待发布/)
+})
+
+test('brand and category import separates restored rows from changed mappings', () => {
+  assert.match(adminCenterVue, /粘贴官方 JSON/)
+  assert.match(adminCenterVue, /v-model="dimensionImportJsonText"/)
+  assert.doesNotMatch(adminCenterVue, /v-model="dimensionImportReplace"/)
+  assert.match(adminCenterVue, /未出现在本次 JSON 中的其他记录不变/)
+  assert.match(adminCenterVue, /将停用旧记录/)
+  assert.match(adminCenterVue, /cateFullName \+ cateId/)
+  assert.match(adminCenterVue, /dimensionImportPreview\.updateRows/)
+  assert.match(adminCenterVue, /dimensionImportPreview\.restoreRows/)
+  assert.match(adminCenterVue, /row\.fieldChanges/)
+  assert.match(adminCenterVue, /row\.stateChanges/)
+  assert.match(adminCenterVue, /恢复已有记录/)
+  assert.match(adminCenterVue, /确认：新增/)
+  assert.match(adminCenterVue, /\/import\/official-json\/preview/)
+  assert.match(adminCenterVue, /\/import\/official-json\/confirm/)
+})
+
+test('batch import dialog renders before a preview exists', async () => {
+  const template = parse(adminCenterVue).descriptor.template.content
+  const render = new Function('Vue', compile(template, { mode: 'function' }).code)(Vue)
+  const values = {
+    activeSection: 'render-test', navigationItems: [], dimensions: [], databaseHealthy: false,
+    configStatus: { currentVersion: 0 }, activeNavigationIndex: 1, activeNavigationItem: {},
+    isSystemOwner: false, dimensionImportOpen: true, dimensionImportMode: 'json',
+    selectedDimensionFile: '类目维表.csv', dimensionDisplayName: (file) => file.replace('维表.csv', ''),
+    dimensionImportBusy: false, dimensionImportComplete: null, isMappingDimension: true,
+    dimensionPackages: ['类目公域行为'], dimensionImportJsonText: '', officialJsonPlaceholder: '',
+    dimensionImportPreview: null, dimensionImportActionCount: 0, dimensionImportPackage: '类目公域行为',
+    canImportDimensions: true, dimensionImportExpectedColumns: [], dimensionImportSkippedRows: [],
+  }
+  const context = new Proxy(values, {
+    has(target, key) { return key in target || (!(key in globalThis) && !String(key).startsWith('_')) },
+    get(target, key) { return key in target ? target[key] : undefined },
+  })
+  const app = Vue.createSSRApp({ render() { return render(context, []) } })
+  app.config.warnHandler = () => {}
+  const ssrContext = {}
+  await renderToString(app, ssrContext)
+  assert.match(ssrContext.teleports.body, /批量导入类目维表/)
+  assert.match(ssrContext.teleports.body, /等待粘贴官方 JSON/)
+})
+
+test('new dimension record renders an editor and opens it in view', async () => {
+  assert.match(adminCenterVue, /function openCreateRow\(\)[\s\S]*dimensionEditorOpen\.value = true[\s\S]*scrollIntoView/)
+  const template = parse(adminCenterVue).descriptor.template.content
+  const render = new Function('Vue', compile(template, { mode: 'function' }).code)(Vue)
+  const values = {
+    activeSection: 'config', navigationItems: [], dimensions: [], databaseHealthy: false,
+    configStatus: { currentVersion: 0, pendingChanges: 0 }, activeNavigationIndex: 1,
+    activeNavigationItem: {}, isSystemOwner: false, dimensionImportOpen: false,
+    selectedDimensionFile: '类目维表.csv', dimensionDisplayName: (file) => file.replace('维表.csv', ''),
+    dimensionEditorOpen: true, editingRow: null, dimensionColumns: ['类目名称', 'cateId'],
+    dimensionFormData: {}, dimensionRows: [], dimensionPackages: [], dimensionQuery: '',
+    dimensionPackage: '', dimensionTotal: 0, dimensionPage: 1, dimensionPageSize: 30,
+    dimensionTotalPages: 0, DIMENSION_PAGE_SIZES: [20, 30, 50, 100],
+    dimensionSaving: false, dimensionLoading: false, dimensionExporting: false,
+    applyDimensionFilters: () => {},
+    canImportDimensions: true, canDeleteDimensions: true, isMappingDimension: false,
+    fieldOptionOrderItems: [], configAuditLogs: [], configVersions: [],
+  }
+  const context = new Proxy(values, {
+    has(target, key) { return key in target || (!(key in globalThis) && !String(key).startsWith('_')) },
+    get(target, key) { return key in target ? target[key] : undefined },
+  })
+  const app = Vue.createSSRApp({ render() { return render(context, []) } })
+  app.config.warnHandler = () => {}
+  const html = await renderToString(app)
+  assert.match(html, /新增维表记录/)
+  assert.match(html, /placeholder="类目名称"/)
 })
 
 test('audit deletion is visible only to super admins and uses the guarded API action', () => {

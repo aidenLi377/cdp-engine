@@ -50,9 +50,11 @@ from .dimension_import import (
     MAX_IMPORT_BYTES,
     DimensionImportFileError,
     parse_dimension_workbook,
+    parse_official_dimension_json,
 )
 from .data_safety import collect_data_safety, create_backup
 from .engine import ConfigEngine
+from .engine_json_reverse import EngineJsonReverseParser
 from .feedback_store import (
     FeedbackNotFoundError,
     FeedbackStore,
@@ -311,6 +313,7 @@ def register_routes(
         ai_solution_knowledge,
         ai_system_knowledge,
     )
+    engine_json_reverse_parser = EngineJsonReverseParser(engine)
     ai_batch_naming_service = AiBatchNamingService(ai_model_client)
     config_reload_lock = Lock()
     loaded_config_version = dimension_store.get_published_version()["version"]
@@ -327,6 +330,7 @@ def register_routes(
         "get_ai_intent_schema",
         "compile_ai_intent",
         "chat_with_ai_audience_planner",
+        "preview_engine_json_import",
         "generate_json_alias",
         "generate",
         "batch_generate",
@@ -1329,6 +1333,13 @@ def register_routes(
             return permission_error
         return jsonify(dimension_store.list_dimensions())
 
+    @app.route("/api/admin/config/dimension-consistency")
+    def admin_dimension_consistency():
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        return jsonify(dimension_store.check_mapping_consistency())
+
     @app.route("/api/admin/dimensions/<filename>")
     def admin_list_dimension_rows(filename: str):
         permission_error = require_config_admin()
@@ -1483,6 +1494,61 @@ def register_routes(
         except DimensionValidationError as exc:
             return error_response("INVALID_REQUEST", str(exc), 400)
         return jsonify({**response, **preview, "valid": True})
+
+    @app.route(
+        "/api/admin/dimensions/<filename>/import/official-json/preview",
+        methods=["POST"],
+    )
+    def admin_preview_official_dimension_json(filename: str):
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "请提交官方 JSON", 400)
+        if "replace" in payload and payload["replace"] is not False:
+            return error_response("INVALID_REQUEST", "店铺 JSON 只能合并导入，不能覆盖其他类目", 400)
+        try:
+            packages = dimension_store.list_rows(filename, page_size=1)["packages"]
+            package_name = payload.get("packageName") or (packages[0] if len(packages) == 1 else "")
+            parsed = parse_official_dimension_json(payload.get("text"), filename, package_name)
+            response = {key: value for key, value in parsed.items() if key != "rows"}
+            if not parsed["valid"]:
+                return jsonify(response)
+            preview = dimension_store.preview_official_json_import(filename, parsed["rows"])
+        except (DimensionImportFileError, DimensionValidationError) as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify({**response, **preview, "valid": preview["valid"],
+                        "packageName": package_name})
+
+    @app.route(
+        "/api/admin/dimensions/<filename>/import/official-json/confirm",
+        methods=["POST"],
+    )
+    def admin_confirm_official_dimension_json(filename: str):
+        permission_error = require_config_admin()
+        if permission_error is not None:
+            return permission_error
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return error_response("INVALID_REQUEST", "请提交官方 JSON", 400)
+        if "replace" in payload and payload["replace"] is not False:
+            return error_response("INVALID_REQUEST", "店铺 JSON 只能合并导入，不能覆盖其他类目", 400)
+        try:
+            parsed = parse_official_dimension_json(
+                payload.get("text"), filename, payload.get("packageName")
+            )
+            if not parsed["valid"]:
+                return error_response("INVALID_REQUEST", "JSON 内容包含无效记录，请重新预检", 400)
+            result = dimension_store.confirm_official_json_import(
+                filename, parsed["rows"], g.current_user["id"],
+                str(payload.get("previewToken") or ""), parsed["rowCount"],
+            )
+        except DimensionImportStateError as exc:
+            return error_response("IMPORT_PREVIEW_EXPIRED", str(exc), 409)
+        except (DimensionImportFileError, DimensionValidationError) as exc:
+            return error_response("INVALID_REQUEST", str(exc), 400)
+        return jsonify(result)
 
     @app.route(
         "/api/admin/dimensions/<filename>/import/<import_id>/confirm",
@@ -1887,6 +1953,13 @@ def register_routes(
         except ValueError as exc:
             return error_response("INVALID_REQUEST", str(exc), 400)
         return jsonify({"preferences": saved})
+
+    @app.route("/api/workbench/import-engine-json/preview", methods=["POST"])
+    def preview_engine_json_import():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
+            return error_response("INVALID_REQUEST", "请提交数据引擎JSON文本", 400)
+        return jsonify(engine_json_reverse_parser.parse_text(payload["text"]))
 
     @app.route("/api/ai/chat", methods=["POST"])
     def chat_with_ai_audience_planner():

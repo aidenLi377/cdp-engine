@@ -895,6 +895,9 @@
           </span>
         </div>
         <div class="json-actions">
+          <el-button class="intercom-btn-outlined json-import-button" size="small" @click="openEngineJsonImport">
+            导入 JSON
+          </el-button>
           <button
             class="databank-engine-button"
             type="button"
@@ -982,6 +985,57 @@
       <pre v-else class="json-code display-mono" aria-label="JSON 预览">{{ getPreviewJsonText() }}</pre>
     </div>
   </div>
+
+  <el-dialog
+    v-model="engineJsonImportVisible"
+    width="min(680px, calc(100vw - 32px))"
+    class="intercom-dialog engine-json-import-dialog"
+    :close-on-click-modal="false"
+  >
+    <template #header>
+      <div class="engine-json-import-heading">
+        <span class="engine-json-import-kicker">DATA ENGINE · XDATA</span>
+        <h3>导入数据引擎 JSON</h3>
+        <p>粘贴完整参数，先解析预览；确认导入后会直接覆盖当前工作台。</p>
+      </div>
+    </template>
+
+    <label class="engine-json-import-label" for="engine-json-import-text">数据引擎参数</label>
+    <textarea
+      id="engine-json-import-text"
+      v-model="engineJsonImportText"
+      class="engine-json-import-textarea"
+      rows="10"
+      maxlength="200000"
+      spellcheck="false"
+      placeholder='粘贴包含 crowdName、list 和 compute 的完整 JSON'
+      aria-describedby="engine-json-import-hint"
+    ></textarea>
+    <p id="engine-json-import-hint" class="engine-json-import-hint">解析只做校验，不会修改工作台。</p>
+
+    <div v-if="engineJsonImportResult" class="engine-json-import-result" :class="engineJsonImportResult.success ? 'is-ready' : 'is-blocked'" role="status">
+      <template v-if="engineJsonImportResult.success">
+        <strong>解析成功 · {{ engineJsonImportResult.nodes.length }} 个节点</strong>
+        <span>人群名称：{{ engineJsonImportResult.crowdName }}</span>
+        <span>导入后可继续在工作台调整参数。</span>
+      </template>
+      <template v-else>
+        <strong>{{ engineJsonImportResult.status === 'unsupported' ? '当前配置暂不支持以下内容' : 'JSON 无法解析' }}</strong>
+        <ul v-if="engineJsonImportIssues.length" class="engine-json-import-issues">
+          <li v-for="(issue, index) in engineJsonImportIssues" :key="index">{{ issue }}</li>
+        </ul>
+        <span v-if="engineJsonImportResult.status === 'unsupported'">工作台未改变，请联系管理员补充参数。</span>
+      </template>
+    </div>
+
+    <template #footer>
+      <div class="engine-json-import-footer">
+        <el-button class="intercom-btn-outlined" @click="engineJsonImportVisible = false">取消</el-button>
+        <el-button class="intercom-btn-outlined" :loading="engineJsonImportLoading" :disabled="!engineJsonImportText.trim()" @click="previewEngineJsonImport">解析并预览</el-button>
+        <el-button class="intercom-btn-primary" :disabled="!engineJsonImportResult?.success || engineJsonImportLoading" @click="applyEngineJsonImport">导入并覆盖工作台</el-button>
+      </div>
+    </template>
+  </el-dialog>
 
   <el-dialog
     v-model="parameterBatchDialogVisible"
@@ -2096,6 +2150,10 @@ const historyPos = ref(-1)
 const generatedJson = ref({ crowdName: DEFAULT_CROWD_NAME, list: [], compute: '' })
 const jsonBuildStatus = ref('empty')
 const jsonBuildError = ref('')
+const engineJsonImportVisible = ref(false)
+const engineJsonImportText = ref('')
+const engineJsonImportResult = ref(null)
+const engineJsonImportLoading = ref(false)
 const snapshotPaused = ref(false)
 const databankAutomating = ref(false)
 const highlightedCfId = ref(null)
@@ -4622,24 +4680,104 @@ async function confirmReplaceCanvas(
   }
 }
 
+const engineJsonImportPreviewText = ref('')
+watch(engineJsonImportText, () => {
+  engineJsonImportResult.value = null
+  engineJsonImportPreviewText.value = ''
+})
+
+const engineJsonImportIssues = computed(() => {
+  const result = engineJsonImportResult.value
+  if (!result) return []
+  const nodes = (result.unsupportedNodes || []).map(node => {
+    const signature = JSON.stringify(node.selectionLv1 ?? null)
+    const name = node.selectionLv2Name ? ` / ${node.selectionLv2Name}` : ''
+    return `第${node.nodeIndex}个节点：${signature}${name}（${node.reason}）`
+  })
+  const parameters = (result.unsupportedParameters || []).map(parameter => {
+    const location = parameter.nodeIndex ? `第${parameter.nodeIndex}个节点` : '顶层'
+    return `${location}参数 ${parameter.path}：${parameter.reason}`
+  })
+  return [...nodes, ...parameters, ...(result.errors || [])]
+})
+
+function openEngineJsonImport() {
+  engineJsonImportText.value = ''
+  engineJsonImportResult.value = null
+  engineJsonImportPreviewText.value = ''
+  engineJsonImportVisible.value = true
+}
+
+async function previewEngineJsonImport() {
+  const text = engineJsonImportText.value.trim()
+  if (!text || engineJsonImportLoading.value) return
+  engineJsonImportLoading.value = true
+  engineJsonImportResult.value = null
+  try {
+    const response = await fetchWithTimeout('/api/workbench/import-engine-json/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    const data = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(data?.message || `解析接口返回 ${response.status}`)
+    if (!data || typeof data.success !== 'boolean') throw new Error('解析接口返回了无效结果')
+    if (engineJsonImportText.value.trim() !== text || !engineJsonImportVisible.value) return
+    engineJsonImportPreviewText.value = text
+    engineJsonImportResult.value = data
+  } catch (error) {
+    ElMessage.error(error.message || '解析失败，请稍后重试')
+  } finally {
+    engineJsonImportLoading.value = false
+  }
+}
+
+async function applyEngineJsonImport() {
+  if (sessionRestorePending) {
+    ElMessage.warning('工作台正在恢复，请稍后导入')
+    return
+  }
+  const result = engineJsonImportResult.value
+  if (!result?.success || !Array.isArray(result.nodes) || !result.nodes.length) return
+  if (engineJsonImportPreviewText.value !== engineJsonImportText.value.trim()) return
+
+  snapshotPaused.value = true
+  try {
+    const hydratedNodes = await hydrateNodes(result.nodes)
+    if (hydratedNodes.some(node => node._hydrationError)) {
+      throw new Error('部分节点加载失败，工作台未改变，请联系管理员检查组件配置')
+    }
+    resetWorkbenchContext({ withDefaultPool: false })
+    nodeList.value = hydratedNodes
+    nodeRefs.value = {}
+    activeNodeIndex.value = 0
+    crowdNameInput.value = String(result.crowdName || '').trim()
+    resetHistory()
+    await nextTick()
+    engineJsonImportVisible.value = false
+    ElMessage.success(`已导入 ${hydratedNodes.length} 个节点，可继续修改参数`)
+  } catch (error) {
+    ElMessage.error(error.message || '导入失败，工作台未改变')
+  } finally {
+    snapshotPaused.value = false
+  }
+}
+
 async function applyAiAudiencePlan({
   nodes,
   audienceName,
   workflow,
-  skipReplaceConfirmation = false,
 } = {}) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
     ElMessage.warning('AI方案中没有可应用的工作台节点')
     return
   }
-  if (!skipReplaceConfirmation) {
-    const confirmed = await confirmReplaceCanvas(
-      '当前画布已有内容，应用AI方案会替换现有状态，是否继续？',
-      '应用AI圈包方案',
-      '确认替换',
-    )
-    if (!confirmed) return
-  }
+  const confirmed = await confirmReplaceCanvas(
+    '当前画布已有内容，应用AI方案会替换现有状态，是否继续？',
+    '应用AI圈包方案',
+    '确认替换',
+  )
+  if (!confirmed) return
 
   snapshotPaused.value = true
   try {
@@ -8504,6 +8642,83 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.engine-json-import-heading h3 {
+  margin: 6px 0 4px;
+  color: #20283a;
+  font-size: 21px;
+  letter-spacing: -.02em;
+}
+
+.engine-json-import-heading p,
+.engine-json-import-hint {
+  margin: 0;
+  color: #727b8b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.engine-json-import-kicker {
+  color: #5572a8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+}
+
+.engine-json-import-label {
+  display: block;
+  margin: 0 0 8px;
+  color: #344158;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.engine-json-import-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 210px;
+  padding: 14px 16px;
+  resize: vertical;
+  color: #243047;
+  background: #f8faff;
+  border: 1px solid #dce4f0;
+  border-radius: 10px;
+  font: 12px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  outline: none;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+
+.engine-json-import-textarea:focus {
+  border-color: #6b91d5;
+  box-shadow: 0 0 0 3px rgba(91, 139, 218, .12);
+}
+
+.engine-json-import-hint { margin-top: 7px; }
+
+.engine-json-import-result {
+  display: grid;
+  gap: 7px;
+  max-height: 210px;
+  margin-top: 16px;
+  padding: 13px 15px;
+  overflow: auto;
+  border: 1px solid #cbded1;
+  border-radius: 10px;
+  background: #f3faf5;
+  color: #315940;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.engine-json-import-result.is-blocked {
+  border-color: #f0d3bc;
+  background: #fff8f2;
+  color: #8c4c22;
+}
+
+.engine-json-import-result strong { font-weight: 650; }
+.engine-json-import-issues { margin: 0; padding-left: 19px; overflow-wrap: anywhere; }
+.engine-json-import-footer { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+
 .ai-library-launcher {
   position: relative;
   display: grid;
