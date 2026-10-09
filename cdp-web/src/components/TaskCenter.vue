@@ -7,11 +7,10 @@
     <!-- 左栏：控制台 -->
     <aside class="tc-control-panel">
       <!-- 扩展状态 -->
-      <div class="tc-ext-status" :class="[extensionState, { connected: extConnected }]">
+      <div class="tc-ext-status" :class="[extensionState, { connected: extConnected }]" :title="extensionVersion && extConnected ? `扩展版本 V${extensionVersion}` : undefined">
         <div class="tc-ext-dot"></div>
         <span class="tc-ext-label">{{ extensionStatusLabel }}</span>
         <span class="tc-ext-hint">{{ extensionStatusHint }}</span>
-        <span v-if="extensionVersion && extConnected" class="tc-ext-version">V{{ extensionVersion }}</span>
         <div class="tc-ext-actions">
           <button
             v-if="!extConnected"
@@ -27,44 +26,26 @@
         </div>
       </div>
 
-      <!-- 测试任务（上下排列） -->
-      <div class="tc-section-heading">
-        <span class="tc-section-marker" aria-hidden="true"></span>
-        <span>任务执行</span>
-      </div>
-      <div class="tc-test-row">
-        <div class="tc-test-col">
-          <div class="tc-test-head">
-            <div class="tc-test-label">数据引擎</div>
-            <label class="tc-auto-apply" title="开启后将自动点击最终应用按钮并提交推送">
-              <span>自动应用</span>
-              <el-switch v-model="databankAutoApply" size="small" :disabled="taskRunning !== null" />
-            </label>
-          </div>
-          <div class="tc-test-controls">
-            <el-input v-if="!databankBatchMode" v-model="databankCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ databankBatch.items.length }} 个</span>
-            <TaskBatchPopover
-              v-model="databankBatchDraft"
-              task-label="数据引擎"
-              :run-hint="databankAutoApply ? '自动应用已开启，运行后将逐个提交推送' : '将逐个打开确认页面，批量完成后手动应用'"
-              :disabled="taskRunning !== null"
-              @run="runBatchDraft('databank', $event)"
-            />
-            <el-button v-if="taskRunning !== 'databank'" class="tc-btn-sm" :disabled="!canRunDatabank" @click="runDatabank()">运行</el-button>
-            <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
-          </div>
-        </div>
-        <div class="tc-test-col">
-          <div class="tc-test-head">
-            <div class="tc-test-label">达摩盘</div>
-          </div>
-          <div class="tc-test-controls">
-            <el-input v-if="!dmpBatchMode" ref="dmpCrowdInputRef" v-model="dmpCrowd" placeholder="人群包名称" size="default" class="tc-input-sm" clearable />
-            <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ dmpBatch.items.length }} 个</span>
+      <section class="tc-flow-section tc-target-section" aria-labelledby="tc-target-heading">
+        <span class="tc-step-number" aria-hidden="true">01</span>
+        <div class="tc-step-main">
+          <h2 id="tc-target-heading" class="tc-flow-heading">目标人群</h2>
+          <el-input
+            v-if="!dmpBatchMode"
+            ref="dmpCrowdInputRef"
+            v-model="dmpCrowd"
+            placeholder="输入人群包名称"
+            aria-label="目标人群包名称"
+            class="tc-crowd-input"
+            clearable
+          />
+          <span v-else class="tc-batch-summary" aria-live="polite">已准备 {{ dmpBatch.items.length }} 个人群包</span>
+          <div class="tc-target-actions">
             <TaskBatchPopover
               v-model="dmpBatchDraft"
               task-label="达摩盘"
+              trigger-label="批量取数 ↗"
+              trigger-class="tc-batch-link"
               run-hint="将按照名单顺序逐个采集"
               :disabled="taskRunning !== null"
               :minimum-items="isDmpTutorialActive ? 2 : 1"
@@ -72,99 +53,103 @@
               @open="handleDmpBatchOpen"
               @run="runBatchDraft('dmp', $event)"
             />
-            <el-button v-if="taskRunning !== 'dmp'" class="tc-btn-sm is-dmp" :disabled="!canRunDmp" @click="runDmp()">运行</el-button>
-            <el-button v-else class="tc-btn-sm is-cancel" :loading="cancelling" :disabled="cancelling" @click="cancelTask">{{ cancelling ? '终止中' : '终止' }}</el-button>
           </div>
         </div>
-      </div>
-
-      <div class="tc-dmp-tools">
-        <span class="tc-dmp-tools-label">DMP 设置</span>
-        <el-popover placement="bottom-start" :width="230" trigger="click" popper-class="tc-settings-popper">
-          <template #reference>
-            <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">显示字段</button>
-          </template>
-          <div class="tc-settings-panel">
-            <div class="tc-settings-title">结果显示字段</div>
-            <label v-for="column in DMP_RESULT_COLUMNS" :key="column" class="tc-settings-option">
-              <input
-                type="checkbox"
-                :checked="dmpSettings.columnVisibility[column] !== false"
-                @change="toggleResultColumn(column, $event.target.checked)"
-              />
-              <span>{{ column }}</span>
-            </label>
-          </div>
-        </el-popover>
-        <el-popover placement="bottom-start" :width="280" trigger="click" popper-class="tc-settings-popper">
-          <template #reference>
-            <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">Rebase</button>
-          </template>
-          <div class="tc-settings-panel tc-rebase-panel">
-            <div class="tc-settings-title-row">
-              <span class="tc-settings-title">参与 Rebase 的标签</span>
-              <button type="button" class="tc-settings-all" @click="toggleAllRebase">
-                {{ allRebaseEnabled ? '全部停用' : '全部启用' }}
-              </button>
-            </div>
-            <label v-for="tag in allDmpTags" :key="tag.tagId" class="tc-settings-option">
-              <input
-                type="checkbox"
-                :checked="isRebaseEnabled(tag.tagId)"
-                @change="toggleRebaseTag(tag.tagId, $event.target.checked)"
-              />
-              <span>{{ tag.tagName }}</span>
-              <small>{{ tag.mainCategory }}</small>
-            </label>
-          </div>
-        </el-popover>
-        <span class="tc-settings-state" v-if="dmpSettingsSyncing">同步中…</span>
-      </div>
+      </section>
 
       <!-- 标签选择 -->
-      <section class="tc-tags-card" data-tutorial-target="dmp-feature-tags">
-        <div class="tc-tags-head">
-          <span class="tc-tags-title">特征大盘</span>
-          <span class="tc-tags-count">已选 {{ selectedTags.length }}</span>
-        </div>
-        <div class="tc-tags-search">
-          <input ref="dmpTagSearchRef" v-model="tagSearch" placeholder="搜索标签…" class="tc-tags-search-input" />
-        </div>
-        <div class="tc-tags-body">
-          <template v-for="group in filteredTagGroups" :key="group.mainCategory">
-            <div class="tc-tag-main" v-if="group.categories.some(category => category.tags.length)">
-              <div class="tc-tag-main-header">{{ group.mainCategory }}</div>
-              <div class="tc-tag-main-body">
-                <div
-                  v-for="category in group.categories"
-                  :key="category.category"
-                  v-show="category.tags.length"
-                  class="tc-tag-category"
-                >
-                  <div class="tc-tag-category-name">{{ category.category }}</div>
-                  <div class="tc-tag-options">
-                    <label
-                      v-for="tag in category.tags"
-                      :key="tag.tagId"
-                      class="tc-feature-option"
-                      :data-tutorial-target="isDmpTutorialActive && DMP_TUTORIAL_TAG_IDS.includes(String(tag.tagId)) ? `dmp-tag-${tag.tagId}` : undefined"
-                      :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
-                      :title="tag.annotation || (!isTagSelectable(tag) ? '请先在 DMP 页面配置该标签的下钻条件' : '')"
-                    >
-                      <input class="tc-tag-checkbox" type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
-                      <span class="tc-tag-name">{{ tag.tagName }}</span>
-                      <span class="tc-tag-condition" v-if="tag.needCondition">
-                        {{ isConditionalTagReady(tag, dmpSettings.readyTagIds) ? '已就绪' : '需配置' }}
-                      </span>
-                    </label>
+      <section class="tc-flow-section tc-metrics-section" data-tutorial-target="dmp-feature-tags" aria-labelledby="tc-metrics-heading">
+        <span class="tc-step-number" aria-hidden="true">02</span>
+        <div class="tc-tags-card tc-step-main">
+          <div class="tc-tags-head">
+            <h2 id="tc-metrics-heading" class="tc-flow-heading">画像指标</h2>
+            <span class="tc-tags-count">已选 <b>{{ selectedTags.length }}</b> 项</span>
+          </div>
+          <div class="tc-tags-search">
+            <svg class="tc-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m15.5 15.5 5 5" /></svg>
+            <input ref="dmpTagSearchRef" v-model="tagSearch" placeholder="搜索标签或分类" aria-label="搜索画像指标" class="tc-tags-search-input" />
+          </div>
+          <div class="tc-tags-body">
+            <template v-for="group in filteredTagGroups" :key="group.mainCategory">
+              <div class="tc-tag-main" v-if="group.categories.some(category => category.tags.length)">
+                <div class="tc-tag-main-header">{{ group.mainCategory }}</div>
+                <div class="tc-tag-main-body">
+                  <div
+                    v-for="category in group.categories"
+                    :key="category.category"
+                    v-show="category.tags.length"
+                    class="tc-tag-category"
+                  >
+                    <div class="tc-tag-category-name">{{ category.category }}</div>
+                    <div class="tc-tag-options">
+                      <label
+                        v-for="tag in category.tags"
+                        :key="tag.tagId"
+                        class="tc-feature-option"
+                        :data-tutorial-target="isDmpTutorialActive && DMP_TUTORIAL_TAG_IDS.includes(String(tag.tagId)) ? `dmp-tag-${tag.tagId}` : undefined"
+                        :class="{ checked: selectedTags.includes(tag.tagId), disabled: !isTagSelectable(tag), needCond: tag.needCondition, ready: tag.needCondition && isConditionalTagReady(tag, dmpSettings.readyTagIds) }"
+                        :title="tag.annotation || (!isTagSelectable(tag) ? '请先在 DMP 页面配置该标签的下钻条件' : '')"
+                      >
+                        <input class="tc-tag-checkbox" type="checkbox" :value="tag.tagId" :disabled="!isTagSelectable(tag)" v-model="selectedTags" />
+                        <span class="tc-tag-name">{{ tag.tagName }}</span>
+                        <span class="tc-tag-condition" v-if="tag.needCondition">
+                          {{ isConditionalTagReady(tag, dmpSettings.readyTagIds) ? '已就绪' : '需配置' }}
+                        </span>
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </template>
-          <div class="tc-tags-empty" v-if="!hasFilteredTags">无匹配标签</div>
+            </template>
+            <div class="tc-tags-empty" v-if="!hasFilteredTags">无匹配标签</div>
+          </div>
         </div>
       </section>
+
+      <footer class="tc-control-footer">
+        <div class="tc-dmp-tools">
+          <span class="tc-dmp-tools-label">DMP 设置</span>
+          <span class="tc-settings-state" v-if="dmpSettingsSyncing">同步中…</span>
+          <div class="tc-settings-actions">
+            <el-popover placement="top-start" :width="230" trigger="click" popper-class="tc-settings-popper">
+              <template #reference>
+                <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">显示字段</button>
+              </template>
+              <div class="tc-settings-panel">
+                <div class="tc-settings-title">结果显示字段</div>
+                <label v-for="column in DMP_RESULT_COLUMNS" :key="column" class="tc-settings-option">
+                  <input type="checkbox" :checked="dmpSettings.columnVisibility[column] !== false" @change="toggleResultColumn(column, $event.target.checked)" />
+                  <span>{{ column }}</span>
+                </label>
+              </div>
+            </el-popover>
+            <span class="tc-settings-separator" aria-hidden="true">·</span>
+            <el-popover placement="top-start" :width="280" trigger="click" popper-class="tc-settings-popper">
+              <template #reference>
+                <button type="button" class="tc-settings-btn" :disabled="!extConnected || dmpSettingsSyncing">Rebase</button>
+              </template>
+              <div class="tc-settings-panel tc-rebase-panel">
+                <div class="tc-settings-title-row">
+                  <span class="tc-settings-title">参与 Rebase 的标签</span>
+                  <button type="button" class="tc-settings-all" @click="toggleAllRebase">{{ allRebaseEnabled ? '全部停用' : '全部启用' }}</button>
+                </div>
+                <label v-for="tag in allDmpTags" :key="tag.tagId" class="tc-settings-option">
+                  <input type="checkbox" :checked="isRebaseEnabled(tag.tagId)" @change="toggleRebaseTag(tag.tagId, $event.target.checked)" />
+                  <span>{{ tag.tagName }}</span>
+                  <small>{{ tag.mainCategory }}</small>
+                </label>
+              </div>
+            </el-popover>
+          </div>
+        </div>
+        <button v-if="taskRunning !== 'dmp'" type="button" class="tc-run-button" :disabled="!canRunDmp" @click="runDmp()">
+          <span>运行取数</span><span class="tc-run-arrow" aria-hidden="true">→</span>
+        </button>
+        <button v-else type="button" class="tc-run-button is-cancel" :disabled="cancelling" @click="cancelTask">
+          <span v-if="cancelling" class="tc-run-spinner" aria-hidden="true"></span>
+          <span>{{ cancelling ? '终止中…' : '终止取数' }}</span>
+        </button>
+      </footer>
 
       <div
         class="panel-resize-handle panel-resize-handle--right"
@@ -1664,7 +1649,7 @@ async function runDmp() {
   }
   if (!canRunDmp.value) return { completed: 0, failed: names.length, completedNames: [], failedNames: names }
   if (selectedTags.value.length === 0) {
-    ElMessage.warning('请先在特征大盘中选择至少一个已就绪的标签')
+    ElMessage.warning('请先在画像指标中选择至少一个已就绪的标签')
     return { completed: 0, failed: names.length, completedNames: [], failedNames: names, error: '未选择画像标签' }
   }
   if (!await confirmDmpLoginReady()) {
@@ -2175,125 +2160,129 @@ onBeforeUnmount(() => {
 /* ---- 左栏 ---- */
 .tc-control-panel {
   position: relative;
-  display: flex; flex-direction: column; gap: 0;
-  padding: 18px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 20px;
   background: #fff;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   border-right: 1px solid var(--ui-divider);
   overflow: hidden;
 }
+.tc-control-panel,
+.tc-control-panel :deep(*) { box-sizing: border-box; }
 
 .tc-ext-status {
-  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
-  margin-bottom: 16px; padding: 2px 1px; border: 0; border-radius: 0; font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  min-height: 54px;
+  margin: 0 -20px;
+  padding: 10px 20px;
+  border: 0;
+  border-bottom: 1px solid #e9edf1;
   background: transparent;
-  transition: all 0.35s ease; flex-shrink: 0;
+  font-size: 11px;
+  flex-shrink: 0;
 }
-.tc-ext-status.connected { background: transparent; border-color: transparent; }
-.tc-ext-dot { width: 7px; height: 7px; border-radius: 50%; background: #ff3b30; box-shadow: none; flex-shrink: 0; transition: all 0.3s ease; }
-.tc-ext-status.connected .tc-ext-dot { background: #34c759; box-shadow: none; }
-.tc-ext-label { font-weight: 500; color: #171717; }
-.tc-ext-hint { min-width: 72px; flex: 1 1 auto; color: #ff3b30; }
-.tc-ext-status.connected .tc-ext-hint { color: #6e6e73; }
-.tc-ext-version { color: #86868b; font: 9px/1 "SF Mono", "Cascadia Code", ui-monospace, monospace; }
-.tc-ext-actions { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+.tc-ext-dot { width: 7px; height: 7px; border-radius: 50%; background: #98a1ab; flex-shrink: 0; }
+.tc-ext-status.connected .tc-ext-dot { background: #34c759; }
+.tc-ext-label { font-weight: 600; color: #29333c; }
+.tc-ext-hint { min-width: 72px; flex: 1 1 auto; color: #7a8591; }
+.tc-ext-actions { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
 .tc-ext-actions button {
-  height: 24px; padding: 0 8px; color: #1d1d1f; font: inherit; font-size: 9px;
-  background: #fff; border: 1px solid #d2d2d7; border-radius: 999px; cursor: pointer;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #747f8a;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
-.tc-ext-actions button:hover:not(:disabled) { border-color: #86868b; background: #f5f5f7; }
-.tc-ext-actions button:disabled { cursor: wait; opacity: 0.55; }
-.tc-ext-status.checking .tc-ext-dot { background: #ff9f0a; animation: tc-ext-pulse 850ms ease-in-out infinite alternate; }
-.tc-ext-status.version-mismatch .tc-ext-dot { background: #ff9f0a; }
-
+.tc-ext-actions button:hover:not(:disabled) { color: #222a32; }
+.tc-ext-actions button:disabled { border: 0 !important; cursor: wait; }
+.tc-ext-status.checking .tc-ext-dot { animation: tc-ext-pulse 850ms ease-in-out infinite alternate; }
 @keyframes tc-ext-pulse { to { opacity: 0.35; } }
 
-.tc-section-heading { display: flex; align-items: center; gap: 7px; margin: 0 1px 11px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
-.tc-section-marker { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; flex: 0 0 auto; }
-.tc-test-row { position: relative; display: flex; flex-direction: column; gap: 14px; margin-bottom: 15px; padding: 0 0 18px 9px; flex-shrink: 0; }
-.tc-test-row::after { position: absolute; right: 4%; bottom: 0; left: 9px; height: 1px; background: linear-gradient(90deg, rgba(29,29,31,0.16), rgba(29,29,31,0.04) 72%, transparent); content: ""; }
-.tc-test-col { background: transparent; border: 0; border-radius: 0; padding: 0 1px; }
-.tc-test-col:focus-within { border-color: transparent; }
-.tc-test-head { min-height: 22px; display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
-.tc-test-label { font-size: 10px; font-weight: 600; color: #a1a1a6; letter-spacing: 0.04em; }
-.tc-auto-apply { display: inline-flex; align-items: center; gap: 6px; color: #6e6e73; font-size: 10px; cursor: pointer; }
-.tc-auto-apply :deep(.el-switch) { --el-switch-on-color: #1d1d1f; --el-switch-off-color: #d1d1d6; height: 18px; }
-.tc-test-controls { display: flex; gap: 6px; align-items: center; }
-.tc-input-sm { flex: 1; min-width: 0; }
-.tc-input-sm :deep(.el-input__wrapper) { background: #fff; border: 0; border-radius: 0; box-shadow: none !important; padding: 0 6px; height: 32px; font-size: 12px; }
-.tc-input-sm :deep(.el-input__wrapper:hover) { background: #fff; }
-.tc-input-sm :deep(.el-input__wrapper.is-focus) { background: #fff; border-color: transparent; box-shadow: inset 0 -1px 0 #1d1d1f !important; }
-.tc-input-sm :deep(.el-input__inner) { font-size: 12px; }
-.tc-batch-summary { display: inline-flex; align-items: center; flex: 1; min-width: 0; height: 32px; padding: 0 6px; overflow: hidden; color: #1d1d1f; font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.tc-flow-section { position: relative; display: flex; gap: 13px; }
+.tc-step-number { flex: 0 0 25px; color: #4b5661; font: 650 20px/1 "Bahnschrift", "Cascadia Code", Consolas, monospace; letter-spacing: -0.08em; }
+.tc-step-main { flex: 1; min-width: 0; }
+.tc-flow-heading { margin: 0; color: #222a32; font-size: 17px; font-weight: 680; line-height: 1.2; letter-spacing: -0.02em; }
+.tc-target-section { flex: 0 0 auto; padding: 23px 0 21px; border-bottom: 1px solid #e7ebef; }
+.tc-target-section::after { position: absolute; top: 45px; bottom: 0; left: 12px; width: 1px; background: #dfe4e8; content: ""; }
+.tc-crowd-input { position: relative; margin-top: 10px; }
+.tc-crowd-input::after { position: absolute; right: auto; bottom: 0; left: 0; width: 46px; height: 2px; background: #303842; content: ""; pointer-events: none; transition: width 160ms ease; }
+.tc-crowd-input:focus-within::after { width: 100%; }
+.tc-crowd-input :deep(.el-input__wrapper) { height: 42px; padding: 0 0 8px; border: 0; border-bottom: 1px solid #cbd2d9; border-radius: 0; background: #fff; box-shadow: none; }
+.tc-crowd-input :deep(.el-input__inner) { color: #262d34; font-size: 14px; }
+.tc-crowd-input :deep(.el-input__inner::placeholder) { color: #8f9ba7; }
+.tc-batch-summary { display: flex; align-items: center; min-height: 42px; margin-top: 10px; padding-bottom: 8px; border-bottom: 1px solid #cbd2d9; color: #262d34; font-size: 14px; }
+.tc-target-actions { display: flex; justify-content: flex-end; margin-top: 11px; }
 
-.tc-btn-sm { height: 32px !important; padding: 0 14px !important; border-radius: 8px !important; border: none !important; background: #1d1d1f !important; color: #fff !important; font-size: 12px !important; font-weight: 500 !important; flex-shrink: 0; transition: all 0.22s ease !important; }
-.tc-btn-sm:hover:not(:disabled) { background: #333336 !important; transform: translateY(-1px); }
-.tc-btn-sm.is-dmp {
-  color: #ffffff !important;
-  background: var(--ui-ink) !important;
-  border-color: var(--ui-ink) !important;
-  box-shadow: none !important;
-}
-.tc-btn-sm.is-dmp:hover:not(:disabled) {
-  color: #ffffff !important;
-  background: var(--ui-ink) !important;
-  border-color: var(--ui-ink) !important;
-  box-shadow: none !important;
-}
-.tc-btn-sm:disabled { background: #fff !important; color: var(--ui-text-secondary) !important; border: 0 !important; opacity: 1; box-shadow: none !important; transform: none !important; }
-.tc-btn-sm.is-cancel { background: #ff3b30 !important; }
-.tc-btn-sm.is-cancel:hover { background: #ff544a !important; }
+/* Metrics scroll independently so the run action stays visible. */
+.tc-metrics-section { flex: 1; min-height: 0; padding-top: 21px; overflow: hidden; }
+.tc-tags-card { display: flex; flex-direction: column; min-height: 0; background: transparent; border: 0; border-radius: 0; overflow: hidden; }
+.tc-tags-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 14px; padding: 0; border: 0; background: transparent; flex-shrink: 0; }
+.tc-tags-count { display: inline-flex; align-items: baseline; gap: 4px; color: #7a8692; font-size: 11px; white-space: nowrap; }
+.tc-tags-count b { color: #26303a; font-size: 16px; font-weight: 650; }
+.tc-tags-search { display: flex; align-items: center; gap: 8px; height: 39px; margin-bottom: 16px; padding: 0 10px; border: 1px solid #edf0f3; border-radius: 7px; background: #f5f6f8; flex-shrink: 0; transition: border-color 160ms ease; }
+.tc-tags-search:focus-within { border-color: #7d8995; }
+.tc-search-icon { width: 16px; height: 16px; flex: 0 0 auto; fill: none; stroke: #7d8995; stroke-width: 1.7; stroke-linecap: round; }
+.tc-tags-search-input { width: 100%; min-width: 0; height: 100%; padding: 0; border: 0; border-radius: 0; outline: none; background: transparent; color: #262d34; font: inherit; font-size: 12px; box-shadow: none; }
+.tc-tags-search-input::placeholder { color: #8d98a3; }
+.tc-tags-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 4px 18px 0; scrollbar-width: thin; scrollbar-color: #cbd2d9 transparent; }
+.tc-tag-main { margin-bottom: 18px; }
+.tc-tag-main:last-child { margin-bottom: 0; }
+.tc-tag-main-header { display: flex; align-items: center; gap: 12px; padding: 1px 0 0; color: #28313a; font-size: 13px; font-weight: 650; }
+.tc-tag-main-header::after { flex: 1; height: 1px; background: #e9edf0; content: ""; }
+.tc-tag-category { margin-top: 11px; }
+.tc-tag-category-name { margin-bottom: 3px; color: #87929c; font-size: 11px; font-weight: 630; letter-spacing: 0.03em; }
+.tc-tag-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.tc-feature-option { display: inline-flex; align-items: center; min-width: 0; min-height: 34px; padding: 3px 0; border-radius: 4px; color: #404a54; font-size: 13px; cursor: pointer; transition: color 160ms ease; user-select: none; }
+.tc-feature-option:hover:not(.disabled) { color: #000; }
+.tc-feature-option.checked { color: #202830; }
+.tc-feature-option.disabled { color: #a1a9b1; cursor: not-allowed; }
+.tc-feature-option.needCond:not(.ready) { color: #8c96a0; }
+.tc-feature-option.needCond.ready { color: #202830; }
+.tc-tag-checkbox { appearance: none; width: 15px; height: 15px; margin: 0; border: 1px solid #b6bfc8; border-radius: 4px; background: #fff; cursor: pointer; flex-shrink: 0; }
+.tc-tag-checkbox:checked { border-color: #292f36; background: #292f36 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='white' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/13px 13px no-repeat; }
+.tc-tag-checkbox:focus-visible { outline: 2px solid #4b5661; outline-offset: 2px; }
+.tc-tag-checkbox:disabled { cursor: not-allowed; opacity: 0.5; }
+.tc-tag-name { min-width: 0; margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
+.tc-feature-option.checked .tc-tag-name { font-weight: 600; }
+.tc-tag-condition { margin-left: 4px; color: #87929c; font-size: 9px; white-space: nowrap; }
+.tc-tags-empty { padding: 28px 0; color: #87929c; font-size: 12px; text-align: center; }
 
-.tc-dmp-tools { display: flex; align-items: center; justify-content: flex-start; gap: 6px; margin-bottom: 18px; padding: 0 1px; flex-shrink: 0; }
-.tc-dmp-tools-label { display: inline-flex; align-items: center; gap: 7px; margin-right: 2px; color: #1d1d1f; font-size: 11px; font-weight: 650; letter-spacing: -0.01em; }
-.tc-dmp-tools-label::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
-.tc-settings-btn { min-width: 48px; height: 24px; padding: 0 7px; border: 1px solid #1d1d1f; border-radius: 3px; background: #fff; color: #1d1d1f; font-size: 9px; font-weight: 550; letter-spacing: 0.01em; cursor: pointer; transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease; }
-.tc-settings-btn:hover:not(:disabled) { color: #fff; background: #1d1d1f; transform: translateY(-1px); }
-.tc-settings-btn:active:not(:disabled) { transform: scale(0.96); }
-.tc-settings-btn:disabled { background: #fff; color: #1d1d1f; border-color: #1d1d1f; opacity: 1; box-shadow: none; transform: none; cursor: not-allowed; }
-.tc-settings-state { font-size: 9px; color: #a1a1a6; }
+.tc-control-footer { display: flex; flex-direction: column; gap: 10px; margin: 0 -20px; padding: 12px 20px 14px; border-top: 1px solid #e8ecf0; background: #fff; flex: 0 0 auto; }
+.tc-dmp-tools { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+.tc-dmp-tools-label { color: #737f8a; font-size: 12px; white-space: nowrap; }
+.tc-settings-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.tc-settings-separator { color: #a5adb5; font-size: 12px; }
+.tc-settings-btn { height: 20px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: #47535f; font: inherit; font-size: 12px; cursor: pointer; }
+.tc-settings-btn:hover:not(:disabled) { color: #000; }
+.tc-settings-state { color: #87929c; font-size: 10px; }
+.tc-run-button { position: relative; width: 100%; height: 44px; padding: 0 42px; border: 0; border-radius: 8px; background: #24282d; color: #fff; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; transition: background 160ms ease; }
+.tc-run-button:hover:not(:disabled) { background: #383d44; }
+.tc-run-arrow { position: absolute; top: 9px; right: 10px; display: inline-grid; width: 26px; height: 26px; place-items: center; border: 1px solid #60666c; border-radius: 5px; font-size: 17px; font-weight: 400; }
+.task-center-page .tc-run-button:disabled { background: #f1f3f5 !important; color: #8b949e !important; border: 0 !important; cursor: not-allowed; }
+.tc-run-button:disabled .tc-run-arrow { border-color: #d4dae0; }
+.tc-run-spinner { width: 13px; height: 13px; margin-right: 8px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: tc-run-spin 700ms linear infinite; }
+@keyframes tc-run-spin { to { transform: rotate(360deg); } }
+.tc-ext-actions button:focus-visible,
+.tc-settings-btn:focus-visible,
+.tc-run-button:focus-visible { outline: 2px solid #4b5661; outline-offset: 3px; }
+
 .tc-settings-panel { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow-y: auto; padding: 2px; }
 .tc-settings-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 1; padding-bottom: 5px; background: #fff; }
 .tc-settings-title { padding: 3px 6px 6px; color: #171717; font-size: 11px; font-weight: 600; }
 .tc-settings-all { border: 0; background: transparent; color: var(--ui-accent); font-size: 10px; cursor: pointer; }
 .tc-settings-option { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: 26px; padding: 3px 7px; border-radius: 7px; color: #444; font-size: 11px; cursor: pointer; }
 .tc-settings-option:hover { background: var(--ui-fill); }
-.tc-settings-option input { accent-color: var(--ui-accent); }
+.tc-settings-option input { accent-color: #292f36; }
 .tc-settings-option small { color: #a1a1a6; font-size: 9px; }
 .tc-rebase-panel { max-height: 390px; }
-
-/* 标签 */
-.tc-tags-card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: transparent; border: 0; border-radius: 0; overflow: hidden; }
-.tc-tags-head { display: flex; align-items: center; justify-content: space-between; padding: 0 3px 8px 1px; border: 0; background: transparent; flex-shrink: 0; }
-.tc-tags-title { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; color: #1d1d1f; letter-spacing: -0.01em; }
-.tc-tags-title::before { width: 2px; height: 13px; border-radius: 1px; background: #1d1d1f; content: ""; flex: 0 0 auto; }
-.tc-tags-count { font-family: inherit; font-size: 10px; color: #86868b; font-weight: 500; }
-.tc-tags-search { padding: 0 0 10px; flex-shrink: 0; }
-.tc-tags-search-input { width: 100%; height: 32px; padding: 0 6px; border: 0; border-radius: 0; font-size: 11px; outline: none; background: #fff; color: #1d1d1f; transition: color 0.2s ease, box-shadow 0.18s ease; box-sizing: border-box; }
-.tc-tags-search-input:focus { border-color: transparent; background: #fff; box-shadow: inset 0 -1px 0 #1d1d1f; }
-.tc-tags-search-input::placeholder { color: #c0c0c0; }
-.tc-tags-body { flex: 1; overflow-y: auto; padding: 0 2px 12px; scrollbar-width: thin; scrollbar-color: #c7c7cc transparent; }
-.tc-tag-main { margin-bottom: 18px; }
-.tc-tag-main:last-child { margin-bottom: 0; }
-.tc-tag-main-header { padding: 8px 2px 6px; border: 0; border-radius: 0; background: transparent; color: #1d1d1f; font-size: 12px; font-weight: 650; letter-spacing: -0.01em; }
-.tc-tag-main-header:hover { background: transparent; }
-.tc-tag-main-body { padding-left: 0; }
-.tc-tag-category { margin-top: 10px; }
-.tc-tag-category-name { margin-bottom: 4px; padding: 0 3px; border: 0; color: #86868b; font-size: 10px; font-weight: 550; letter-spacing: 0.03em; }
-.tc-tag-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 6px; font-size: 11px; }
-.tc-feature-option { display: inline-flex; align-items: center; min-width: 0; min-height: 27px; padding: 3px 6px; border-radius: 7px; color: #3a3a3c; cursor: pointer; transition: background 0.18s ease, color 0.18s ease; user-select: none; }
-.tc-feature-option:hover:not(.disabled) { background: transparent; color: #000; }
-.tc-feature-option.checked { background: transparent; color: #000; font-weight: 550; }
-.tc-feature-option.disabled { background: transparent; color: #a1a1a6; cursor: not-allowed; opacity: 1; }
-.tc-feature-option.disabled.needCond:hover { background: transparent; transform: none; }
-.tc-feature-option.needCond:not(.ready) { color: #86868b; }
-.tc-feature-option.needCond.ready { color: #1d1d1f; }
-.tc-tag-checkbox { width: 12px; height: 12px; margin: 0; accent-color: #171717; cursor: pointer; flex-shrink: 0; }
-.tc-tag-checkbox:disabled { cursor: not-allowed; opacity: 0.62; }
-.tc-tag-name { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 450; color: inherit; }
-.tc-tag-condition { margin-left: 4px; white-space: nowrap; color: #86868b; font-size: 8px; font-weight: 500; }
-.tc-tags-empty { text-align: center; padding: 20px 0; color: rgba(0,0,0,0.15); font-size: 12px; }
 
 /* ---- 右栏 ---- */
 .tc-monitor-panel { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: 0; padding: 0 18px 14px; overflow: hidden; background: var(--ui-canvas); }
@@ -2565,10 +2554,21 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1120px) {
-  .task-center-page { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
-  .tc-control-panel { border-right: 0; border-bottom: 0; }
+  .task-center-page { grid-template-columns: 1fr; grid-template-rows: minmax(330px, 45%) minmax(0, 1fr); }
+  .tc-control-panel { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; column-gap: 24px; border-right: 0; border-bottom: 1px solid var(--ui-divider); }
+  .tc-ext-status { grid-column: 1 / -1; }
+  .tc-target-section { padding: 16px 0 0; border-bottom: 0; }
+  .tc-metrics-section { grid-column: 2; grid-row: 2 / 4; padding-top: 16px; }
+  .tc-control-footer { margin: 0; padding: 12px 0 14px; }
   .panel-resize-handle { display: none; }
   .tc-monitor-tabs { padding-right: 10px; }
   .tc-completion-toast { top: 64px; }
+}
+
+@media (max-width: 640px) {
+  .task-center-page { grid-template-rows: minmax(460px, 60%) minmax(0, 1fr); }
+  .tc-control-panel { display: flex; }
+  .tc-target-section { padding: 16px 0; border-bottom: 1px solid #e7ebef; }
+  .tc-control-footer { margin: 0 -20px; padding: 12px 20px 14px; }
 }
 </style>

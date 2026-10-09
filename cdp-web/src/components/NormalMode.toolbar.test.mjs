@@ -11,31 +11,41 @@ const css = readFileSync(join(currentDir, '..', 'styles', 'cdp-global.css'), 'ut
 test('workbench toolbar separates copy, primary action, and secondary actions', () => {
   assert.match(normalModeVue, /class="workbench-toolbar-copy"/)
   assert.match(normalModeVue, /class="workbench-secondary-actions"/)
-  assert.match(normalModeVue, /class="workbench-compact-action"/)
+  assert.match(normalModeVue, /class="workbench-compact-action(?: [^"]*)?"/)
   assert.doesNotMatch(normalModeVue, /workbench-primary-action/)
   assert.doesNotMatch(css, /\.workbench-primary-action/)
   assert.doesNotMatch(normalModeVue, /自由搭建当前画布，并可直接存为方案草稿/)
 })
 
-test('data engine is an icon link before copy and automation owns the former action slot', () => {
-  const engineIndex = normalModeVue.indexOf('class="databank-engine-button"')
+test('output toolbar uses accessible import and copy icons before the automation action', () => {
+  const importIndex = normalModeVue.indexOf('aria-label="导入 JSON"')
   const copyIndex = normalModeVue.indexOf('@click="copyJson"')
   const automationIndex = normalModeVue.indexOf('@click="handleAutomationButtonClick"')
 
-  assert.ok(engineIndex >= 0)
-  assert.ok(engineIndex < copyIndex)
+  assert.ok(importIndex >= 0)
+  assert.ok(importIndex < copyIndex)
   assert.ok(copyIndex < automationIndex)
-  assert.match(normalModeVue, /aria-label="打开数据引擎"/)
+  assert.match(normalModeVue, /:aria-label="batchMode \? '复制参数' : '复制 JSON'"/)
   assert.match(normalModeVue, /自动化圈人/)
-  assert.doesNotMatch(normalModeVue, /class="go-databank-dropdown"/)
-  assert.match(css, /\.databank-engine-button \{[^}]*width: 32px;[^}]*height: 32px;/s)
+  assert.doesNotMatch(normalModeVue, /goToDataBank|DATABANK_URL|databank-engine-button/)
+  assert.match(css, /\.json-action-icon \{[^}]*width: 31px;[^}]*height: 31px;/s)
+  assert.doesNotMatch(css, /\.databank-engine-button/)
+})
+
+test('crowd name and output controls share the selected P typography', () => {
+  assert.match(normalModeVue, /class="panel-name-area workbench-crowd-name"/)
+  assert.match(normalModeVue, /placeholder="为人群包命名"/)
+  assert.match(normalModeVue, /class="crowd-name-edit-icon"/)
+  assert.match(css, /\.workbench-crowd-name \.name-label-inline \{[^}]*font-size: 13px;/s)
+  assert.match(css, /\.crowd-name-input \.el-input__inner \{[^}]*font-size: 15px !important;/s)
+  assert.match(css, /\.json-toolbar \.json-tab \{[^}]*font-size: 13px !important;/s)
 })
 
 test('save draft is a compact secondary toolbar action', () => {
   assert.match(normalModeVue, /class="workbench-compact-action save-draft"/)
   assert.match(normalModeVue, />\s*存草稿\s*</)
   assert.doesNotMatch(normalModeVue, /class="intercom-btn-primary[^"]*"[^>]*@click="saveWorkbenchDraft"/s)
-  assert.match(css, /\.workbench-compact-action\.save-draft\.el-button \{[^}]*color: #5f6368 !important;/s)
+  assert.match(css, /\.workbench-compact-action\.save-draft\.el-button \{[^}]*color: #343a43 !important;/s)
 })
 
 test('workbench toolbar stays on one line without widening the canvas', () => {
@@ -88,5 +98,5 @@ test('solution-use toolbar uses icon actions for restore and save-as-new', () =>
   assert.match(normalModeVue, /class="workbench-toolbar-icon-btn"/)
   assert.match(normalModeVue, /content="恢复方案默认值"/)
   assert.match(normalModeVue, /content="另存为新方案"/)
-  assert.match(css, /\.workbench-toolbar-icon-btn\.el-button \{[^}]*width: 28px !important;[^}]*height: 28px !important;/s)
+  assert.match(css, /\.workbench-secondary-actions \.workbench-toolbar-icon-btn\.el-button \{[^}]*height: 30px !important;/s)
 })

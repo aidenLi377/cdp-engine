@@ -65,11 +65,13 @@ test('DataBank flow supports explicit auto apply while preserving manual confirm
   assert.match(source, /已自动点击“应用”，推送已提交至达摩盘/)
 })
 
-test('task center keeps single run actions and adds batch paste entry points', () => {
-  assert.match(source, /@click="runDatabank\(\)">运行<\/el-button>/)
-  assert.match(source, /@click="runDmp\(\)">运行<\/el-button>/)
+test('DMP sidebar retains single and batch extraction after removing the DataBank entry', () => {
+  const template = source.slice(0, source.indexOf('<script setup>'))
+  assert.match(template, /@click="runDmp\(\)"/)
+  assert.match(template, /:disabled="!canRunDmp"/)
+  assert.match(template, /@click="cancelTask"/)
+  assert.doesNotMatch(template, /runDatabank|task-label="数据引擎"|任务执行/)
   assert.match(source, /<TaskBatchPopover/)
-  assert.match(source, /@run="runBatchDraft\('databank', \$event\)"/)
   assert.match(source, /@run="runBatchDraft\('dmp', \$event\)"/)
   assert.match(source, /parseCrowdBatch/)
   assert.doesNotMatch(source, /目前检测到 \$\{count\} 个人群包，是否批量执行/)
@@ -115,7 +117,7 @@ test('run buttons use task-specific prerequisites and explain missing DMP tags o
   assert.doesNotMatch(databankRule, /selectedTags/)
   assert.doesNotMatch(dmpRule, /selectedTags/)
   assert.match(runDmp, /selectedTags\.value\.length === 0/)
-  assert.match(runDmp, /请先在特征大盘中选择至少一个已就绪的标签/)
+  assert.match(runDmp, /请先在画像指标中选择至少一个已就绪的标签/)
   assert.match(source, /async function confirmDmpLoginReady\(\)/)
   assert.match(source, /请确认已经登录达摩盘/)
   assert.match(source, /confirmButtonText: '已登录，开始取数'/)
@@ -162,9 +164,7 @@ test('task termination waits for extension acknowledgement and isolates stale ru
   assert.doesNotMatch(source, /crowdName: '__CANCEL__'/)
 })
 
-test('DataBank and DMP launch groups stay compact while batch editing moves to a temporary popover', () => {
-  assert.match(source, /\.tc-test-col\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/s)
-  assert.match(source, /\.tc-input-sm :deep\(\.el-input__wrapper\)\s*\{[^}]*background:\s*#fff;[^}]*border:\s*0;/s)
+test('batch editing remains in a temporary popover', () => {
   assert.doesNotMatch(source, /class="tc-batch-panel"|class="tc-batch-textarea"|class="tc-batch-chips"/)
   assert.match(batchPopoverSource, /placement="right-start"/)
   assert.match(batchPopoverSource, /popper-class="tc-batch-popover-shell"/)
@@ -173,8 +173,6 @@ test('DataBank and DMP launch groups stay compact while batch editing moves to a
   assert.match(batchPopoverSource, /每行一个，也支持逗号和 Tab/)
   assert.match(batchPopoverSource, /`运行 \$\{draftBatch\.items\.length\} 个`/)
   assert.doesNotMatch(batchPopoverSource, /tc-batch-chip|v-for="name/)
-  assert.match(globalStyles, /#app \.tc-test-col,[\s\S]*?#app \.tc-tags-card\s*\{[^}]*background:\s*#ffffff\s*!important;[^}]*border:\s*0\s*!important;/)
-  assert.match(globalStyles, /#app \.tc-input-sm \.el-input__wrapper,[\s\S]*?#app \.tc-tags-search-input:focus\s*\{[^}]*background:\s*#ffffff\s*!important;[^}]*border:\s*0\s*!important;/)
 })
 
 test('batch popover keeps persistent drafts and starts a batch in one action', () => {
@@ -193,33 +191,6 @@ test('batch popover keeps persistent drafts and starts a batch in one action', (
   assert.match(batchPopoverSource, /emit\('run', props\.modelValue\.trim\(\)\)/)
   assert.doesNotMatch(batchPopoverSource, /确认名单|切换为单个/)
   assert.match(batchPopoverSource, /自动应用|runHint/)
-})
-
-test('task center uses compact section markers and focus-only input underlines', () => {
-  assert.match(source, /class="tc-section-heading"[\s\S]*?class="tc-section-marker"[\s\S]*?任务执行/)
-  assert.match(source, /\.tc-control-panel\s*\{[^}]*border-right:\s*1px solid var\(--ui-divider\);/s)
-  assert.match(source, /\.tc-section-marker\s*\{[^}]*width:\s*2px;[^}]*height:\s*13px;[^}]*background:\s*#1d1d1f;/s)
-  assert.match(source, /\.tc-dmp-tools-label::before\s*\{[^}]*height:\s*13px;[^}]*background:\s*#1d1d1f;/s)
-  assert.match(source, /\.tc-tags-title::before\s*\{[^}]*height:\s*13px;[^}]*background:\s*#1d1d1f;/s)
-  assert.match(source, /\.tc-ext-status\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/s)
-  assert.match(source, /\.tc-input-sm :deep\(\.el-input__wrapper\.is-focus\)\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f !important;/s)
-  assert.match(source, /\.tc-tags-search-input:focus\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f;/s)
-  assert.match(globalStyles, /#app \.tc-control-panel\s*\{[^}]*border-right:\s*1px solid var\(--ui-divider\) !important;/s)
-  assert.match(globalStyles, /#app \.tc-input-sm \.el-input__wrapper\.is-focus,[\s\S]*?#app \.tc-tags-search-input:focus\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 #1d1d1f !important;/s)
-})
-
-test('task execution and left-aligned DMP settings are separated by a quiet fading hairline', () => {
-  assert.match(source, /\.tc-test-row\s*\{[^}]*position:\s*relative;[^}]*padding:\s*0 0 18px 9px;/s)
-  assert.match(source, /\.tc-test-row::after\s*\{[^}]*height:\s*1px;[^}]*linear-gradient\(90deg, rgba\(29,29,31,0\.16\), rgba\(29,29,31,0\.04\) 72%, transparent\)/s)
-  assert.match(source, /\.tc-dmp-tools\s*\{[^}]*justify-content:\s*flex-start;[^}]*padding:\s*0 1px;/s)
-  assert.match(source, /\.tc-dmp-tools-label\s*\{[^}]*margin-right:\s*2px;/s)
-})
-
-test('DMP settings use small rectangular black and white buttons', () => {
-  assert.match(source, /\.tc-settings-btn\s*\{[^}]*min-width:\s*48px;[^}]*height:\s*24px;[^}]*border:\s*1px solid #1d1d1f;[^}]*border-radius:\s*3px;/s)
-  assert.match(source, /\.tc-settings-btn:hover:not\(:disabled\)\s*\{[^}]*color:\s*#fff;[^}]*background:\s*#1d1d1f;/s)
-  assert.match(globalStyles, /#app \.tc-settings-btn\s*\{[^}]*height:\s*24px !important;[^}]*border:\s*1px solid #1d1d1f !important;[^}]*border-radius:\s*3px !important;/s)
-  assert.match(globalStyles, /#app \.tc-settings-btn:hover:not\(:disabled\)\s*\{[^}]*color:\s*#ffffff !important;[^}]*background:\s*#1d1d1f !important;/s)
 })
 
 test('task center centers every native and Element Plus button and keeps disabled surfaces white', () => {
@@ -306,21 +277,6 @@ test('task history removes the large outer frame but keeps item boundaries', () 
   assert.match(source, /\.tc-history-card\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;[^}]*border-radius:\s*0;/s)
   assert.match(source, /\.tc-history-item\s*\{[^}]*border:\s*1px solid/s)
   assert.match(globalStyles, /#app \.tc-history-card,[\s\S]*?#app \.tc-history-card\.expanded\s*\{[^}]*background:\s*transparent !important;[^}]*border:\s*0 !important;[^}]*border-radius:\s*0 !important;/s)
-})
-
-test('feature panel uses borderless black and white hierarchy', () => {
-  assert.match(
-    source,
-    /\.tc-tags-card\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/s,
-  )
-  assert.match(
-    source,
-    /\.tc-tag-main-header\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
-  )
-  assert.match(
-    source,
-    /\.tc-tag-checkbox\s*\{[^}]*accent-color:\s*#171717;/s,
-  )
 })
 
 test('completed DMP feedback is a dismissible four-second status toast', () => {

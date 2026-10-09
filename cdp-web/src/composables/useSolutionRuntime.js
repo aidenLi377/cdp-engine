@@ -315,6 +315,7 @@ export function useSolutionRuntime() {
       logicMatrix: meta.matrix,
       formData,
       modeData: { ...defaults.modeData, ...(cloneValue(node?.modeData) || {}) },
+      ...(node?.engineJsonImport ? { engineJsonImport: cloneValue(node.engineJsonImport) } : {}),
       selectedFirstDate: null,
       collapsed: false,
     }

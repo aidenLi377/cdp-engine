@@ -303,12 +303,18 @@
             </el-tooltip>
             <el-button
               v-if="nodeList.length > 0 && !batchMode"
-              class="workbench-compact-action"
+              class="workbench-compact-action icon-only collapse-all"
               size="small"
               text
+              :aria-label="allCollapsed ? '展开全部' : '收起全部'"
+              :title="allCollapsed ? '展开全部' : '收起全部'"
+              :aria-expanded="!allCollapsed"
               @click="toggleCollapseAll"
             >
-              {{ allCollapsed ? '展开全部' : '收起全部' }}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="allCollapsed ? 'm7 8 5-5 5 5M7 16l5 5 5-5' : 'm7 3 5 5 5-5M7 21l5-5 5 5'" />
+                <path d="M5 12h14" />
+              </svg>
             </el-button>
             <el-button
               v-if="nodeList.length > 0 && !batchMode"
@@ -334,12 +340,18 @@
             </el-button>
             <el-button
               v-if="nodeList.length > 0"
-              class="workbench-compact-action"
+              class="workbench-compact-action icon-only collapse-all"
               size="small"
               text
+              :aria-label="allCollapsed ? '展开全部' : '收起全部'"
+              :title="allCollapsed ? '展开全部' : '收起全部'"
+              :aria-expanded="!allCollapsed"
               @click="toggleCollapseAll"
             >
-              {{ allCollapsed ? '展开全部' : '收起全部' }}
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="allCollapsed ? 'm7 8 5-5 5 5M7 16l5 5 5-5' : 'm7 3 5 5 5-5M7 21l5-5 5 5'" />
+                <path d="M5 12h14" />
+              </svg>
             </el-button>
             <el-button
               v-if="nodeList.length > 0"
@@ -352,8 +364,16 @@
             </el-button>
           </template>
 
-          <el-button class="workbench-compact-action icon-only" :disabled="!canUndo" @click="undo" size="small" text title="撤销 Ctrl+Z">↶</el-button>
-          <el-button class="workbench-compact-action icon-only" :disabled="!canRedo" @click="redo" size="small" text title="重做 Ctrl+Shift+Z">↷</el-button>
+          <el-button class="workbench-compact-action icon-only" :disabled="!canUndo" @click="undo" size="small" text title="撤销 Ctrl+Z" aria-label="撤销">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 5-5 5 5 5M4 10h9a6 6 0 0 1 6 6v3" />
+            </svg>
+          </el-button>
+          <el-button class="workbench-compact-action icon-only" :disabled="!canRedo" @click="redo" size="small" text title="重做 Ctrl+Shift+Z" aria-label="重做">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 5 5 5-5 5M20 10h-9a6 6 0 0 0-6 6v3" />
+            </svg>
+          </el-button>
         </div>
       </div>
     </div>
@@ -583,8 +603,10 @@
                       v-if="!batchMode && !(pool.entries.length === 0 && operationPools.length === 1)"
                       type="button"
                       class="operation-pool-delete"
+                      aria-label="删除运算池"
+                      title="删除运算池"
                       @click="removePool(pool)"
-                    >删除运算池</button>
+                    ><el-icon><Delete /></el-icon></button>
                   </div>
                 </header>
 
@@ -619,7 +641,7 @@
 	                    <div v-if="!batchMode" class="behavior-card-action-group">
                         <button v-if="pool.entries.length > 1" type="button" class="operation-node-detach" @click.stop="detachNodeFromPool(entry.index)">移出池</button>
 	                      <el-tooltip content="复制节点" placement="top">
-	                        <el-button class="behavior-card-icon-btn" @click.stop="duplicateNode(entry.index)"><el-icon><CopyDocument /></el-icon></el-button>
+                        <el-button class="behavior-card-icon-btn" aria-label="复制节点" @click.stop="duplicateNode(entry.index)"><el-icon><CopyDocument /></el-icon></el-button>
 	                      </el-tooltip>
 	                      <el-tooltip content="移除节点" placement="top">
 	                        <el-button class="behavior-card-icon-btn danger" aria-label="移除节点" @click.stop="removeNode(entry.index)"><el-icon><Delete /></el-icon></el-button>
@@ -748,8 +770,10 @@
                     v-if="!(pool.entries.length === 0 && operationPools.length === 1)"
                     type="button"
                     class="operation-pool-delete"
+                    aria-label="删除运算池"
+                    title="删除运算池"
                     @click="removePool(pool)"
-                  >删除运算池</button>
+                  ><el-icon><Delete /></el-icon></button>
                 </div>
               </header>
 
@@ -787,7 +811,7 @@
 	                  <div class="behavior-card-action-group">
                       <button v-if="pool.entries.length > 1" type="button" class="operation-node-detach" @click.stop="detachNodeFromPool(entry.index)">移出池</button>
 	                    <el-tooltip content="复制节点" placement="top">
-	                      <el-button class="behavior-card-icon-btn" :data-tutorial-target="entry.index === 0 ? 'duplicate-solution-node-0' : undefined" @click.stop="duplicateNode(entry.index)">
+	                      <el-button class="behavior-card-icon-btn" aria-label="复制节点" :data-tutorial-target="entry.index === 0 ? 'duplicate-solution-node-0' : undefined" @click.stop="duplicateNode(entry.index)">
 	                        <el-icon><CopyDocument /></el-icon>
 	                      </el-button>
 	                    </el-tooltip>
@@ -854,24 +878,28 @@
       @keydown="onWorkbenchRightResizeKeydown"
     ></div>
 
-    <div class="panel-name-area">
+    <div class="panel-name-area workbench-crowd-name">
       <div class="workbench-name-top">
-        <div class="display-body-light name-label-inline">人群包名称</div>
+        <label class="name-label-inline" for="workbench-crowd-name-input">人群包名称</label>
       </div>
 
-      <div style="display:flex;align-items:center;gap:6px">
-        <el-input
-          v-model="crowdNameInput"
-          data-tutorial-target="audience-name"
-          placeholder="手动输入人群包名称"
-          size="default"
-          clearable
-          class="intercom-input"
-          style="flex:1"
-          :disabled="batchMode"
-          @input="onNameManualEdit"
-        />
-      </div>
+      <el-input
+        id="workbench-crowd-name-input"
+        v-model="crowdNameInput"
+        data-tutorial-target="audience-name"
+        placeholder="为人群包命名"
+        size="default"
+        clearable
+        class="intercom-input crowd-name-input"
+        :disabled="batchMode"
+        @input="onNameManualEdit"
+      >
+        <template #suffix>
+          <svg v-if="!batchMode" class="crowd-name-edit-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m5 16 10-10 3 3-10 10-4 1zM14 7l3 3" />
+          </svg>
+        </template>
+      </el-input>
 
       <div v-if="batchMode && currentSolution" class="batch-crowd-name-lock">
         <span class="batch-crowd-name-lock-mark">✓</span>
@@ -886,42 +914,40 @@
 
     <div class="json-area">
       <div class="json-toolbar">
-        <div class="json-tabs">
-          <span class="json-tab" :class="{ active: jsonViewMode === 'summary' }" @click="jsonViewMode = 'summary'">
+        <div class="json-tabs" role="group" aria-label="结果预览方式">
+          <button type="button" class="json-tab" :aria-pressed="jsonViewMode === 'summary'" :class="{ active: jsonViewMode === 'summary' }" @click="jsonViewMode = 'summary'">
             摘要
-          </span>
-          <span class="json-tab" :class="{ active: jsonViewMode === 'json' }" @click="jsonViewMode = 'json'">
+          </button>
+          <button type="button" class="json-tab" :aria-pressed="jsonViewMode === 'json'" :class="{ active: jsonViewMode === 'json' }" @click="jsonViewMode = 'json'">
             JSON
-          </span>
+          </button>
         </div>
         <div class="json-actions">
-          <el-button class="intercom-btn-outlined json-import-button" size="small" @click="openEngineJsonImport">
-            导入 JSON
-          </el-button>
-          <button
-            class="databank-engine-button"
-            type="button"
-            aria-label="打开数据引擎"
-            title="打开数据引擎"
-            @click="goToDataBank"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <ellipse cx="12" cy="5.5" rx="6.5" ry="2.5" />
-              <path d="M5.5 5.5v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5" />
-              <path d="M5.5 10.5v5c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-5" />
-            </svg>
-          </button>
-          <el-button class="intercom-btn-primary" size="small" :disabled="databankAutomating" @click="copyJson">
-            {{ batchMode ? '复制参数' : '复制' }}
-          </el-button>
+          <el-tooltip content="导入 JSON" placement="top">
+            <button class="json-action-icon" type="button" aria-label="导入 JSON" @click="openEngineJsonImport">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 3.5h8l4 4V20H6z" />
+                <path d="M14 3.5V8h4" />
+                <path d="M12 10.5v6m-2.5-2.5 2.5 2.5 2.5-2.5" />
+              </svg>
+            </button>
+          </el-tooltip>
+          <el-tooltip :content="batchMode ? '复制参数' : '复制 JSON'" placement="top">
+            <button class="json-action-icon" type="button" :aria-label="batchMode ? '复制参数' : '复制 JSON'" :disabled="databankAutomating" @click="copyJson">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="11" height="12" rx="2" />
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" />
+              </svg>
+            </button>
+          </el-tooltip>
           <el-button
-            class="intercom-btn-outlined databank-automation-button"
+            class="intercom-btn-primary databank-automation-button"
             :data-tutorial-target="getTutorialAutomationTarget()"
             size="small"
             :disabled="databankAutomating && !batchMode"
             @click="handleAutomationButtonClick"
           >
-            {{ batchMode && databankAutomating
+            <span>{{ batchMode && databankAutomating
               ? '执行中 · 查看'
               : batchMode && batchWaitingCount
                 ? '取数中 · 查看'
@@ -931,7 +957,8 @@
                   ? `取数中 · ${singlePendingCountTaskCount}`
                 : databankAutomating
                   ? '执行中…'
-                  : '自动化圈人' }}
+                  : '自动化圈人' }}</span>
+            <svg class="json-automation-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13m-5-5 5 5-5 5" /></svg>
           </el-button>
         </div>
       </div>
@@ -1818,6 +1845,7 @@ import { usePackagesApi } from '../composables/usePackagesApi'
 import { usePanelResize } from '../composables/usePanelResize'
 import { useGuidedTutorial } from '../composables/useGuidedTutorial.js'
 import { buildParameterWriteBackChanges } from '../utils/parameterWriteBack.js'
+import { applyImportedEngineJsonFields } from '../utils/engineJsonImport.js'
 import { CONFIG_VERSION_EVENT } from '../utils/configVersion'
 import { groupBehaviorComponents } from '../utils/behaviorComponentGroups.js'
 import { buildLeafFolderDirectCounts, collectFolderSubtreeIds } from '../utils/folderTree.js'
@@ -1970,7 +1998,6 @@ const PRESERVE_FROM_POOL_ID_PACKAGES = new Set([
 const OFFICIAL_DEFAULT_CROWD_NAME = '未命名'
 const DEFAULT_DRAFT_NAME = '圈包方案草稿'
 const MAX_HISTORY = 20
-const DATABANK_URL = 'https://databank.tmall.com/#/userDefinedAnalyses'
 const EXTENSION_PING_MESSAGE_TYPE = 'CDP_EXTENSION_PING'
 const EXTENSION_BRIDGE_SOURCE = 'databank-extension-bridge'
 const EXTENSION_RESPONSE_TIMEOUT_MS = 170000
@@ -5106,9 +5133,12 @@ async function buildFinalJson() {
       const nodeJson = await response.json()
       if (nodeJson?.list?.length > 0) {
         const baseTemplate = nodeJson.list[0]
-        if (!PRESERVE_FROM_POOL_ID_PACKAGES.has(node.packageType)) {
-          baseTemplate.fromPoolId = poolExpression.fromPoolIdByIndex.get(index) ?? index
-        }
+        applyImportedEngineJsonFields(
+          baseTemplate,
+          node,
+          poolExpression.fromPoolIdByIndex.get(index) ?? index,
+          PRESERVE_FROM_POOL_ID_PACKAGES.has(node.packageType),
+        )
         if (index > 0) {
           baseTemplate.op = 'INIT'
         }
@@ -5298,10 +5328,6 @@ async function confirmBatchCopy() {
   } finally {
     batchCopying.value = false
   }
-}
-
-function goToDataBank() {
-  window.open(DATABANK_URL, '_blank', 'noopener,noreferrer')
 }
 
 function isExtensionVersionAtLeast(version, minimumVersion) {
@@ -8891,14 +8917,14 @@ onBeforeUnmount(() => {
   --pool-accent: #f26b2d;
   --pool-soft: #fff4ec;
   position: relative;
-  padding: 0 10px 10px;
+  padding: 0 12px 8px;
   overflow: hidden;
   background: #fff;
-  border: 1px solid #e6e8ed;
-  border-left: 3px solid var(--pool-accent);
-  border-radius: 10px;
+  border: 0;
+  border-left: 2px solid var(--pool-accent);
+  border-radius: 0;
   box-shadow: none;
-  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+  transition: background .18s ease;
 }
 
 .operation-pool.is-union {
@@ -8907,9 +8933,8 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool.is-drag-over {
-  background: var(--pool-soft);
-  border-color: var(--pool-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pool-accent) 14%, transparent);
+  background: #f8fafc;
+  box-shadow: none;
 }
 
 .operation-pool-header {
@@ -8941,11 +8966,10 @@ onBeforeUnmount(() => {
 
 .operation-pool-title small {
   overflow: hidden;
-  margin-left: 2px;
-  padding-left: 10px;
+  margin-left: 4px;
+  padding-left: 0;
   color: #92969f;
   font-size: 10px;
-  border-left: 1px solid #e1e3e8;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8997,10 +9021,11 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool-type-switch {
-  padding: 2px;
-  background: #fff;
-  border: 1px solid #dfe2e8;
-  border-radius: 7px;
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .operation-pool-type-switch :deep(.el-radio-button__inner) {
@@ -9011,16 +9036,17 @@ onBeforeUnmount(() => {
   font-size: 10px;
   line-height: 24px;
   background: transparent;
-  border: 0;
-  box-shadow: none;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
 
 .operation-pool-type-switch :deep(.el-radio-button:first-child .el-radio-button__inner) {
-  border-radius: 4px 0 0 4px;
+  border-radius: 5px;
 }
 
 .operation-pool-type-switch :deep(.el-radio-button:last-child .el-radio-button__inner) {
-  border-radius: 0 4px 4px 0;
+  border-radius: 5px;
 }
 
 .operation-pool-type-switch :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
@@ -9042,8 +9068,23 @@ onBeforeUnmount(() => {
   background: transparent;
   border: 0;
   cursor: pointer;
-  opacity: .42;
+  opacity: .7;
   transition: color .16s ease, opacity .16s ease;
+}
+
+.operation-pool-delete {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 6px;
+}
+
+.operation-pool-delete .el-icon { font-size: 15px; }
+.operation-pool-delete:focus-visible,
+.operation-node-detach:focus-visible {
+  outline: 2px solid #69717d;
+  outline-offset: 2px;
 }
 
 .operation-pool-delete:hover { color: #c94e31; opacity: 1; }
@@ -9051,7 +9092,7 @@ onBeforeUnmount(() => {
 
 .operation-pool-body {
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 
 .operation-pool-node.node-wrapper {
@@ -9059,8 +9100,8 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool-node .intercom-card {
-  border: 1px solid #e6e8ed !important;
-  border-radius: 8px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
   box-shadow: none !important;
 }
 
@@ -9069,16 +9110,16 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool-node .card-header-inner {
-  min-height: 40px;
-  padding: 5px 8px;
-  border-bottom: 1px solid #eceef2;
-  border-radius: 8px 8px 0 0;
+  min-height: 34px;
+  padding: 4px 0;
+  border-bottom: 0;
+  border-radius: 0;
 }
 
 .operation-pool-node .intercom-card.collapsed .card-header-inner {
-  min-height: 42px;
+  min-height: 34px;
   border-bottom: 0;
-  border-radius: 8px;
+  border-radius: 0;
 }
 
 .operation-pool-drop-hint {
@@ -9090,7 +9131,7 @@ onBeforeUnmount(() => {
   color: #878783;
   font-size: 9px;
   background: transparent;
-  border: 1px dashed #eceef2;
+  border: 0;
   border-radius: 5px;
 }
 
@@ -9221,10 +9262,13 @@ onBeforeUnmount(() => {
   width: 24px !important;
   min-width: 24px !important;
   height: 24px !important;
+  margin-left: 0 !important;
+  border: 0 !important;
+  border-radius: 6px !important;
 }
 
 .operation-pool-node .behavior-card-action-group {
-  opacity: .3;
+  opacity: .7;
   transition: opacity .16s ease;
 }
 
@@ -9234,31 +9278,52 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool-connector .tutorial-intersection-control {
-  padding: 1px;
-  border-radius: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   box-shadow: none;
 }
 
-.operation-pool-connector .tutorial-intersection-control :deep(.intercom-radio-group) {
-  gap: 1px;
+.operation-pool-connector :deep(.intercom-radio-group) {
+  gap: 3px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
-.operation-pool-connector .tutorial-intersection-control :deep(.el-radio-button__inner) {
+.operation-pool-connector :deep(.el-radio-button__inner) {
   min-width: 34px;
   min-height: 24px;
   padding: 0 8px !important;
   font-size: 11px !important;
   line-height: 24px !important;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
   border-radius: 5px !important;
+  box-shadow: none !important;
+}
+
+.operation-pool-connector :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  color: #fff !important;
+  background: var(--ui-ink) !important;
+}
+
+.operation-pool-type-switch :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner),
+.operation-pool-connector :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner) {
+  outline: 2px solid #69717d !important;
+  outline-offset: 2px;
 }
 
 .operation-pool-node :deep(.dynamic-form) {
-  padding: 10px 12px 14px;
+  padding: 8px 0 12px;
 }
 
 .operation-pool-node :deep(.dynamic-form .el-form-item) {
   min-height: 30px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .operation-pool-node :deep(.dynamic-form .el-form-item__label) {
@@ -9270,10 +9335,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.operation-pool-node :deep(.dynamic-form .el-form-item__label .display-body),
+.operation-pool-node :deep(.dynamic-form .el-form-item__label .display-body) {
+  font-size: 12px !important;
+}
+
 .operation-pool-node :deep(.dynamic-form .el-form-item__content),
 .operation-pool-node :deep(.dynamic-form .display-body) {
-  font-size: 12px !important;
+  font-size: 13px !important;
 }
 
 .operation-pool-node :deep(.dynamic-form .el-form-item__content) {
@@ -9294,19 +9362,19 @@ onBeforeUnmount(() => {
 .operation-pool-node :deep(.dynamic-form .select-auto-height .el-select__wrapper),
 .operation-pool-node :deep(.dynamic-form .select-auto-height .el-select-v2__wrapper) {
   height: auto !important;
-  min-height: 28px !important;
+  min-height: 30px !important;
   padding: 1px 8px !important;
 }
 
 .operation-pool-node :deep(.dynamic-form .el-input__inner),
 .operation-pool-node :deep(.dynamic-form .el-select__placeholder),
 .operation-pool-node :deep(.dynamic-form .el-select__selected-item) {
-  font-size: 12px !important;
+  font-size: 13px !important;
 }
 
 .operation-pool-node :deep(.dynamic-form .el-radio__label),
 .operation-pool-node :deep(.dynamic-form .el-checkbox__label) {
-  font-size: 12px !important;
+  font-size: 13px !important;
 }
 
 .operation-pool-node :deep(.dynamic-form .plain-radio-row),
@@ -9316,10 +9384,10 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool-node :deep(.dynamic-form .intercom-radio-group .el-radio-button__inner) {
-  min-height: 24px !important;
+  min-height: 30px !important;
   padding: 0 8px !important;
-  font-size: 11px !important;
-  line-height: 24px !important;
+  font-size: 13px !important;
+  line-height: 30px !important;
   border-radius: 5px !important;
 }
 
@@ -9352,7 +9420,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 2px 4px 8px;
   color: #686f7e;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -9395,6 +9463,7 @@ onBeforeUnmount(() => {
 }
 
 .operation-pool.is-empty .operation-pool-drop-hint {
+  border: 1px dashed #dfe3e9;
   min-height: 72px;
   margin-top: 2px;
   color: #8d95a4;

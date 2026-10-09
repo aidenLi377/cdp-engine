@@ -44,16 +44,21 @@ test('plain radio choices in behavior cards keep the bullet visually attached to
   assert.match(css, /\.behavior-card \.el-checkbox__input \{[^}]*margin-right: 0;/s)
 })
 
-test('shared behavior form centers labels and keeps date and numeric inputs inline', () => {
+test('shared behavior form aligns borderless date and numeric controls', () => {
   assert.match(css, /\.dynamic-form \.el-form-item__label \{[^}]*display: inline-flex;[^}]*align-items: center;/s)
   assert.match(css, /\.range-block \{[^}]*align-items: center;[^}]*flex-wrap: wrap;/s)
+  assert.match(dynamicFormVue, /'range-field-row': field\.Widget_Type === '数值_切换' \|\| field\.Widget_Type === '日期_切换'/)
   assert.match(dynamicFormVue, /class="range-block numeric-mode-field"/)
   assert.match(dynamicFormVue, /class="range-block date-mode-field"/)
   assert.match(dynamicFormVue, /class="intercom-input date-recent-number"/)
   assert.match(dynamicFormVue, /:controls="false" size="small" class="intercom-input date-recent-number"/)
-  assert.match(css, /\.dynamic-form \.date-recent-number \{ width: 44px; flex: 0 0 44px; \}/)
-  assert.match(css, /\.dynamic-form \.range-number-input \{ width: 92px; \}/)
-  assert.match(css, /\.dynamic-form \.date-exact-picker \{[^}]*flex: 0 0 238px !important;[^}]*width: 238px !important;/)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-field-row \{[^}]*margin-bottom: 4px !important;[^}]*padding: 2px 0;/s)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.el-form-item:not\(\.range-field-row\):has\(\+ \.range-field-row\) \{[^}]*margin-bottom: 4px;/s)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-block \.intercom-radio-group \{[^}]*flex: 0 1 var\(--range-mode-width\);/s)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-block \.el-radio-button__inner,[\s\S]*?border: 0 !important;/)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-block \.range-number-input \{[^}]*width: 108px;/s)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-block \.date-recent-number \{[^}]*width: 64px;/s)
+  assert.match(css, /#app \.behavior-card \.dynamic-form \.range-block \.date-exact-picker \{[^}]*width: 248px !important;/s)
 })
 
 test('the long effect-promotion account label stays within the shared label column', () => {

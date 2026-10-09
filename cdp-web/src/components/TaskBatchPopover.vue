@@ -15,12 +15,12 @@
     <template #reference>
       <button
         type="button"
-        class="tc-batch-popover-trigger"
+        :class="['tc-batch-popover-trigger', triggerClass]"
         :data-tutorial-target="tutorialKey ? `${tutorialKey}-trigger` : undefined"
         :disabled="disabled"
         :aria-label="`配置并运行${taskLabel}批量名单`"
       >
-        批量
+        {{ triggerLabel }}
       </button>
     </template>
 
@@ -86,6 +86,8 @@ import { parseCrowdBatch } from '../utils/crowdBatch.js'
 const props = defineProps({
   modelValue: { type: String, default: '' },
   taskLabel: { type: String, required: true },
+  triggerLabel: { type: String, default: '批量' },
+  triggerClass: { type: String, default: '' },
   runHint: { type: String, default: '' },
   disabled: { type: Boolean, default: false },
   minimumItems: { type: Number, default: 1 },
@@ -179,6 +181,20 @@ function runDraft() {
   color: #a1a1a6;
   background: #fff;
   cursor: not-allowed;
+}
+
+.tc-batch-popover-trigger.tc-batch-link {
+  height: 24px;
+  padding: 0;
+  border-radius: 3px;
+  color: #303942;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.tc-batch-popover-trigger.tc-batch-link:hover:not(:disabled) {
+  color: #000;
+  background: transparent;
 }
 
 .tc-batch-composer {

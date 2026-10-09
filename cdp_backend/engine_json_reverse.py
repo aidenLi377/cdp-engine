@@ -270,6 +270,37 @@ class EngineJsonReverseParser:
             form_data[key] = decoded
 
         self._restore_switch_fields(form_data, fields_by_key)
+        # ``fromPoolId`` is not consistently derived from the compute pool in
+        # official exports. Keep the exact per-node value for imported workbenches
+        # instead of guessing a rule from the component or pool position.
+        import_metadata: dict[str, Any] = {}
+        source_pool_id = item.get("fromPoolId", MISSING)
+        if source_pool_id is not MISSING and source_pool_id is not None:
+            if (
+                isinstance(source_pool_id, bool)
+                or not isinstance(source_pool_id, int)
+                or source_pool_id < 0
+            ):
+                unsupported.append(
+                    self._unsupported_parameter(
+                        index, package_name, "fromPoolId", source_pool_id,
+                        "fromPoolId必须是非负整数",
+                    )
+                )
+            else:
+                import_metadata["fromPoolId"] = source_pool_id
+
+        selection_lv3 = item.get("selectionLv3")
+        if not isinstance(selection_lv3, dict):
+            selection_lv3 = {}
+        if (
+            package_name == ConfigEngine.SINGLE_MEDIA_PACKAGE
+            and selection_lv3.get("dateType") == "RELATIVE_RANGE"
+        ):
+            import_metadata["relativeDateValue"] = {
+                "present": selection_lv3.get("dateValue", MISSING) not in (MISSING, None),
+                "initialDays": (form_data.get("time") or {}).get("days"),
+            }
         context = pool_context or {
             "poolId": f"imported-pool-{index + 1}",
             "poolIndex": index,
@@ -286,6 +317,8 @@ class EngineJsonReverseParser:
             "formData": form_data,
             "modeData": mode_data,
         }
+        if import_metadata:
+            node["engineJsonImport"] = import_metadata
 
         if not unsupported:
             try:
@@ -293,8 +326,15 @@ class EngineJsonReverseParser:
             except (TypeError, ValueError, KeyError) as exc:
                 errors.append(f"第{index + 1}个节点无法重新生成：{exc}")
             else:
-                if package_name not in PRESERVE_FROM_POOL_ID_PACKAGES:
+                if "fromPoolId" in import_metadata:
+                    regenerated["fromPoolId"] = import_metadata["fromPoolId"]
+                elif package_name not in PRESERVE_FROM_POOL_ID_PACKAGES:
                     regenerated["fromPoolId"] = context.get("poolIndex", index)
+                relative_date = import_metadata.get("relativeDateValue")
+                if relative_date and relative_date["present"]:
+                    regenerated.setdefault("selectionLv3", {})["dateValue"] = str(
+                        relative_date["initialDays"]
+                    )
                 if index:
                     regenerated["op"] = "INIT"
                 else:
@@ -620,7 +660,13 @@ class EngineJsonReverseParser:
             mode_data[key] = "range"
             return
         if date_type == "RELATIVE_RANGE":
-            raw_days = 30 if date_value is MISSING else date_value
+            # Some official components omit dateValue for their configured
+            # default relative range (for example 单媒体智投: 180 days).
+            raw_days = (
+                (form_data.get(key) or {}).get("days", 30)
+                if date_value is MISSING
+                else date_value
+            )
             try:
                 days = int(raw_days)
             except (TypeError, ValueError):

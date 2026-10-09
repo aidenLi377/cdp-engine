@@ -13,6 +13,7 @@ import {
   buildMultiFieldNodeSplits,
   isWorkbenchStructureLocked,
   serializeCustomFieldsForSolution,
+  cloneNodeForDuplicate,
 } from './solutionState.js'
 
 test('serializeNodesForSolution strips runtime-only fields and preserves persisted shape', () => {
@@ -56,6 +57,19 @@ test('serializeNodesForSolution preserves node displayName', () => {
   ]
 
   assert.deepEqual(serializeNodesForSolution(nodes)[0].displayName, 'CPB 主链路')
+})
+
+test('imported JSON metadata survives saving but is removed when duplicating a node', () => {
+  const source = {
+    id: 'imported-node-1', packageType: '单媒体智投', operator: null,
+    formData: { time: { days: 180 } }, modeData: { time: 'recent' },
+    engineJsonImport: {
+      fromPoolId: 1,
+      relativeDateValue: { present: true, initialDays: 180 },
+    },
+  }
+  assert.deepEqual(serializeNodesForSolution([source])[0].engineJsonImport, source.engineJsonImport)
+  assert.equal(Object.hasOwn(cloneNodeForDuplicate(source, 0), 'engineJsonImport'), false)
 })
 
 test('getNodeDisplayName prefers custom node name and falls back to index label', () => {
@@ -252,6 +266,7 @@ test('buildMultiFieldNodeSplits creates one class product behavior per product I
       time: { days: 30, dateRange: [] },
     },
     modeData: { time: 'recent' },
+    engineJsonImport: { fromPoolId: 3 },
   }
 
   const splits = buildMultiFieldNodeSplits(sourceNode, [{
@@ -269,6 +284,7 @@ test('buildMultiFieldNodeSplits creates one class product behavior per product I
     { days: 30, dateRange: [] },
   ])
   assert.deepEqual(splits.map((node) => node.operator), ['u', 'u'])
+  assert.ok(splits.every((node) => !Object.hasOwn(node, 'engineJsonImport')))
 })
 
 // ============================================================

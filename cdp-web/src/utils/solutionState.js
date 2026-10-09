@@ -57,7 +57,7 @@ function getSchemaKeys(node) {
 }
 
 export function cloneNodeForDuplicate(source, index) {
-  return prepareNodeAsOwnOperationPool({
+  const duplicated = prepareNodeAsOwnOperationPool({
     ...JSON.parse(JSON.stringify(source)),
     id: `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
     displayName: '',
@@ -65,6 +65,9 @@ export function cloneNodeForDuplicate(source, index) {
     selectedFirstDate: null,
     collapsed: false,
   }, index === 0 ? 'n' : (source?.operator ?? 'n'))
+  // A copy is a new node, not another instance of the official source node.
+  delete duplicated.engineJsonImport
+  return duplicated
 }
 
 export function insertNodeAtPosition(nodeList, newNode, index) {
@@ -103,6 +106,9 @@ export function serializeNodesForSolution(nodeList) {
       ...poolState,
       formData: persistedFormData,
       modeData: node?.modeData ?? {},
+      ...(node?.engineJsonImport
+        ? { engineJsonImport: cloneSerializableValue(node.engineJsonImport) }
+        : {}),
     }
   })
 }
@@ -365,6 +371,7 @@ export function buildNodeSplits(sourceNode, fieldKey, allValues, limit) {
   const splits = []
   for (let i = 1; i < chunks.length; i++) {
     const cloned = JSON.parse(JSON.stringify(sourceNode))
+    delete cloned.engineJsonImport
     cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${i}`
     cloned.displayName = ''
     cloned.operator = 'u'
@@ -407,6 +414,7 @@ export function buildMultiFieldNodeSplits(sourceNode, overflows) {
     }
 
     const cloned = JSON.parse(JSON.stringify(sourceNode))
+    delete cloned.engineJsonImport
     cloned.id = `node_${Date.now()}_${Math.random().toString(16).slice(2, 8)}_s${ci}`
     cloned.displayName = ''
     cloned.operator = 'u'

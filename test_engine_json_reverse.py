@@ -94,6 +94,133 @@ def effect_promotion_json_without_level_two_name(engine: ConfigEngine) -> dict:
     return {"crowdName": "直通车8月新客人数_副本", "list": [item], "compute": "(0)"}
 
 
+def brand_promotion_exposure_all_scenes_30_days_json() -> dict:
+    """Official export for exposure, all scenes, unlimited days, and recent 30 days."""
+    return {
+        "crowdName": "未命名",
+        "list": [{
+            "selectionLv1": ["FIELD", "AD"],
+            "selectionLv3": {
+                "cate": "ALL",
+                "bhv": "15318#|#exp_pptg",
+                "ppob_scene": [
+                    "20216#|#395", "20215#|#389", "20084#|#76", "20083#|#78",
+                    "19283#|#66", "19488#|#353", "19281#|#72", "19285#|#77",
+                    "15371#|#50", "15350#|#60", "15365#|#49", "15376#|#74",
+                    "15380#|#73", "15384#|#70", "20091#|#77",
+                ],
+                "dateType": "RELATIVE_RANGE",
+                "dateValue": "30",
+                "dayFrequency": {"op": "OPEN_OPEN"},
+            },
+            "fromPoolId": 1,
+            "selectionLv2Name": "品牌推广",
+            "selectionLv2": ["15272#|#cate_8969"],
+        }],
+        "compute": "(0)",
+    }
+
+
+def official_eight_node_relative_dates_json() -> dict:
+    """Official mixed-pool JSON supplied for the import regression."""
+    def node(lv1, lv2, lv3, pool, **extra):
+        result = {
+            "selectionLv1": lv1,
+            "selectionLv3": lv3,
+            "fromPoolId": pool,
+            **extra,
+        }
+        if lv2 is not None:
+            result["selectionLv2"] = lv2
+        return result
+
+    def recent(days):
+        return {"dateType": "RELATIVE_RANGE", "dateValue": str(days)}
+
+    unlimited = {"op": "OPEN_OPEN"}
+    return {
+        "crowdName": "未命名",
+        "list": [
+            node(
+                ["COMMON_TOUCH", "PUBLIC_CATE_BHV"], None,
+                {
+                    "extraFilters": {
+                        "channel": ["16772#|#4"],
+                        "stdBrand": ["20096", "18641319"],
+                        "frequency": unlimited, "price": unlimited,
+                        "itemprice": unlimited,
+                    },
+                    "leafCates": ["50011980#|#50011980"],
+                    "bhv": ["18919#|#CATE_PUBLIC_PAY"],
+                    **recent(20),
+                }, 0,
+            ),
+            node(
+                ["FIELD", "AD"], ["15272#|#cate_8969"],
+                {
+                    "cate": "ALL", "bhv": "15298#|#click_pptg",
+                    "ppob_scene": ["20212#|#395", "15349#|#60", "15364#|#49"],
+                    **recent(180), "dayFrequency": unlimited,
+                }, 0, selectionLv2Name="品牌推广", op="INIT",
+            ),
+            node(
+                ["FIELD", "AD"], ["15270#|#cate_8954"],
+                {
+                    "account": "ALL", "bhv": "15296#|#onebp_expose",
+                    "onebp_scene": ["15405#|#372", "15403#|#371"],
+                    **recent(180), "dayFrequency": unlimited,
+                }, 0, selectionLv2Name="效果推广", op="INIT",
+            ),
+            node(
+                ["FIELD", "AD"], ["15250#|#EB"],
+                {
+                    "contType": "bhv", "account": "ALL",
+                    "dayFrequency": unlimited, "bhv": "15274#|#EXPOSE_AD",
+                    **recent(12),
+                }, 0, selectionLv2Name="品牌专区", op="INIT",
+            ),
+            node(
+                ["FIELD", "AD"], ["19872#|#EXP_UD_ZHT_EXP_BHV"],
+                {
+                    "dayFrequency": unlimited,
+                    "bhv": "19873#|#EXP_UD_ZHT_EXP_BHV",
+                    "bhv_type": "exp_udzht", **recent(180),
+                }, 1, selectionLv2Name="全媒体智投", op="INIT",
+                tipProperty={
+                    "dateTo": "20240717", "type": 3,
+                    "dateFrom": "20240615", "content": "原UD智汇投更名为全媒体智投",
+                },
+            ),
+            node(
+                ["FIELD", "AD"], ["19936#|#cate_9195"],
+                {"bhv": "19937#|#is_pv_uddmt", **recent(180)},
+                1, selectionLv2Name="单媒体智投", op="INIT",
+                tipProperty={
+                    "dateTo": "20990129", "type": 3, "dateFrom": "20250814",
+                },
+            ),
+            node(
+                ["FIELD", "SEARCH"], None,
+                {
+                    "contType": "bhv",
+                    "searchs": ["你没事吧", "meishi", "没事就好"],
+                    **recent(180),
+                }, 2, op="INIT",
+            ),
+            node(
+                ["COMMODITY", "ITEM"], ["16596#|#ALL"],
+                {
+                    "keywords": None, "cate": "201166702#|#201166702",
+                    "bhv": ["16628#|#VIEW_ITEM"],
+                    "dayFrequency": unlimited,
+                    "selectedGoodsType": "1", **recent(180),
+                }, 3, op="INIT",
+            ),
+        ],
+        "compute": "(0n1n2n3)u(4u5)n(6)u(7)",
+    }
+
+
 class EngineJsonReverseParserTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -274,6 +401,95 @@ class EngineJsonReverseParserTests(unittest.TestCase):
             for entry in result["unsupportedParameters"]
         ))
 
+    def test_brand_promotion_exposure_all_scenes_with_30_days_round_trips(self):
+        payload = brand_promotion_exposure_all_scenes_30_days_json()
+        item = payload["list"][0]
+
+        result = self.parser.parse(payload)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["unsupportedParameters"], [])
+        node = result["nodes"][0]
+        self.assertEqual(node["formData"]["time"]["days"], 30)
+        self.assertEqual(len(node["formData"]["ppob_scene"]), 15)
+        self.assertEqual(node["formData"]["ppob_scene"][2], "淘内展示营销 - 品牌闪购")
+        self.assertEqual(
+            self.parser._regenerate_item(
+                "品牌推广",
+                self.engine.get_package_meta("品牌推广"),
+                node["formData"],
+                node["modeData"],
+            ),
+            item,
+        )
+
+    def test_import_preserves_official_pool_ids_and_single_media_relative_days(self):
+        brand = brand_promotion_exposure_all_scenes_30_days_json()["list"][0]
+        brand["fromPoolId"] = 0  # Unlike the component's generated default of 1.
+        category = category_node(self.engine, "20250929", "20251005")
+        category["fromPoolId"] = 1
+        single_media = self.engine.generate_json({
+            "_package": "单媒体智投",
+            "bhv": "曝光",
+            "time": {"val": {"days": 180}, "min": "recent"},
+        })["list"][0]
+        single_media["fromPoolId"] = 1  # Not the compute pool index (2).
+        single_media["selectionLv3"]["dateValue"] = "180"
+        payload = {
+            "crowdName": "官方混合池样本",
+            "list": [brand, category, single_media],
+            "compute": "(0)u(1)n(2)",
+        }
+
+        result = self.parser.parse(payload)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual([node["engineJsonImport"]["fromPoolId"] for node in result["nodes"]], [0, 1, 1])
+        self.assertEqual(result["nodes"][2]["formData"]["time"]["days"], 180)
+        self.assertEqual(
+            result["nodes"][2]["engineJsonImport"]["relativeDateValue"],
+            {"present": True, "initialDays": 180},
+        )
+
+    def test_official_eight_node_relative_dates_imports_without_loss(self):
+        payload = official_eight_node_relative_dates_json()
+
+        result = self.parser.parse(payload)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["unsupportedParameters"], [])
+        self.assertEqual(len(result["nodes"]), 8)
+        self.assertEqual(
+            [node["engineJsonImport"]["fromPoolId"] for node in result["nodes"]],
+            [0, 0, 0, 0, 1, 1, 2, 3],
+        )
+        self.assertEqual(result["nodes"][5]["formData"]["time"]["days"], 180)
+
+    def test_import_keeps_missing_single_media_date_value_variant(self):
+        item = self.engine.generate_json({
+            "_package": "单媒体智投",
+            "bhv": "曝光",
+            "time": {"val": {"days": 180}, "min": "recent"},
+        })["list"][0]
+        result = self.parser.parse({"crowdName": "未命名", "list": [item], "compute": "(0)"})
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            result["nodes"][0]["engineJsonImport"]["relativeDateValue"],
+            {"present": False, "initialDays": 180},
+        )
+
+    def test_import_rejects_non_numeric_from_pool_id(self):
+        payload = brand_promotion_exposure_all_scenes_30_days_json()
+        payload["list"][0]["fromPoolId"] = "0"
+
+        result = self.parser.parse(payload)
+
+        self.assertFalse(result["success"])
+        self.assertTrue(any(entry["path"] == "fromPoolId" for entry in result["unsupportedParameters"]))
+
     def test_unknown_ad_node_reports_its_discriminating_level_two_code(self):
         payload = effect_promotion_json_without_level_two_name(self.engine)
         payload["list"][0]["selectionLv2"] = ["15033#|#cate_8969"]
@@ -299,6 +515,42 @@ class EngineJsonReverseParserTests(unittest.TestCase):
 
 
 class EngineJsonReverseImportApiTests(unittest.TestCase):
+    def test_official_eight_node_import_preview_is_ready(self):
+        test_app = create_authenticated_test_app("eight-node-import-user")
+        try:
+            response = test_app.client.post(
+                "/api/workbench/import-engine-json/preview",
+                json={"text": json.dumps(official_eight_node_relative_dates_json(), ensure_ascii=False)},
+            )
+            data = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(data["success"], data)
+            self.assertEqual(len(data["nodes"]), 8)
+            self.assertEqual(data["nodes"][5]["engineJsonImport"]["fromPoolId"], 1)
+            self.assertEqual(data["nodes"][5]["engineJsonImport"]["relativeDateValue"]["initialDays"], 180)
+        finally:
+            test_app.close()
+
+    def test_official_brand_promotion_exposure_preview_is_ready(self):
+        test_app = create_authenticated_test_app("brand-promotion-exposure-import-user")
+        try:
+            response = test_app.client.post(
+                "/api/workbench/import-engine-json/preview",
+                json={"text": json.dumps(
+                    brand_promotion_exposure_all_scenes_30_days_json(),
+                    ensure_ascii=False,
+                )},
+            )
+            data = response.get_json()
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(data["status"], "ready")
+            self.assertEqual(data["unsupportedParameters"], [])
+            self.assertEqual(data["nodes"][0]["formData"]["time"]["days"], 30)
+        finally:
+            test_app.close()
+
     def test_import_preview_works_without_ai_configuration(self):
         model_calls = 0
 

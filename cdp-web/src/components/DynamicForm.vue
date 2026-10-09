@@ -13,7 +13,8 @@
           'field-highlighted': ctx && ctx.isFieldHighlighted && ctx.isFieldHighlighted(node.id, field.key),
           'field-dimmed': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldStep === 2 && field.Widget_Type !== ctx.creatingCustomFieldType,
           'field-selectable': ctx && ctx.creatingCustomField && (ctx.creatingCustomFieldStep === 1 || field.Widget_Type === ctx.creatingCustomFieldType),
-          'field-selected': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldBindings && ctx.creatingCustomFieldBindings.some(b => b.nodeId === node.id && b.fieldKey === field.key)
+          'field-selected': ctx && ctx.creatingCustomField && ctx.creatingCustomFieldBindings && ctx.creatingCustomFieldBindings.some(b => b.nodeId === node.id && b.fieldKey === field.key),
+          'range-field-row': field.Widget_Type === '数值_切换' || field.Widget_Type === '日期_切换'
         }"
         @click="ctx && ctx.creatingCustomField && (ctx.creatingCustomFieldStep === 1 || field.Widget_Type === ctx.creatingCustomFieldType) ? ctx.onFieldClickForBinding(node.id, field.key) : null"
       >
@@ -243,7 +244,7 @@
               @change="onTutorialFieldChanged(node, field)"
               @visible-change="handleTutorialSelectVisibleChange(node, field, $event)"
             ></el-select-v2>
-            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light">{{ getDynamicDescription(field) }}</span>
+            <span v-if="getDynamicDescription(field) && getDynamicStyle(field) === '文字'" class="hint-text display-body-light" :class="{ 'selection-hint': getDynamicDescription(field) === '单选' }">{{ getDynamicDescription(field) }}</span>
           </div>
         </template>
 
@@ -403,6 +404,7 @@ const categorySearchQueries = reactive({})
 
 function getCompactFieldLabel(field) {
   // The full source label remains available on hover, while the form grid stays aligned.
+  if (field?.Widget_Type === '日期_切换' && /^时间_/.test(field?.Label || '')) return '时间'
   return field?.Label === '广告账号(阿里妈妈)' ? '广告账号' : field?.Label
 }
 

@@ -66,14 +66,14 @@ test('official parity outputs keep the official default name and copy indentatio
   assert.match(normalModeVue, /JSON\.stringify\(generatedJson\.value, null, isPureOfficialParityOutput\(\) \? '\\t' : 4\)/)
 })
 
-test('packages with a fixed source pool preserve the generated pool id', () => {
+test('new nodes use generated pool defaults while imported nodes restore their official pool id', () => {
   assert.match(
     normalModeVue,
     /const PRESERVE_FROM_POOL_ID_PACKAGES = new Set\(\[[\s\S]*?BRAND_PROMOTION_PACKAGE,[\s\S]*?'全媒体智投',[\s\S]*?SINGLE_MEDIA_PACKAGE,[\s\S]*?\]\)/,
   )
   assert.match(
     normalModeVue,
-    /if \(!PRESERVE_FROM_POOL_ID_PACKAGES\.has\(node\.packageType\)\) \{[\s\S]*?baseTemplate\.fromPoolId = poolExpression\.fromPoolIdByIndex\.get\(index\) \?\? index[\s\S]*?\}/,
+    /applyImportedEngineJsonFields\([\s\S]*?baseTemplate,[\s\S]*?node,[\s\S]*?poolExpression\.fromPoolIdByIndex\.get\(index\) \?\? index,[\s\S]*?PRESERVE_FROM_POOL_ID_PACKAGES\.has\(node\.packageType\)/,
   )
 })
 

@@ -177,8 +177,8 @@ test('task center uses neutral surfaces, signal orange, and P1 status colors', (
   assert.doesNotMatch(taskStyle, /#f8f7f5|#f2f1ee|#ff6b4a|#e55a3e|#ff7b5e|rgba\(255\s*,?\s*107\s*,?\s*74/i)
   assert.doesNotMatch(taskStyle, /(?:linear|radial)-gradient\([^)]*(#ff6b35|255\s*,\s*107\s*,\s*53)/i)
   assert.match(taskStyle, /\.task-center-page\s*\{[\s\S]*background:\s*var\(--ui-canvas\)/)
-  assert.match(taskStyle, /\.tc-btn-sm\.is-dmp\s*\{[\s\S]*background:\s*var\(--ui-ink\)/)
-  assert.match(taskStyle, /\.tc-feature-option\.checked\s*\{[\s\S]*background:\s*transparent/)
+  assert.match(taskStyle, /\.tc-run-button\s*\{[^}]*background:\s*#24282d/)
+  assert.match(taskStyle, /\.tc-feature-option\.checked\s*\{[^}]*color:\s*#202830/)
   assert.match(taskStyle, /\.tc-phase-step\.current \.tc-phase-dot\s*\{[\s\S]*border-color:\s*var\(--ui-accent\)/)
 })
 
@@ -310,35 +310,18 @@ test('gallery white warm upload and publish controls keep neutral hover treatmen
   assert.doesNotMatch(warmHover + publish + publishHover, /(?:linear|radial)-gradient|#ff6b35|#ff6b4a|255\s*,\s*107\s*,\s*(?:53|74)/i)
 })
 
-test('task center disabled actions and tag labels remain opaque and readable', () => {
+test('task center disabled actions and tag labels remain readable', () => {
   const taskStyle = vueStyle('components/TaskCenter.vue')
-  const button = effectiveRule(taskStyle, '.tc-btn-sm:disabled')
-  const settings = effectiveRule(taskStyle, '.tc-settings-btn:disabled')
+  const button = effectiveRule(taskStyle, '.task-center-page .tc-run-button:disabled')
+  const settings = effectiveSelectorListRule(themeCss, '#app .tc-settings-btn:disabled')
   const tag = effectiveRule(taskStyle, '.tc-feature-option.disabled')
 
-  assert.match(button, /background:\s*#fff\s*!important/)
-  assert.match(button, /color:\s*var\(--ui-text-secondary\)\s*!important/)
-  assert.match(button, /border:\s*0\s*!important/)
-  assert.match(button, /opacity:\s*1/)
-  assert.match(button, /box-shadow:\s*none\s*!important/)
-  assert.match(button, /transform:\s*none\s*!important/)
-
-  assert.match(settings, /background:\s*#fff/)
-  assert.match(settings, /color:\s*#1d1d1f/)
-  assert.match(settings, /border-color:\s*#1d1d1f/)
-  assert.match(settings, /opacity:\s*1/)
-
-  assert.match(tag, /background:\s*transparent/)
-  assert.match(tag, /color:\s*#a1a1a6/)
+  assert.match(button, /color:\s*#8b949e\s*!important/)
+  assert.match(button, /cursor:\s*not-allowed/)
+  assert.match(settings, /opacity:\s*1\s*!important/)
+  assert.match(tag, /color:\s*#a1a9b1/)
   assert.match(tag, /cursor:\s*not-allowed/)
-  assert.match(tag, /opacity:\s*1/)
-
-  const disabledConditionalHover = effectiveRule(taskStyle, '.tc-feature-option.disabled.needCond:hover')
-  assert.match(disabledConditionalHover, /background:\s*transparent/)
-  assert.match(disabledConditionalHover, /transform:\s*none/)
-
   assert.match(effectiveRule(taskStyle, '.tc-tag-name'), /color:\s*inherit/)
-  assert.match(effectiveRule(taskStyle, '.tc-tag-condition'), /font-weight:\s*500/)
 })
 
 test('gallery white keeps full-height three-column rails pure white', () => {
@@ -380,7 +363,7 @@ test('gallery white C keeps persistent interior cards pure white and border-only
   }
 
   const taskStyle = vueStyle('components/TaskCenter.vue')
-  const taskLaunchGroup = effectiveRule(taskStyle, '.tc-test-col')
+  const taskLaunchGroup = effectiveRule(taskStyle, '.tc-tags-card')
   assert.match(taskLaunchGroup, /background:\s*transparent/)
   assert.match(taskLaunchGroup, /border:\s*0/)
 
@@ -389,10 +372,6 @@ test('gallery white C keeps persistent interior cards pure white and border-only
     assert.match(effectiveRule(solutionStyle, selector), /border-color:\s*var\(--ui-accent\)/)
   }
 
-  assert.match(
-    effectiveRule(taskStyle, '.tc-test-col:focus-within'),
-    /border-color:\s*transparent/,
-  )
   assert.match(
     effectiveSelectorListRule(themeCss, '#app .tc-tag-item.checked'),
     /border-color:\s*var\(--ui-accent\)\s*!important/,
@@ -576,10 +555,6 @@ test('gallery white C preserves combined selected, drag, ready, and disabled sta
   assert.match(readyHover, /transform:\s*none\s*!important/)
   assert.doesNotMatch(readyHover, /(?:^|;)\s*(?:background|border-color)\s*:/)
 
-  const taskStyle = vueStyle('components/TaskCenter.vue')
-  const disabledHover = effectiveRule(taskStyle, '.tc-feature-option.disabled.needCond:hover')
-  assert.match(disabledHover, /background:\s*transparent/)
-  assert.match(disabledHover, /transform:\s*none/)
 })
 
 test('gallery white A uses one shared app slider and borderless secondary switches', () => {

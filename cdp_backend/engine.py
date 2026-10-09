@@ -770,11 +770,13 @@ class ConfigEngine:
         selection_lv3 = canonical.get("selectionLv3")
         if isinstance(selection_lv3, dict):
             selection_lv3 = dict(selection_lv3)
-            # The supplied official exposure payload keeps dateType but omits
-            # dateValue for a relative range; click payloads retain dateValue.
+            # The supplied default-180-day exposure payload omits dateValue,
+            # but official exposure payloads with explicitly chosen days (for
+            # example 30) retain it. Do not erase those custom day counts.
             if (
                 selection_lv3.get("bhv") == "15318#|#exp_pptg"
                 and selection_lv3.get("dateType") == "RELATIVE_RANGE"
+                and selection_lv3.get("dateValue") == "180"
             ):
                 selection_lv3.pop("dateValue", None)
             canonical["selectionLv3"] = cls._order_mapping(

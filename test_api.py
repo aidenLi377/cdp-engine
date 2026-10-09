@@ -188,6 +188,22 @@ class CdpApiTests(unittest.TestCase):
         self.assertEqual(len(data["list"]), 1)
         self.assertNotIn("stdBrand", data["list"][0]["selectionLv3"]["extraFilters"])
 
+    def test_generate_category_json_with_remote_brand_id(self):
+        response = self.client.post(
+            "/api/generate",
+            json={
+                "_package": "类目公域行为",
+                "leafCates": ["美容护肤/美体/精油>乳液/面霜"],
+                "stdBrand": ["2334560803"],
+                "__remoteBrandOptions": [{"name": "赫莲娜黑绷带", "id": "2334560803"}],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        selection = response.get_json()["list"][0]["selectionLv3"]
+        self.assertEqual(selection["leafCates"], ["50011980#|#50011980"])
+        self.assertEqual(selection["extraFilters"]["stdBrand"], ["2334560803"])
+        self.assertNotIn("__remoteBrandOptions", selection)
+
     def test_generate_category_json_normalizes_iso_date_range_from_ai_workbench(self):
         response = self.client.post(
             "/api/generate",
