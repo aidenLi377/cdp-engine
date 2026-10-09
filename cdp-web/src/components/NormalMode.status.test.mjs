@@ -16,7 +16,7 @@ test('workbench mode is rendered as a read-only status indicator', () => {
 
 test('right panel crowd name header does not repeat the workbench phase status', () => {
   const rightPanelNameHeader = normalModeVue.match(
-    /<div class="workbench-name-top">[\s\S]*?<\/div>\s*<\/div>/,
+    /<div class="workbench-name-top">[\s\S]*?<\/div>/,
   )?.[0]
 
   assert.ok(rightPanelNameHeader, 'right panel crowd name header should exist')
