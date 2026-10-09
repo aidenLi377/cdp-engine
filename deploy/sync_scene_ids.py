@@ -14,6 +14,7 @@ import os
 import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
@@ -39,6 +40,11 @@ EXPECTED_IDS = {
     "消费者运营-人群击穿": ("15383", "15381"),
     "原万相台-电商场景": ("15402", "15400"),
 }
+PREEXISTING_MISSING_ORDER = (
+    PACKAGE,
+    BEHAVIOR,
+    "精准人群推广(整合原消费者运营)",
+)
 
 
 def _key(row: dict) -> tuple[str, str, str]:
@@ -92,7 +98,18 @@ def _preflight(db_path: Path, csv_path: Path, expected_count: int) -> list[tuple
     for key, desired in target.items():
         row_id, existing = current[key]
         for column, value in desired.items():
-            if column != "ID" and str(existing.get(column, "")) != str(value):
+            same_value = str(existing.get(column, "")) == str(value)
+            if column == "排序" and not same_value:
+                # This already-correct ID is missing order metadata in the live DB.
+                # Preserve it: the approved migration changes exactly 13 IDs.
+                if key == PREEXISTING_MISSING_ORDER and "排序" not in existing:
+                    same_value = True
+                else:
+                    try:
+                        same_value = Decimal(str(existing.get(column, ""))) == Decimal(str(value))
+                    except InvalidOperation:
+                        same_value = False
+            if column != "ID" and not same_value:
                 raise RuntimeError(f"Unexpected change to {column} for {key}")
         old_id, new_id = EXPECTED_IDS.get(key[2], (None, None)) if key[:2] == (PACKAGE, BEHAVIOR) else (None, None)
         if existing["ID"] == desired["ID"]:
@@ -121,6 +138,19 @@ def _backup(db_path: Path, backup_dir: Path) -> Path:
     return backup_path
 
 
+def _assert_only_approved_drafts(db_path: Path, approved_ids: set[str]) -> None:
+    with closing(sqlite3.connect(f"{db_path.resolve().as_uri()}?mode=ro", uri=True)) as conn:
+        draft_ids = {
+            row[0]
+            for row in conn.execute("SELECT id FROM dimension_rows WHERE has_changes = 1")
+        }
+        order_drafts = conn.execute(
+            "SELECT COUNT(*) FROM field_option_orders WHERE has_changes = 1"
+        ).fetchone()[0]
+    if draft_ids != approved_ids or order_drafts:
+        raise RuntimeError("Draft rows changed during scene ID synchronization")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", type=Path, required=True)
@@ -143,14 +173,12 @@ def main() -> None:
     store = DimensionStore(str(args.db_path))
     for row_id, data in updates:
         store.update_row(FILENAME, row_id, data, "cdpdeploy")
-    current, pending = _read_db(args.db_path)
-    if pending != len(updates):
-        raise RuntimeError(f"Draft count changed unexpectedly: {pending}")
+    _assert_only_approved_drafts(args.db_path, {row_id for row_id, _ in updates})
     store.publish_changes("cdpdeploy", note="同步效果推广点击场景官方 ID")
     remaining = _preflight(args.db_path, args.csv_path, 0)
     if remaining:
         raise RuntimeError("Published scene IDs still differ from the approved CSV")
-    print("Published scene table now matches all 67 CSV rows")
+    print("All 67 published scene IDs now match the approved CSV")
 
 
 if __name__ == "__main__":
